@@ -104,8 +104,81 @@ If `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` are missing (empty or undefin
 
 ---
 
+## Auth setup (Stage 3)
+
+The app has two roles: **DDP Admin** and **Farmer**. Role-based navigation is enforced in Supabase mode; in localStorage demo mode everything is unrestricted.
+
+### SQL prerequisites
+
+Run these files in order in the Supabase SQL Editor:
+
+1. `SUPABASE_SCHEMA.sql` — base tables
+2. `AUTH_RLS_SCHEMA.sql` — `profiles`, `farm_memberships`, helper functions, draft RLS policies
+
+### Create the first DDP Admin user
+
+Supabase Auth does not expose a role field — you must set it manually after account creation.
+
+**Step 1 — Create the account via Supabase dashboard:**
+
+Go to **Authentication → Users → Invite user** (or create via the signup form and confirm the email).
+
+**Step 2 — Set the role to `ddp_admin` in SQL Editor:**
+
+```sql
+-- Replace with the actual user UUID from Authentication → Users
+UPDATE public.profiles
+SET role = 'ddp_admin'
+WHERE id = 'paste-user-uuid-here';
+```
+
+**Step 3 — Verify:**
+
+```sql
+SELECT id, email, display_name, role FROM public.profiles;
+```
+
+### Create a farmer test user
+
+Use the in-app **Create farmer account** form (Sign in → Create a farmer account). The `handle_new_user()` trigger auto-creates a `profiles` row with `role = 'farmer'`.
+
+If the trigger is not yet installed, run `AUTH_RLS_SCHEMA.sql` first, then the profile row will be created automatically on next signup. Alternatively, insert it manually:
+
+```sql
+INSERT INTO public.profiles (id, email, display_name, role)
+VALUES ('paste-farmer-uuid', 'farmer@example.com', 'Test Farmer', 'farmer');
+```
+
+### Test role-based navigation
+
+| Action | Expected behaviour |
+|---|---|
+| Open app without Supabase env vars | Full demo mode, no auth required |
+| Open app with Supabase env vars, not signed in | Landing page shows "Sign in" button |
+| Sign in as **farmer** | Farmer nav group only; DDP pages show "Access Denied" |
+| Sign in as **ddp_admin** | Full nav (Farmer + DDP groups) |
+| Farmer submits farm registration | Row appears in `farms`, `farm_profiles`, `farm_memberships` |
+| Farmer submits inventory | Row appears in `inventory_batches` |
+| Admin approves/rejects | Status updated in `farms` or `inventory_batches`; row in `status_history` |
+
+### Enable email confirmation (optional)
+
+By default Supabase requires email confirmation. For local testing, disable it:
+**Authentication → Settings → Email Auth → "Confirm email"** — turn off.
+
+### RLS policies
+
+Draft policies are in `AUTH_RLS_SCHEMA.sql` (Part 3), all commented out. Apply them only after:
+
+1. Auth UI is tested end-to-end.
+2. At least one `ddp_admin` profile exists.
+3. At least one farmer with a `farm_memberships` row exists.
+4. You have verified data reads work correctly without RLS.
+
+---
+
 ## Notes
 
 - The app uses in-app navigation (no URL routing), so all routes resolve to `index.html`. Render serves static sites from `index.html` by default — no rewrite rules needed.
 - Demo data resets via the **Reset Demo** button in the app; this clears localStorage only and does not affect the Supabase database.
-- Database schema is documented in `SUPABASE_SCHEMA.sql`.
+- Base schema: `SUPABASE_SCHEMA.sql`. Auth + RLS schema: `AUTH_RLS_SCHEMA.sql`.

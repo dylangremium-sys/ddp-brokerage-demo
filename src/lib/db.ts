@@ -60,7 +60,7 @@ export function getFarmProfiles(): FarmProfile[] {
   return lsLoadFarms()
 }
 
-export async function createFarmProfile(farm: FarmProfile): Promise<void> {
+export async function createFarmProfile(farm: FarmProfile, userId?: string): Promise<void> {
   // localStorage is always written first (sync, never fails)
   const existing = lsLoadFarms()
   lsSaveFarms([farm, ...existing.filter(f => f.id !== farm.id)])
@@ -92,6 +92,7 @@ export async function createFarmProfile(farm: FarmProfile): Promise<void> {
     export_readiness: null,
     risk_level: null,
     partner_tier: farm.partnerTier,
+    created_by: userId ?? null,
     updated_at: new Date().toISOString(),
   })
 
@@ -250,12 +251,23 @@ export async function createFarmProfile(farm: FarmProfile): Promise<void> {
       monthlyReportingAgreement: farm.monthlyReportingAgreement,
     },
   })
+
+  // 3. farm_memberships — link the creating user as farm owner
+  if (userId && isValidUUID(userId)) {
+    console.log('Creating farm_membership for farm id:', farm.id, 'user id:', userId)
+    await sbInsert('farm_memberships', {
+      farm_id: farm.id,
+      user_id: userId,
+      role: 'owner',
+    })
+  }
 }
 
 export async function updateFarmProfileStatus(
   farmId: string,
   newStatus: FarmStatus,
   oldStatus?: FarmStatus,
+  reviewerId?: string,
 ): Promise<void> {
   if (!supabase) return
 
@@ -264,13 +276,16 @@ export async function updateFarmProfileStatus(
     return
   }
 
-  await sbUpdate('farms', { status: newStatus, updated_at: new Date().toISOString() }, 'id', farmId)
+  const farmUpdate: Record<string, unknown> = { status: newStatus, updated_at: new Date().toISOString() }
+  if (reviewerId && isValidUUID(reviewerId)) farmUpdate.reviewed_by = reviewerId
+  await sbUpdate('farms', farmUpdate, 'id', farmId)
 
   await sbInsert('status_history', {
     entity_type: 'farm',
     entity_id: farmId,
     old_status: oldStatus ?? null,
     new_status: newStatus,
+    note: reviewerId ? `Reviewed by ${reviewerId}` : null,
   })
 }
 
@@ -282,7 +297,7 @@ export function getInventoryBatches(): InventoryItem[] {
   return lsLoadInventory()
 }
 
-export async function createInventoryBatch(item: InventoryItem): Promise<void> {
+export async function createInventoryBatch(item: InventoryItem, userId?: string): Promise<void> {
   // localStorage is always written first
   const existing = lsLoadInventory()
   lsSaveInventory([item, ...existing.filter(i => i.id !== item.id)])
@@ -317,6 +332,7 @@ export async function createInventoryBatch(item: InventoryItem): Promise<void> {
     storage_conditions: item.storageConditions,
     notes: item.notes || null,
     status: item.status,
+    created_by: userId ?? null,
     updated_at: new Date().toISOString(),
   })
 }
@@ -325,6 +341,7 @@ export async function updateInventoryStatus(
   itemId: string,
   newStatus: InventoryStatus,
   oldStatus?: InventoryStatus,
+  reviewerId?: string,
 ): Promise<void> {
   if (!supabase) return
 
@@ -333,18 +350,16 @@ export async function updateInventoryStatus(
     return
   }
 
-  await sbUpdate(
-    'inventory_batches',
-    { status: newStatus, updated_at: new Date().toISOString() },
-    'id',
-    itemId,
-  )
+  const batchUpdate: Record<string, unknown> = { status: newStatus, updated_at: new Date().toISOString() }
+  if (reviewerId && isValidUUID(reviewerId)) batchUpdate.reviewed_by = reviewerId
+  await sbUpdate('inventory_batches', batchUpdate, 'id', itemId)
 
   await sbInsert('status_history', {
     entity_type: 'inventory_batch',
     entity_id: itemId,
     old_status: oldStatus ?? null,
     new_status: newStatus,
+    note: reviewerId ? `Reviewed by ${reviewerId}` : null,
   })
 }
 

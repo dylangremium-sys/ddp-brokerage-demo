@@ -1,5 +1,7 @@
 export type Lang = 'en' | 'th'
 
+export type { UserRole, UserProfile } from './services/auth'
+
 export type InventoryStatus = 'Pending Review' | 'Approved' | 'Missing Document' | 'Rejected'
 
 export type FarmStatus =
@@ -22,6 +24,8 @@ export type PartnerTier =
 
 export type Page =
   | 'landing'
+  | 'login'
+  | 'signup'
   | 'farmer-onboarding'
   | 'farmer-submit'
   | 'farmer-status'
