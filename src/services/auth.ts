@@ -7,6 +7,11 @@ export interface UserProfile {
   email: string
   displayName: string
   role: UserRole
+  phoneNumber?: string
+  lineId?: string
+  preferredLang?: 'th' | 'en'
+  farmerSubRole?: string
+  province?: string
 }
 
 export async function getCurrentUser() {
@@ -32,17 +37,31 @@ export async function signUpFarmer(
   email: string,
   password: string,
   displayName: string,
+  extra?: {
+    phoneNumber?: string
+    lineId?: string
+    preferredLang?: string
+    farmerSubRole?: string
+    province?: string
+  },
 ) {
   if (!supabase) throw new Error('Supabase not configured')
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { display_name: displayName } },
+    options: {
+      data: {
+        display_name: displayName,
+        phone_number: extra?.phoneNumber ?? '',
+        line_id: extra?.lineId ?? '',
+        preferred_lang: extra?.preferredLang ?? 'th',
+        farmer_sub_role: extra?.farmerSubRole ?? 'Farmer',
+        province: extra?.province ?? '',
+      },
+    },
   })
   if (error) throw new Error(error.message)
 
-  // The handle_new_user() DB trigger auto-inserts a profiles row on signup.
-  // We upsert here as a safety net for environments where the trigger is not yet installed.
   if (data.user) {
     const { error: profileError } = await supabase.from('profiles').upsert({
       id: data.user.id,
@@ -73,11 +92,17 @@ export async function getCurrentProfile(): Promise<UserProfile | null> {
     .eq('id', user.id)
     .single()
   if (error || !data) return null
+  const m = user.user_metadata ?? {}
   return {
     id: data.id,
     email: data.email ?? user.email ?? '',
     displayName: data.display_name ?? '',
     role: data.role as UserRole,
+    phoneNumber: m.phone_number,
+    lineId: m.line_id,
+    preferredLang: m.preferred_lang,
+    farmerSubRole: m.farmer_sub_role,
+    province: m.province,
   }
 }
 
@@ -110,6 +135,7 @@ export function subscribeToAuthChanges(
         .select('*')
         .eq('id', session.user.id)
         .single()
+      const m = session.user.user_metadata ?? {}
       callback(
         data
           ? {
@@ -117,6 +143,11 @@ export function subscribeToAuthChanges(
               email: data.email ?? session.user.email ?? '',
               displayName: data.display_name ?? '',
               role: data.role as UserRole,
+              phoneNumber: m.phone_number,
+              lineId: m.line_id,
+              preferredLang: m.preferred_lang,
+              farmerSubRole: m.farmer_sub_role,
+              province: m.province,
             }
           : null,
       )

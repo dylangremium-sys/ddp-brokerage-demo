@@ -25,7 +25,10 @@ import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatu
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
+import FarmerRegister from './pages/FarmerRegister'
+import FarmerDashboard from './pages/FarmerDashboard'
 import FarmerOnboarding from './pages/FarmerOnboarding'
+import FarmerAdvancedProfile from './pages/FarmerAdvancedProfile'
 import FarmerSubmitInventory from './pages/FarmerSubmitInventory'
 import FarmerStatus from './pages/FarmerStatus'
 import DDPOverview from './pages/DDPOverview'
@@ -36,7 +39,7 @@ import DDPInventoryReview from './pages/DDPInventoryReview'
 import DDPMasterInventory from './pages/DDPMasterInventory'
 import DDPBuyerPreview from './pages/DDPBuyerPreview'
 
-const FARMER_PAGES: Page[] = ['landing', 'login', 'signup', 'farmer-onboarding', 'farmer-submit', 'farmer-status']
+const FARMER_PAGES: Page[] = ['landing', 'login', 'signup', 'farmer-register', 'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile', 'farmer-submit', 'farmer-status']
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer']
 const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
 
@@ -187,9 +190,11 @@ export default function App() {
 
   // ── Landing page entry points ─────────────────────────────────────────────
   function handleEnterFarmer() {
-    if (!isDemo && !isSignedIn) { goTo('signup'); return }
-    goTo('farmer-onboarding')
+    if (isDemo) { goTo('farmer-register'); return }
+    if (!isSignedIn) { goTo('signup'); return }
+    goTo('farmer-dashboard')
   }
+
 
   function handleEnterDDP() {
     if (!isDemo && !isSignedIn) { goTo('login'); return }
@@ -214,7 +219,11 @@ export default function App() {
   }
 
   function handleFarmSubmit(farm: FarmProfile) {
-    setFarms(prev => [farm, ...prev])
+    setFarms(prev => {
+      // If a farm with this ID already exists (e.g. advanced profile update), replace it
+      const exists = prev.some(f => f.id === farm.id)
+      return exists ? prev.map(f => f.id === farm.id ? farm : f) : [farm, ...prev]
+    })
     createFarmProfile(farm, currentProfile?.id).catch(onDbError)
     // Optimistically expand scope so the farmer sees their new farm immediately
     if (isFarmerRole) {
@@ -298,7 +307,7 @@ export default function App() {
     <div className="app">
 
       {/* ── Navbar (all non-landing pages) ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && (
+      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
         <nav className="navbar">
           <div className="navbar-brand" onClick={() => goTo('landing')} style={{ cursor: 'pointer' }}>
             <span className="brand-logo">DDP</span>
@@ -310,9 +319,13 @@ export default function App() {
               <div className="nav-group">
                 <span className="nav-group-label">{T[lang].farmerGroupLabel}</span>
                 <button
+                  className={`nav-btn${page === 'farmer-dashboard' ? ' nav-active' : ''}`}
+                  onClick={() => goTo('farmer-dashboard')}
+                >{T[lang].navDashboard}</button>
+                <button
                   className={`nav-btn${page === 'farmer-onboarding' ? ' nav-active' : ''}`}
                   onClick={() => goTo('farmer-onboarding')}
-                >{T[lang].navOnboarding}</button>
+                >{T[lang].buildProfile}</button>
                 <button
                   className={`nav-btn${page === 'farmer-submit' ? ' nav-active' : ''}`}
                   onClick={() => goTo('farmer-submit')}
@@ -320,7 +333,7 @@ export default function App() {
                 <button
                   className={`nav-btn${page === 'farmer-status' ? ' nav-active' : ''}`}
                   onClick={() => goTo('farmer-status')}
-                >{T[lang].navStatus}</button>
+                >{T[lang].myActivity}</button>
               </div>
             )}
 
@@ -414,21 +427,54 @@ export default function App() {
       {page === 'signup' && (
         <main className="main-content">
           <SignupPage
-            onSuccess={() => goTo('farmer-onboarding')}
+            lang={lang}
+            onSuccess={() => goTo('farmer-dashboard')}
             onGoLogin={() => goTo('login')}
           />
         </main>
       )}
 
-      {/* ── App pages ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && (
+      {/* ── Demo registration (no navbar) ── */}
+      {page === 'farmer-register' && (
         <main className="main-content">
+          <FarmerRegister
+            lang={lang}
+            onComplete={() => goTo('farmer-dashboard')}
+          />
+        </main>
+      )}
+
+      {/* ── App pages ── */}
+      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
+        <main className="main-content">
+
+          {page === 'farmer-dashboard' && (
+            <FarmerDashboard
+              lang={lang}
+              farms={farmerFarms}
+              currentProfile={isDemo ? null : currentProfile}
+              onBuildProfile={() => goTo('farmer-onboarding')}
+              onSubmitBatch={() => goTo('farmer-submit')}
+              onMyActivity={() => goTo('farmer-status')}
+              onAdvancedProfile={() => goTo('farmer-advanced-profile')}
+            />
+          )}
 
           {page === 'farmer-onboarding' && (
             <FarmerOnboarding
               lang={lang}
+              currentProfile={currentProfile}
               onSubmit={handleFarmSubmit}
-              onBack={() => goTo('farmer-status')}
+              onBack={() => goTo('farmer-dashboard')}
+            />
+          )}
+
+          {page === 'farmer-advanced-profile' && (
+            <FarmerAdvancedProfile
+              lang={lang}
+              farms={farmerFarms}
+              onSave={handleFarmSubmit}
+              onBack={() => goTo('farmer-dashboard')}
             />
           )}
 

@@ -1,0 +1,166 @@
+import { useState } from 'react'
+import { saveFarmDraft } from '../data'
+import type { Lang, FarmProfile } from '../types'
+
+const THAI_PROVINCES = [
+  'Amnat Charoen', 'Ang Thong', 'Bangkok', 'Bueng Kan', 'Buri Ram',
+  'Chachoengsao', 'Chai Nat', 'Chaiyaphum', 'Chanthaburi', 'Chiang Mai',
+  'Chiang Rai', 'Chon Buri', 'Chumphon', 'Kalasin', 'Kamphaeng Phet',
+  'Kanchanaburi', 'Khon Kaen', 'Krabi', 'Lampang', 'Lamphun',
+  'Loei', 'Lop Buri', 'Mae Hong Son', 'Maha Sarakham', 'Mukdahan',
+  'Nakhon Nayok', 'Nakhon Pathom', 'Nakhon Phanom', 'Nakhon Ratchasima',
+  'Nakhon Sawan', 'Nakhon Si Thammarat', 'Nan', 'Narathiwat',
+  'Nong Bua Lam Phu', 'Nong Khai', 'Nonthaburi', 'Pathum Thani',
+  'Pattani', 'Phang Nga', 'Phatthalung', 'Phayao', 'Phetchabun',
+  'Phetchaburi', 'Phichit', 'Phitsanulok', 'Phra Nakhon Si Ayutthaya',
+  'Phrae', 'Phuket', 'Prachin Buri', 'Prachuap Khiri Khan', 'Ranong',
+  'Ratchaburi', 'Rayong', 'Roi Et', 'Sa Kaeo', 'Sakon Nakhon',
+  'Samut Prakan', 'Samut Sakhon', 'Samut Songkhram', 'Sara Buri',
+  'Satun', 'Si Sa Ket', 'Sing Buri', 'Songkhla', 'Sukhothai',
+  'Suphan Buri', 'Surat Thani', 'Surin', 'Tak', 'Trang', 'Trat',
+  'Ubon Ratchathani', 'Udon Thani', 'Uthai Thani', 'Uttaradit',
+  'Yala', 'Yasothon',
+]
+
+type SubRole = 'Farmer' | 'Farm Manager' | 'Broker'
+
+interface Props {
+  lang: Lang
+  onComplete: () => void
+}
+
+export default function FarmerRegister({ lang, onComplete }: Props) {
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [province, setProvince] = useState('')
+  const [role, setRole] = useState<SubRole>('Farmer')
+  const [preferredLang, setPreferredLang] = useState<Lang>(lang)
+  const [error, setError] = useState<string | null>(null)
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) {
+      setError(lang === 'th' ? 'กรุณากรอกชื่อ' : 'Name is required.')
+      return
+    }
+    if (!phone.trim()) {
+      setError(lang === 'th' ? 'กรุณากรอกเบอร์โทรศัพท์' : 'Phone number is required.')
+      return
+    }
+    setError(null)
+    const draft: Partial<FarmProfile> = {
+      tradingName: name.trim(),
+      primaryContact: name.trim(),
+      mobileNumber: phone.trim(),
+      province: province || '',
+      position: role,
+    }
+    saveFarmDraft(draft)
+    onComplete()
+  }
+
+  const isTh = lang === 'th'
+
+  return (
+    <div className="page-wrap auth-page">
+      <div className="page-header farmer-header" style={{ maxWidth: 480, margin: '0 auto 24px' }}>
+        <div className="page-eyebrow">DDP Brokerage</div>
+        <h1 className="page-title">
+          {isTh ? 'สมัครเป็นผู้จัดหาสินค้า' : 'Join as a Supplier'}
+        </h1>
+        <p className="page-desc">
+          {isTh
+            ? 'ใช้เวลาแค่ 2 นาที เพิ่มข้อมูลฟาร์มทีหลังได้'
+            : 'It takes 2 minutes. You can add your farm details after.'}
+        </p>
+      </div>
+
+      <div className="card form-card auth-card">
+        {error && (
+          <div className="alert alert-danger" style={{ marginTop: 0, marginBottom: 16 }}>
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <label className="field">
+            <span>{isTh ? 'ชื่อ หรือชื่อฟาร์ม' : 'Your name or farm nickname'}</span>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              required
+              placeholder={isTh ? 'เช่น สวนพฤกษา' : 'e.g. Green Valley Farm'}
+              autoComplete="name"
+            />
+          </label>
+
+          <label className="field" style={{ marginTop: 14 }}>
+            <span>{isTh ? 'เบอร์โทรศัพท์' : 'Phone number'}</span>
+            <input
+              type="tel"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              required
+              placeholder={isTh ? 'เช่น 0812345678' : 'e.g. 0812345678'}
+              autoComplete="tel"
+            />
+          </label>
+
+          <label className="field" style={{ marginTop: 14 }}>
+            <span>{isTh ? 'จังหวัด' : 'Province'}</span>
+            <select value={province} onChange={e => setProvince(e.target.value)}>
+              <option value="">{isTh ? 'เลือกจังหวัด' : 'Select your province'}</option>
+              {THAI_PROVINCES.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="field" style={{ marginTop: 14 }}>
+            <span className="field-label">{isTh ? 'บทบาทของคุณ' : 'Your role'}</span>
+            <div className="role-selector">
+              {(['Farmer', 'Farm Manager', 'Broker'] as SubRole[]).map(r => (
+                <button
+                  key={r}
+                  type="button"
+                  className={`role-btn${role === r ? ' role-btn-active' : ''}`}
+                  onClick={() => setRole(r)}
+                >
+                  {r === 'Farmer'
+                    ? (isTh ? 'เกษตรกร' : 'Farmer')
+                    : r === 'Farm Manager'
+                      ? (isTh ? 'ผู้จัดการฟาร์ม' : 'Farm Manager')
+                      : (isTh ? 'นายหน้า' : 'Broker')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field" style={{ marginTop: 14 }}>
+            <span className="field-label">{isTh ? 'ภาษาที่ต้องการ' : 'Preferred language'}</span>
+            <div className="role-selector">
+              <button
+                type="button"
+                className={`role-btn${preferredLang === 'th' ? ' role-btn-active' : ''}`}
+                onClick={() => setPreferredLang('th')}
+              >ภาษาไทย</button>
+              <button
+                type="button"
+                className={`role-btn${preferredLang === 'en' ? ' role-btn-active' : ''}`}
+                onClick={() => setPreferredLang('en')}
+              >English</button>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="btn btn-primary btn-lg"
+            style={{ width: '100%', marginTop: 24 }}
+          >
+            {isTh ? 'เริ่มต้น' : 'Get Started'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}

@@ -2,6 +2,7 @@ import type { InventoryItem, FarmProfile } from './types'
 
 export const INV_KEY = 'ddp_inventory'
 export const FARM_KEY = 'ddp_farms'
+export const FARM_DRAFT_KEY = 'ddp_farm_draft'
 
 export function calcCompletion(f: Partial<FarmProfile>): number {
   const fields = [
@@ -572,4 +573,18 @@ export function saveFarms(farms: FarmProfile[]) {
 export function resetDemo() {
   localStorage.setItem(INV_KEY, JSON.stringify(SEED_INVENTORY))
   localStorage.setItem(FARM_KEY, JSON.stringify(SEED_FARMS))
+  localStorage.removeItem(FARM_DRAFT_KEY)
+}
+
+export function loadFarmDraft(): Partial<FarmProfile> | null {
+  const raw = localStorage.getItem(FARM_DRAFT_KEY)
+  return raw ? (JSON.parse(raw) as Partial<FarmProfile>) : null
+}
+
+export function saveFarmDraft(draft: Partial<FarmProfile>) {
+  localStorage.setItem(FARM_DRAFT_KEY, JSON.stringify(draft))
+}
+
+export function clearFarmDraft() {
+  localStorage.removeItem(FARM_DRAFT_KEY)
 }

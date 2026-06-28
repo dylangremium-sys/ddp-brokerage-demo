@@ -26,7 +26,10 @@ export type Page =
   | 'landing'
   | 'login'
   | 'signup'
+  | 'farmer-register'
+  | 'farmer-dashboard'
   | 'farmer-onboarding'
+  | 'farmer-advanced-profile'
   | 'farmer-submit'
   | 'farmer-status'
   | 'ddp-overview'
@@ -206,6 +209,9 @@ export interface FarmProfile {
   interestedLongTerm: string
   interestedJV: string
   monthlyReportingAgreement: string
+  // Registration & pricing extras
+  role?: string
+  priceNotes?: string
   // DDP internal scores
   scoreCompliance: number
   scoreDocumentation: number
