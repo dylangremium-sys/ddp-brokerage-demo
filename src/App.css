@@ -525,8 +525,8 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
 }
 
 .inv-table {
-  width: max-content;
-  min-width: max(100%, 900px);
+  width: 100%;
+  min-width: 900px;
   border-collapse: collapse;
   font-size: 13.5px;
 }
@@ -569,6 +569,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
   position: sticky;
   right: 0;
   z-index: 1;
+  min-width: 130px;
   box-shadow: -2px 0 5px rgba(0,0,0,0.06);
 }
 .inv-table thead th:last-child { background: #f8fafc; }
