@@ -368,6 +368,55 @@ export function getApprovedInventory(): InventoryItem[] {
 }
 
 // ---------------------------------------------------------------------------
+// Farmer data scoping — returns the set of farm IDs and inventory item IDs
+// owned by a specific user in Supabase mode.
+//
+// farmIds  = farm_memberships.farm_id WHERE user_id = userId
+//          ∪ farms.id WHERE created_by = userId
+// itemIds  = inventory_batches.id WHERE created_by = userId
+//          ∪ inventory_batches.id WHERE farm_id ∈ farmIds
+//
+// Returns empty sets when Supabase is not configured or userId is not a UUID.
+// ---------------------------------------------------------------------------
+export interface FarmerScope {
+  farmIds: Set<string>
+  itemIds: Set<string>
+}
+
+export async function getFarmerScope(userId: string): Promise<FarmerScope> {
+  const empty: FarmerScope = { farmIds: new Set(), itemIds: new Set() }
+  if (!supabase || !isValidUUID(userId)) return empty
+
+  const [membershipsRes, createdFarmsRes] = await Promise.all([
+    supabase.from('farm_memberships').select('farm_id').eq('user_id', userId),
+    supabase.from('farms').select('id').eq('created_by', userId),
+  ])
+  if (membershipsRes.error) console.warn('getFarmerScope memberships:', membershipsRes.error.message)
+  if (createdFarmsRes.error) console.warn('getFarmerScope farms.created_by:', createdFarmsRes.error.message)
+
+  const farmIds = new Set<string>([
+    ...(membershipsRes.data ?? []).map(m => m.farm_id as string),
+    ...(createdFarmsRes.data ?? []).map(f => f.id as string),
+  ])
+
+  // Fetch inventory owned directly (created_by) or linked to an owned farm
+  const itemsRes = farmIds.size > 0
+    ? await supabase
+        .from('inventory_batches')
+        .select('id')
+        .or(`created_by.eq.${userId},farm_id.in.(${[...farmIds].join(',')})`)
+    : await supabase
+        .from('inventory_batches')
+        .select('id')
+        .eq('created_by', userId)
+
+  if (itemsRes.error) console.warn('getFarmerScope inventory_batches:', itemsRes.error.message)
+  const itemIds = new Set<string>((itemsRes.data ?? []).map(i => i.id as string))
+
+  return { farmIds, itemIds }
+}
+
+// ---------------------------------------------------------------------------
 // Persist helpers — write-through to localStorage on every React state change.
 // ---------------------------------------------------------------------------
 

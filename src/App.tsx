@@ -11,6 +11,8 @@ import {
   updateInventoryStatus,
   resetDemoData,
   isSupabaseConfigured,
+  getFarmerScope,
+  type FarmerScope,
 } from './lib/db'
 import { loadInventory, loadFarms } from './data'
 import {
@@ -89,6 +91,10 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState<boolean>(isSupabaseConfigured)
   const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null)
 
+  // Farmer data scope — null until loaded, empty Sets if farmer has no data
+  const [farmerScope, setFarmerScope] = useState<FarmerScope | null>(null)
+  const [scopeLoading, setScopeLoading] = useState(false)
+
   // ── Persist to localStorage on every state change ────────────────────────
   useEffect(() => { persistInventory(inventory) }, [inventory])
   useEffect(() => { persistFarms(farms) }, [farms])
@@ -102,9 +108,28 @@ export default function App() {
     const unsubscribe = subscribeToAuthChanges((profile) => {
       setCurrentProfile(profile)
       setAuthLoading(false)
+      // Clear scope on sign-out
+      if (!profile) setFarmerScope(null)
     })
     return unsubscribe
   }, [])
+
+  // ── Load farmer scope when a farmer signs in ─────────────────────────────
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'farmer') {
+      if (!currentProfile || currentProfile.role !== 'farmer') setFarmerScope(null)
+      return
+    }
+    setScopeLoading(true)
+    getFarmerScope(currentProfile.id)
+      .then(scope => setFarmerScope(scope))
+      .catch(err => {
+        console.warn('getFarmerScope failed:', err)
+        // Fail safe: empty scope so farmer sees no other farms
+        setFarmerScope({ farmIds: new Set(), itemIds: new Set() })
+      })
+      .finally(() => setScopeLoading(false))
+  }, [currentProfile])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
   // In demo mode (no Supabase), everything is open — preserve existing behaviour.
@@ -113,6 +138,26 @@ export default function App() {
   const isAdminRole = isDemo || currentProfile?.role === 'ddp_admin'
   const isFarmerRole = !isDemo && currentProfile?.role === 'farmer'
   const isFarmerPage = FARMER_PAGES.includes(page)
+
+  // ── Scoped data for farmer pages ─────────────────────────────────────────
+  // In demo mode or for admin, pass everything through unchanged.
+  // For a signed-in farmer in Supabase mode, filter to only their owned records.
+  // While the scope is loading (farmerScope === null), use empty arrays so the
+  // farmer never sees other users' data.
+  const farmerFarms: FarmProfile[] = isDemo || !isFarmerRole
+    ? farms
+    : farmerScope !== null
+      ? farms.filter(f => farmerScope.farmIds.has(f.id))
+      : []
+
+  const farmerInventory: InventoryItem[] = isDemo || !isFarmerRole
+    ? inventory
+    : farmerScope !== null
+      ? inventory.filter(i =>
+          farmerScope.itemIds.has(i.id) ||
+          (i.farmId != null && farmerScope.farmIds.has(i.farmId))
+        )
+      : []
 
   // ── Error handler ────────────────────────────────────────────────────────
   function onDbError(err: unknown) {
@@ -156,11 +201,28 @@ export default function App() {
   function handleInventorySubmit(item: InventoryItem) {
     setInventory(prev => [item, ...prev])
     createInventoryBatch(item, currentProfile?.id).catch(onDbError)
+    // Optimistically expand scope so the farmer sees their new submission immediately
+    if (isFarmerRole) {
+      setFarmerScope(prev => {
+        const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
+        const newFarmIds = item.farmId
+          ? new Set([...base.farmIds, item.farmId])
+          : base.farmIds
+        return { farmIds: newFarmIds, itemIds: new Set([...base.itemIds, item.id]) }
+      })
+    }
   }
 
   function handleFarmSubmit(farm: FarmProfile) {
     setFarms(prev => [farm, ...prev])
     createFarmProfile(farm, currentProfile?.id).catch(onDbError)
+    // Optimistically expand scope so the farmer sees their new farm immediately
+    if (isFarmerRole) {
+      setFarmerScope(prev => {
+        const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
+        return { farmIds: new Set([...base.farmIds, farm.id]), itemIds: base.itemIds }
+      })
+    }
     goTo('farmer-status')
   }
 
@@ -394,19 +456,23 @@ export default function App() {
           )}
 
           {page === 'farmer-submit' && (
-            <FarmerSubmitInventory
-              lang={lang}
-              farms={farms}
-              onSubmit={handleInventorySubmit}
-            />
+            scopeLoading && isFarmerRole
+              ? <div className="scope-loading">Loading your farm data…</div>
+              : <FarmerSubmitInventory
+                  lang={lang}
+                  farms={farmerFarms}
+                  onSubmit={handleInventorySubmit}
+                />
           )}
 
           {page === 'farmer-status' && (
-            <FarmerStatus
-              lang={lang}
-              inventory={inventory}
-              farms={farms}
-            />
+            scopeLoading && isFarmerRole
+              ? <div className="scope-loading">Loading your submissions…</div>
+              : <FarmerStatus
+                  lang={lang}
+                  inventory={farmerInventory}
+                  farms={farmerFarms}
+                />
           )}
 
           {/* DDP pages — AccessDenied for non-admin in Supabase mode */}

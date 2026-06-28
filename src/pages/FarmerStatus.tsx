@@ -27,8 +27,8 @@ const FARM_STATUS_CLASS: Record<FarmStatus, string> = {
 
 export default function FarmerStatus({ lang, inventory, farms }: Props) {
   const t = T[lang]
-  // Show farms sorted by most recent
   const myFarms = [...farms].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
+  const isEmpty = myFarms.length === 0 && inventory.length === 0
 
   function farmMsg(status: FarmStatus): string {
     if (status === 'Submitted to DDP' || status === 'Under Review') return t.farmPendingMsg
@@ -64,14 +64,24 @@ export default function FarmerStatus({ lang, inventory, farms }: Props) {
         <p className="page-desc">{t.statusDesc}</p>
       </div>
 
-      {/* Farm Status */}
-      <div className="section-label-row">
-        <div className="section-label">{t.farmStatusSection}</div>
-      </div>
+      {/* Combined empty state — shown only when farmer has made no submissions at all */}
+      {isEmpty && (
+        <div className="empty-state-hero">
+          <div className="empty-state-icon">📋</div>
+          <p className="empty-state-message">
+            No submissions yet. Register your farm or submit an inventory batch to begin.
+          </p>
+        </div>
+      )}
 
-      {myFarms.length === 0 ? (
+      {/* Farm Status */}
+      {!isEmpty && <div className="section-label-row">
+        <div className="section-label">{t.farmStatusSection}</div>
+      </div>}
+
+      {!isEmpty && myFarms.length === 0 ? (
         <div className="empty-state">{t.noFarmProfile}</div>
-      ) : (
+      ) : !isEmpty && (
         <div className="status-list" style={{ marginBottom: 32 }}>
           {myFarms.map(farm => (
             <div key={farm.id} className="card status-card">
@@ -110,13 +120,13 @@ export default function FarmerStatus({ lang, inventory, farms }: Props) {
       )}
 
       {/* Inventory Status */}
-      <div className="section-label-row">
+      {!isEmpty && <div className="section-label-row">
         <div className="section-label">{t.inventoryStatusSection}</div>
-      </div>
+      </div>}
 
-      {inventory.length === 0 ? (
+      {!isEmpty && inventory.length === 0 ? (
         <div className="empty-state">{t.noInventory}</div>
-      ) : (
+      ) : !isEmpty && (
         <div className="status-list">
           {inventory.map(item => {
             const msg = invMsg(item.status)

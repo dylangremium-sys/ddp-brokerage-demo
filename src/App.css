@@ -1972,3 +1972,35 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
   font-size: 13.5px;
   line-height: 1.5;
 }
+
+/* ── Scope loading ── */
+.scope-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+/* ── Combined empty state (FarmerStatus) ── */
+.empty-state-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+}
+
+.empty-state-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-state-message {
+  color: #64748b;
+  font-size: 15px;
+  line-height: 1.6;
+  max-width: 400px;
+}
