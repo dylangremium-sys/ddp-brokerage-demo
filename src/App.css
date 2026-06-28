@@ -488,23 +488,29 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
   letter-spacing: 0.3px;
 }
 
-.s-total { border-top: 3px solid #0369a1; }
-.s-total .summary-val { color: #0369a1; }
+/* neutral/data — slate */
+.s-total { border-top: 3px solid #475569; }
+.s-total .summary-val { color: #1e293b; }
 
+/* requires action — amber */
 .s-pending { border-top: 3px solid #d97706; }
 .s-pending .summary-val { color: #d97706; }
 
+/* verified/positive — muted green */
 .s-approved { border-top: 3px solid #1a5c38; }
 .s-approved .summary-val { color: #1a5c38; }
 
-.s-missing { border-top: 3px solid #ea580c; }
-.s-missing .summary-val { color: #ea580c; }
+/* requires action — amber (was orange) */
+.s-missing { border-top: 3px solid #d97706; }
+.s-missing .summary-val { color: #d97706; }
 
-.s-rejected { border-top: 3px solid #dc2626; }
-.s-rejected .summary-val { color: #dc2626; }
+/* requires action — amber (was red) */
+.s-rejected { border-top: 3px solid #d97706; }
+.s-rejected .summary-val { color: #d97706; }
 
-.s-farms { border-top: 3px solid #7c3aed; }
-.s-farms .summary-val { color: #7c3aed; }
+/* neutral/data — slate (was purple) */
+.s-farms { border-top: 3px solid #475569; }
+.s-farms .summary-val { color: #1e293b; }
 
 /* ── Inventory Table ── */
 .table-card {
@@ -538,7 +544,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
   font-weight: 700;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  padding: 11px 16px;
+  padding: 11px 12px;
   text-align: left;
   border-bottom: 1px solid #e2e8f0;
   white-space: nowrap;
@@ -558,7 +564,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
 }
 
 .inv-table td {
-  padding: 13px 16px;
+  padding: 13px 12px;
   color: #374151;
   vertical-align: middle;
 }
@@ -575,6 +581,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
 .inv-table thead th:last-child { background: #f8fafc; }
 .inv-table tbody td:last-child { background: #fff; }
 .inv-table tbody tr:hover td:last-child { background: #f8fafc; }
+
 
 .td-bold { font-weight: 600; color: #0f172a; }
 .td-muted { color: #64748b; font-size: 13px; }
@@ -1699,10 +1706,46 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
 
 .db-mode-badge {
   font-size: 10px;
-  color: #64748b;
+  color: #475569;
   white-space: nowrap;
-  opacity: 0.75;
+  opacity: 0.7;
   letter-spacing: 0.01em;
+}
+
+/* ── Demo Utility Strip ── */
+.demo-utility-strip {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  height: 30px;
+  background: #0f172a;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 16px;
+}
+
+.demo-reset-btn {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #64748b;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.demo-reset-btn:hover {
+  background: #1e293b;
+  color: #94a3b8;
+  border-color: #475569;
 }
 
 /* ── Watchlist badge (distinct from rejected) ── */

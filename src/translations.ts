@@ -47,7 +47,7 @@ export const T = {
     landingCard3Desc: 'Approved batches enter the DDP Master Inventory — controlled, traceable, and ready for qualified buyers.',
     landingWorkflowTitle: 'How It Works',
     landingStep1: 'Farmer',
-    landingStep2: 'Onboarding',
+    landingStep2: 'Registration',
     landingStep3: 'Inventory',
     landingStep4: 'DDP Review',
     landingStep5: 'Master Inventory',

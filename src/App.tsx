@@ -182,13 +182,7 @@ export default function App() {
           </div>
 
           <div className="navbar-right">
-            <span className="db-mode-badge" title={isSupabaseConfigured ? 'Connected to Supabase database' : 'Using browser localStorage — no Supabase env vars set'}>
-              {isSupabaseConfigured ? '● Database mode: Supabase' : '○ Demo mode: localStorage'}
-            </span>
             {isFarmerPage && <LangToggle lang={lang} setLang={setLang} />}
-            <button className="nav-reset-btn" onClick={handleReset} title="Reset all demo data">
-              ↺ Reset Demo
-            </button>
           </div>
         </nav>
       )}
@@ -201,11 +195,7 @@ export default function App() {
               <span className="brand-name" style={{ color: '#e2e8f0' }}>Supply Intelligence</span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span className="db-mode-badge" title={isSupabaseConfigured ? 'Connected to Supabase database' : 'Using browser localStorage — no Supabase env vars set'}>
-                {isSupabaseConfigured ? '● Database mode: Supabase' : '○ Demo mode: localStorage'}
-              </span>
               <LangToggle lang={lang} setLang={setLang} />
-              <button className="nav-reset-btn" onClick={handleReset} title="Reset demo data">↺ Reset Demo</button>
             </div>
           </div>
           <LandingPage
@@ -302,6 +292,15 @@ export default function App() {
             />
           )}
         </main>
+      )}
+
+      {!isSupabaseConfigured && (
+        <div className="demo-utility-strip">
+          <span className="db-mode-badge">○ Demo mode: localStorage</span>
+          <button className="demo-reset-btn" onClick={handleReset} title="Reset all demo data">
+            ↺ Reset Demo
+          </button>
+        </div>
       )}
     </div>
   )
