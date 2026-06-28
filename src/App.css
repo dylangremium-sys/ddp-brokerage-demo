@@ -525,8 +525,8 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
 }
 
 .inv-table {
-  width: 100%;
-  min-width: 900px;
+  width: max-content;
+  min-width: max(100%, 900px);
   border-collapse: collapse;
   font-size: 13.5px;
 }
@@ -562,6 +562,18 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
   color: #374151;
   vertical-align: middle;
 }
+
+/* Sticky action column — always visible regardless of horizontal scroll */
+.inv-table th:last-child,
+.inv-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  box-shadow: -2px 0 5px rgba(0,0,0,0.06);
+}
+.inv-table thead th:last-child { background: #f8fafc; }
+.inv-table tbody td:last-child { background: #fff; }
+.inv-table tbody tr:hover td:last-child { background: #f8fafc; }
 
 .td-bold { font-weight: 600; color: #0f172a; }
 .td-muted { color: #64748b; font-size: 13px; }
