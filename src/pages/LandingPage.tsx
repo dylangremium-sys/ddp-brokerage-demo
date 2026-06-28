@@ -15,9 +15,9 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
         <div className="landing-hero-inner">
           <div className="landing-logo-row">
             <span className="brand-logo" style={{ fontSize: 18, padding: '6px 14px' }}>DDP</span>
-            <span style={{ color: '#94a3b8', fontSize: 13 }}>Brokerage</span>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>Supply Intelligence</span>
           </div>
-          <h1 className="landing-headline">DDP Brokerage</h1>
+          <h1 className="landing-headline">DDP Supply Intelligence</h1>
           <div className="landing-tagline">{t.landingTagline}</div>
           <p className="landing-hero-text">{t.landingHero1}</p>
           <p className="landing-hero-text">{t.landingHero2}</p>
@@ -31,17 +31,17 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
       <div className="landing-body">
         <div className="concept-cards">
           <div className="concept-card">
-            <div className="concept-icon">🌱</div>
+            <div className="concept-icon-num">01</div>
             <div className="concept-card-title">{t.landingCard1Title}</div>
             <p className="concept-card-desc">{t.landingCard1Desc}</p>
           </div>
           <div className="concept-card">
-            <div className="concept-icon">🔍</div>
+            <div className="concept-icon-num">02</div>
             <div className="concept-card-title">{t.landingCard2Title}</div>
             <p className="concept-card-desc">{t.landingCard2Desc}</p>
           </div>
           <div className="concept-card">
-            <div className="concept-icon">✅</div>
+            <div className="concept-icon-num">03</div>
             <div className="concept-card-title">{t.landingCard3Title}</div>
             <p className="concept-card-desc">{t.landingCard3Desc}</p>
           </div>
@@ -62,7 +62,7 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
           </div>
         </div>
 
-        <div className="landing-disclaimer">{t.landingDisclaimer}</div>
+        <div className="legal-strip">{t.landingDisclaimer}</div>
       </div>
     </div>
   )

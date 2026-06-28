@@ -37,21 +37,21 @@ export default function DDPBuyerPreview({ inventory }: Props) {
   return (
     <div className="page-wrap ddp-wrap">
       <div className="page-header ddp-header">
-        <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — FUTURE MODULE</div>
-        <h1 className="page-title">Future Buyer Interest Preview</h1>
-        <p className="page-desc">This module is in development. DDP controls what commercial buyers can see.</p>
+        <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — COMMERCIAL INTELLIGENCE</div>
+        <h1 className="page-title">Qualified Buyer Preview</h1>
+        <p className="page-desc">Prototype view of buyer interest signals. DDP controls all buyer access, communications, and commercial terms.</p>
       </div>
 
       <div className="disclaimer-box">
-        <span className="disclaimer-icon">⚠️</span>
+        <span className="disclaimer-icon" style={{ fontSize: 16, fontWeight: 700, color: '#92400e' }}>NOTE</span>
         <div>
-          <strong>FUTURE MODULE</strong> — This section is a presentation preview only. Buyer access, messaging, pricing, and transactions are not functional. DDP controls all buyer visibility.
+          <strong>PROTOTYPE MODULE</strong> — Buyer access, pricing, messaging, and transactions are not active in this demonstration. All commercial buyer visibility is managed exclusively by DDP operations.
         </div>
       </div>
 
       {approved.length === 0 ? (
         <div className="card" style={{ padding: 32, textAlign: 'center', color: '#64748b' }}>
-          No approved inventory available for preview yet. Approve inventory from the Inventory Dashboard to enable this section.
+          No approved inventory available for preview. Approve inventory batches from the Inventory Dashboard to enable this section.
         </div>
       ) : (
         <>
@@ -74,8 +74,8 @@ export default function DDPBuyerPreview({ inventory }: Props) {
           </div>
 
           <div className="section-label-row" style={{ marginTop: 32 }}>
-            <div className="section-label">Available Approved Inventory</div>
-            <span style={{ fontSize: 12, color: '#64748b' }}>What qualified buyers would see — controlled by DDP</span>
+            <div className="section-label">Verified Available Inventory</div>
+            <span style={{ fontSize: 12, color: '#64748b' }}>Visible only to qualified buyers approved by DDP</span>
           </div>
 
           <div className="card table-card">

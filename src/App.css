@@ -362,6 +362,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
   border: 1px solid #bae6fd;
   font-size: 12.5px;
   padding: 6px 14px;
+  white-space: nowrap;
 }
 
 .btn-review:hover {
@@ -520,10 +521,12 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
 
 .table-scroll {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .inv-table {
   width: 100%;
+  min-width: 900px;
   border-collapse: collapse;
   font-size: 13.5px;
 }
@@ -1652,8 +1655,18 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
 }
 
 @media (max-width: 768px) {
-  .navbar { padding: 0 16px; height: auto; flex-wrap: wrap; padding: 8px 16px; gap: 8px; }
-  .navbar-links { flex-wrap: wrap; gap: 4px; order: 3; width: 100%; padding-bottom: 4px; }
+  .navbar { padding: 8px 16px; height: auto; flex-wrap: wrap; gap: 6px; }
+  .navbar-links {
+    order: 3;
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 3px;
+    padding-bottom: 4px;
+  }
+  .navbar-links::-webkit-scrollbar { display: none; }
   .brand-name { display: none; }
 }
 

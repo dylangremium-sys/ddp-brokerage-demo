@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { FarmProfile, FarmStatus } from '../types'
 
 interface Props {
@@ -8,10 +9,10 @@ interface Props {
 const STATUS_CLASS: Record<FarmStatus, string> = {
   'Draft': 'badge-gray',
   'Submitted to DDP': 'badge-pending',
-  'Under Review': 'badge-blue',
+  'Under Review': 'badge-under-review',
   'More Information Required': 'badge-orange',
   'Approved': 'badge-approved',
-  'Watchlist': 'badge-rejected',
+  'Watchlist': 'badge-watchlist',
   'Strategic Partner': 'badge-purple',
   'Rejected': 'badge-rejected',
 }
@@ -28,24 +29,61 @@ function exportReadiness(farm: FarmProfile): string {
   return 'Low'
 }
 
+type FilterStatus = 'All' | 'Pending' | 'Approved' | 'Watchlist' | 'Rejected'
+
 export default function DDPFarmProfiles({ farms, onReview }: Props) {
+  const [filter, setFilter] = useState<FilterStatus>('All')
+
+  const filtered = farms.filter(f => {
+    if (filter === 'All') return true
+    if (filter === 'Pending') return f.status === 'Submitted to DDP' || f.status === 'Under Review'
+    if (filter === 'Approved') return f.status === 'Approved' || f.status === 'Strategic Partner'
+    if (filter === 'Watchlist') return f.status === 'Watchlist'
+    if (filter === 'Rejected') return f.status === 'Rejected' || f.status === 'More Information Required'
+    return true
+  })
+
+  const counts = {
+    all: farms.length,
+    pending: farms.filter(f => f.status === 'Submitted to DDP' || f.status === 'Under Review').length,
+    approved: farms.filter(f => f.status === 'Approved' || f.status === 'Strategic Partner').length,
+    watchlist: farms.filter(f => f.status === 'Watchlist').length,
+    rejected: farms.filter(f => f.status === 'Rejected' || f.status === 'More Information Required').length,
+  }
+
   return (
     <div className="page-wrap ddp-wrap">
       <div className="page-header ddp-header">
-        <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS</div>
+        <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — FARM PROFILES</div>
         <h1 className="page-title">Farm Profiles</h1>
         <p className="page-desc">All submitted farm profiles — qualification, compliance, and partner assessment.</p>
       </div>
 
+      <div className="filter-tabs">
+        {(['All', 'Pending', 'Approved', 'Watchlist', 'Rejected'] as FilterStatus[]).map(s => (
+          <button
+            key={s}
+            className={`filter-tab${filter === s ? ' filter-active' : ''}`}
+            onClick={() => setFilter(s)}
+          >
+            {s === 'All' ? `All (${counts.all})` :
+             s === 'Pending' ? `Pending Review (${counts.pending})` :
+             s === 'Approved' ? `Approved (${counts.approved})` :
+             s === 'Watchlist' ? `Watchlist (${counts.watchlist})` :
+             `Needs Action (${counts.rejected})`}
+          </button>
+        ))}
+      </div>
+
       <div className="card table-card">
-        <div className="table-card-title">Farm Profile Registry — {farms.length} farms</div>
+        <div className="table-card-title">Farm Profile Registry — {filtered.length} {filtered.length === 1 ? 'farm' : 'farms'}</div>
         <div className="table-scroll">
           <table className="inv-table">
             <thead>
               <tr>
                 <th>Farm Name</th>
                 <th>Province</th>
-                <th>Completion</th>
+                <th>Profile Completeness</th>
                 <th>Status</th>
                 <th>Export Readiness</th>
                 <th>Risk Level</th>
@@ -54,7 +92,9 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
               </tr>
             </thead>
             <tbody>
-              {farms.map(farm => {
+              {filtered.length === 0 ? (
+                <tr><td colSpan={8} className="empty-table-cell">No farm profiles match this filter.</td></tr>
+              ) : filtered.map(farm => {
                 const risk = riskLevel(farm)
                 const exp = exportReadiness(farm)
                 return (
@@ -85,7 +125,7 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
                       </span>
                     </td>
                     <td>
-                      <button className="btn btn-review" onClick={() => onReview(farm.id)}>Review</button>
+                      <button className="btn btn-review" onClick={() => onReview(farm.id)}>Open Review</button>
                     </td>
                   </tr>
                 )

@@ -29,9 +29,9 @@ export default function DDPMasterInventory({ inventory, farms }: Props) {
     <div className="page-wrap ddp-wrap">
       <div className="master-banner">
         <div className="master-banner-inner">
-          <div className="master-eyebrow">DDP MASTER INVENTORY</div>
-          <h1 className="master-title">DDP Master Inventory</h1>
-          <p className="master-desc">Approved stock verified by DDP — ready for commercial intelligence.</p>
+          <div className="master-eyebrow">DDP VERIFIED INVENTORY</div>
+          <h1 className="master-title">Master Inventory</h1>
+          <p className="master-desc">Verified and approved stock — controlled by DDP and ready for qualified buyer engagement.</p>
           <div className="master-stats-row">
             <div className="master-stat">
               <div className="master-stat-val">{approved.length}</div>
@@ -51,13 +51,12 @@ export default function DDPMasterInventory({ inventory, farms }: Props) {
 
       {approved.length === 0 ? (
         <div className="card" style={{ padding: 48, textAlign: 'center' }}>
-          <div style={{ fontSize: 40, marginBottom: 16 }}>📦</div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>No Approved Inventory Yet</div>
-          <p style={{ color: '#64748b', fontSize: 14 }}>Approved inventory from DDP Inventory Review will appear here.</p>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>No Verified Inventory Yet</div>
+          <p style={{ color: '#64748b', fontSize: 14 }}>Approved inventory batches from the Inventory Review screen will appear here once approved.</p>
         </div>
       ) : (
         <div className="card table-card">
-          <div className="table-card-title">Verified Inventory — DDP Controlled</div>
+          <div className="table-card-title">Verified Inventory — DDP Controlled · {approved.length} {approved.length === 1 ? 'batch' : 'batches'}</div>
           <div className="table-scroll">
             <table className="inv-table">
               <thead>

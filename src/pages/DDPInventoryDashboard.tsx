@@ -23,7 +23,7 @@ export default function DDPInventoryDashboard({ inventory, onReview }: Props) {
   return (
     <div className="page-wrap ddp-wrap">
       <div className="page-header ddp-header">
-        <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS</div>
+        <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — INVENTORY REVIEW</div>
         <h1 className="page-title">Inventory Dashboard</h1>
         <p className="page-desc">Review and manage all incoming farmer inventory submissions.</p>
       </div>
@@ -38,16 +38,16 @@ export default function DDPInventoryDashboard({ inventory, onReview }: Props) {
       </div>
 
       <div className="card table-card">
-        <div className="table-card-title">All Inventory Submissions</div>
+        <div className="table-card-title">All Inventory Submissions — {inventory.length} {inventory.length === 1 ? 'batch' : 'batches'}</div>
         <div className="table-scroll">
           <table className="inv-table">
             <thead>
               <tr>
-                <th>Product</th>
+                <th>Product / Strain</th>
                 <th>Farm</th>
                 <th>Location</th>
                 <th>Qty (kg)</th>
-                <th>Batch</th>
+                <th>Batch No.</th>
                 <th>THC %</th>
                 <th>CBD %</th>
                 <th>Moisture %</th>
@@ -58,7 +58,9 @@ export default function DDPInventoryDashboard({ inventory, onReview }: Props) {
               </tr>
             </thead>
             <tbody>
-              {inventory.map(item => (
+              {inventory.length === 0 ? (
+                <tr><td colSpan={12} className="empty-table-cell">No inventory submissions yet. Batches submitted by suppliers will appear here.</td></tr>
+              ) : inventory.map(item => (
                 <tr key={item.id}>
                   <td className="td-bold">{item.productName}</td>
                   <td>{item.farmName}</td>
@@ -71,12 +73,12 @@ export default function DDPInventoryDashboard({ inventory, onReview }: Props) {
                   <td><span className="grade-chip">Grade {item.qualityGrade}</span></td>
                   <td>
                     {item.certFileName
-                      ? <span className="coa-present">✓</span>
-                      : <span className="coa-missing">✗ Missing</span>}
+                      ? <span className="coa-present">COA provided</span>
+                      : <span className="coa-missing">COA missing</span>}
                   </td>
                   <td><span className={`badge ${STATUS_CLASS[item.status]}`}>{item.status}</span></td>
                   <td>
-                    <button className="btn btn-review" onClick={() => onReview(item.id)}>Review</button>
+                    <button className="btn btn-review" onClick={() => onReview(item.id)}>Open Review</button>
                   </td>
                 </tr>
               ))}

@@ -18,10 +18,10 @@ const INV_STATUS_CLASS: Record<InventoryStatus, string> = {
 const FARM_STATUS_CLASS: Record<FarmStatus, string> = {
   'Draft': 'badge-gray',
   'Submitted to DDP': 'badge-pending',
-  'Under Review': 'badge-blue',
+  'Under Review': 'badge-under-review',
   'More Information Required': 'badge-orange',
   'Approved': 'badge-approved',
-  'Watchlist': 'badge-rejected',
+  'Watchlist': 'badge-watchlist',
   'Strategic Partner': 'badge-purple',
   'Rejected': 'badge-rejected',
 }
@@ -47,34 +47,36 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
     <div className="page-wrap ddp-wrap">
       <div className="page-header ddp-header">
         <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS</div>
-        <h1 className="page-title">Overview Dashboard</h1>
-        <p className="page-desc">Supply intelligence summary across all farms and inventory submissions.</p>
+        <h1 className="page-title">Operations Overview</h1>
+        <p className="page-desc">Supply intelligence summary — all farm registrations, inventory submissions, and compliance status.</p>
       </div>
 
       <div className="summary-grid-8">
-        <SummaryCard val={totalFarms} lbl="Total Farms" cls="s-total" />
-        <SummaryCard val={pendingFarms} lbl="Pending Review" cls="s-pending" />
+        <SummaryCard val={totalFarms} lbl="Registered Farms" cls="s-total" />
+        <SummaryCard val={pendingFarms} lbl="Awaiting Review" cls="s-pending" />
         <SummaryCard val={approvedFarms} lbl="Approved Farms" cls="s-approved" />
-        <SummaryCard val={watchlistFarms} lbl="Watchlist" cls="s-rejected" />
-        <SummaryCard val={`${totalKg.toLocaleString()} kg`} lbl="Total Inventory" cls="s-total" />
-        <SummaryCard val={`${approvedKg.toLocaleString()} kg`} lbl="Approved Inventory" cls="s-approved" />
-        <SummaryCard val={missingDocItems} lbl="Missing Docs" cls="s-missing" />
+        <SummaryCard val={watchlistFarms} lbl="Watchlist" cls="s-missing" />
+        <SummaryCard val={`${totalKg.toLocaleString()} kg`} lbl="Total Submitted Stock" cls="s-total" />
+        <SummaryCard val={`${approvedKg.toLocaleString()} kg`} lbl="Verified Stock" cls="s-approved" />
+        <SummaryCard val={missingDocItems} lbl="Missing Documents" cls="s-missing" />
         <SummaryCard val={exportReadyFarms} lbl="Export-Ready Farms" cls="s-farms" />
       </div>
 
       <div className="overview-grid">
         <div>
-          <div className="section-label-row"><div className="section-label">Recent Farm Submissions</div></div>
+          <div className="section-label-row"><div className="section-label">Recent Farm Registrations</div></div>
           <div className="card table-card">
             <table className="inv-table">
               <thead><tr><th>Farm</th><th>Province</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {recentFarms.map(f => (
+                {recentFarms.length === 0 ? (
+                  <tr><td colSpan={4} className="empty-table-cell">No farm registrations yet.</td></tr>
+                ) : recentFarms.map(f => (
                   <tr key={f.id}>
                     <td className="td-bold">{f.tradingName}</td>
                     <td>{f.province}</td>
                     <td><span className={`badge ${FARM_STATUS_CLASS[f.status]}`}>{f.status}</span></td>
-                    <td><button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Review</button></td>
+                    <td><button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Open Review</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -83,18 +85,20 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
         </div>
 
         <div>
-          <div className="section-label-row"><div className="section-label">Recent Inventory Submissions</div></div>
+          <div className="section-label-row"><div className="section-label">Recent Inventory Batches</div></div>
           <div className="card table-card">
             <table className="inv-table">
               <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {recentInventory.map(i => (
+                {recentInventory.length === 0 ? (
+                  <tr><td colSpan={5} className="empty-table-cell">No inventory batches submitted yet.</td></tr>
+                ) : recentInventory.map(i => (
                   <tr key={i.id}>
                     <td className="td-bold">{i.productName}</td>
                     <td>{i.farmName}</td>
                     <td className="td-num">{i.quantityKg.toLocaleString()}</td>
                     <td><span className={`badge ${INV_STATUS_CLASS[i.status]}`}>{i.status}</span></td>
-                    <td><button className="btn btn-review" onClick={() => onReviewItem(i.id)}>Review</button></td>
+                    <td><button className="btn btn-review" onClick={() => onReviewItem(i.id)}>Open Review</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -105,22 +109,22 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
 
       {(riskAlertFarms.length > 0 || riskAlertInventory.length > 0) && (
         <div style={{ marginTop: 24 }}>
-          <div className="section-label-row"><div className="section-label" style={{ color: '#dc2626' }}>⚠ Risk Alerts</div></div>
+          <div className="section-label-row"><div className="section-label" style={{ color: '#dc2626' }}>Action Required</div></div>
           <div className="card" style={{ padding: '16px 20px' }}>
             {riskAlertFarms.map(f => (
               <div key={f.id} className="risk-alert-row">
-                <span className="risk-icon">🏭</span>
+                <span className="risk-icon" style={{ fontSize: 14, color: '#64748b' }}>Farm</span>
                 <span className="risk-name">{f.tradingName}</span>
                 <span className={`badge ${FARM_STATUS_CLASS[f.status]}`}>{f.status}</span>
-                <button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Review</button>
+                <button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Open Review</button>
               </div>
             ))}
             {riskAlertInventory.map(i => (
               <div key={i.id} className="risk-alert-row">
-                <span className="risk-icon">📦</span>
+                <span className="risk-icon" style={{ fontSize: 14, color: '#64748b' }}>Batch</span>
                 <span className="risk-name">{i.productName} — {i.farmName}</span>
                 <span className="badge badge-missing">Missing Document</span>
-                <button className="btn btn-review" onClick={() => onReviewItem(i.id)}>Review</button>
+                <button className="btn btn-review" onClick={() => onReviewItem(i.id)}>Open Review</button>
               </div>
             ))}
           </div>
@@ -129,12 +133,14 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
 
       <div className="overview-grid" style={{ marginTop: 24 }}>
         <div>
-          <div className="section-label-row"><div className="section-label">Top Inventory by Quantity</div></div>
+          <div className="section-label-row"><div className="section-label">Largest Approved Batches</div></div>
           <div className="card table-card">
             <table className="inv-table">
               <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Grade</th><th>Status</th></tr></thead>
               <tbody>
-                {topInventory.map(i => (
+                {topInventory.length === 0 ? (
+                  <tr><td colSpan={5} className="empty-table-cell">No inventory batches yet.</td></tr>
+                ) : topInventory.map(i => (
                   <tr key={i.id}>
                     <td className="td-bold">{i.productName}</td>
                     <td>{i.farmName}</td>
@@ -149,9 +155,11 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
         </div>
 
         <div>
-          <div className="section-label-row"><div className="section-label">Highest Scoring Farms</div></div>
+          <div className="section-label-row"><div className="section-label">Top-Scored Farm Profiles</div></div>
           <div className="card" style={{ overflow: 'hidden' }}>
-            {topFarms.map(f => {
+            {topFarms.length === 0
+              ? <div className="empty-table-cell">No farm profiles submitted yet.</div>
+              : topFarms.map(f => {
               const total = farmTotalScore(f)
               const avg = Math.round(total / 9)
               return (

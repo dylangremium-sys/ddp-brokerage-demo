@@ -98,11 +98,11 @@ export default function DDPFarmReview({ farm, onBack, onAction }: Props) {
     <div className="page-wrap ddp-wrap">
       <div className="page-header ddp-header review-page-header">
         <div>
-          <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS</div>
+          <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — FARM REVIEW</div>
           <h1 className="page-title">{farm.tradingName || farm.legalBusinessName}</h1>
           <p className="page-desc" style={{ color: '#93c5fd' }}>{farm.province}{farm.district ? `, ${farm.district}` : ''} · {farm.farmType}</p>
         </div>
-        <button className="btn btn-ghost" onClick={onBack}>← Back to Farms</button>
+        <button className="btn btn-ghost" onClick={onBack}>← Back to Farm Profiles</button>
       </div>
 
       <div className="review-layout">
@@ -257,7 +257,7 @@ export default function DDPFarmReview({ farm, onBack, onAction }: Props) {
 
         <div className="review-sidebar">
           <div className="card decision-card sidebar-sticky">
-            <div className="decision-title">DDP Internal Score</div>
+            <div className="decision-title">Compliance Score</div>
             <div className="score-total-row">
               <span className="score-total-num">{totalScore}</span>
               <span className="score-total-denom">/ 900</span>
@@ -298,11 +298,11 @@ export default function DDPFarmReview({ farm, onBack, onAction }: Props) {
             )}
 
             <div className="decision-actions">
-              <button className="btn btn-approve" onClick={() => onAction(farm.id, 'approve')}>✅ Approve Farm Profile</button>
-              <button className="btn btn-missing" onClick={() => onAction(farm.id, 'request-info')}>⚠️ Request More Information</button>
-              <button className="btn btn-watchlist" onClick={() => onAction(farm.id, 'watchlist')}>👁 Mark as Watchlist</button>
-              <button className="btn btn-strategic" onClick={() => onAction(farm.id, 'strategic')}>⭐ Mark as Strategic Partner</button>
-              <button className="btn btn-reject" onClick={() => onAction(farm.id, 'reject')}>✗ Reject Farm Profile</button>
+              <button className="btn btn-approve" onClick={() => onAction(farm.id, 'approve')}>Approve Farm Profile</button>
+              <button className="btn btn-missing" onClick={() => onAction(farm.id, 'request-info')}>Request Additional Information</button>
+              <button className="btn btn-watchlist" onClick={() => onAction(farm.id, 'watchlist')}>Flag for Watchlist</button>
+              <button className="btn btn-strategic" onClick={() => onAction(farm.id, 'strategic')}>Designate as Strategic Partner</button>
+              <button className="btn btn-reject" onClick={() => onAction(farm.id, 'reject')}>Reject Farm Profile</button>
             </div>
           </div>
         </div>

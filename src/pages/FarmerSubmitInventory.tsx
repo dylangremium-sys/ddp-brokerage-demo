@@ -91,6 +91,8 @@ export default function FarmerSubmitInventory({ lang, farms, onSubmit }: Props) 
       )}
 
       <form className="card form-card" onSubmit={handleSubmit}>
+        <p className="form-intro">Submit a new inventory batch for DDP review. All batches must include harvest date and quantity. Lab data and COA documentation improve approval speed. Fields marked <span className="required-star">*</span> are required.</p>
+
         <div className="form-section-title">{t.sectionFarmerDetails}</div>
 
         {farms.length > 0 && (
@@ -109,15 +111,15 @@ export default function FarmerSubmitInventory({ lang, farms, onSubmit }: Props) 
 
         <div className="form-grid-3">
           <label className="field">
-            <span>{t.farmerName}</span>
-            <input name="farmerName" value={form.farmerName} onChange={handleChange} required placeholder={lang === 'th' ? 'ชื่อ-นามสกุล' : 'Your full name'} />
+            <span>{t.farmerName}<span className="required-star">*</span></span>
+            <input name="farmerName" value={form.farmerName} onChange={handleChange} required placeholder={lang === 'th' ? 'ชื่อ-นามสกุล' : 'Full name of responsible operator'} />
           </label>
           <label className="field">
-            <span>{t.farmName}</span>
-            <input name="farmName" value={form.farmName} onChange={handleChange} required placeholder={lang === 'th' ? 'ชื่อฟาร์ม' : 'Farm name'} />
+            <span>{t.farmName}<span className="required-star">*</span></span>
+            <input name="farmName" value={form.farmName} onChange={handleChange} required placeholder={lang === 'th' ? 'ชื่อฟาร์ม' : 'Registered farm or business name'} />
           </label>
           <label className="field">
-            <span>{t.location}</span>
+            <span>{t.location}<span className="required-star">*</span></span>
             <input name="location" value={form.location} onChange={handleChange} required placeholder={lang === 'th' ? 'จังหวัด, ประเทศ' : 'Province, Country'} />
           </label>
         </div>
@@ -125,15 +127,15 @@ export default function FarmerSubmitInventory({ lang, farms, onSubmit }: Props) 
         <div className="form-section-title">{t.sectionProductDetails}</div>
         <div className="form-grid-3">
           <label className="field">
-            <span>{t.productName}</span>
-            <input name="productName" value={form.productName} onChange={handleChange} required placeholder={lang === 'th' ? 'เช่น มะม่วง, เรดดราก้อน' : 'e.g. Mango, Red Dragon'} />
+            <span>{t.productName}<span className="required-star">*</span></span>
+            <input name="productName" value={form.productName} onChange={handleChange} required placeholder={lang === 'th' ? 'เช่น มะม่วง, เรดดราก้อน' : 'Strain name or product type'} />
           </label>
           <label className="field">
-            <span>{t.quantityKg}</span>
-            <input name="quantityKg" type="number" min="0" step="0.01" value={form.quantityKg} onChange={handleChange} required placeholder="0" />
+            <span>{t.quantityKg}<span className="required-star">*</span></span>
+            <input name="quantityKg" type="number" min="0" step="0.01" value={form.quantityKg} onChange={handleChange} required placeholder="0.00" />
           </label>
           <label className="field">
-            <span>{t.harvestDate}</span>
+            <span>{t.harvestDate}<span className="required-star">*</span></span>
             <input name="harvestDate" type="date" value={form.harvestDate} onChange={handleChange} required />
           </label>
           <label className="field">
@@ -182,20 +184,23 @@ export default function FarmerSubmitInventory({ lang, farms, onSubmit }: Props) 
         <div className="form-grid-2">
           <label className="field">
             <span>{t.certFileName}</span>
-            <input name="certFileName" value={form.certFileName} onChange={handleChange} placeholder={lang === 'th' ? 'เช่น COA_batch1.pdf' : 'e.g. COA_batch1.pdf'} />
+            <input name="certFileName" value={form.certFileName} onChange={handleChange} placeholder={lang === 'th' ? 'เช่น COA_batch1.pdf' : 'Filename or reference number, e.g. COA_batch1.pdf'} />
+            <span className="field-hint">Certificate of Analysis reference. Required for full approval.</span>
           </label>
           <label className="field">
             <span>{t.photoUrl}</span>
             <input name="photoUrl" value={form.photoUrl} onChange={handleChange} placeholder="https://..." />
+            <span className="field-hint">Paste a URL to an existing product photo if available.</span>
           </label>
         </div>
         <label className="field">
           <span>{t.storageConditions}</span>
           <input name="storageConditions" value={form.storageConditions} onChange={handleChange} placeholder={lang === 'th' ? 'เช่น ปิดสนิท, มืด, 18°C, 55% RH' : 'e.g. Sealed, dark, 18°C, 55% RH'} />
+          <span className="field-hint">Current storage environment for this batch.</span>
         </label>
         <label className="field" style={{ marginTop: 12 }}>
           <span>{t.notes}</span>
-          <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} placeholder={lang === 'th' ? 'ข้อมูลเพิ่มเติมสำหรับ DDP...' : 'Additional information for DDP...'} />
+          <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} placeholder={lang === 'th' ? 'ข้อมูลเพิ่มเติมสำหรับ DDP...' : 'Any additional information DDP should be aware of for this batch...'} />
         </label>
 
         <div className="form-footer">

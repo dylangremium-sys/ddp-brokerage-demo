@@ -42,12 +42,12 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction }: Pro
     <div className="page-wrap ddp-wrap">
       <div className="page-header ddp-header review-page-header">
         <div>
-          <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS</div>
+          <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — BATCH REVIEW</div>
           <h1 className="page-title">{item.productName}</h1>
           <p className="page-desc" style={{ color: '#93c5fd' }}>{item.farmName} · {item.location}</p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-          <button className="btn btn-ghost" onClick={onBack}>← Back to Inventory</button>
+          <button className="btn btn-ghost" onClick={onBack}>← Back to Inventory Dashboard</button>
           <span className={`badge ${STATUS_CLASS[item.status]}`}>{item.status}</span>
         </div>
       </div>
@@ -132,7 +132,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction }: Pro
             </div>
 
             <div className="detail-block" style={{ borderBottom: 'none' }}>
-              <div className="detail-block-title">Compliance Checklist — {passCount}/{checks.length}</div>
+              <div className="detail-block-title">Batch Compliance Checklist — {passCount}/{checks.length} checks passed</div>
               <div className="compliance-checklist">
                 {checks.map((c, i) => <CheckRow key={i} label={c.label} pass={c.pass} />)}
               </div>
@@ -142,11 +142,11 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction }: Pro
 
         <div className="review-sidebar">
           <div className="card decision-card sidebar-sticky">
-            <div className="decision-title">DDP Decision</div>
-            <p className="decision-desc">Select an action to update the status. The farmer sees this change immediately.</p>
-            <button className="btn btn-approve" onClick={() => onAction(item.id, 'approve')}>✅ Approve Inventory</button>
-            <button className="btn btn-missing" onClick={() => onAction(item.id, 'missing')}>📋 Request Missing Document</button>
-            <button className="btn btn-reject" onClick={() => onAction(item.id, 'reject')}>✗ Reject Inventory</button>
+            <div className="decision-title">Review Decision</div>
+            <p className="decision-desc">Select an action to update this batch status. The supplier will see this change immediately.</p>
+            <button className="btn btn-approve" onClick={() => onAction(item.id, 'approve')}>Approve Batch</button>
+            <button className="btn btn-missing" onClick={() => onAction(item.id, 'missing')}>Request Missing Document</button>
+            <button className="btn btn-reject" onClick={() => onAction(item.id, 'reject')}>Reject Batch</button>
           </div>
         </div>
       </div>

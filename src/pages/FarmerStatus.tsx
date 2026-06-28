@@ -17,10 +17,10 @@ const STATUS_CLASS: Record<InventoryStatus, string> = {
 const FARM_STATUS_CLASS: Record<FarmStatus, string> = {
   'Draft': 'badge-gray',
   'Submitted to DDP': 'badge-pending',
-  'Under Review': 'badge-blue',
+  'Under Review': 'badge-under-review',
   'More Information Required': 'badge-orange',
   'Approved': 'badge-approved',
-  'Watchlist': 'badge-rejected',
+  'Watchlist': 'badge-watchlist',
   'Strategic Partner': 'badge-purple',
   'Rejected': 'badge-rejected',
 }
@@ -97,6 +97,11 @@ export default function FarmerStatus({ lang, inventory, farms }: Props) {
               {farmMsg(farm.status) && (
                 <div className={`alert ${farm.status === 'Approved' || farm.status === 'Strategic Partner' ? 'alert-success-sm' : farm.status === 'Rejected' ? 'alert-danger' : farm.status === 'More Information Required' || farm.status === 'Watchlist' ? 'alert-warning' : 'alert-info-sm'}`} style={{ marginTop: 10 }}>
                   {farmMsg(farm.status)}
+                </div>
+              )}
+              {farm.submittedAt && (
+                <div className="submitted-date">
+                  Submitted: {new Date(farm.submittedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </div>
               )}
             </div>

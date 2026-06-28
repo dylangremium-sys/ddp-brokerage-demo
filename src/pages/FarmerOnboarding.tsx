@@ -50,11 +50,14 @@ const BLANK: Draft = {
   scoreCommunication: 0, scoreScalability: 0, scoreGMPReadiness: 0,
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, required, hint }: {
+  label: string; children: React.ReactNode; required?: boolean; hint?: string
+}) {
   return (
     <label className="field">
-      <span>{label}</span>
+      <span>{label}{required && <span className="required-star">*</span>}</span>
       {children}
+      {hint && <span className="field-hint">{hint}</span>}
     </label>
   )
 }
@@ -166,19 +169,20 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
 
         {step === 1 && (
           <div>
+            <p className="step-intro">Enter the registered legal details for your farm business. Fields marked <span className="required-star">*</span> are required for submission.</p>
             <div className="form-grid-3">
-              <Field label={t.legalBusinessName}><TextInput name="legalBusinessName" value={draft.legalBusinessName || ''} onChange={handleText} /></Field>
+              <Field label={t.legalBusinessName} required><TextInput name="legalBusinessName" value={draft.legalBusinessName || ''} onChange={handleText} /></Field>
               <Field label={t.tradingName}><TextInput name="tradingName" value={draft.tradingName || ''} onChange={handleText} /></Field>
-              <Field label={t.registrationNumber}><TextInput name="registrationNumber" value={draft.registrationNumber || ''} onChange={handleText} /></Field>
+              <Field label={t.registrationNumber} hint="Company registration number as issued by the relevant authority"><TextInput name="registrationNumber" value={draft.registrationNumber || ''} onChange={handleText} /></Field>
               <Field label={t.taxNumber}><TextInput name="taxNumber" value={draft.taxNumber || ''} onChange={handleText} /></Field>
               <Field label={t.dateEstablished}><input type="date" name="dateEstablished" value={draft.dateEstablished || ''} onChange={handleText} /></Field>
-              <Field label={t.province}><TextInput name="province" value={draft.province || ''} onChange={handleText} /></Field>
+              <Field label={t.province} required><TextInput name="province" value={draft.province || ''} onChange={handleText} /></Field>
               <Field label={t.district}><TextInput name="district" value={draft.district || ''} onChange={handleText} /></Field>
-              <Field label={t.gpsCoordinates}><TextInput name="gpsCoordinates" value={draft.gpsCoordinates || ''} onChange={handleText} placeholder="e.g. 14.63° N, 102.79° E" /></Field>
-              <Field label={t.email}><TextInput name="email" value={draft.email || ''} onChange={handleText} placeholder="email@farm.com" /></Field>
-              <Field label={t.primaryContact}><TextInput name="primaryContact" value={draft.primaryContact || ''} onChange={handleText} /></Field>
+              <Field label={t.gpsCoordinates} hint="Decimal degrees format, e.g. 14.6300, 102.7900"><TextInput name="gpsCoordinates" value={draft.gpsCoordinates || ''} onChange={handleText} placeholder="e.g. 14.63, 102.79" /></Field>
+              <Field label={t.email} required hint="Primary contact email for DDP communications"><TextInput name="email" value={draft.email || ''} onChange={handleText} placeholder="contact@farm.com" /></Field>
+              <Field label={t.primaryContact} required><TextInput name="primaryContact" value={draft.primaryContact || ''} onChange={handleText} /></Field>
               <Field label={t.position}><TextInput name="position" value={draft.position || ''} onChange={handleText} /></Field>
-              <Field label={t.mobileNumber}><TextInput name="mobileNumber" value={draft.mobileNumber || ''} onChange={handleText} /></Field>
+              <Field label={t.mobileNumber} required><TextInput name="mobileNumber" value={draft.mobileNumber || ''} onChange={handleText} /></Field>
             </div>
             <div className="form-grid-2" style={{ marginTop: 16 }}>
               <Field label={t.registeredAddress}><TextInput name="registeredAddress" value={draft.registeredAddress || ''} onChange={handleText} /></Field>
@@ -194,6 +198,8 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
         )}
 
         {step === 2 && (
+          <div>
+            <p className="step-intro">Provide details of the legal ownership structure. DDP uses this for compliance screening and regulatory due diligence.</p>
           <div className="form-grid-3">
             <Field label={t.ownerName}><TextInput name="ownerName" value={draft.ownerName || ''} onChange={handleText} /></Field>
             <Field label={t.nationality}><TextInput name="nationality" value={draft.nationality || ''} onChange={handleText} /></Field>
@@ -207,22 +213,23 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
             <Field label={t.strategicPartners}><TextInput name="strategicPartners" value={draft.strategicPartners || ''} onChange={handleText} /></Field>
             <Field label={t.exportPartners}><TextInput name="exportPartners" value={draft.exportPartners || ''} onChange={handleText} /></Field>
           </div>
+          </div>
         )}
 
         {step === 3 && (
           <div>
-            <p style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>
-              Enter the file name of each document. Do not upload actual files.
+            <p className="step-intro">
+              Enter the reference number or filename for each licence and certification you hold. Original documents will be collected by DDP during due diligence. Fields marked <span className="required-star">*</span> are required for full approval.
             </p>
             <div className="form-grid-2">
-              <Field label={t.cultivationLicence}><TextInput name="cultivationLicence" value={draft.cultivationLicence || ''} onChange={handleText} placeholder="e.g. cultivation_licence.pdf" /></Field>
-              <Field label={t.processingLicence}><TextInput name="processingLicence" value={draft.processingLicence || ''} onChange={handleText} placeholder="e.g. processing_licence.pdf" /></Field>
+              <Field label={t.cultivationLicence} required hint="e.g. CUL-2024-001 or cultivation_licence.pdf"><TextInput name="cultivationLicence" value={draft.cultivationLicence || ''} onChange={handleText} placeholder="Reference or filename" /></Field>
+              <Field label={t.processingLicence} hint="e.g. PROC-2024-001 or processing_licence.pdf"><TextInput name="processingLicence" value={draft.processingLicence || ''} onChange={handleText} placeholder="Reference or filename" /></Field>
               <Field label={t.manufacturingLicence}><TextInput name="manufacturingLicence" value={draft.manufacturingLicence || ''} onChange={handleText} /></Field>
               <Field label={t.researchLicence}><TextInput name="researchLicence" value={draft.researchLicence || ''} onChange={handleText} /></Field>
               <Field label={t.medicalCannabisLicence}><TextInput name="medicalCannabisLicence" value={draft.medicalCannabisLicence || ''} onChange={handleText} /></Field>
-              <Field label={t.exportLicence}><TextInput name="exportLicence" value={draft.exportLicence || ''} onChange={handleText} /></Field>
-              <Field label={t.importLicence}><TextInput name="importLicence" value={draft.importLicence || ''} onChange={handleText} /></Field>
-              <Field label={t.gmpCert}><TextInput name="gmpCert" value={draft.gmpCert || ''} onChange={handleText} /></Field>
+              <Field label={t.exportLicence} hint="Required for international supply arrangements"><TextInput name="exportLicence" value={draft.exportLicence || ''} onChange={handleText} placeholder="Reference or filename" /></Field>
+              <Field label={t.importLicence}><TextInput name="importLicence" value={draft.importLicence || ''} onChange={handleText} placeholder="Reference or filename" /></Field>
+              <Field label={t.gmpCert} hint="Good Manufacturing Practice certification number or file"><TextInput name="gmpCert" value={draft.gmpCert || ''} onChange={handleText} placeholder="Reference or filename" /></Field>
               <Field label={t.gapCert}><TextInput name="gapCert" value={draft.gapCert || ''} onChange={handleText} /></Field>
               <Field label={t.gacpCert}><TextInput name="gacpCert" value={draft.gacpCert || ''} onChange={handleText} /></Field>
               <Field label={t.organicCert}><TextInput name="organicCert" value={draft.organicCert || ''} onChange={handleText} /></Field>
@@ -234,6 +241,8 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
         )}
 
         {step === 4 && (
+          <div>
+            <p className="step-intro">Describe your facility layout and land use. All measurements should reflect current operational status.</p>
           <div className="form-grid-3">
             <Field label={t.farmType}>
               <select name="farmType" value={draft.farmType || ''} onChange={handleText}>
@@ -254,11 +263,14 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
             <Field label={t.storageArea}><TextInput name="storageArea" value={draft.storageArea || ''} onChange={handleText} /></Field>
             <Field label={t.securityArea}><TextInput name="securityArea" value={draft.securityArea || ''} onChange={handleText} /></Field>
             <Field label={t.expansionCapacity}><TextInput name="expansionCapacity" value={draft.expansionCapacity || ''} onChange={handleText} /></Field>
-            <Field label={t.facilityPhotoUrl}><TextInput name="facilityPhotoUrl" value={draft.facilityPhotoUrl || ''} onChange={handleText} placeholder="https://..." /></Field>
+            <Field label={t.facilityPhotoUrl} hint="Paste a URL to an existing facility photo if available"><TextInput name="facilityPhotoUrl" value={draft.facilityPhotoUrl || ''} onChange={handleText} placeholder="https://..." /></Field>
+          </div>
           </div>
         )}
 
         {step === 5 && (
+          <div>
+            <p className="step-intro">Enter current production data and cultivation practices. This information informs DDP's supply planning and quality assessment.</p>
           <div className="form-grid-3">
             <Field label={t.activeRooms}><TextInput name="activeRooms" value={draft.activeRooms || ''} onChange={handleText} /></Field>
             <Field label={t.harvestsPerYear}><TextInput name="harvestsPerYear" value={draft.harvestsPerYear || ''} onChange={handleText} /></Field>
@@ -275,11 +287,14 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
             <Field label={t.ipmProcedures}><TextInput name="ipmProcedures" value={draft.ipmProcedures || ''} onChange={handleText} /></Field>
             <Field label={t.waterSource}><TextInput name="waterSource" value={draft.waterSource || ''} onChange={handleText} /></Field>
             <Field label={t.waterTestingFrequency}><TextInput name="waterTestingFrequency" value={draft.waterTestingFrequency || ''} onChange={handleText} /></Field>
-            <Field label={t.waterAnalysisFile}><TextInput name="waterAnalysisFile" value={draft.waterAnalysisFile || ''} onChange={handleText} placeholder="water_analysis.pdf" /></Field>
+            <Field label={t.waterAnalysisFile} hint="Filename or reference for most recent water analysis report"><TextInput name="waterAnalysisFile" value={draft.waterAnalysisFile || ''} onChange={handleText} placeholder="water_analysis.pdf" /></Field>
+          </div>
           </div>
         )}
 
         {step === 6 && (
+          <div>
+            <p className="step-intro">Provide details on your plant genetics and available quantities. Accurate THC/CBD figures and availability windows are essential for DDP's buyer matching.</p>
           <div className="form-grid-3">
             <Field label={t.mainStrains}><TextInput name="mainStrains" value={draft.mainStrains || ''} onChange={handleText} /></Field>
             <Field label={t.breeder}><TextInput name="breeder" value={draft.breeder || ''} onChange={handleText} /></Field>
@@ -294,13 +309,15 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
             <Field label={t.qtyAvailable60}><TextInput name="qtyAvailable60" value={draft.qtyAvailable60 || ''} onChange={handleText} /></Field>
             <Field label={t.qtyAvailable90}><TextInput name="qtyAvailable90" value={draft.qtyAvailable90 || ''} onChange={handleText} /></Field>
             <Field label={t.qtyAvailable180}><TextInput name="qtyAvailable180" value={draft.qtyAvailable180 || ''} onChange={handleText} /></Field>
-            <Field label={t.productPhotoUrl}><TextInput name="productPhotoUrl" value={draft.productPhotoUrl || ''} onChange={handleText} placeholder="https://..." /></Field>
+            <Field label={t.productPhotoUrl} hint="Paste a URL to an existing product photo if available"><TextInput name="productPhotoUrl" value={draft.productPhotoUrl || ''} onChange={handleText} placeholder="https://..." /></Field>
+          </div>
           </div>
         )}
 
         {step === 7 && (
           <div>
-            <Field label={t.coaFiles}><TextInput name="coaFiles" value={draft.coaFiles || ''} onChange={handleText} placeholder="e.g. coa_batch1.pdf, coa_batch2.pdf" /></Field>
+            <p className="step-intro">Declare your testing and quality-management protocols. COA documentation is required for DDP approval. Answer Yes/No for each applicable procedure.</p>
+            <Field label={t.coaFiles} hint="Comma-separated filenames or references, e.g. coa_batch1.pdf, coa_batch2.pdf"><TextInput name="coaFiles" value={draft.coaFiles || ''} onChange={handleText} placeholder="coa_batch1.pdf, coa_batch2.pdf" /></Field>
             <div className="form-grid-3" style={{ marginTop: 16 }}>
               <Field label={t.heavyMetalsTested}><YesNo name="heavyMetalsTested" value={draft.heavyMetalsTested || ''} onChange={handleText} /></Field>
               <Field label={t.pesticidesTested}><YesNo name="pesticidesTested" value={draft.pesticidesTested || ''} onChange={handleText} /></Field>
@@ -324,6 +341,8 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
         )}
 
         {step === 8 && (
+          <div>
+            <p className="step-intro">Indicate your export experience, GMP readiness, and partnership preferences. This helps DDP assess your suitability for international supply arrangements.</p>
           <div className="form-grid-3">
             <Field label={t.suppliedEU}><YesNo name="suppliedEU" value={draft.suppliedEU || ''} onChange={handleText} /></Field>
             <Field label={t.suppliedPharma}><YesNo name="suppliedPharma" value={draft.suppliedPharma || ''} onChange={handleText} /></Field>
@@ -350,6 +369,7 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
             <Field label={t.packagingStandards}><TextInput name="packagingStandards" value={draft.packagingStandards || ''} onChange={handleText} /></Field>
             <Field label={t.labellingStandards}><TextInput name="labellingStandards" value={draft.labellingStandards || ''} onChange={handleText} /></Field>
             <Field label={t.shippingCapacity}><TextInput name="shippingCapacity" value={draft.shippingCapacity || ''} onChange={handleText} /></Field>
+          </div>
           </div>
         )}
 
@@ -390,10 +410,10 @@ export default function FarmerOnboarding({ lang, onSubmit, onBack }: Props) {
             </div>
 
             <div style={{ marginTop: 24 }}>
-              <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+              <div style={{ fontSize: 13.5, color: '#475569', marginBottom: 12, lineHeight: 1.6 }}>
                 {lang === 'th'
                   ? 'เมื่อส่งข้อมูลแล้ว DDP จะทำการตรวจสอบโปรไฟล์ฟาร์มของคุณ'
-                  : 'Once submitted, DDP will review your farm profile. You can track status under My Status.'}
+                  : 'Once submitted, DDP will conduct a compliance review of your farm profile. You can monitor your approval status under My Submissions.'}
               </div>
               <button className="btn btn-primary btn-lg" onClick={handleSubmit}>
                 {t.reviewSubmitBtn}
