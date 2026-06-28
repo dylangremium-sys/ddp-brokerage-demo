@@ -354,22 +354,8 @@ export default function App() {
           </div>
 
           <div className="navbar-right">
-            <span
-              className="db-mode-badge"
-              title={isSupabaseConfigured
-                ? 'Connected to Supabase database'
-                : 'Using browser localStorage — no Supabase env vars set'}
-            >
-              {isSupabaseConfigured ? '● Database mode: Supabase' : '○ Demo mode: localStorage'}
-            </span>
-
             {isDemo ? (
-              <>
-                {isFarmerPage && <LangToggle lang={lang} setLang={setLang} />}
-                <button className="nav-reset-btn" onClick={handleReset} title="Reset all demo data">
-                  ↺ Reset Demo
-                </button>
-              </>
+              isFarmerPage && <LangToggle lang={lang} setLang={setLang} />
             ) : (
               currentProfile
                 ? <UserBadge profile={currentProfile} onSignOut={handleSignOut} />
@@ -388,12 +374,6 @@ export default function App() {
               <span className="brand-name" style={{ color: '#e2e8f0' }}>Supply Intelligence</span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span
-                className="db-mode-badge"
-                title={isSupabaseConfigured ? 'Supabase connected' : 'localStorage demo mode'}
-              >
-                {isSupabaseConfigured ? '● Database mode: Supabase' : '○ Demo mode: localStorage'}
-              </span>
               {isDemo && <LangToggle lang={lang} setLang={setLang} />}
               {!isDemo && isSignedIn && (
                 <UserBadge profile={currentProfile!} onSignOut={handleSignOut} />
@@ -402,9 +382,6 @@ export default function App() {
                 <button className="btn btn-primary" style={{ fontSize: 13, padding: '6px 14px' }} onClick={() => goTo('login')}>
                   Sign in
                 </button>
-              )}
-              {isDemo && (
-                <button className="nav-reset-btn" onClick={handleReset} title="Reset demo data">↺ Reset Demo</button>
               )}
             </div>
           </div>
@@ -533,6 +510,15 @@ export default function App() {
             />
           )}
         </main>
+      )}
+
+      {isDemo && (
+        <div className="demo-utility-strip">
+          <span className="db-mode-badge">○ Demo mode: localStorage</span>
+          <button className="demo-reset-btn" onClick={handleReset} title="Reset all demo data">
+            ↺ Reset Demo
+          </button>
+        </div>
       )}
     </div>
   )
