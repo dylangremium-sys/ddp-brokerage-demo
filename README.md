@@ -6,6 +6,18 @@ By default all data is stored in **browser localStorage**. When Supabase environ
 
 ---
 
+## Live Demo
+
+| | |
+|---|---|
+| **URL** | https://ddp-brokerage-demo.onrender.com/ |
+| **Deployed branch** | `backend-mvp` |
+| **Status** | Demo-ready |
+
+> Auth and role-based access (RLS) work is in progress on the separate `auth-rls-mvp` branch and is not part of this deployed demo.
+
+---
+
 ## What this demo is
 
 This is a static front-end prototype built with **Vite + React + TypeScript**. It demonstrates:
