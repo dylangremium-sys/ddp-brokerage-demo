@@ -45,9 +45,16 @@ export default function App() {
   const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
   const [reviewFarmId, setReviewFarmId] = useState<string | null>(null)
   const [reviewItemId, setReviewItemId] = useState<string | null>(null)
+  const [dbError, setDbError] = useState<string | null>(null)
 
   useEffect(() => { persistInventory(inventory) }, [inventory])
   useEffect(() => { persistFarms(farms) }, [farms])
+
+  function onDbError(err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('Supabase error:', msg)
+    setDbError(msg)
+  }
 
   const t = T[lang]
   const isFarmerPage = FARMER_PAGES.includes(page)
@@ -59,12 +66,12 @@ export default function App() {
 
   function handleInventorySubmit(item: InventoryItem) {
     setInventory(prev => [item, ...prev])
-    createInventoryBatch(item)
+    createInventoryBatch(item).catch(onDbError)
   }
 
   function handleFarmSubmit(farm: FarmProfile) {
     setFarms(prev => [farm, ...prev])
-    createFarmProfile(farm)
+    createFarmProfile(farm).catch(onDbError)
     goTo('farmer-status')
   }
 
@@ -78,8 +85,9 @@ export default function App() {
     }
     const newStatus = statusMap[action]
     if (newStatus) {
+      const oldStatus = farms.find(f => f.id === farmId)?.status
       setFarms(prev => prev.map(f => f.id === farmId ? { ...f, status: newStatus } : f))
-      updateFarmProfileStatus(farmId, newStatus)
+      updateFarmProfileStatus(farmId, newStatus, oldStatus).catch(onDbError)
     }
     goTo('ddp-farms')
   }
@@ -92,8 +100,9 @@ export default function App() {
     }
     const newStatus = statusMap[action]
     if (newStatus) {
+      const oldStatus = inventory.find(i => i.id === itemId)?.status
       setInventory(prev => prev.map(i => i.id === itemId ? { ...i, status: newStatus } : i))
-      updateInventoryStatus(itemId, newStatus)
+      updateInventoryStatus(itemId, newStatus, oldStatus).catch(onDbError)
     }
     goTo('ddp-inventory')
   }
@@ -125,7 +134,7 @@ export default function App() {
         <nav className="navbar">
           <div className="navbar-brand" onClick={() => goTo('landing')} style={{ cursor: 'pointer' }}>
             <span className="brand-logo">DDP</span>
-            <span className="brand-name">Brokerage Supply Intelligence</span>
+            <span className="brand-name">Supply Intelligence</span>
           </div>
 
           <div className="navbar-links">
@@ -156,11 +165,11 @@ export default function App() {
               <button
                 className={`nav-btn ddp-nav-btn${page === 'ddp-farms' || page === 'ddp-farm-review' ? ' nav-active' : ''}`}
                 onClick={() => goTo('ddp-farms')}
-              >Farms</button>
+              >Farm Profiles</button>
               <button
                 className={`nav-btn ddp-nav-btn${page === 'ddp-inventory' || page === 'ddp-inventory-review' ? ' nav-active' : ''}`}
                 onClick={() => goTo('ddp-inventory')}
-              >Inventory</button>
+              >Inventory Review</button>
               <button
                 className={`nav-btn ddp-nav-btn${page === 'ddp-master' ? ' nav-active' : ''}`}
                 onClick={() => goTo('ddp-master')}
@@ -189,7 +198,7 @@ export default function App() {
           <div className="landing-nav">
             <div className="navbar-brand">
               <span className="brand-logo">DDP</span>
-              <span className="brand-name" style={{ color: '#e2e8f0' }}>Brokerage Supply Intelligence</span>
+              <span className="brand-name" style={{ color: '#e2e8f0' }}>Supply Intelligence</span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span className="db-mode-badge" title={isSupabaseConfigured ? 'Connected to Supabase database' : 'Using browser localStorage — no Supabase env vars set'}>
@@ -204,6 +213,13 @@ export default function App() {
             onEnterFarmer={() => goTo('farmer-onboarding')}
             onEnterDDP={() => goTo('ddp-overview')}
           />
+        </div>
+      )}
+
+      {dbError && (
+        <div className="db-error-banner" role="alert">
+          <strong>Database write failed:</strong> {dbError}
+          <button className="db-error-dismiss" onClick={() => setDbError(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
 

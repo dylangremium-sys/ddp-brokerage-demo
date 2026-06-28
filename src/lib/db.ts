@@ -1,15 +1,3 @@
-/**
- * Data layer — wraps localStorage with optional Supabase writes.
- *
- * When VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set, mutating operations
- * (create / update) are mirrored to Supabase after updating localStorage.
- * Reads always come from localStorage so the UI stays synchronous and instant.
- *
- * To fully switch reads to Supabase in a future iteration, replace the
- * localStorage calls in getFarmProfiles() and getInventoryBatches() with
- * Supabase selects and add a loading state in App.tsx.
- */
-
 import { supabase, isSupabaseConfigured } from './supabase'
 import {
   loadInventory as lsLoadInventory,
@@ -23,6 +11,48 @@ import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus } from '..
 export { isSupabaseConfigured }
 
 // ---------------------------------------------------------------------------
+// UUID guard — seed farms use 'farm-1' style IDs that are not valid UUIDs.
+// Supabase UUID columns reject them. Skip Supabase writes for these IDs and
+// warn loudly so the developer knows what happened.
+// ---------------------------------------------------------------------------
+function isValidUUID(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+}
+
+// ---------------------------------------------------------------------------
+// Low-level Supabase helpers — always check { error } and throw on failure.
+// Supabase JS client never throws; every error is returned in the response.
+// ---------------------------------------------------------------------------
+async function sbInsert(table: string, data: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase!.from(table).insert(data)
+  if (error) {
+    console.error(`Supabase error [${table} insert]:`, error)
+    throw new Error(error.message)
+  }
+}
+
+async function sbUpsert(table: string, data: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase!.from(table).upsert(data)
+  if (error) {
+    console.error(`Supabase error [${table} upsert]:`, error)
+    throw new Error(error.message)
+  }
+}
+
+async function sbUpdate(
+  table: string,
+  data: Record<string, unknown>,
+  matchCol: string,
+  matchVal: string,
+): Promise<void> {
+  const { error } = await supabase!.from(table).update(data).eq(matchCol, matchVal)
+  if (error) {
+    console.error(`Supabase error [${table} update]:`, error)
+    throw new Error(error.message)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Farm Profiles
 // ---------------------------------------------------------------------------
 
@@ -31,10 +61,21 @@ export function getFarmProfiles(): FarmProfile[] {
 }
 
 export async function createFarmProfile(farm: FarmProfile): Promise<void> {
+  // localStorage is always written first (sync, never fails)
   const existing = lsLoadFarms()
   lsSaveFarms([farm, ...existing.filter(f => f.id !== farm.id)])
+
   if (!supabase) return
-  await supabase.from('farms').upsert({
+
+  if (!isValidUUID(farm.id)) {
+    console.warn(`createFarmProfile: skipping Supabase write — "${farm.id}" is not a valid UUID`)
+    return
+  }
+
+  console.log('Creating farm in Supabase', { id: farm.id, tradingName: farm.tradingName })
+
+  // 1. farms row (flat columns used for list views and filtering)
+  await sbUpsert('farms', {
     id: farm.id,
     farm_name: farm.tradingName,
     legal_business_name: farm.legalBusinessName,
@@ -51,12 +92,186 @@ export async function createFarmProfile(farm: FarmProfile): Promise<void> {
     export_readiness: null,
     risk_level: null,
     partner_tier: farm.partnerTier,
+    updated_at: new Date().toISOString(),
+  })
+
+  console.log('Created farm id:', farm.id)
+  console.log('Creating farm_profile for farm id:', farm.id)
+
+  // 2. farm_profiles row (full profile data split into JSONB sections)
+  await sbInsert('farm_profiles', {
+    farm_id: farm.id,
+    business_info: {
+      legalBusinessName: farm.legalBusinessName,
+      tradingName: farm.tradingName,
+      registrationNumber: farm.registrationNumber,
+      taxNumber: farm.taxNumber,
+      dateEstablished: farm.dateEstablished,
+      province: farm.province,
+      district: farm.district,
+      gpsCoordinates: farm.gpsCoordinates,
+      registeredAddress: farm.registeredAddress,
+      operationalAddress: farm.operationalAddress,
+      website: farm.website,
+      facebook: farm.facebook,
+      lineId: farm.lineId,
+      whatsapp: farm.whatsapp,
+      email: farm.email,
+      primaryContact: farm.primaryContact,
+      position: farm.position,
+      mobileNumber: farm.mobileNumber,
+      secondaryContact: farm.secondaryContact,
+      emergencyContact: farm.emergencyContact,
+    },
+    ownership: {
+      ownerName: farm.ownerName,
+      nationality: farm.nationality,
+      ownershipPct: farm.ownershipPct,
+      additionalShareholders: farm.additionalShareholders,
+      ownershipBreakdown: farm.ownershipBreakdown,
+      ultimateBeneficialOwners: farm.ultimateBeneficialOwners,
+      parentCompany: farm.parentCompany,
+      subsidiaries: farm.subsidiaries,
+      foreignInvestors: farm.foreignInvestors,
+      strategicPartners: farm.strategicPartners,
+      exportPartners: farm.exportPartners,
+    },
+    licenses: {
+      cultivationLicence: farm.cultivationLicence,
+      processingLicence: farm.processingLicence,
+      manufacturingLicence: farm.manufacturingLicence,
+      researchLicence: farm.researchLicence,
+      medicalCannabisLicence: farm.medicalCannabisLicence,
+      exportLicence: farm.exportLicence,
+      importLicence: farm.importLicence,
+      gmpCert: farm.gmpCert,
+      gapCert: farm.gapCert,
+      gacpCert: farm.gacpCert,
+      organicCert: farm.organicCert,
+      isoCerts: farm.isoCerts,
+      otherCerts: farm.otherCerts,
+      documentExpiry: farm.documentExpiry,
+    },
+    facility: {
+      farmType: farm.farmType,
+      totalLandArea: farm.totalLandArea,
+      cultivationArea: farm.cultivationArea,
+      floweringArea: farm.floweringArea,
+      nurseryArea: farm.nurseryArea,
+      motherPlantArea: farm.motherPlantArea,
+      processingArea: farm.processingArea,
+      dryingArea: farm.dryingArea,
+      storageArea: farm.storageArea,
+      securityArea: farm.securityArea,
+      expansionCapacity: farm.expansionCapacity,
+      facilityPhotoUrl: farm.facilityPhotoUrl,
+    },
+    cultivation: {
+      activeRooms: farm.activeRooms,
+      harvestsPerYear: farm.harvestsPerYear,
+      avgYieldPerHarvest: farm.avgYieldPerHarvest,
+      annualCapacity: farm.annualCapacity,
+      currentInventory: farm.currentInventory,
+      projectedInventory: farm.projectedInventory,
+      productionUtilisation: farm.productionUtilisation,
+      maxProductionCapacity: farm.maxProductionCapacity,
+      cultivationMethod: farm.cultivationMethod,
+      fertiliserProgram: farm.fertiliserProgram,
+      nutrientBrands: farm.nutrientBrands,
+      pestManagement: farm.pestManagement,
+      ipmProcedures: farm.ipmProcedures,
+      waterSource: farm.waterSource,
+      waterTestingFrequency: farm.waterTestingFrequency,
+      waterAnalysisFile: farm.waterAnalysisFile,
+    },
+    strains: {
+      mainStrains: farm.mainStrains,
+      breeder: farm.breeder,
+      geneticLineage: farm.geneticLineage,
+      typicalThc: farm.typicalThc,
+      typicalCbd: farm.typicalCbd,
+      dominantTerpenes: farm.dominantTerpenes,
+      harvestCycle: farm.harvestCycle,
+      yieldPerSqm: farm.yieldPerSqm,
+      qtyAvailableNow: farm.qtyAvailableNow,
+      qtyAvailable30: farm.qtyAvailable30,
+      qtyAvailable60: farm.qtyAvailable60,
+      qtyAvailable90: farm.qtyAvailable90,
+      qtyAvailable180: farm.qtyAvailable180,
+      productPhotoUrl: farm.productPhotoUrl,
+    },
+    lab_testing: {
+      coaFiles: farm.coaFiles,
+      heavyMetalsTested: farm.heavyMetalsTested,
+      pesticidesTested: farm.pesticidesTested,
+      mycotoxinsTested: farm.mycotoxinsTested,
+      microbiologyTested: farm.microbiologyTested,
+      waterActivityTested: farm.waterActivityTested,
+      batchTrackingSystem: farm.batchTrackingSystem,
+      seedToSaleSystem: farm.seedToSaleSystem,
+      sopsAvailable: farm.sopsAvailable,
+      recallProcedure: farm.recallProcedure,
+      wasteDisposal: farm.wasteDisposal,
+      employeeTraining: farm.employeeTraining,
+      securityProtocols: farm.securityProtocols,
+      visitorProcedures: farm.visitorProcedures,
+      incidentReporting: farm.incidentReporting,
+      capaProgram: farm.capaProgram,
+      internalAudits: farm.internalAudits,
+      externalAudits: farm.externalAudits,
+    },
+    export_readiness_data: {
+      suppliedEU: farm.suppliedEU,
+      suppliedPharma: farm.suppliedPharma,
+      suppliedGMPProcessors: farm.suppliedGMPProcessors,
+      existingSopLibrary: farm.existingSopLibrary,
+      existingQA: farm.existingQA,
+      existingQC: farm.existingQC,
+      qualifiedPerson: farm.qualifiedPerson,
+      stabilityProgram: farm.stabilityProgram,
+      changeControl: farm.changeControl,
+      deviationProcedures: farm.deviationProcedures,
+      riskManagement: farm.riskManagement,
+      documentationControl: farm.documentationControl,
+      countriesExported: farm.countriesExported,
+      freightProviders: farm.freightProviders,
+      customsBrokers: farm.customsBrokers,
+      incotermsFamiliarity: farm.incotermsFamiliarity,
+      packagingStandards: farm.packagingStandards,
+      labellingStandards: farm.labellingStandards,
+      shippingCapacity: farm.shippingCapacity,
+      interestedExclusive: farm.interestedExclusive,
+      interestedNonExclusive: farm.interestedNonExclusive,
+      interestedEUGMP: farm.interestedEUGMP,
+      interestedLongTerm: farm.interestedLongTerm,
+      interestedJV: farm.interestedJV,
+    },
+    monthly_reporting: {
+      monthlyReportingAgreement: farm.monthlyReportingAgreement,
+    },
   })
 }
 
-export async function updateFarmProfileStatus(farmId: string, status: FarmStatus): Promise<void> {
+export async function updateFarmProfileStatus(
+  farmId: string,
+  newStatus: FarmStatus,
+  oldStatus?: FarmStatus,
+): Promise<void> {
   if (!supabase) return
-  await supabase.from('farms').update({ status }).eq('id', farmId)
+
+  if (!isValidUUID(farmId)) {
+    console.warn(`updateFarmProfileStatus: skipping Supabase write — "${farmId}" is not a valid UUID (seed data)`)
+    return
+  }
+
+  await sbUpdate('farms', { status: newStatus, updated_at: new Date().toISOString() }, 'id', farmId)
+
+  await sbInsert('status_history', {
+    entity_type: 'farm',
+    entity_id: farmId,
+    old_status: oldStatus ?? null,
+    new_status: newStatus,
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -68,12 +283,22 @@ export function getInventoryBatches(): InventoryItem[] {
 }
 
 export async function createInventoryBatch(item: InventoryItem): Promise<void> {
+  // localStorage is always written first
   const existing = lsLoadInventory()
   lsSaveInventory([item, ...existing.filter(i => i.id !== item.id)])
+
   if (!supabase) return
-  await supabase.from('inventory_batches').upsert({
+
+  if (!isValidUUID(item.id)) {
+    console.warn(`createInventoryBatch: skipping Supabase write — "${item.id}" is not a valid UUID`)
+    return
+  }
+
+  console.log('Creating inventory batch in Supabase', { id: item.id, productName: item.productName })
+
+  await sbUpsert('inventory_batches', {
     id: item.id,
-    farm_id: item.farmId ?? null,
+    farm_id: item.farmId && isValidUUID(item.farmId) ? item.farmId : null,
     product_name: item.productName,
     strain: item.productName,
     location: item.location,
@@ -87,17 +312,40 @@ export async function createInventoryBatch(item: InventoryItem): Promise<void> {
     water_activity: parseFloat(item.waterActivity) || null,
     quality_grade: item.qualityGrade,
     price_per_kg: item.pricePerKg,
-    coa_file_name: item.certFileName,
+    coa_file_name: item.certFileName || null,
     photo_url: item.photoUrl || null,
     storage_conditions: item.storageConditions,
     notes: item.notes || null,
     status: item.status,
+    updated_at: new Date().toISOString(),
   })
 }
 
-export async function updateInventoryStatus(itemId: string, status: InventoryStatus): Promise<void> {
+export async function updateInventoryStatus(
+  itemId: string,
+  newStatus: InventoryStatus,
+  oldStatus?: InventoryStatus,
+): Promise<void> {
   if (!supabase) return
-  await supabase.from('inventory_batches').update({ status }).eq('id', itemId)
+
+  if (!isValidUUID(itemId)) {
+    console.warn(`updateInventoryStatus: skipping Supabase write — "${itemId}" is not a valid UUID (seed data)`)
+    return
+  }
+
+  await sbUpdate(
+    'inventory_batches',
+    { status: newStatus, updated_at: new Date().toISOString() },
+    'id',
+    itemId,
+  )
+
+  await sbInsert('status_history', {
+    entity_type: 'inventory_batch',
+    entity_id: itemId,
+    old_status: oldStatus ?? null,
+    new_status: newStatus,
+  })
 }
 
 export function getApprovedInventory(): InventoryItem[] {
@@ -105,8 +353,7 @@ export function getApprovedInventory(): InventoryItem[] {
 }
 
 // ---------------------------------------------------------------------------
-// Persist helpers — called by App.tsx useEffects on every state change.
-// These keep localStorage in sync as the primary write-through cache.
+// Persist helpers — write-through to localStorage on every React state change.
 // ---------------------------------------------------------------------------
 
 export function persistInventory(items: InventoryItem[]): void {
@@ -123,6 +370,4 @@ export function persistFarms(farms: FarmProfile[]): void {
 
 export async function resetDemoData(): Promise<void> {
   lsResetDemo()
-  // Full Supabase reset requires a server-side function; localStorage reset
-  // is sufficient for demo purposes.
 }
