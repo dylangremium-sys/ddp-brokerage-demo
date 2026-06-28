@@ -1,73 +1,60 @@
-# React + TypeScript + Vite
+# DDP Inventory Demo
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A single-page React/TypeScript demo simulating a **DDP (Delivered Duty Paid) Brokerage** workflow for agricultural commodities. It covers the full cycle: farmer onboarding, inventory submission, DDP operator review, master inventory management, and a buyer preview portal.
 
-Currently, two official plugins are available:
+All data is stored in **browser localStorage** — no backend, no database, no authentication.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## What this demo is
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+This is a static front-end prototype built with **Vite + React + TypeScript**. It demonstrates:
 
-## Expanding the ESLint configuration
+- Farmer portal — onboarding and inventory submission (EN/Thai)
+- DDP operator dashboard — farm approval, inventory review, fulfilment packing queue
+- Master inventory and buyer preview views
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+There is no server-side component. Resetting the demo clears localStorage and restores seed data.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Run locally
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Open [http://localhost:5173](http://localhost:5173).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Other scripts:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+| Script | Purpose |
+|---|---|
+| `npm run build` | Production build → `dist/` |
+| `npm run preview` | Serve the `dist/` build locally |
+
+---
+
+## Deploy to Render (Static Site)
+
+1. Push this repo to GitHub (or GitLab).
+2. In [Render](https://render.com), click **New → Static Site**.
+3. Connect your repository.
+4. Set the following:
+
+| Setting | Value |
+|---|---|
+| **Build Command** | `npm run build` |
+| **Publish Directory** | `dist` |
+
+5. Click **Create Static Site**. Render will install dependencies, build, and serve `dist/`.
+
+No environment variables are required.
+
+---
+
+## Notes
+
+- The app uses `react-router`-style in-app navigation (no actual URL routing), so all routes resolve to `index.html`. Render serves static sites from `index.html` by default, which is correct.
+- Demo data resets via the **Reset Demo** button in the app; it does not affect the deployed build in any way.
