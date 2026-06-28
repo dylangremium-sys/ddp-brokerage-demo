@@ -1,6 +1,18 @@
 import { useState, useEffect } from 'react'
 import './App.css'
-import { loadInventory, saveInventory, loadFarms, saveFarms, resetDemo } from './data'
+import {
+  getFarmProfiles,
+  getInventoryBatches,
+  persistInventory,
+  persistFarms,
+  createFarmProfile,
+  updateFarmProfileStatus,
+  createInventoryBatch,
+  updateInventoryStatus,
+  resetDemoData,
+  isSupabaseConfigured,
+} from './lib/db'
+import { loadInventory, loadFarms } from './data'
 import { T } from './translations'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus } from './types'
 import LandingPage from './pages/LandingPage'
@@ -29,13 +41,13 @@ function LangToggle({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void 
 export default function App() {
   const [page, setPage] = useState<Page>('landing')
   const [lang, setLang] = useState<Lang>('en')
-  const [inventory, setInventory] = useState<InventoryItem[]>(loadInventory)
-  const [farms, setFarms] = useState<FarmProfile[]>(loadFarms)
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => getInventoryBatches())
+  const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
   const [reviewFarmId, setReviewFarmId] = useState<string | null>(null)
   const [reviewItemId, setReviewItemId] = useState<string | null>(null)
 
-  useEffect(() => { saveInventory(inventory) }, [inventory])
-  useEffect(() => { saveFarms(farms) }, [farms])
+  useEffect(() => { persistInventory(inventory) }, [inventory])
+  useEffect(() => { persistFarms(farms) }, [farms])
 
   const t = T[lang]
   const isFarmerPage = FARMER_PAGES.includes(page)
@@ -47,10 +59,12 @@ export default function App() {
 
   function handleInventorySubmit(item: InventoryItem) {
     setInventory(prev => [item, ...prev])
+    createInventoryBatch(item)
   }
 
   function handleFarmSubmit(farm: FarmProfile) {
     setFarms(prev => [farm, ...prev])
+    createFarmProfile(farm)
     goTo('farmer-status')
   }
 
@@ -65,6 +79,7 @@ export default function App() {
     const newStatus = statusMap[action]
     if (newStatus) {
       setFarms(prev => prev.map(f => f.id === farmId ? { ...f, status: newStatus } : f))
+      updateFarmProfileStatus(farmId, newStatus)
     }
     goTo('ddp-farms')
   }
@@ -78,6 +93,7 @@ export default function App() {
     const newStatus = statusMap[action]
     if (newStatus) {
       setInventory(prev => prev.map(i => i.id === itemId ? { ...i, status: newStatus } : i))
+      updateInventoryStatus(itemId, newStatus)
     }
     goTo('ddp-inventory')
   }
@@ -93,7 +109,7 @@ export default function App() {
   }
 
   function handleReset() {
-    resetDemo()
+    resetDemoData()
     setInventory(loadInventory())
     setFarms(loadFarms())
     goTo('landing')
@@ -157,6 +173,9 @@ export default function App() {
           </div>
 
           <div className="navbar-right">
+            <span className="db-mode-badge" title={isSupabaseConfigured ? 'Connected to Supabase database' : 'Using browser localStorage — no Supabase env vars set'}>
+              {isSupabaseConfigured ? '● Database mode: Supabase' : '○ Demo mode: localStorage'}
+            </span>
             {isFarmerPage && <LangToggle lang={lang} setLang={setLang} />}
             <button className="nav-reset-btn" onClick={handleReset} title="Reset all demo data">
               ↺ Reset Demo
@@ -173,6 +192,9 @@ export default function App() {
               <span className="brand-name" style={{ color: '#e2e8f0' }}>Brokerage Supply Intelligence</span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span className="db-mode-badge" title={isSupabaseConfigured ? 'Connected to Supabase database' : 'Using browser localStorage — no Supabase env vars set'}>
+                {isSupabaseConfigured ? '● Database mode: Supabase' : '○ Demo mode: localStorage'}
+              </span>
               <LangToggle lang={lang} setLang={setLang} />
               <button className="nav-reset-btn" onClick={handleReset} title="Reset demo data">↺ Reset Demo</button>
             </div>

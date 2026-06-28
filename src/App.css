@@ -1670,3 +1670,11 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
   .workflow-steps { flex-direction: column; align-items: center; }
   .workflow-arrow { transform: rotate(90deg); margin: 2px 0; }
 }
+
+.db-mode-badge {
+  font-size: 10px;
+  color: #64748b;
+  white-space: nowrap;
+  opacity: 0.75;
+  letter-spacing: 0.01em;
+}
