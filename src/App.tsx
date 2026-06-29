@@ -96,34 +96,28 @@ export default function App() {
 
   // Farmer data scope — null until loaded, empty Sets if farmer has no data
   const [farmerScope, setFarmerScope] = useState<FarmerScope | null>(null)
-  const [scopeLoading, setScopeLoading] = useState(false)
 
   // ── Persist to localStorage on every state change ────────────────────────
   useEffect(() => { persistInventory(inventory) }, [inventory])
   useEffect(() => { persistFarms(farms) }, [farms])
 
   // ── Auth subscription ────────────────────────────────────────────────────
+  // authLoading is initialised to false in demo mode via useState, so no
+  // synchronous setState is needed in the early-return branch.
   useEffect(() => {
-    if (!isSupabaseConfigured) {
-      setAuthLoading(false)
-      return
-    }
+    if (!isSupabaseConfigured) return
     const unsubscribe = subscribeToAuthChanges((profile) => {
       setCurrentProfile(profile)
       setAuthLoading(false)
-      // Clear scope on sign-out
-      if (!profile) setFarmerScope(null)
+      // Clear scope on sign-out or when a non-farmer profile appears
+      if (!profile || profile.role !== 'farmer') setFarmerScope(null)
     })
     return unsubscribe
   }, [])
 
   // ── Load farmer scope when a farmer signs in ─────────────────────────────
   useEffect(() => {
-    if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'farmer') {
-      if (!currentProfile || currentProfile.role !== 'farmer') setFarmerScope(null)
-      return
-    }
-    setScopeLoading(true)
+    if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'farmer') return
     getFarmerScope(currentProfile.id)
       .then(scope => setFarmerScope(scope))
       .catch(err => {
@@ -131,7 +125,6 @@ export default function App() {
         // Fail safe: empty scope so farmer sees no other farms
         setFarmerScope({ farmIds: new Set(), itemIds: new Set() })
       })
-      .finally(() => setScopeLoading(false))
   }, [currentProfile])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
@@ -141,6 +134,8 @@ export default function App() {
   const isAdminRole = isDemo || currentProfile?.role === 'ddp_admin'
   const isFarmerRole = !isDemo && currentProfile?.role === 'farmer'
   const isFarmerPage = FARMER_PAGES.includes(page)
+  // Derived — true while a farmer's scope is being fetched from Supabase
+  const scopeLoading = isFarmerRole && farmerScope === null
 
   // ── Scoped data for farmer pages ─────────────────────────────────────────
   // In demo mode or for admin, pass everything through unchanged.
