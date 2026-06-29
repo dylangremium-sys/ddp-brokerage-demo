@@ -30,7 +30,9 @@ export type Page =
   | 'farmer-dashboard'
   | 'farmer-onboarding'
   | 'farmer-advanced-profile'
-  | 'farmer-submit'
+  | 'farmer-my-stock'
+  | 'farmer-stock-form'
+  | 'farmer-requests'
   | 'farmer-status'
   | 'ddp-overview'
   | 'ddp-farms'
@@ -39,6 +41,44 @@ export type Page =
   | 'ddp-inventory-review'
   | 'ddp-master'
   | 'ddp-buyer'
+
+export type StockStatus =
+  | 'draft'
+  | 'submitted'
+  | 'needs_changes'
+  | 'approved_internal'
+  | 'client_visible'
+  | 'reserved'
+  | 'sold'
+  | 'archived'
+
+export type ProductType = 'flower' | 'trim' | 'biomass' | 'extract' | 'other'
+
+export type TestStatus = 'pass' | 'fail' | 'not_tested' | ''
+
+export interface ReviewRequest {
+  id: string
+  stockItemId?: string
+  farmProfileId?: string
+  requestType: 'coa' | 'photo' | 'quantity' | 'price' | 'batch_number' | 'licence' | 'general'
+  message: string
+  status: 'open' | 'resolved'
+  createdBy: string
+  createdAt: string
+  resolvedAt?: string
+  productName?: string
+  farmName?: string
+}
+
+export interface MarketBenchmark {
+  id: string
+  productType: string
+  thcRange?: string
+  priceMin: number
+  priceMax: number
+  unit: 'g' | 'kg'
+  visibleToFarmers: boolean
+}
 
 export interface InventoryItem {
   id: string
@@ -63,6 +103,26 @@ export interface InventoryItem {
   notes: string
   status: InventoryStatus
   submittedAt: string
+  // Extended stock tracking (all optional to preserve existing records)
+  stockStatus?: StockStatus
+  productType?: ProductType
+  unit?: 'g' | 'kg'
+  minimumOrderKg?: number
+  totalTerpenesPct?: number
+  expiryDate?: string
+  clientVisible?: boolean
+  coaAvailable?: boolean
+  labName?: string
+  reportNumber?: string
+  sampleName?: string
+  testDate?: string
+  heavyMetalsStatus?: TestStatus
+  pesticidesStatus?: TestStatus
+  microbialStatus?: TestStatus
+  mycotoxinsStatus?: TestStatus
+  photoUrls?: string[]
+  farmerNotes?: string
+  ownerNotes?: string
 }
 
 export interface FarmProfile {

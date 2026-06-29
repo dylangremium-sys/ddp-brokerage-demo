@@ -9,19 +9,24 @@ import {
   updateFarmProfileStatus,
   createInventoryBatch,
   updateInventoryStatus,
+  patchInventoryBatch,
+  createReviewRequest,
+  resolveReviewRequest,
+  loadReviewRequestsFromDB,
+  loadMarketBenchmarksFromDB,
   resetDemoData,
   isSupabaseConfigured,
   getFarmerScope,
   type FarmerScope,
 } from './lib/db'
-import { loadInventory, loadFarms } from './data'
+import { loadInventory, loadFarms, loadReviewRequests, saveReviewRequests, loadMarketBenchmarks } from './data'
 import {
   signOut,
   subscribeToAuthChanges,
   type UserProfile,
 } from './services/auth'
 import { T } from './translations'
-import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus } from './types'
+import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark } from './types'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
@@ -29,7 +34,9 @@ import FarmerRegister from './pages/FarmerRegister'
 import FarmerDashboard from './pages/FarmerDashboard'
 import FarmerOnboarding from './pages/FarmerOnboarding'
 import FarmerAdvancedProfile from './pages/FarmerAdvancedProfile'
+import FarmerMyStock from './pages/FarmerMyStock'
 import FarmerSubmitInventory from './pages/FarmerSubmitInventory'
+import FarmerRequests from './pages/FarmerRequests'
 import FarmerStatus from './pages/FarmerStatus'
 import DDPOverview from './pages/DDPOverview'
 import DDPFarmProfiles from './pages/DDPFarmProfiles'
@@ -39,7 +46,11 @@ import DDPInventoryReview from './pages/DDPInventoryReview'
 import DDPMasterInventory from './pages/DDPMasterInventory'
 import DDPBuyerPreview from './pages/DDPBuyerPreview'
 
-const FARMER_PAGES: Page[] = ['landing', 'login', 'signup', 'farmer-register', 'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile', 'farmer-submit', 'farmer-status']
+const FARMER_PAGES: Page[] = [
+  'landing', 'login', 'signup', 'farmer-register',
+  'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
+  'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
+]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer']
 const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
 
@@ -97,9 +108,15 @@ export default function App() {
   // Farmer data scope — null until loaded, empty Sets if farmer has no data
   const [farmerScope, setFarmerScope] = useState<FarmerScope | null>(null)
 
+  // Review requests (owner → farmer messages) and stock edit tracking
+  const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>(() => loadReviewRequests())
+  const [marketBenchmarks, setMarketBenchmarks] = useState<MarketBenchmark[]>(() => loadMarketBenchmarks())
+  const [stockEditItemId, setStockEditItemId] = useState<string | null>(null)
+
   // ── Persist to localStorage on every state change ────────────────────────
   useEffect(() => { persistInventory(inventory) }, [inventory])
   useEffect(() => { persistFarms(farms) }, [farms])
+  useEffect(() => { saveReviewRequests(reviewRequests) }, [reviewRequests])
 
   // ── Auth subscription ────────────────────────────────────────────────────
   // authLoading is initialised to false in demo mode via useState, so no
@@ -119,13 +136,27 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'farmer') return
     getFarmerScope(currentProfile.id)
-      .then(scope => setFarmerScope(scope))
+      .then(scope => {
+        setFarmerScope(scope)
+        // Once we have scope, load review requests from Supabase to override localStorage
+        return loadReviewRequestsFromDB(currentProfile.id, scope.farmIds, scope.itemIds)
+      })
+      .then(dbRequests => {
+        if (dbRequests.length > 0) setReviewRequests(dbRequests)
+      })
       .catch(err => {
-        console.warn('getFarmerScope failed:', err)
-        // Fail safe: empty scope so farmer sees no other farms
+        console.warn('getFarmerScope / loadReviewRequestsFromDB failed:', err)
         setFarmerScope({ farmIds: new Set(), itemIds: new Set() })
       })
   }, [currentProfile])
+
+  // ── Load market benchmarks from Supabase once on mount ───────────────────
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+    loadMarketBenchmarksFromDB()
+      .then(benchmarks => { if (benchmarks.length > 0) setMarketBenchmarks(benchmarks) })
+      .catch(err => console.warn('loadMarketBenchmarksFromDB failed:', err))
+  }, [])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
   // In demo mode (no Supabase), everything is open — preserve existing behaviour.
@@ -199,7 +230,10 @@ export default function App() {
 
   // ── Data handlers ─────────────────────────────────────────────────────────
   function handleInventorySubmit(item: InventoryItem) {
-    setInventory(prev => [item, ...prev])
+    setInventory(prev => {
+      const exists = prev.some(i => i.id === item.id)
+      return exists ? prev.map(i => i.id === item.id ? item : i) : [item, ...prev]
+    })
     createInventoryBatch(item, currentProfile?.id).catch(onDbError)
     // Optimistically expand scope so the farmer sees their new submission immediately
     if (isFarmerRole) {
@@ -211,6 +245,42 @@ export default function App() {
         return { farmIds: newFarmIds, itemIds: new Set([...base.itemIds, item.id]) }
       })
     }
+  }
+
+  function handleSendReviewRequest(req: Omit<ReviewRequest, 'id' | 'createdAt'>) {
+    const newReq: ReviewRequest = { ...req, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
+    setReviewRequests(prev => [newReq, ...prev])
+    // Mark the item as needs_changes (both in state and Supabase)
+    if (req.stockItemId) {
+      setInventory(prev => prev.map(i =>
+        i.id === req.stockItemId ? { ...i, stockStatus: 'needs_changes' as const } : i
+      ))
+      patchInventoryBatch(req.stockItemId, { stock_status: 'needs_changes' }).catch(onDbError)
+    }
+    createReviewRequest(req, currentProfile?.id).catch(onDbError)
+  }
+
+  function handleResolveRequest(requestId: string) {
+    setReviewRequests(prev => prev.map(r =>
+      r.id === requestId ? { ...r, status: 'resolved' as const, resolvedAt: new Date().toISOString() } : r
+    ))
+    resolveReviewRequest(requestId).catch(onDbError)
+  }
+
+  function handleMarkClientVisible(itemId: string, visible: boolean) {
+    const newStockStatus = visible ? 'client_visible' as const : 'approved_internal' as const
+    setInventory(prev => prev.map(i =>
+      i.id === itemId ? { ...i, clientVisible: visible, stockStatus: newStockStatus } : i
+    ))
+    patchInventoryBatch(itemId, {
+      client_visible: visible,
+      stock_status: newStockStatus,
+    }).catch(onDbError)
+  }
+
+  function handleEditStock(itemId: string) {
+    setStockEditItemId(itemId)
+    goTo('farmer-stock-form')
   }
 
   function handleFarmSubmit(farm: FarmProfile) {
@@ -322,9 +392,9 @@ export default function App() {
                   onClick={() => goTo('farmer-onboarding')}
                 >{T[lang].buildProfile}</button>
                 <button
-                  className={`nav-btn${page === 'farmer-submit' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('farmer-submit')}
-                >{T[lang].navSubmit}</button>
+                  className={`nav-btn${page === 'farmer-my-stock' ? ' nav-active' : ''}`}
+                  onClick={() => goTo('farmer-my-stock')}
+                >{T[lang].myStock}</button>
                 <button
                   className={`nav-btn${page === 'farmer-status' ? ' nav-active' : ''}`}
                   onClick={() => goTo('farmer-status')}
@@ -449,9 +519,48 @@ export default function App() {
               farms={farmerFarms}
               currentProfile={isDemo ? null : currentProfile}
               onBuildProfile={() => goTo('farmer-onboarding')}
-              onSubmitBatch={() => goTo('farmer-submit')}
+              onMyStock={() => goTo('farmer-my-stock')}
               onMyActivity={() => goTo('farmer-status')}
               onAdvancedProfile={() => goTo('farmer-advanced-profile')}
+              onRequests={() => goTo('farmer-requests')}
+              openRequestsCount={reviewRequests.filter(r => r.status === 'open').length}
+            />
+          )}
+
+          {page === 'farmer-my-stock' && (
+            <FarmerMyStock
+              lang={lang}
+              inventory={farmerInventory}
+              onAddNew={() => { setStockEditItemId(null); goTo('farmer-stock-form') }}
+              onEdit={handleEditStock}
+              openRequestCount={reviewRequests.filter(r => r.status === 'open').length}
+              onGoRequests={() => goTo('farmer-requests')}
+            />
+          )}
+
+          {page === 'farmer-stock-form' && (
+            <FarmerSubmitInventory
+              lang={lang}
+              farms={farmerFarms}
+              initialItem={stockEditItemId ? farmerInventory.find(i => i.id === stockEditItemId) : null}
+              onSubmit={item => {
+                handleInventorySubmit(item)
+                if (item.stockStatus !== 'draft') goTo('farmer-my-stock')
+              }}
+              onBack={() => goTo('farmer-my-stock')}
+              marketBenchmarks={marketBenchmarks}
+              openRequests={reviewRequests}
+            />
+          )}
+
+          {page === 'farmer-requests' && (
+            <FarmerRequests
+              lang={lang}
+              requests={reviewRequests}
+              inventory={farmerInventory}
+              onResolve={handleResolveRequest}
+              onEditStock={handleEditStock}
+              onGoMyStock={() => goTo('farmer-my-stock')}
             />
           )}
 
@@ -471,16 +580,6 @@ export default function App() {
               onSave={handleFarmSubmit}
               onBack={() => goTo('farmer-dashboard')}
             />
-          )}
-
-          {page === 'farmer-submit' && (
-            scopeLoading && isFarmerRole
-              ? <div className="scope-loading">Loading your farm data…</div>
-              : <FarmerSubmitInventory
-                  lang={lang}
-                  farms={farmerFarms}
-                  onSubmit={handleInventorySubmit}
-                />
           )}
 
           {page === 'farmer-status' && (
@@ -534,7 +633,12 @@ export default function App() {
               item={reviewItem}
               farm={reviewItemFarm}
               onBack={() => goTo('ddp-inventory')}
-              onAction={handleInventoryAction}
+              onAction={(itemId, action) => {
+                if (action === 'client-visible') { handleMarkClientVisible(itemId, true); return }
+                if (action === 'client-hide') { handleMarkClientVisible(itemId, false); return }
+                handleInventoryAction(itemId, action)
+              }}
+              onSendRequest={handleSendReviewRequest}
             />
           )}
 

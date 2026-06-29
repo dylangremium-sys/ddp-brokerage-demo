@@ -2397,3 +2397,71 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
   flex-direction: column;
   gap: 12px;
 }
+
+/* ── Farmer My Stock ── */
+.stock-item-card {
+  padding: 16px 18px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  transition: box-shadow 0.15s;
+}
+.stock-item-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.stock-card-needs-changes {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+/* ── Farmer Requests ── */
+.request-card {
+  padding: 16px 18px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: 1.5px solid #fde68a;
+  background: #fffbeb;
+}
+.request-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.request-message {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: #374151;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* ── Requests badge on dashboard card ── */
+.requests-badge {
+  background: #dc2626;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 100px;
+  padding: 1px 7px;
+  line-height: 1.4;
+}
+.quick-action-requests {
+  border: 1.5px solid #fcd34d !important;
+  background: #fffbeb !important;
+}
+.quick-action-requests .quick-action-label { color: #92400e; }
+.quick-action-requests .quick-action-desc { color: #a16207; }
+.quick-action-requests .quick-action-icon { font-size: 26px; }
+
+/* ── Alert success small ── */
+.alert-success-sm {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #14532d;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+

@@ -8,9 +8,11 @@ interface Props {
   farms: FarmProfile[]
   currentProfile: UserProfile | null
   onBuildProfile: () => void
-  onSubmitBatch: () => void
+  onMyStock: () => void
   onMyActivity: () => void
   onAdvancedProfile: () => void
+  onRequests: () => void
+  openRequestsCount?: number
 }
 
 export default function FarmerDashboard({
@@ -18,9 +20,11 @@ export default function FarmerDashboard({
   farms,
   currentProfile,
   onBuildProfile,
-  onSubmitBatch,
+  onMyStock,
   onMyActivity,
   onAdvancedProfile,
+  onRequests,
+  openRequestsCount = 0,
 }: Props) {
   const t = T[lang]
 
@@ -74,16 +78,34 @@ export default function FarmerDashboard({
           <div className="quick-action-desc">{t.buildProfileDesc}</div>
         </button>
 
-        <button className="quick-action-card" onClick={onSubmitBatch}>
+        <button className="quick-action-card" onClick={onMyStock}>
           <div className="quick-action-icon">📦</div>
-          <div className="quick-action-label">{t.submitBatch}</div>
-          <div className="quick-action-desc">{t.submitBatchDesc}</div>
+          <div className="quick-action-label">{t.myStock}</div>
+          <div className="quick-action-desc">{t.myStockDesc}</div>
         </button>
 
         <button className="quick-action-card" onClick={onMyActivity}>
           <div className="quick-action-icon">📋</div>
           <div className="quick-action-label">{t.myActivity}</div>
           <div className="quick-action-desc">{t.myActivityDesc}</div>
+        </button>
+
+        <button
+          className={`quick-action-card${openRequestsCount > 0 ? ' quick-action-requests' : ' quick-action-advanced'}`}
+          onClick={onRequests}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="quick-action-icon">📬</div>
+            {openRequestsCount > 0 && (
+              <span className="requests-badge">{openRequestsCount}</span>
+            )}
+          </div>
+          <div className="quick-action-label">{t.requestsLabel}</div>
+          <div className="quick-action-desc">
+            {openRequestsCount > 0
+              ? (lang === 'th' ? `${openRequestsCount} รายการรอดำเนินการ` : `${openRequestsCount} open`)
+              : t.requestsDesc}
+          </div>
         </button>
 
         <button className="quick-action-card quick-action-advanced" onClick={onAdvancedProfile}>

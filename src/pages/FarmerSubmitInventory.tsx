@@ -1,210 +1,611 @@
-import { useState } from 'react'
-import { T } from '../translations'
-import type { Lang, InventoryItem, FarmProfile } from '../types'
+import { useState, useRef } from 'react'
+import type {
+  Lang, InventoryItem, FarmProfile, ProductType, TestStatus, MarketBenchmark, ReviewRequest
+} from '../types'
 
 interface Props {
   lang: Lang
   farms: FarmProfile[]
+  initialItem?: InventoryItem | null
   onSubmit: (item: InventoryItem) => void
+  onBack: () => void
+  marketBenchmarks?: MarketBenchmark[]
+  openRequests?: ReviewRequest[]
 }
 
-const BLANK = {
-  farmerName: '', farmName: '', farmId: '', location: '',
-  productName: '', quantityKg: '', harvestDate: '', cureDate: '',
-  batchNumber: '', thcPct: '', cbdPct: '', moisturePct: '',
-  waterActivity: '', qualityGrade: 'A', pricePerKg: '',
-  certFileName: '', photoUrl: '', storageConditions: '', notes: '',
+const PRODUCT_TYPES: { key: ProductType; en: string; th: string }[] = [
+  { key: 'flower',  en: 'Flower',   th: 'ดอก' },
+  { key: 'trim',    en: 'Trim',     th: 'ทริม' },
+  { key: 'biomass', en: 'Biomass',  th: 'ไบโอมาส' },
+  { key: 'extract', en: 'Extract',  th: 'สารสกัด' },
+  { key: 'other',   en: 'Other',    th: 'อื่นๆ' },
+]
+
+const TEST_OPTIONS: { key: TestStatus; en: string; th: string }[] = [
+  { key: 'pass',       en: 'Pass',       th: 'ผ่าน' },
+  { key: 'fail',       en: 'Fail',       th: 'ไม่ผ่าน' },
+  { key: 'not_tested', en: 'Not tested', th: 'ยังไม่ทดสอบ' },
+]
+
+function initForm(item: InventoryItem | null | undefined) {
+  if (!item) return {
+    farmId: '', strainName: '', productType: 'flower' as ProductType,
+    batchNumber: '', quantityAvailable: '', unit: 'kg' as 'kg' | 'g',
+    askingPrice: '', minimumOrderKg: '', harvestDate: '', expiryDate: '',
+    moisturePct: '', totalThc: '', totalCbd: '', totalTerpenes: '',
+    coaAvailable: false, labName: '', reportNumber: '', sampleName: '', testDate: '',
+    heavyMetalsStatus: '' as TestStatus, pesticidesStatus: '' as TestStatus,
+    microbialStatus: '' as TestStatus, mycotoxinsStatus: '' as TestStatus,
+    coaFileName: '', farmerNotes: '',
+  }
+  return {
+    farmId: item.farmId ?? '',
+    strainName: item.productName ?? '',
+    productType: (item.productType ?? 'flower') as ProductType,
+    batchNumber: item.batchNumber ?? '',
+    quantityAvailable: item.quantityKg ? String(item.quantityKg) : '',
+    unit: (item.unit ?? 'kg') as 'kg' | 'g',
+    askingPrice: item.pricePerKg ? String(item.pricePerKg) : '',
+    minimumOrderKg: item.minimumOrderKg ? String(item.minimumOrderKg) : '',
+    harvestDate: item.harvestDate ?? '',
+    expiryDate: item.expiryDate ?? '',
+    moisturePct: item.moisturePct ? String(item.moisturePct) : '',
+    totalThc: item.thcPct ? String(item.thcPct) : '',
+    totalCbd: item.cbdPct ? String(item.cbdPct) : '',
+    totalTerpenes: item.totalTerpenesPct ? String(item.totalTerpenesPct) : '',
+    coaAvailable: item.coaAvailable ?? false,
+    labName: item.labName ?? '',
+    reportNumber: item.reportNumber ?? '',
+    sampleName: item.sampleName ?? '',
+    testDate: item.testDate ?? '',
+    heavyMetalsStatus: (item.heavyMetalsStatus ?? '') as TestStatus,
+    pesticidesStatus: (item.pesticidesStatus ?? '') as TestStatus,
+    microbialStatus: (item.microbialStatus ?? '') as TestStatus,
+    mycotoxinsStatus: (item.mycotoxinsStatus ?? '') as TestStatus,
+    coaFileName: item.certFileName ?? '',
+    farmerNotes: item.farmerNotes ?? item.notes ?? '',
+  }
 }
 
-export default function FarmerSubmitInventory({ lang, farms, onSubmit }: Props) {
-  const [form, setForm] = useState(BLANK)
+function SectionTitle({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return <div className="form-section-title" style={style}>{children}</div>
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      {children}
+      {hint && <span className="field-hint">{hint}</span>}
+    </label>
+  )
+}
+
+function PillRow<T extends string>({
+  options, value, onChange,
+}: { options: { key: T; label: string }[]; value: T; onChange: (v: T) => void }) {
+  return (
+    <div className="role-selector" style={{ flexWrap: 'wrap' }}>
+      {options.map(o => (
+        <button
+          key={o.key}
+          type="button"
+          className={`role-btn${value === o.key ? ' role-btn-active' : ''}`}
+          onClick={() => onChange(o.key)}
+        >{o.label}</button>
+      ))}
+    </div>
+  )
+}
+
+export default function FarmerSubmitInventory({
+  lang, farms, initialItem, onSubmit, onBack, marketBenchmarks = [], openRequests = [],
+}: Props) {
+  const isTh = lang === 'th'
+  const isEdit = !!initialItem
+  const [form, setForm] = useState(() => initForm(initialItem))
+  const [photos, setPhotos] = useState<string[]>(initialItem?.photoUrls ?? [])
+  const [saved, setSaved] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const t = T[lang]
+  const coaInputRef = useRef<HTMLInputElement>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
-    const { name, value } = e.target
-    setForm(f => ({ ...f, [name]: value }))
+  const selectedFarm = farms.find(f => f.id === form.farmId) ?? farms[0] ?? null
+
+  function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+    setForm(prev => ({ ...prev, [key]: value }))
   }
 
-  function handleFarmSelect(e: React.ChangeEvent<HTMLSelectElement>) {
-    const farmId = e.target.value
-    const farm = farms.find(f => f.id === farmId)
-    if (farm) {
-      setForm(f => ({
-        ...f,
-        farmId: farm.id,
-        farmName: farm.tradingName,
-        farmerName: farm.primaryContact,
-        location: `${farm.province}, Thailand`,
-      }))
-    } else {
-      setForm(f => ({ ...f, farmId: '', farmName: '', farmerName: '', location: '' }))
+  const pricePerKg = form.unit === 'kg'
+    ? parseFloat(form.askingPrice) || 0
+    : (parseFloat(form.askingPrice) || 0) * 1000
+
+  const benchmark = marketBenchmarks.find(b =>
+    b.productType === form.productType && b.visibleToFarmers && b.unit === 'kg'
+  )
+  const priceAboveRange = benchmark && pricePerKg > benchmark.priceMax
+  const priceBelowRange = benchmark && pricePerKg > 0 && pricePerKg < benchmark.priceMin
+
+  function handleCoaFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) set('coaFileName', file.name)
+  }
+
+  function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const dataUrl = ev.target?.result as string
+      setPhotos(prev => [dataUrl, ...prev.slice(0, 3)])
     }
+    reader.readAsDataURL(file)
+  }
+
+  function buildItem(isDraft: boolean): InventoryItem {
+    const qtyKg = form.unit === 'g'
+      ? (parseFloat(form.quantityAvailable) || 0) / 1000
+      : parseFloat(form.quantityAvailable) || 0
+
+    return {
+      id: initialItem?.id ?? crypto.randomUUID(),
+      farmerName: selectedFarm?.primaryContact ?? '',
+      farmName: selectedFarm?.tradingName ?? '',
+      farmId: form.farmId || selectedFarm?.id,
+      location: selectedFarm ? `${selectedFarm.province}, Thailand` : '',
+      productName: form.strainName.trim(),
+      quantityKg: qtyKg,
+      harvestDate: form.harvestDate,
+      cureDate: '',
+      batchNumber: form.batchNumber,
+      thcPct: parseFloat(form.totalThc) || 0,
+      cbdPct: parseFloat(form.totalCbd) || 0,
+      moisturePct: parseFloat(form.moisturePct) || 0,
+      waterActivity: '',
+      qualityGrade: 'A',
+      pricePerKg,
+      certFileName: form.coaFileName,
+      photoUrl: photos[0] ?? '',
+      storageConditions: '',
+      notes: form.farmerNotes,
+      status: 'Pending Review',
+      submittedAt: initialItem?.submittedAt ?? new Date().toISOString(),
+      // Extended fields
+      stockStatus: isDraft ? 'draft' : 'submitted',
+      productType: form.productType,
+      unit: form.unit,
+      minimumOrderKg: parseFloat(form.minimumOrderKg) || undefined,
+      totalTerpenesPct: parseFloat(form.totalTerpenes) || undefined,
+      expiryDate: form.expiryDate || undefined,
+      clientVisible: initialItem?.clientVisible ?? false,
+      coaAvailable: form.coaAvailable,
+      labName: form.labName || undefined,
+      reportNumber: form.reportNumber || undefined,
+      sampleName: form.sampleName || undefined,
+      testDate: form.testDate || undefined,
+      heavyMetalsStatus: form.heavyMetalsStatus || undefined,
+      pesticidesStatus: form.pesticidesStatus || undefined,
+      microbialStatus: form.microbialStatus || undefined,
+      mycotoxinsStatus: form.mycotoxinsStatus || undefined,
+      photoUrls: photos.length > 0 ? photos : undefined,
+      farmerNotes: form.farmerNotes || undefined,
+      ownerNotes: initialItem?.ownerNotes,
+    }
+  }
+
+  function handleSaveDraft(e: React.FormEvent) {
+    e.preventDefault()
+    onSubmit(buildItem(true))
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const item: InventoryItem = {
-      id: crypto.randomUUID(),
-      farmerName: form.farmerName,
-      farmName: form.farmName,
-      farmId: form.farmId || undefined,
-      location: form.location,
-      productName: form.productName,
-      quantityKg: parseFloat(form.quantityKg) || 0,
-      harvestDate: form.harvestDate,
-      cureDate: form.cureDate,
-      batchNumber: form.batchNumber,
-      thcPct: parseFloat(form.thcPct) || 0,
-      cbdPct: parseFloat(form.cbdPct) || 0,
-      moisturePct: parseFloat(form.moisturePct) || 0,
-      waterActivity: form.waterActivity,
-      qualityGrade: form.qualityGrade,
-      pricePerKg: parseFloat(form.pricePerKg) || 0,
-      certFileName: form.certFileName,
-      photoUrl: form.photoUrl,
-      storageConditions: form.storageConditions,
-      notes: form.notes,
-      status: 'Pending Review',
-      submittedAt: new Date().toISOString(),
-    }
-    onSubmit(item)
+    if (!form.strainName.trim()) return
+    onSubmit(buildItem(false))
     setSubmitted(true)
-    setForm(BLANK)
-    window.scrollTo(0, 0)
   }
 
-  return (
-    <div className="page-wrap">
-      <div className="page-header farmer-header">
-        <div className="farmer-header-row">
-          <div className="page-eyebrow">{t.eyebrow}</div>
+  if (submitted) {
+    return (
+      <div className="page-wrap auth-page" style={{ textAlign: 'center', paddingTop: 40 }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+        <h2 style={{ color: '#1e293b', marginBottom: 8 }}>
+          {isTh ? 'ส่งเรียบร้อยแล้ว' : 'Submitted for Review'}
+        </h2>
+        <p style={{ color: '#64748b', marginBottom: 28, maxWidth: 360, margin: '0 auto 28px', lineHeight: 1.6 }}>
+          {isTh
+            ? 'DDP จะตรวจสอบสินค้าของคุณ ดูสถานะได้ที่สต็อกของฉัน'
+            : 'DDP will review your stock. Track status in My Stock.'}
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={onBack}>
+            {isTh ? '← กลับไปสต็อก' : '← Back to My Stock'}
+          </button>
         </div>
-        <h1 className="page-title">{t.submitTitle}</h1>
-        <p className="page-desc">{t.submitDesc}</p>
+      </div>
+    )
+  }
+
+  const openRequestsForItem = openRequests.filter(r =>
+    r.status === 'open' && r.stockItemId === initialItem?.id
+  )
+
+  return (
+    <div className="page-wrap" style={{ maxWidth: 640 }}>
+      <div className="page-header farmer-header" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ color: 'rgba(255,255,255,0.75)', padding: '4px 8px', fontSize: 13 }}
+            onClick={onBack}
+          >← {isTh ? 'กลับ' : 'Back'}</button>
+        </div>
+        <div className="page-eyebrow">{isTh ? 'พอร์ทัลเกษตรกร' : 'SUPPLIER & FARMER PORTAL'}</div>
+        <h1 className="page-title">
+          {isEdit
+            ? (isTh ? 'แก้ไขสต็อก' : 'Edit Stock')
+            : (isTh ? 'เพิ่มสต็อกใหม่' : 'Add Stock')}
+        </h1>
+        <p className="page-desc">
+          {isTh
+            ? 'กรอกข้อมูลที่มี บันทึกร่างได้ก่อน แล้วส่งตอนพร้อม'
+            : 'Fill in what you know. Save a draft first, submit when ready.'}
+        </p>
       </div>
 
-      {submitted && (
-        <div className="alert alert-success">
-          <strong>{t.alertSuccessTitle}</strong> {t.alertSuccessBody}
+      {openRequestsForItem.length > 0 && (
+        <div className="alert alert-warning" style={{ marginBottom: 16 }}>
+          <strong>{isTh ? 'DDP ต้องการข้อมูลเพิ่มเติม:' : 'DDP requested changes:'}</strong>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+            {openRequestsForItem.map(r => <li key={r.id} style={{ fontSize: 13 }}>{r.message}</li>)}
+          </ul>
         </div>
       )}
 
-      <form className="card form-card" onSubmit={handleSubmit}>
-        <p className="form-intro">Submit a new inventory batch for DDP review. All batches must include harvest date and quantity. Lab data and COA documentation improve approval speed. Fields marked <span className="required-star">*</span> are required.</p>
+      <form>
+        <div className="card form-card" style={{ marginBottom: 16 }}>
+          <SectionTitle>{isTh ? 'ข้อมูลฟาร์ม' : 'Farm'}</SectionTitle>
 
-        <div className="form-section-title">{t.sectionFarmerDetails}</div>
-
-        {farms.length > 0 && (
-          <div className="form-grid-2" style={{ marginBottom: 16 }}>
-            <label className="field">
-              <span>{t.farmLink}</span>
-              <select onChange={handleFarmSelect} value={form.farmId}>
-                <option value="">— {lang === 'th' ? 'เลือกฟาร์ม' : 'Select a known farm'} —</option>
-                {farms.map(f => (
-                  <option key={f.id} value={f.id}>{f.tradingName} ({f.province})</option>
-                ))}
+          {farms.length > 1 && (
+            <Field label={isTh ? 'เลือกฟาร์ม' : 'Select farm'}>
+              <select value={form.farmId} onChange={e => set('farmId', e.target.value)}>
+                {farms.map(f => <option key={f.id} value={f.id}>{f.tradingName || f.primaryContact}</option>)}
               </select>
-            </label>
+            </Field>
+          )}
+          {farms.length <= 1 && selectedFarm && (
+            <div style={{ fontSize: 14, color: '#475569', padding: '8px 0' }}>
+              🌿 {selectedFarm.tradingName || selectedFarm.primaryContact}
+              {selectedFarm.province ? ` · ${selectedFarm.province}` : ''}
+            </div>
+          )}
+          {farms.length === 0 && (
+            <div style={{ fontSize: 13, color: '#dc2626' }}>
+              {isTh ? 'กรุณาสร้างโปรไฟล์ฟาร์มก่อน' : 'Create a farm profile first to link this stock.'}
+            </div>
+          )}
+
+          <SectionTitle style={{ marginTop: 20 } as React.CSSProperties}>{isTh ? 'ข้อมูลสินค้า' : 'Product Info'}</SectionTitle>
+
+          <Field label={isTh ? 'ชื่อสายพันธุ์ / สินค้า *' : 'Strain / product name *'}>
+            <input
+              value={form.strainName}
+              onChange={e => set('strainName', e.target.value)}
+              placeholder={isTh ? 'เช่น Purple Gelato, ดอกแห้ง A' : 'e.g. Purple Gelato, Dried Flower A'}
+              required
+            />
+          </Field>
+
+          <div style={{ marginTop: 14 }}>
+            <div className="field-label">{isTh ? 'ประเภทสินค้า' : 'Product type'}</div>
+            <PillRow
+              options={PRODUCT_TYPES.map(p => ({ key: p.key, label: isTh ? p.th : p.en }))}
+              value={form.productType}
+              onChange={v => set('productType', v)}
+            />
           </div>
-        )}
 
-        <div className="form-grid-3">
+          <Field label={isTh ? 'เลขแบทช์' : 'Batch number'} hint={isTh ? 'ตามที่ระบุในใบ COA' : 'As shown on COA'}>
+            <input
+              value={form.batchNumber}
+              onChange={e => set('batchNumber', e.target.value)}
+              placeholder={isTh ? 'เช่น PG-2025-001' : 'e.g. PG-2025-001'}
+            />
+          </Field>
+        </div>
+
+        <div className="card form-card" style={{ marginBottom: 16 }}>
+          <SectionTitle>{isTh ? 'ปริมาณและราคา' : 'Quantity & Pricing'}</SectionTitle>
+
+          <div className="form-grid-2">
+            <Field label={isTh ? 'ปริมาณที่มีอยู่' : 'Available quantity'}>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.quantityAvailable}
+                onChange={e => set('quantityAvailable', e.target.value)}
+                placeholder="0"
+                min="0"
+              />
+            </Field>
+            <div className="field" style={{ justifyContent: 'flex-end' }}>
+              <span className="field-label">{isTh ? 'หน่วย' : 'Unit'}</span>
+              <div className="role-selector" style={{ marginTop: 4 }}>
+                {(['kg', 'g'] as const).map(u => (
+                  <button
+                    key={u}
+                    type="button"
+                    className={`role-btn${form.unit === u ? ' role-btn-active' : ''}`}
+                    onClick={() => set('unit', u)}
+                  >{u}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="form-grid-2" style={{ marginTop: 14 }}>
+            <Field
+              label={isTh ? `ราคาที่ขอ (฿ /${form.unit})` : `Asking price (฿ per ${form.unit})`}
+              hint={
+                benchmark
+                  ? `${isTh ? 'ช่วงตลาด' : 'Market range'}: ฿${(benchmark.priceMin / (form.unit === 'g' ? 1000 : 1)).toLocaleString()}–฿${(benchmark.priceMax / (form.unit === 'g' ? 1000 : 1)).toLocaleString()}/${form.unit}`
+                  : undefined
+              }
+            >
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.askingPrice}
+                onChange={e => set('askingPrice', e.target.value)}
+                placeholder="0"
+                min="0"
+                style={priceAboveRange ? { borderColor: '#f59e0b' } : priceBelowRange ? { borderColor: '#94a3b8' } : {}}
+              />
+            </Field>
+            <Field label={isTh ? 'ปริมาณขั้นต่ำ (กก.)' : 'Min. order (kg)'}>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.minimumOrderKg}
+                onChange={e => set('minimumOrderKg', e.target.value)}
+                placeholder="1"
+                min="0"
+              />
+            </Field>
+          </div>
+
+          {priceAboveRange && (
+            <div className="alert alert-warning" style={{ marginTop: 8 }}>
+              {isTh
+                ? `⚠ ราคาของคุณสูงกว่าช่วงตลาดของ DDP (฿${benchmark!.priceMin.toLocaleString()}–฿${benchmark!.priceMax.toLocaleString()}/กก.)`
+                : `⚠ Your price is above DDP's current market range (฿${benchmark!.priceMin.toLocaleString()}–฿${benchmark!.priceMax.toLocaleString()}/kg)`}
+            </div>
+          )}
+
+          <div className="form-grid-2" style={{ marginTop: 14 }}>
+            <Field label={isTh ? 'วันที่เก็บเกี่ยว' : 'Harvest date'}>
+              <input type="date" value={form.harvestDate} onChange={e => set('harvestDate', e.target.value)} />
+            </Field>
+            <Field label={isTh ? 'วันหมดอายุ' : 'Expiry date'}>
+              <input type="date" value={form.expiryDate} onChange={e => set('expiryDate', e.target.value)} />
+            </Field>
+          </div>
+        </div>
+
+        <div className="card form-card" style={{ marginBottom: 16 }}>
+          <SectionTitle>{isTh ? 'ผลห้องแล็บ' : 'Lab Values'}</SectionTitle>
+
+          <div className="form-grid-2">
+            <Field label="THC %">
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.totalThc}
+                onChange={e => set('totalThc', e.target.value)}
+                placeholder="0.00"
+                min="0" max="100" step="0.01"
+              />
+            </Field>
+            <Field label="CBD %">
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.totalCbd}
+                onChange={e => set('totalCbd', e.target.value)}
+                placeholder="0.00"
+                min="0" max="100" step="0.01"
+              />
+            </Field>
+            <Field label={isTh ? 'ความชื้น %' : 'Moisture %'}>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.moisturePct}
+                onChange={e => set('moisturePct', e.target.value)}
+                placeholder="0.00"
+                min="0" max="100" step="0.01"
+              />
+            </Field>
+            <Field label={isTh ? 'เทอร์พีน %' : 'Terpenes %'}>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.totalTerpenes}
+                onChange={e => set('totalTerpenes', e.target.value)}
+                placeholder="0.00"
+                min="0" max="30" step="0.01"
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="card form-card" style={{ marginBottom: 16 }}>
+          <SectionTitle>{isTh ? 'ใบรับรองการวิเคราะห์ (COA)' : 'Certificate of Analysis (COA)'}</SectionTitle>
+
+          <div style={{ marginBottom: 14 }}>
+            <div className="field-label">{isTh ? 'มีใบ COA ไหม?' : 'COA available?'}</div>
+            <div className="role-selector">
+              <button
+                type="button"
+                className={`role-btn${form.coaAvailable ? ' role-btn-active' : ''}`}
+                onClick={() => set('coaAvailable', true)}
+              >{isTh ? 'มี' : 'Yes'}</button>
+              <button
+                type="button"
+                className={`role-btn${!form.coaAvailable ? ' role-btn-active' : ''}`}
+                onClick={() => set('coaAvailable', false)}
+              >{isTh ? 'ยังไม่มี' : 'Not yet'}</button>
+            </div>
+          </div>
+
+          {form.coaAvailable && (
+            <>
+              <div style={{ marginBottom: 14 }}>
+                <div className="field-label">{isTh ? 'อัปโหลดไฟล์ COA (PDF / รูป)' : 'Upload COA file (PDF / image)'}</div>
+                <input
+                  ref={coaInputRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  style={{ display: 'none' }}
+                  onChange={handleCoaFile}
+                />
+                {form.coaFileName ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                    <span className="pill pill-doc">📄 {form.coaFileName}</span>
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() => { set('coaFileName', ''); if (coaInputRef.current) coaInputRef.current.value = '' }}
+                    >✕</button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-ghost-dark"
+                    style={{ marginTop: 4 }}
+                    onClick={() => coaInputRef.current?.click()}
+                  >
+                    📎 {isTh ? 'เลือกไฟล์' : 'Choose file'}
+                  </button>
+                )}
+                <span className="field-hint">{isTh ? 'PDF, JPG, หรือ PNG' : 'PDF, JPG, or PNG'}</span>
+              </div>
+
+              <div className="form-grid-2">
+                <Field label={isTh ? 'ชื่อห้องแล็บ' : 'Lab name'}>
+                  <input value={form.labName} onChange={e => set('labName', e.target.value)} placeholder={isTh ? 'เช่น Green Lab Thailand' : 'e.g. Green Lab Thailand'} />
+                </Field>
+                <Field label={isTh ? 'เลขที่รายงาน' : 'Report number'}>
+                  <input value={form.reportNumber} onChange={e => set('reportNumber', e.target.value)} placeholder="RPT-2025-001" />
+                </Field>
+                <Field label={isTh ? 'ชื่อตัวอย่าง' : 'Sample name'}>
+                  <input value={form.sampleName} onChange={e => set('sampleName', e.target.value)} placeholder={form.strainName || 'Purple Gelato'} />
+                </Field>
+                <Field label={isTh ? 'วันที่ทดสอบ' : 'Test date'}>
+                  <input type="date" value={form.testDate} onChange={e => set('testDate', e.target.value)} />
+                </Field>
+              </div>
+
+              <div style={{ marginTop: 16 }}>
+                <div className="detail-block-title">{isTh ? 'ผลการทดสอบ' : 'Test Results'}</div>
+                {([
+                  { key: 'heavyMetalsStatus', label: isTh ? 'โลหะหนัก' : 'Heavy Metals' },
+                  { key: 'pesticidesStatus',  label: isTh ? 'สารกำจัดแมลง' : 'Pesticides' },
+                  { key: 'microbialStatus',   label: isTh ? 'จุลชีววิทยา' : 'Microbial' },
+                  { key: 'mycotoxinsStatus',  label: isTh ? 'ไมโคทอกซิน' : 'Mycotoxins' },
+                ] as { key: 'heavyMetalsStatus' | 'pesticidesStatus' | 'microbialStatus' | 'mycotoxinsStatus'; label: string }[]).map(({ key, label }) => (
+                  <div key={key} style={{ marginBottom: 12 }}>
+                    <div className="field-label" style={{ fontSize: 13, marginBottom: 4 }}>{label}</div>
+                    <PillRow
+                      options={TEST_OPTIONS.map(o => ({ key: o.key, label: isTh ? o.th : o.en }))}
+                      value={form[key] as TestStatus}
+                      onChange={v => set(key, v as TestStatus)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="card form-card" style={{ marginBottom: 16 }}>
+          <SectionTitle>{isTh ? 'รูปภาพสินค้า' : 'Product Photos'}</SectionTitle>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: 'none' }}
+            onChange={handlePhotoFile}
+          />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+            {photos.map((url, i) => (
+              <div key={i} style={{ position: 'relative', width: 80, height: 80 }}>
+                <img
+                  src={url}
+                  alt=""
+                  style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid #e2e8f0' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
+                  style={{
+                    position: 'absolute', top: -6, right: -6,
+                    background: '#dc2626', color: '#fff',
+                    border: 'none', borderRadius: '50%',
+                    width: 20, height: 20, cursor: 'pointer',
+                    fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >✕</button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost-dark"
+            onClick={() => photoInputRef.current?.click()}
+          >
+            📷 {isTh ? 'ถ่ายรูปหรือเลือกรูป' : 'Take photo or choose image'}
+          </button>
+          <span className="field-hint">{isTh ? 'รูปดอก บรรจุภัณฑ์ หรือป้ายแบทช์' : 'Bud close-up, packaging, or batch label'}</span>
+        </div>
+
+        <div className="card form-card" style={{ marginBottom: 24 }}>
+          <SectionTitle>{isTh ? 'บันทึก' : 'Notes'}</SectionTitle>
           <label className="field">
-            <span>{t.farmerName}<span className="required-star">*</span></span>
-            <input name="farmerName" value={form.farmerName} onChange={handleChange} required placeholder={lang === 'th' ? 'ชื่อ-นามสกุล' : 'Full name of responsible operator'} />
-          </label>
-          <label className="field">
-            <span>{t.farmName}<span className="required-star">*</span></span>
-            <input name="farmName" value={form.farmName} onChange={handleChange} required placeholder={lang === 'th' ? 'ชื่อฟาร์ม' : 'Registered farm or business name'} />
-          </label>
-          <label className="field">
-            <span>{t.location}<span className="required-star">*</span></span>
-            <input name="location" value={form.location} onChange={handleChange} required placeholder={lang === 'th' ? 'จังหวัด, ประเทศ' : 'Province, Country'} />
+            <span>{isTh ? 'บันทึกของเกษตรกร (มองเห็นเฉพาะ DDP)' : 'Farmer notes (visible to DDP only)'}</span>
+            <textarea
+              rows={3}
+              value={form.farmerNotes}
+              onChange={e => set('farmerNotes', e.target.value)}
+              placeholder={isTh ? 'หมายเหตุเพิ่มเติมสำหรับ DDP...' : 'Additional notes for DDP...'}
+            />
           </label>
         </div>
 
-        <div className="form-section-title">{t.sectionProductDetails}</div>
-        <div className="form-grid-3">
-          <label className="field">
-            <span>{t.productName}<span className="required-star">*</span></span>
-            <input name="productName" value={form.productName} onChange={handleChange} required placeholder={lang === 'th' ? 'เช่น มะม่วง, เรดดราก้อน' : 'Strain name or product type'} />
-          </label>
-          <label className="field">
-            <span>{t.quantityKg}<span className="required-star">*</span></span>
-            <input name="quantityKg" type="number" min="0" step="0.01" value={form.quantityKg} onChange={handleChange} required placeholder="0.00" />
-          </label>
-          <label className="field">
-            <span>{t.harvestDate}<span className="required-star">*</span></span>
-            <input name="harvestDate" type="date" value={form.harvestDate} onChange={handleChange} required />
-          </label>
-          <label className="field">
-            <span>{t.cureDate}</span>
-            <input name="cureDate" type="date" value={form.cureDate} onChange={handleChange} />
-          </label>
-          <label className="field">
-            <span>{t.batchNumber}</span>
-            <input name="batchNumber" value={form.batchNumber} onChange={handleChange} placeholder={lang === 'th' ? 'เช่น F4-122025' : 'e.g. F4-122025'} />
-          </label>
-          <label className="field">
-            <span>{t.qualityGrade}</span>
-            <select name="qualityGrade" value={form.qualityGrade} onChange={handleChange}>
-              <option value="A">{t.gradeA}</option>
-              <option value="B">{t.gradeB}</option>
-              <option value="C">{t.gradeC}</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>{t.pricePerKg}</span>
-            <input name="pricePerKg" type="number" min="0" step="0.01" value={form.pricePerKg} onChange={handleChange} placeholder="0.00" />
-          </label>
-        </div>
-
-        <div className="form-section-title">{t.sectionLabData}</div>
-        <div className="form-grid-3">
-          <label className="field">
-            <span>{t.thcPct}</span>
-            <input name="thcPct" type="number" min="0" max="40" step="0.01" value={form.thcPct} onChange={handleChange} placeholder="e.g. 23.5" />
-          </label>
-          <label className="field">
-            <span>{t.cbdPct}</span>
-            <input name="cbdPct" type="number" min="0" max="40" step="0.01" value={form.cbdPct} onChange={handleChange} placeholder="e.g. 0.10" />
-          </label>
-          <label className="field">
-            <span>{t.moisturePct}</span>
-            <input name="moisturePct" type="number" min="0" max="100" step="0.01" value={form.moisturePct} onChange={handleChange} placeholder="e.g. 10.27" />
-          </label>
-          <label className="field">
-            <span>{t.waterActivity}</span>
-            <input name="waterActivity" value={form.waterActivity} onChange={handleChange} placeholder="e.g. 0.58" />
-          </label>
-        </div>
-
-        <div className="form-section-title">{t.sectionDocuments}</div>
-        <div className="form-grid-2">
-          <label className="field">
-            <span>{t.certFileName}</span>
-            <input name="certFileName" value={form.certFileName} onChange={handleChange} placeholder={lang === 'th' ? 'เช่น COA_batch1.pdf' : 'Filename or reference number, e.g. COA_batch1.pdf'} />
-            <span className="field-hint">Certificate of Analysis reference. Required for full approval.</span>
-          </label>
-          <label className="field">
-            <span>{t.photoUrl}</span>
-            <input name="photoUrl" value={form.photoUrl} onChange={handleChange} placeholder="https://..." />
-            <span className="field-hint">Paste a URL to an existing product photo if available.</span>
-          </label>
-        </div>
-        <label className="field">
-          <span>{t.storageConditions}</span>
-          <input name="storageConditions" value={form.storageConditions} onChange={handleChange} placeholder={lang === 'th' ? 'เช่น ปิดสนิท, มืด, 18°C, 55% RH' : 'e.g. Sealed, dark, 18°C, 55% RH'} />
-          <span className="field-hint">Current storage environment for this batch.</span>
-        </label>
-        <label className="field" style={{ marginTop: 12 }}>
-          <span>{t.notes}</span>
-          <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} placeholder={lang === 'th' ? 'ข้อมูลเพิ่มเติมสำหรับ DDP...' : 'Any additional information DDP should be aware of for this batch...'} />
-        </label>
-
-        <div className="form-footer">
-          <button type="submit" className="btn btn-primary btn-lg">{t.submitBtn}</button>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 40 }}>
+          <button
+            type="button"
+            className="btn btn-ghost-dark"
+            style={{ flex: 1 }}
+            onClick={handleSaveDraft}
+          >
+            {saved
+              ? (isTh ? '✓ บันทึกแล้ว' : '✓ Saved')
+              : (isTh ? '💾 บันทึกร่าง' : '💾 Save Draft')}
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ flex: 2 }}
+            disabled={!form.strainName.trim()}
+            onClick={handleSubmit}
+          >
+            {isTh ? 'ส่งให้ DDP ตรวจสอบ →' : 'Submit for Review →'}
+          </button>
         </div>
       </form>
     </div>

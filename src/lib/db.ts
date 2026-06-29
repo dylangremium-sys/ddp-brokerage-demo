@@ -5,8 +5,9 @@ import {
   loadFarms as lsLoadFarms,
   saveFarms as lsSaveFarms,
   resetDemo as lsResetDemo,
+  SEED_BENCHMARKS,
 } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus } from '../types'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark } from '../types'
 
 export { isSupabaseConfigured }
 
@@ -311,6 +312,10 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
 
   console.log('Creating inventory batch in Supabase', { id: item.id, productName: item.productName })
 
+  // Filter out data URLs — they can be 500 KB+ and don't belong in the DB.
+  // In production, replace with Supabase Storage URLs.
+  const storablePhotoUrls = (item.photoUrls ?? []).filter(u => !u.startsWith('data:'))
+
   await sbUpsert('inventory_batches', {
     id: item.id,
     farm_id: item.farmId && isValidUUID(item.farmId) ? item.farmId : null,
@@ -334,6 +339,26 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
     status: item.status,
     created_by: userId ?? null,
     updated_at: new Date().toISOString(),
+    // New farmer-MVP fields
+    stock_status: item.stockStatus ?? null,
+    product_type: item.productType ?? null,
+    unit: item.unit ?? 'kg',
+    minimum_order_kg: item.minimumOrderKg ?? null,
+    total_terpenes_pct: item.totalTerpenesPct ?? null,
+    expiry_date: item.expiryDate ?? null,
+    client_visible: item.clientVisible ?? false,
+    coa_available: item.coaAvailable ?? false,
+    lab_name: item.labName ?? null,
+    report_number: item.reportNumber ?? null,
+    sample_name: item.sampleName ?? null,
+    test_date: item.testDate ?? null,
+    heavy_metals_status: item.heavyMetalsStatus || null,
+    pesticides_status: item.pesticidesStatus || null,
+    microbial_status: item.microbialStatus || null,
+    mycotoxins_status: item.mycotoxinsStatus || null,
+    photo_urls: storablePhotoUrls.length > 0 ? storablePhotoUrls : null,
+    farmer_notes: item.farmerNotes ?? null,
+    owner_notes: item.ownerNotes ?? null,
   })
 }
 
@@ -361,6 +386,138 @@ export async function updateInventoryStatus(
     new_status: newStatus,
     note: reviewerId ? `Reviewed by ${reviewerId}` : null,
   })
+}
+
+// ---------------------------------------------------------------------------
+// Patch an inventory batch — for admin actions (client_visible toggle,
+// owner_notes) and farmer re-submissions (stock_status change).
+// ---------------------------------------------------------------------------
+export async function patchInventoryBatch(
+  itemId: string,
+  fields: Partial<{
+    stock_status: string
+    client_visible: boolean
+    owner_notes: string
+    status: InventoryStatus
+  }>,
+): Promise<void> {
+  if (!supabase) return
+  if (!isValidUUID(itemId)) {
+    console.warn(`patchInventoryBatch: skipping — "${itemId}" is not a valid UUID`)
+    return
+  }
+  await sbUpdate(
+    'inventory_batches',
+    { ...fields, updated_at: new Date().toISOString() },
+    'id',
+    itemId,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Review requests (DDP → farmer change requests)
+// ---------------------------------------------------------------------------
+
+export async function createReviewRequest(
+  req: Omit<ReviewRequest, 'id' | 'createdAt'>,
+  adminUserId?: string,
+): Promise<void> {
+  if (!supabase) return
+  if (req.stockItemId && !isValidUUID(req.stockItemId)) {
+    console.warn('createReviewRequest: skipping — invalid UUID for stockItemId')
+    return
+  }
+  await sbInsert('farmer_review_requests', {
+    inventory_batch_id: req.stockItemId ?? null,
+    farm_id: null,
+    request_type: req.requestType,
+    message: req.message,
+    status: 'open',
+    created_by: adminUserId && isValidUUID(adminUserId) ? adminUserId : null,
+    product_name: req.productName ?? null,
+    farm_name: req.farmName ?? null,
+  })
+}
+
+export async function resolveReviewRequest(requestId: string): Promise<void> {
+  if (!supabase) return
+  if (!isValidUUID(requestId)) {
+    console.warn('resolveReviewRequest: skipping — invalid UUID')
+    return
+  }
+  await sbUpdate(
+    'farmer_review_requests',
+    { status: 'resolved', resolved_at: new Date().toISOString() },
+    'id',
+    requestId,
+  )
+}
+
+export async function loadReviewRequestsFromDB(
+  userId: string,
+  _farmIds: Set<string>,
+  itemIds: Set<string>,
+): Promise<ReviewRequest[]> {
+  if (!supabase || !isValidUUID(userId)) return []
+
+  const batchIdList = [...itemIds].filter(isValidUUID)
+  if (batchIdList.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('farmer_review_requests')
+    .select('*')
+    .in('inventory_batch_id', batchIdList)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.warn('loadReviewRequestsFromDB:', error.message)
+    return []
+  }
+
+  return (data ?? []).map(row => ({
+    id: row.id as string,
+    stockItemId: row.inventory_batch_id as string | undefined,
+    farmProfileId: row.farm_id as string | undefined,
+    requestType: row.request_type as ReviewRequest['requestType'],
+    message: row.message as string,
+    status: row.status as 'open' | 'resolved',
+    createdBy: row.created_by as string ?? 'DDP Admin',
+    createdAt: row.created_at as string,
+    resolvedAt: row.resolved_at as string | undefined,
+    productName: row.product_name as string | undefined,
+    farmName: row.farm_name as string | undefined,
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// Market benchmarks (DDP → farmer price hints)
+// ---------------------------------------------------------------------------
+
+export async function loadMarketBenchmarksFromDB(): Promise<MarketBenchmark[]> {
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('market_price_benchmarks')
+    .select('*')
+    .eq('visible_to_farmers', true)
+    .order('product_type')
+
+  if (error) {
+    console.warn('loadMarketBenchmarksFromDB:', error.message)
+    return SEED_BENCHMARKS
+  }
+
+  if (!data || data.length === 0) return SEED_BENCHMARKS
+
+  return data.map(row => ({
+    id: row.id as string,
+    productType: row.product_type as string,
+    thcRange: row.thc_range as string | undefined,
+    priceMin: row.price_min as number,
+    priceMax: row.price_max as number,
+    unit: (row.unit ?? 'kg') as 'g' | 'kg',
+    visibleToFarmers: true,
+  }))
 }
 
 export function getApprovedInventory(): InventoryItem[] {

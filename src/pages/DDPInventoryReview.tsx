@@ -1,10 +1,24 @@
-import type { FarmProfile, InventoryItem, InventoryStatus } from '../types'
+import { useState } from 'react'
+import type { FarmProfile, InventoryItem, InventoryStatus, ReviewRequest } from '../types'
+
+type RequestType = ReviewRequest['requestType']
+
+const REQUEST_TYPES: { key: RequestType; label: string }[] = [
+  { key: 'coa',          label: 'Upload COA' },
+  { key: 'photo',        label: 'Add Photos' },
+  { key: 'quantity',     label: 'Confirm Quantity' },
+  { key: 'price',        label: 'Revise Price' },
+  { key: 'batch_number', label: 'Add Batch Number' },
+  { key: 'licence',      label: 'Upload Licence' },
+  { key: 'general',      label: 'General Request' },
+]
 
 interface Props {
   item: InventoryItem
   farm: FarmProfile | undefined
   onBack: () => void
   onAction: (itemId: string, action: string) => void
+  onSendRequest?: (req: Omit<ReviewRequest, 'id' | 'createdAt'>) => void
 }
 
 const STATUS_CLASS: Record<InventoryStatus, string> = {
@@ -23,7 +37,26 @@ function CheckRow({ label, pass }: { label: string; pass: boolean }) {
   )
 }
 
-export default function DDPInventoryReview({ item, farm, onBack, onAction }: Props) {
+export default function DDPInventoryReview({ item, farm, onBack, onAction, onSendRequest }: Props) {
+  const [reqType, setReqType] = useState<RequestType>('general')
+  const [reqMsg, setReqMsg] = useState('')
+  const [reqSent, setReqSent] = useState(false)
+
+  function handleSendRequest() {
+    if (!reqMsg.trim() || !onSendRequest) return
+    onSendRequest({
+      stockItemId: item.id,
+      requestType: reqType,
+      message: reqMsg.trim(),
+      status: 'open',
+      createdBy: 'DDP Admin',
+      productName: item.productName,
+      farmName: item.farmName,
+    })
+    setReqMsg('')
+    setReqSent(true)
+    setTimeout(() => setReqSent(false), 3000)
+  }
   const checks = [
     { label: 'Farm profile submitted', pass: !!farm },
     { label: 'Farmer details complete', pass: !!(item.farmerName && item.farmName && item.location) },
@@ -48,7 +81,12 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction }: Pro
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
           <button className="btn btn-ghost" onClick={onBack}>← Back to Inventory Dashboard</button>
-          <span className={`badge ${STATUS_CLASS[item.status]}`}>{item.status}</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <span className={`badge ${STATUS_CLASS[item.status]}`}>{item.status}</span>
+            {item.clientVisible && (
+              <span className="badge badge-blue">👁 Buyer Visible</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -123,12 +161,40 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction }: Pro
               </div>
             )}
 
+            {(item.heavyMetalsStatus || item.pesticidesStatus || item.microbialStatus || item.mycotoxinsStatus) && (
+              <div className="detail-block">
+                <div className="detail-block-title">COA Test Results</div>
+                <div className="detail-rows">
+                  {item.labName && <div className="detail-row"><span className="dl">Lab</span><span className="dv">{item.labName}</span></div>}
+                  {item.reportNumber && <div className="detail-row"><span className="dl">Report #</span><span className="dv mono">{item.reportNumber}</span></div>}
+                  {item.testDate && <div className="detail-row"><span className="dl">Test Date</span><span className="dv">{item.testDate}</span></div>}
+                  {item.heavyMetalsStatus && <div className="detail-row"><span className="dl">Heavy Metals</span><span className={`dv ${item.heavyMetalsStatus === 'pass' ? 'check-yes' : item.heavyMetalsStatus === 'fail' ? 'check-no' : ''}`}>{item.heavyMetalsStatus}</span></div>}
+                  {item.pesticidesStatus && <div className="detail-row"><span className="dl">Pesticides</span><span className={`dv ${item.pesticidesStatus === 'pass' ? 'check-yes' : item.pesticidesStatus === 'fail' ? 'check-no' : ''}`}>{item.pesticidesStatus}</span></div>}
+                  {item.microbialStatus && <div className="detail-row"><span className="dl">Microbial</span><span className={`dv ${item.microbialStatus === 'pass' ? 'check-yes' : item.microbialStatus === 'fail' ? 'check-no' : ''}`}>{item.microbialStatus}</span></div>}
+                  {item.mycotoxinsStatus && <div className="detail-row"><span className="dl">Mycotoxins</span><span className={`dv ${item.mycotoxinsStatus === 'pass' ? 'check-yes' : item.mycotoxinsStatus === 'fail' ? 'check-no' : ''}`}>{item.mycotoxinsStatus}</span></div>}
+                </div>
+              </div>
+            )}
+
+            {(item.photoUrls?.length ?? 0) > 0 && (
+              <div className="detail-block">
+                <div className="detail-block-title">Photos ({item.photoUrls!.length})</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {item.photoUrls!.map((url, i) => (
+                    <img key={i} src={url} alt="" style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0' }} />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="detail-block">
               <div className="detail-block-title">Storage & Notes</div>
               <div className="detail-rows">
                 <div className="detail-row"><span className="dl">Storage Conditions</span><span className="dv">{item.storageConditions || <span className="text-muted">—</span>}</span></div>
               </div>
-              {item.notes && <p className="notes-body" style={{ marginTop: 12 }}>{item.notes}</p>}
+              {item.farmerNotes && <p className="notes-body" style={{ marginTop: 12 }}><strong>Farmer:</strong> {item.farmerNotes}</p>}
+              {item.notes && !item.farmerNotes && <p className="notes-body" style={{ marginTop: 12 }}>{item.notes}</p>}
+              {item.ownerNotes && <p className="notes-body" style={{ marginTop: 12, background: '#f0f4ff' }}><strong>Internal:</strong> {item.ownerNotes}</p>}
             </div>
 
             <div className="detail-block" style={{ borderBottom: 'none' }}>
@@ -147,6 +213,71 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction }: Pro
             <button className="btn btn-approve" onClick={() => onAction(item.id, 'approve')}>Approve Batch</button>
             <button className="btn btn-missing" onClick={() => onAction(item.id, 'missing')}>Request Missing Document</button>
             <button className="btn btn-reject" onClick={() => onAction(item.id, 'reject')}>Reject Batch</button>
+
+            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16, marginTop: 4 }}>
+              <div className="decision-title" style={{ fontSize: 13 }}>Client Visibility</div>
+              <p style={{ fontSize: 12.5, color: '#64748b', margin: '4px 0 12px' }}>
+                Only approved batches should be made buyer-visible.
+              </p>
+              {item.clientVisible ? (
+                <button
+                  className="btn"
+                  style={{ background: '#dbeafe', color: '#1e40af', border: '1px solid #93c5fd', width: '100%', fontSize: 13, marginBottom: 0 }}
+                  onClick={() => onAction(item.id, 'client-hide')}
+                >
+                  👁 Hide from Buyers
+                </button>
+              ) : (
+                <button
+                  className="btn"
+                  style={{ background: '#f0fdf4', color: '#14532d', border: '1px solid #86efac', width: '100%', fontSize: 13 }}
+                  onClick={() => onAction(item.id, 'client-visible')}
+                  disabled={item.status !== 'Approved'}
+                  title={item.status !== 'Approved' ? 'Approve the batch first' : ''}
+                >
+                  👁 Mark Buyer-Visible
+                </button>
+              )}
+            </div>
+
+            {onSendRequest && (
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16, marginTop: 4 }}>
+                <div className="decision-title" style={{ fontSize: 13 }}>Send Request to Farmer</div>
+                {reqSent && (
+                  <div className="alert-success-sm" style={{ marginBottom: 10 }}>✓ Request sent</div>
+                )}
+                <div className="field" style={{ marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Request type</span>
+                  <select
+                    value={reqType}
+                    onChange={e => setReqType(e.target.value as RequestType)}
+                    style={{ fontSize: 13 }}
+                  >
+                    {REQUEST_TYPES.map(r => (
+                      <option key={r.key} value={r.key}>{r.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field" style={{ marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Message to farmer</span>
+                  <textarea
+                    rows={3}
+                    value={reqMsg}
+                    onChange={e => setReqMsg(e.target.value)}
+                    placeholder="e.g. Please upload a clearer COA image..."
+                    style={{ fontSize: 13 }}
+                  />
+                </div>
+                <button
+                  className="btn"
+                  style={{ background: '#f8fafc', color: '#0369a1', border: '1px solid #bae6fd', width: '100%', fontSize: 13 }}
+                  onClick={handleSendRequest}
+                  disabled={!reqMsg.trim()}
+                >
+                  Send Request →
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import type { InventoryItem, FarmProfile } from './types'
+import type { InventoryItem, FarmProfile, ReviewRequest, MarketBenchmark } from './types'
 
 export const INV_KEY = 'ddp_inventory'
 export const FARM_KEY = 'ddp_farms'
@@ -587,4 +587,44 @@ export function saveFarmDraft(draft: Partial<FarmProfile>) {
 
 export function clearFarmDraft() {
   localStorage.removeItem(FARM_DRAFT_KEY)
+}
+
+// ── Review Requests ──────────────────────────────────────────────────────────
+
+export const REVIEW_REQUESTS_KEY = 'ddp_review_requests'
+
+export function loadReviewRequests(): ReviewRequest[] {
+  try {
+    return JSON.parse(localStorage.getItem(REVIEW_REQUESTS_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+export function saveReviewRequests(requests: ReviewRequest[]): void {
+  localStorage.setItem(REVIEW_REQUESTS_KEY, JSON.stringify(requests))
+}
+
+// ── Market Benchmarks (owner-controlled, farmer-visible) ─────────────────────
+
+export const MARKET_BENCHMARKS_KEY = 'ddp_market_benchmarks'
+
+export const SEED_BENCHMARKS: MarketBenchmark[] = [
+  { id: 'b1', productType: 'flower', thcRange: '20–25%', priceMin: 35000, priceMax: 55000, unit: 'kg', visibleToFarmers: true },
+  { id: 'b2', productType: 'flower', thcRange: '15–20%', priceMin: 20000, priceMax: 35000, unit: 'kg', visibleToFarmers: true },
+  { id: 'b3', productType: 'trim', priceMin: 5000, priceMax: 12000, unit: 'kg', visibleToFarmers: true },
+  { id: 'b4', productType: 'biomass', priceMin: 3000, priceMax: 8000, unit: 'kg', visibleToFarmers: true },
+  { id: 'b5', productType: 'extract', priceMin: 80000, priceMax: 200000, unit: 'kg', visibleToFarmers: true },
+]
+
+export function loadMarketBenchmarks(): MarketBenchmark[] {
+  const stored = localStorage.getItem(MARKET_BENCHMARKS_KEY)
+  if (stored) {
+    try { return JSON.parse(stored) } catch { /* malformed JSON — fall through to seed */ }
+  }
+  return SEED_BENCHMARKS
+}
+
+export function saveMarketBenchmarks(benchmarks: MarketBenchmark[]): void {
+  localStorage.setItem(MARKET_BENCHMARKS_KEY, JSON.stringify(benchmarks))
 }
