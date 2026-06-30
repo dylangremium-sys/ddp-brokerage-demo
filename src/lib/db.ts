@@ -357,6 +357,7 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
     microbial_status: item.microbialStatus || null,
     mycotoxins_status: item.mycotoxinsStatus || null,
     photo_urls: storablePhotoUrls.length > 0 ? storablePhotoUrls : null,
+    coa_storage_path: item.coaStoragePath ?? null,
     farmer_notes: item.farmerNotes ?? null,
     owner_notes: item.ownerNotes ?? null,
   })
@@ -399,6 +400,9 @@ export async function patchInventoryBatch(
     client_visible: boolean
     owner_notes: string
     status: InventoryStatus
+    coa_file_name: string
+    coa_available: boolean
+    coa_storage_path: string
   }>,
 ): Promise<void> {
   if (!supabase) return
@@ -525,6 +529,41 @@ export function getApprovedInventory(): InventoryItem[] {
 }
 
 // ---------------------------------------------------------------------------
+// COA file upload and signed URL helpers
+// ---------------------------------------------------------------------------
+
+// Upload a PDF COA for a specific inventory batch.
+// Storage path: {userId}/{farmId}/{batchId}/{timestamp}-{safeFileName}.pdf
+// The first segment (userId) satisfies the storage RLS policy:
+//   auth.uid()::text = (string_to_array(name, '/'))[1]
+export async function uploadCoaFile(
+  file: File,
+  userId: string,
+  farmId: string,
+  batchId: string,
+): Promise<{ storagePath: string }> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100)
+  const storagePath = `${userId}/${farmId}/${batchId}/${Date.now()}-${safeName}`
+  const { error } = await supabase.storage
+    .from('farmer-documents')
+    .upload(storagePath, file, { contentType: 'application/pdf', upsert: false })
+  if (error) throw new Error(`COA upload failed: ${error.message}`)
+  return { storagePath }
+}
+
+// Generate a 1-hour signed URL for a private COA file.
+// Returns null if Supabase is not configured or the path is empty.
+export async function getCoaSignedUrl(storagePath: string): Promise<string | null> {
+  if (!supabase || !storagePath) return null
+  const { data, error } = await supabase.storage
+    .from('farmer-documents')
+    .createSignedUrl(storagePath, 3600)
+  if (error || !data?.signedUrl) return null
+  return data.signedUrl
+}
+
+// ---------------------------------------------------------------------------
 // Row mappers — convert raw Supabase rows to frontend shapes.
 // ---------------------------------------------------------------------------
 
@@ -579,6 +618,7 @@ function batchRowToInventoryItem(row: Record<string, any>, farmName?: string): I
     photoUrls: (row.photo_urls as string[]) ?? undefined,
     farmerNotes: row.farmer_notes as string ?? undefined,
     ownerNotes: row.owner_notes as string ?? undefined,
+    coaStoragePath: row.coa_storage_path as string ?? undefined,
   }
 }
 

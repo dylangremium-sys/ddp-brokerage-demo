@@ -123,6 +123,7 @@ export interface InventoryItem {
   photoUrls?: string[]
   farmerNotes?: string
   ownerNotes?: string
+  coaStoragePath?: string
 }
 
 export interface FarmProfile {

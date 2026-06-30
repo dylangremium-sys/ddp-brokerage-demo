@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { Lang, InventoryItem } from '../types'
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
   onEdit: (itemId: string) => void
   openRequestCount: number
   onGoRequests: () => void
+  onCoaUpload?: (batchId: string, file: File) => Promise<void>
 }
 
 type Filter = 'all' | 'draft' | 'submitted' | 'needs_changes' | 'approved' | 'archived'
@@ -45,10 +46,38 @@ function matchesFilter(item: InventoryItem, f: Filter): boolean {
 }
 
 export default function FarmerMyStock({
-  lang, inventory, onAddNew, onEdit, openRequestCount, onGoRequests,
+  lang, inventory, onAddNew, onEdit, openRequestCount, onGoRequests, onCoaUpload,
 }: Props) {
   const isTh = lang === 'th'
   const [filter, setFilter] = useState<Filter>('all')
+  const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const coaInputRef = useRef<HTMLInputElement>(null)
+
+  function handleCoaClick(batchId: string) {
+    setUploadingId(batchId)
+    setUploadError(null)
+    coaInputRef.current?.click()
+  }
+
+  async function handleCoaFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !uploadingId || !onCoaUpload) return
+    if (file.type !== 'application/pdf') {
+      setUploadError(isTh ? 'อนุญาตเฉพาะไฟล์ PDF เท่านั้น' : 'PDF files only. Please choose a .pdf file.')
+      if (coaInputRef.current) coaInputRef.current.value = ''
+      setUploadingId(null)
+      return
+    }
+    try {
+      await onCoaUpload(uploadingId, file)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : (isTh ? 'อัปโหลดล้มเหลว' : 'Upload failed'))
+    } finally {
+      if (coaInputRef.current) coaInputRef.current.value = ''
+      setUploadingId(null)
+    }
+  }
 
   const filtered = inventory.filter(i => matchesFilter(i, filter))
 
@@ -67,6 +96,25 @@ export default function FarmerMyStock({
 
   return (
     <div className="page-wrap" style={{ maxWidth: 680 }}>
+      {/* Hidden file input — shared across all batch cards */}
+      <input
+        ref={coaInputRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        style={{ display: 'none' }}
+        onChange={handleCoaFileChange}
+      />
+
+      {uploadError && (
+        <div className="alert alert-warning" style={{ marginBottom: 12 }}>
+          {uploadError}
+          <button
+            style={{ marginLeft: 10, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+            onClick={() => setUploadError(null)}
+          >✕</button>
+        </div>
+      )}
+
       <div className="page-header farmer-header" style={{ marginBottom: 20 }}>
         <div className="page-eyebrow">{isTh ? 'พอร์ทัลเกษตรกร' : 'SUPPLIER & FARMER PORTAL'}</div>
         <h1 className="page-title">{isTh ? 'สต็อกของฉัน' : 'My Stock'}</h1>
@@ -172,9 +220,39 @@ export default function FarmerMyStock({
                 )}
                 {item.thcPct > 0 && <span className="pill">THC {item.thcPct}%</span>}
                 {item.cbdPct > 0 && <span className="pill">CBD {item.cbdPct}%</span>}
-                {item.certFileName || item.coaAvailable
-                  ? <span className="pill pill-doc">📄 COA</span>
-                  : <span className="pill" style={{ color: '#94a3b8' }}>{isTh ? 'ไม่มี COA' : 'No COA'}</span>}
+                {item.certFileName || item.coaAvailable || item.coaStoragePath
+                  ? (
+                    <span className="pill pill-doc">
+                      📄 {item.certFileName || 'COA'}
+                      {onCoaUpload && (
+                        <button
+                          type="button"
+                          onClick={() => handleCoaClick(item.id)}
+                          disabled={uploadingId === item.id}
+                          style={{ marginLeft: 6, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#64748b', padding: 0 }}
+                          title={isTh ? 'แทนที่ไฟล์ COA' : 'Replace COA'}
+                        >
+                          {uploadingId === item.id ? '…' : '↑'}
+                        </button>
+                      )}
+                    </span>
+                  )
+                  : onCoaUpload
+                    ? (
+                      <button
+                        type="button"
+                        className="pill"
+                        style={{ cursor: 'pointer', border: '1px dashed #94a3b8', background: 'none', color: '#475569' }}
+                        onClick={() => handleCoaClick(item.id)}
+                        disabled={uploadingId === item.id}
+                      >
+                        {uploadingId === item.id
+                          ? (isTh ? '⏳ กำลังอัปโหลด…' : '⏳ Uploading…')
+                          : (isTh ? '📎 อัปโหลด COA' : '📎 Upload COA')}
+                      </button>
+                    )
+                    : <span className="pill" style={{ color: '#94a3b8' }}>{isTh ? 'ไม่มี COA' : 'No COA'}</span>
+                }
                 {item.harvestDate && (
                   <span className="pill">{isTh ? 'เก็บเกี่ยว' : 'Harvest'} {item.harvestDate}</span>
                 )}

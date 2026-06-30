@@ -19,6 +19,7 @@ interface Props {
   onBack: () => void
   onAction: (itemId: string, action: string) => void
   onSendRequest?: (req: Omit<ReviewRequest, 'id' | 'createdAt'>) => void
+  onGetCoaUrl?: (storagePath: string) => Promise<string | null>
 }
 
 const STATUS_CLASS: Record<InventoryStatus, string> = {
@@ -37,10 +38,19 @@ function CheckRow({ label, pass }: { label: string; pass: boolean }) {
   )
 }
 
-export default function DDPInventoryReview({ item, farm, onBack, onAction, onSendRequest }: Props) {
+export default function DDPInventoryReview({ item, farm, onBack, onAction, onSendRequest, onGetCoaUrl }: Props) {
   const [reqType, setReqType] = useState<RequestType>('general')
   const [reqMsg, setReqMsg] = useState('')
   const [reqSent, setReqSent] = useState(false)
+  const [coaLoading, setCoaLoading] = useState(false)
+
+  async function handleViewCoa() {
+    if (!onGetCoaUrl || !item.coaStoragePath) return
+    setCoaLoading(true)
+    const url = await onGetCoaUrl(item.coaStoragePath)
+    setCoaLoading(false)
+    if (url) window.open(url, '_blank', 'noopener,noreferrer')
+  }
 
   function handleSendRequest() {
     if (!reqMsg.trim() || !onSendRequest) return
@@ -137,10 +147,21 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
               <div className="detail-rows">
                 <div className="detail-row">
                   <span className="dl">COA / Certificate</span>
-                  <span className="dv">
-                    {item.certFileName
-                      ? <span className="doc-name">📄 {item.certFileName}</span>
+                  <span className="dv" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {item.certFileName || item.coaStoragePath
+                      ? <span className="doc-name">📄 {item.certFileName || 'COA file'}</span>
                       : <span className="text-missing">✗ Not provided</span>}
+                    {item.coaStoragePath && onGetCoaUrl && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ fontSize: 12, padding: '2px 10px' }}
+                        onClick={handleViewCoa}
+                        disabled={coaLoading}
+                      >
+                        {coaLoading ? 'Loading…' : '🔗 View PDF'}
+                      </button>
+                    )}
                   </span>
                 </div>
                 <div className="detail-row">

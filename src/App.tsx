@@ -18,6 +18,8 @@ import {
   loadInventoryFromDB,
   loadFarmerInventoryFromDB,
   loadFarmerFarmsFromDB,
+  uploadCoaFile,
+  getCoaSignedUrl,
   resetDemoData,
   isSupabaseConfigured,
   getFarmerScope,
@@ -276,6 +278,27 @@ export default function App() {
         return { farmIds: newFarmIds, itemIds: new Set([...base.itemIds, item.id]) }
       })
     }
+  }
+
+  async function handleCoaUpload(batchId: string, file: File) {
+    const item = inventory.find(i => i.id === batchId)
+    if (!item || !currentProfile) return
+    const { storagePath } = await uploadCoaFile(
+      file,
+      currentProfile.id,
+      item.farmId ?? '',
+      batchId,
+    )
+    await patchInventoryBatch(batchId, {
+      coa_file_name: file.name,
+      coa_available: true,
+      coa_storage_path: storagePath,
+    })
+    setInventory(prev => prev.map(i =>
+      i.id === batchId
+        ? { ...i, certFileName: file.name, coaAvailable: true, coaStoragePath: storagePath }
+        : i
+    ))
   }
 
   function handleSendReviewRequest(req: Omit<ReviewRequest, 'id' | 'createdAt'>) {
@@ -566,6 +589,7 @@ export default function App() {
               onEdit={handleEditStock}
               openRequestCount={reviewRequests.filter(r => r.status === 'open').length}
               onGoRequests={() => goTo('farmer-requests')}
+              onCoaUpload={isFarmerRole && isSupabaseConfigured ? handleCoaUpload : undefined}
             />
           )}
 
@@ -670,6 +694,7 @@ export default function App() {
                 handleInventoryAction(itemId, action)
               }}
               onSendRequest={handleSendReviewRequest}
+              onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
             />
           )}
 
@@ -677,6 +702,7 @@ export default function App() {
             <DDPMasterInventory
               inventory={inventory}
               farms={farms}
+              onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
             />
           )}
 

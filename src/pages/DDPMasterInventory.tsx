@@ -1,13 +1,24 @@
+import { useState } from 'react'
 import type { FarmProfile, InventoryItem } from '../types'
 
 interface Props {
   inventory: InventoryItem[]
   farms: FarmProfile[]
+  onGetCoaUrl?: (storagePath: string) => Promise<string | null>
 }
 
-export default function DDPMasterInventory({ inventory, farms }: Props) {
+export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl }: Props) {
   const approved = inventory.filter(i => i.status === 'Approved')
   const totalKg = approved.reduce((s, i) => s + i.quantityKg, 0)
+  const [coaLoadingId, setCoaLoadingId] = useState<string | null>(null)
+
+  async function handleViewCoa(item: InventoryItem) {
+    if (!onGetCoaUrl || !item.coaStoragePath) return
+    setCoaLoadingId(item.id)
+    const url = await onGetCoaUrl(item.coaStoragePath)
+    setCoaLoadingId(null)
+    if (url) window.open(url, '_blank', 'noopener,noreferrer')
+  }
 
   function getFarm(item: InventoryItem): FarmProfile | undefined {
     if (item.farmId) return farms.find(f => f.id === item.farmId)
@@ -88,8 +99,23 @@ export default function DDPMasterInventory({ inventory, farms }: Props) {
                     <td className="td-num">{item.moisturePct > 0 ? `${item.moisturePct}%` : '—'}</td>
                     <td><span className="grade-chip">Grade {item.qualityGrade}</span></td>
                     <td>
-                      {item.certFileName
-                        ? <span className="coa-present">✓ {item.certFileName}</span>
+                      {item.certFileName || item.coaStoragePath
+                        ? (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="coa-present">✓ {item.certFileName || 'COA'}</span>
+                            {item.coaStoragePath && onGetCoaUrl && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                style={{ fontSize: 11, padding: '1px 8px' }}
+                                onClick={() => handleViewCoa(item)}
+                                disabled={coaLoadingId === item.id}
+                              >
+                                {coaLoadingId === item.id ? '…' : 'View'}
+                              </button>
+                            )}
+                          </span>
+                        )
                         : <span className="coa-missing">✗</span>}
                     </td>
                     <td>
