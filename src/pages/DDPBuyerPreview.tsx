@@ -90,7 +90,19 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
 
   function handleOpenPhoto() {
     const url = item.photoUrls?.[0] ?? item.photoUrl
-    if (url) window.open(url, '_blank', 'noopener,noreferrer')
+    if (!url) return
+    if (url.startsWith('data:')) {
+      // Browsers block window.open() with data: URLs — convert to blob URL first
+      fetch(url)
+        .then(r => r.blob())
+        .then(blob => {
+          const blobUrl = URL.createObjectURL(blob)
+          window.open(blobUrl, '_blank', 'noopener,noreferrer')
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+        })
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
   }
 
   function buildSummaryText() {
