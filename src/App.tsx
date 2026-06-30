@@ -33,6 +33,7 @@ import {
 } from './services/auth'
 import { T } from './translations'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark } from './types'
+import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
@@ -59,30 +60,6 @@ const FARMER_PAGES: Page[] = [
 ]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer']
 const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
-
-// ─── Logo SVGs ───────────────────────────────────────────────────────────────
-
-function DDPMonogram({ size = 32 }: { size?: number }) {
-  return (
-    <svg width={size} height={Math.round(size * 0.75)} viewBox="0 0 40 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="0.75" y="0.75" width="38.5" height="28.5" rx="3.25" fill="#07130F" stroke="#C6A15B" strokeWidth="1.5"/>
-      <text x="20" y="20.5" textAnchor="middle" fill="#C6A15B" fontSize="12" fontWeight="800"
-        fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" letterSpacing="2.5">DDP</text>
-    </svg>
-  )
-}
-
-function DDPWordmark() {
-  return (
-    <svg width="160" height="28" viewBox="0 0 160 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="0.75" y="0.75" width="40" height="26.5" rx="3" fill="#07130F" stroke="#C6A15B" strokeWidth="1.5"/>
-      <text x="20.5" y="18.5" textAnchor="middle" fill="#C6A15B" fontSize="11" fontWeight="800"
-        fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" letterSpacing="2">DDP</text>
-      <text x="52" y="19" fill="#F4EFE4" fontSize="13" fontWeight="600"
-        fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" letterSpacing="0.3">Brokerage</text>
-    </svg>
-  )
-}
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -142,6 +119,7 @@ export default function App() {
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>(() => loadReviewRequests())
   const [marketBenchmarks, setMarketBenchmarks] = useState<MarketBenchmark[]>(() => loadMarketBenchmarks())
   const [stockEditItemId, setStockEditItemId] = useState<string | null>(null)
+  const [buyerPackItemId, setBuyerPackItemId] = useState<string | null>(null)
 
   // ── Persist to localStorage on every state change ────────────────────────
   useEffect(() => { persistInventory(inventory) }, [inventory])
@@ -420,6 +398,11 @@ export default function App() {
     goTo('ddp-inventory-review')
   }
 
+  function handleOpenBuyerPack(itemId: string) {
+    setBuyerPackItemId(itemId)
+    goTo('ddp-buyer')
+  }
+
   function handleReset() {
     resetDemoData()
     setInventory(loadInventory())
@@ -432,6 +415,7 @@ export default function App() {
   const reviewItemFarm = reviewItem
     ? farms.find(f => f.id === reviewItem.farmId || f.tradingName === reviewItem.farmName)
     : undefined
+  const buyerPackItem = inventory.find(i => i.id === buyerPackItemId) ?? null
 
   // ── Auth loading screen ───────────────────────────────────────────────────
   if (authLoading) {
@@ -453,7 +437,7 @@ export default function App() {
       {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
         <nav className="navbar">
           <div className="navbar-brand" onClick={() => goTo('landing')} style={{ cursor: 'pointer' }}>
-            <DDPMonogram size={36} />
+            <DDPMonogramLogo height={44} />
             <span className="brand-name">Brokerage</span>
           </div>
 
@@ -525,8 +509,9 @@ export default function App() {
       {page === 'landing' && (
         <div>
           <div className="landing-nav">
-            <div className="navbar-brand">
-              <DDPWordmark />
+            <div className="navbar-brand" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <DDPMonogramLogo height={30} />
+              <span className="brand-name">Brokerage</span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {isDemo && <LangToggle lang={lang} setLang={setLang} />}
@@ -726,12 +711,17 @@ export default function App() {
               inventory={inventory}
               farms={farms}
               onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
+              onBuyerPack={handleOpenBuyerPack}
             />
           )}
 
           {page === 'ddp-buyer' && isAdminRole && (
             <DDPBuyerPreview
               inventory={inventory}
+              farms={farms}
+              selectedItem={buyerPackItem}
+              onBack={() => { setBuyerPackItemId(null); goTo('ddp-master') }}
+              onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
             />
           )}
         </main>

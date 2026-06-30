@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import type { FarmProfile, InventoryItem } from '../types'
+import { DDPVerifiedSupplySeal } from '../components/logos'
 
 interface Props {
   inventory: InventoryItem[]
   farms: FarmProfile[]
   onGetCoaUrl?: (storagePath: string) => Promise<string | null>
+  onBuyerPack?: (itemId: string) => void
 }
 
-export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl }: Props) {
+export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBuyerPack }: Props) {
   const approved = inventory.filter(i => i.status === 'Approved')
   const totalKg = approved.reduce((s, i) => s + i.quantityKg, 0)
   const [coaLoadingId, setCoaLoadingId] = useState<string | null>(null)
@@ -40,9 +42,14 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl }: Pr
     <div className="page-wrap ddp-wrap">
       <div className="master-banner">
         <div className="master-banner-inner">
-          <div className="master-eyebrow">DDP VERIFIED INVENTORY</div>
-          <h1 className="master-title">Master Inventory</h1>
-          <p className="master-desc">Verified and approved stock — controlled by DDP and ready for qualified buyer engagement.</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div className="master-eyebrow">DDP VERIFIED INVENTORY</div>
+              <h1 className="master-title">Master Inventory</h1>
+              <p className="master-desc">Verified and approved stock — controlled by DDP and ready for qualified buyer engagement.</p>
+            </div>
+            <DDPVerifiedSupplySeal size={68} />
+          </div>
           <div className="master-stats-row">
             <div className="master-stat">
               <div className="master-stat-val">{approved.length}</div>
@@ -84,6 +91,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl }: Pr
                   <th>COA</th>
                   <th>Farm Tier</th>
                   <th>Status</th>
+                  {onBuyerPack && <th>Export</th>}
                 </tr>
               </thead>
               <tbody>
@@ -124,6 +132,18 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl }: Pr
                       </span>
                     </td>
                     <td><span className="badge badge-approved">Approved</span></td>
+                    {onBuyerPack && (
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ fontSize: 11, padding: '2px 10px', whiteSpace: 'nowrap' }}
+                          onClick={() => onBuyerPack(item.id)}
+                        >
+                          📋 Buyer Pack
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

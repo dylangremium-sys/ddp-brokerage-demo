@@ -2512,3 +2512,86 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 .quick-action-requests .quick-action-label { color: var(--warning); }
 .quick-action-requests .quick-action-desc { color: var(--warning); opacity: 0.8; }
 .quick-action-requests .quick-action-icon { font-size: 24px; }
+
+/* ─── Buyer Pack ──────────────────────────────────────────────────────────── */
+.buyer-pack-wrap { max-width: 780px; }
+.buyer-pack-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.buyer-pack-card { padding: 28px 30px; }
+.buyer-pack-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.buyer-pack-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.buyer-pack-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px;
+  line-height: 1.2;
+}
+.buyer-pack-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.buyer-pack-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px 32px;
+  margin-bottom: 4px;
+}
+@media (max-width: 580px) { .buyer-pack-grid { grid-template-columns: 1fr; } }
+.buyer-pack-field {
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+  align-items: baseline;
+}
+.buyer-pack-field:last-child { border-bottom: none; }
+.buyer-pack-lbl {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: 130px;
+}
+
+/* Elements hidden on screen but shown when printing */
+.print-only { display: none; }
+
+/* ─── Print styles ────────────────────────────────────────────────────────── */
+@media print {
+  .no-print,
+  .app-nav,
+  .demo-utility-strip,
+  .lang-toggle,
+  .user-badge,
+  .buyer-pack-actions { display: none !important; }
+
+  .print-only { display: inline !important; }
+
+  body { background: #fff !important; }
+  .buyer-pack-card { box-shadow: none !important; border: 1px solid #ddd !important; }
+  .buyer-pack-wrap { max-width: 100% !important; padding: 0 !important; }
+  .page-wrap { padding: 12px !important; }
+}
