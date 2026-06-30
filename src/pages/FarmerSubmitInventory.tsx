@@ -36,7 +36,7 @@ function initForm(item: InventoryItem | null | undefined) {
     coaAvailable: false, labName: '', reportNumber: '', sampleName: '', testDate: '',
     heavyMetalsStatus: '' as TestStatus, pesticidesStatus: '' as TestStatus,
     microbialStatus: '' as TestStatus, mycotoxinsStatus: '' as TestStatus,
-    coaFileName: '', farmerNotes: '',
+    coaFileName: '', farmerNotes: '', waterActivity: '', storageConditions: '',
   }
   return {
     farmId: item.farmId ?? '',
@@ -64,6 +64,8 @@ function initForm(item: InventoryItem | null | undefined) {
     mycotoxinsStatus: (item.mycotoxinsStatus ?? '') as TestStatus,
     coaFileName: item.certFileName ?? '',
     farmerNotes: item.farmerNotes ?? item.notes ?? '',
+    waterActivity: item.waterActivity ?? '',
+    storageConditions: item.storageConditions ?? '',
   }
 }
 
@@ -161,12 +163,12 @@ export default function FarmerSubmitInventory({
       thcPct: parseFloat(form.totalThc) || 0,
       cbdPct: parseFloat(form.totalCbd) || 0,
       moisturePct: parseFloat(form.moisturePct) || 0,
-      waterActivity: '',
+      waterActivity: form.waterActivity,
       qualityGrade: 'A',
       pricePerKg,
       certFileName: form.coaFileName,
       photoUrl: photos[0] ?? '',
-      storageConditions: '',
+      storageConditions: form.storageConditions,
       notes: form.farmerNotes,
       status: 'Pending Review',
       submittedAt: initialItem?.submittedAt ?? new Date().toISOString(),
@@ -439,6 +441,16 @@ export default function FarmerSubmitInventory({
                 min="0" max="30" step="0.01"
               />
             </Field>
+            <Field label={isTh ? 'วอเตอร์แอคทิวิตี้ (aw)' : 'Water activity (aw)'} hint={isTh ? 'เช่น 0.55' : 'e.g. 0.55'}>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.waterActivity}
+                onChange={e => set('waterActivity', e.target.value)}
+                placeholder="0.00"
+                min="0" max="1" step="0.01"
+              />
+            </Field>
           </div>
         </div>
 
@@ -575,7 +587,14 @@ export default function FarmerSubmitInventory({
 
         <div className="card form-card" style={{ marginBottom: 24 }}>
           <SectionTitle>{isTh ? 'บันทึก' : 'Notes'}</SectionTitle>
-          <label className="field">
+          <Field label={isTh ? 'สภาพการเก็บรักษา' : 'Storage conditions'} hint={isTh ? 'เช่น ห้องเย็น 15°C ความชื้นต่ำกว่า 60%' : 'e.g. Cool room 15°C, humidity below 60%'}>
+            <input
+              value={form.storageConditions}
+              onChange={e => set('storageConditions', e.target.value)}
+              placeholder={isTh ? 'เช่น ห้องเย็น 15°C ความชื้นต่ำกว่า 60%' : 'e.g. Cool room 15°C, RH < 60%, dark storage'}
+            />
+          </Field>
+          <label className="field" style={{ marginTop: 14 }}>
             <span>{isTh ? 'บันทึกของเกษตรกร (มองเห็นเฉพาะ DDP)' : 'Farmer notes (visible to DDP only)'}</span>
             <textarea
               rows={3}
