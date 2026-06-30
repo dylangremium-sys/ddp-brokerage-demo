@@ -238,6 +238,12 @@ export default function App() {
       window.scrollTo(0, 0)
       return
     }
+    // In Supabase mode: redirect admins away from farmer-only pages
+    if (!isDemo && isAdminRole && FARMER_PAGES.includes(p) && !PUBLIC_PAGES.includes(p)) {
+      setPage('ddp-overview')
+      window.scrollTo(0, 0)
+      return
+    }
     setPage(p)
     window.scrollTo(0, 0)
   }
@@ -427,7 +433,7 @@ export default function App() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const showFarmerNav = isSignedIn
+  const showFarmerNav = isDemo || isFarmerRole
   const showDDPNav = isAdminRole
 
   return (
