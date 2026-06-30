@@ -90,8 +90,8 @@ export default function FarmerStatus({ lang, inventory, farms }: Props) {
                   <div className="status-product">{farm.tradingName || farm.legalBusinessName}</div>
                   <div className="status-meta">{farm.province}{farm.district ? `, ${farm.district}` : ''}</div>
                 </div>
-                <span className={`badge ${FARM_STATUS_CLASS[farm.status]}`}>
-                  {FARM_STATUS_LABEL[farm.status][lang]}
+                <span className={`badge ${FARM_STATUS_CLASS[farm.status] ?? 'badge-gray'}`}>
+                  {FARM_STATUS_LABEL[farm.status]?.[lang] ?? farm.status}
                 </span>
               </div>
               <div className="status-pills">
@@ -139,8 +139,8 @@ export default function FarmerStatus({ lang, inventory, farms }: Props) {
                       {item.farmName} · {item.location} · {t.batchPrefix} {item.batchNumber || '—'}
                     </div>
                   </div>
-                  <span className={`badge ${STATUS_CLASS[item.status]}`}>
-                    {INVENTORY_STATUS_LABEL[item.status][lang]}
+                  <span className={`badge ${STATUS_CLASS[item.status] ?? 'badge-pending'}`}>
+                    {INVENTORY_STATUS_LABEL[item.status]?.[lang] ?? item.status}
                   </span>
                 </div>
                 <div className="status-pills">
