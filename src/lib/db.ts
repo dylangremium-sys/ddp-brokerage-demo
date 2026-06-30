@@ -750,6 +750,38 @@ function farmRowToProfile(row: Record<string, any>): FarmProfile {
 // Demo mode (no env vars) continues to use localStorage via lsLoad* above.
 // ---------------------------------------------------------------------------
 
+// Fetch farm profiles for a specific set of farm IDs. Used by farmer pages
+// so the Add Stock form has a real selectedFarm and writes farm_id correctly.
+export async function loadFarmerFarmsFromDB(farmIds: Set<string>): Promise<FarmProfile[]> {
+  if (!supabase) return []
+  const idList = [...farmIds].filter(isValidUUID)
+  if (idList.length === 0) return []
+  const { data, error } = await supabase
+    .from('farms')
+    .select(`
+      *,
+      farm_profiles (
+        business_info,
+        ownership,
+        licenses,
+        facility,
+        cultivation,
+        strains,
+        lab_testing,
+        export_readiness_data,
+        monthly_reporting
+      )
+    `)
+    .in('id', idList)
+    .order('created_at', { ascending: false })
+  if (error) {
+    console.warn('loadFarmerFarmsFromDB:', error.message)
+    return []
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((row: any) => farmRowToProfile(row))
+}
+
 // Fetch all farms + their profile JSON blobs. Used by admin pages.
 export async function loadFarmsFromDB(): Promise<FarmProfile[]> {
   if (!supabase) return []

@@ -17,6 +17,7 @@ import {
   loadFarmsFromDB,
   loadInventoryFromDB,
   loadFarmerInventoryFromDB,
+  loadFarmerFarmsFromDB,
   resetDemoData,
   isSupabaseConfigured,
   getFarmerScope,
@@ -141,11 +142,20 @@ export default function App() {
     getFarmerScope(currentProfile.id)
       .then(async scope => {
         setFarmerScope(scope)
-        const [dbInventory, dbRequests] = await Promise.all([
+        const [dbFarms, dbInventory, dbRequests] = await Promise.all([
+          loadFarmerFarmsFromDB(scope.farmIds),
           loadFarmerInventoryFromDB(scope.itemIds, scope.farmIds),
           loadReviewRequestsFromDB(currentProfile.id, scope.farmIds, scope.itemIds),
         ])
-        // Merge Supabase rows into state, replacing any matching IDs from localStorage.
+        // Populate farmer's farm profiles so Add Stock can resolve selectedFarm
+        // and write farm_id correctly on every new batch submission.
+        if (dbFarms.length > 0) {
+          setFarms(prev => {
+            const sbIds = new Set(dbFarms.map(f => f.id))
+            return [...dbFarms, ...prev.filter(f => !sbIds.has(f.id))]
+          })
+        }
+        // Merge Supabase inventory rows into state, replacing any matching IDs.
         if (dbInventory.length > 0) {
           setInventory(prev => {
             const sbIds = new Set(dbInventory.map(i => i.id))
