@@ -437,7 +437,7 @@ export default function App() {
       {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
         <nav className="navbar">
           <div className="navbar-brand" onClick={() => goTo('landing')} style={{ cursor: 'pointer' }}>
-            <DDPMonogramLogo height={44} />
+            <DDPMonogramLogo height={48} />
             <span className="brand-name">Brokerage</span>
           </div>
 
@@ -509,8 +509,8 @@ export default function App() {
       {page === 'landing' && (
         <div>
           <div className="landing-nav">
-            <div className="navbar-brand" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <DDPMonogramLogo height={30} />
+            <div className="navbar-brand">
+              <DDPMonogramLogo height={34} />
               <span className="brand-name">Brokerage</span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

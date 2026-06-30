@@ -56,7 +56,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 .navbar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
 }
 
 .brand-logo {
@@ -66,9 +66,10 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .brand-name {
   color: var(--text-muted);
-  font-weight: 500;
-  font-size: 14px;
-  letter-spacing: 0.3px;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
 }
 
 .navbar-links {
