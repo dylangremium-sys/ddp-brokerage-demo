@@ -43,14 +43,14 @@ export default function DDPBuyerPreview({ inventory }: Props) {
       </div>
 
       <div className="disclaimer-box">
-        <span className="disclaimer-icon" style={{ fontSize: 16, fontWeight: 700, color: '#92400e' }}>NOTE</span>
+        <span className="disclaimer-icon" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '1px', color: 'var(--warning)' }}>NOTE</span>
         <div>
           <strong>PROTOTYPE MODULE</strong> — Buyer access, pricing, messaging, and transactions are not active in this demonstration. All commercial buyer visibility is managed exclusively by DDP operations.
         </div>
       </div>
 
       {approved.length === 0 ? (
-        <div className="card" style={{ padding: 32, textAlign: 'center', color: '#64748b' }}>
+        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
           No approved inventory available for preview. Approve inventory batches from the Inventory Dashboard to enable this section.
         </div>
       ) : (
@@ -75,7 +75,7 @@ export default function DDPBuyerPreview({ inventory }: Props) {
 
           <div className="section-label-row" style={{ marginTop: 32 }}>
             <div className="section-label">Verified Available Inventory</div>
-            <span style={{ fontSize: 12, color: '#64748b' }}>Visible only to qualified buyers approved by DDP</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Visible only to qualified buyers approved by DDP</span>
           </div>
 
           <div className="card table-card">

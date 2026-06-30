@@ -436,7 +436,7 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
             </ul>
           </div>
 
-          <p style={{ fontSize: 14, color: '#64748b', marginTop: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 16 }}>
             {t.wizardStep9Hint}
           </p>
 

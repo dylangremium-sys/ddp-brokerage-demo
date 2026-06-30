@@ -62,8 +62,8 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl }: Pr
 
       {approved.length === 0 ? (
         <div className="card" style={{ padding: 48, textAlign: 'center' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>No Verified Inventory Yet</div>
-          <p style={{ color: '#64748b', fontSize: 14 }}>Approved inventory batches from the Inventory Review screen will appear here once approved.</p>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>No Verified Inventory Yet</div>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>Approved inventory batches from the Inventory Review screen will appear here once approved.</p>
         </div>
       ) : (
         <div className="card table-card">

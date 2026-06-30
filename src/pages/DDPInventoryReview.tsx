@@ -87,7 +87,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
         <div>
           <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — BATCH REVIEW</div>
           <h1 className="page-title">{item.productName}</h1>
-          <p className="page-desc" style={{ color: '#93c5fd' }}>{item.farmName} · {item.location}</p>
+          <p className="page-desc">{item.farmName} · {item.location}</p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
           <button className="btn btn-ghost" onClick={onBack}>← Back to Inventory Dashboard</button>
@@ -178,7 +178,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
             {item.photoUrl && (
               <div className="detail-block">
                 <div className="detail-block-title">Photo Preview</div>
-                <img src={item.photoUrl} alt="Product" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <img src={item.photoUrl} alt="Product" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
               </div>
             )}
 
@@ -202,7 +202,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                 <div className="detail-block-title">Photos ({item.photoUrls!.length})</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {item.photoUrls!.map((url, i) => (
-                    <img key={i} src={url} alt="" style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0' }} />
+                    <img key={i} src={url} alt="" style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
                   ))}
                 </div>
               </div>
@@ -215,7 +215,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
               </div>
               {item.farmerNotes && <p className="notes-body" style={{ marginTop: 12 }}><strong>Farmer:</strong> {item.farmerNotes}</p>}
               {item.notes && !item.farmerNotes && <p className="notes-body" style={{ marginTop: 12 }}>{item.notes}</p>}
-              {item.ownerNotes && <p className="notes-body" style={{ marginTop: 12, background: '#f0f4ff' }}><strong>Internal:</strong> {item.ownerNotes}</p>}
+              {item.ownerNotes && <p className="notes-body" style={{ marginTop: 12, borderLeft: '2px solid var(--gold)' }}><strong>Internal:</strong> {item.ownerNotes}</p>}
             </div>
 
             <div className="detail-block" style={{ borderBottom: 'none' }}>
@@ -235,40 +235,40 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
             <button className="btn btn-missing" onClick={() => onAction(item.id, 'missing')}>Request Missing Document</button>
             <button className="btn btn-reject" onClick={() => onAction(item.id, 'reject')}>Reject Batch</button>
 
-            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16, marginTop: 4 }}>
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 4 }}>
               <div className="decision-title" style={{ fontSize: 13 }}>Client Visibility</div>
-              <p style={{ fontSize: 12.5, color: '#64748b', margin: '4px 0 12px' }}>
+              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '4px 0 12px' }}>
                 Only approved batches should be made buyer-visible.
               </p>
               {item.clientVisible ? (
                 <button
                   className="btn"
-                  style={{ background: '#dbeafe', color: '#1e40af', border: '1px solid #93c5fd', width: '100%', fontSize: 13, marginBottom: 0 }}
+                  style={{ background: 'rgba(46,125,91,0.12)', color: 'var(--success)', border: '1px solid rgba(79,163,122,0.35)', width: '100%', fontSize: 13, marginBottom: 0 }}
                   onClick={() => onAction(item.id, 'client-hide')}
                 >
-                  👁 Hide from Buyers
+                  Hide from Buyers
                 </button>
               ) : (
                 <button
                   className="btn"
-                  style={{ background: '#f0fdf4', color: '#14532d', border: '1px solid #86efac', width: '100%', fontSize: 13 }}
+                  style={{ background: 'rgba(198,161,91,0.1)', color: 'var(--gold)', border: '1px solid rgba(198,161,91,0.35)', width: '100%', fontSize: 13 }}
                   onClick={() => onAction(item.id, 'client-visible')}
                   disabled={item.status !== 'Approved'}
                   title={item.status !== 'Approved' ? 'Approve the batch first' : ''}
                 >
-                  👁 Mark Buyer-Visible
+                  Mark Buyer-Visible
                 </button>
               )}
             </div>
 
             {onSendRequest && (
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16, marginTop: 4 }}>
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 4 }}>
                 <div className="decision-title" style={{ fontSize: 13 }}>Send Request to Farmer</div>
                 {reqSent && (
                   <div className="alert-success-sm" style={{ marginBottom: 10 }}>✓ Request sent</div>
                 )}
                 <div className="field" style={{ marginBottom: 10 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Request type</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Request type</span>
                   <select
                     value={reqType}
                     onChange={e => setReqType(e.target.value as RequestType)}
@@ -280,7 +280,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                   </select>
                 </div>
                 <div className="field" style={{ marginBottom: 10 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Message to farmer</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Message to farmer</span>
                   <textarea
                     rows={3}
                     value={reqMsg}
@@ -291,7 +291,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                 </div>
                 <button
                   className="btn"
-                  style={{ background: '#f8fafc', color: '#0369a1', border: '1px solid #bae6fd', width: '100%', fontSize: 13 }}
+                  style={{ background: 'var(--bg-elevated)', color: 'var(--gold)', border: '1px solid rgba(198,161,91,0.3)', width: '100%', fontSize: 13 }}
                   onClick={handleSendRequest}
                   disabled={!reqMsg.trim()}
                 >

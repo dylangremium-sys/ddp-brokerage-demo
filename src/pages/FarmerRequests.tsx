@@ -68,7 +68,7 @@ export default function FarmerRequests({
               {isTh ? 'รอดำเนินการ' : 'Open'}
               {' '}
               <span style={{
-                background: '#dc2626', color: '#fff',
+                background: 'var(--error)', color: 'var(--text)',
                 borderRadius: '50%', fontSize: 10, fontWeight: 700,
                 padding: '1px 6px', marginLeft: 4,
               }}>{open.length}</span>
@@ -82,13 +82,18 @@ export default function FarmerRequests({
               return (
                 <div key={req.id} className="card request-card">
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-                    <div className="request-icon">📋</div>
+                    <div className="request-icon">
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="var(--warning)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="14" height="12" rx="1.5"/>
+                        <path d="M3 12h4l2.5 3L12 12h5"/>
+                      </svg>
+                    </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a', marginBottom: 2 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text)', marginBottom: 2 }}>
                         {isTh ? typeInfo.th : typeInfo.en}
                       </div>
                       {(req.productName || item?.productName) && (
-                        <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>
+                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 4 }}>
                           {item?.productName ?? req.productName}
                           {(req.farmName || item?.farmName) && ` · ${req.farmName ?? item?.farmName}`}
                         </div>
@@ -103,7 +108,7 @@ export default function FarmerRequests({
                     {req.message}
                   </div>
 
-                  <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8, marginBottom: 14 }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, marginBottom: 14 }}>
                     {new Date(req.createdAt).toLocaleDateString(
                       isTh ? 'th-TH' : 'en-GB',
                       { day: 'numeric', month: 'short', year: 'numeric' }
@@ -117,7 +122,7 @@ export default function FarmerRequests({
                         style={{ fontSize: 13, padding: '7px 14px' }}
                         onClick={() => onEditStock(item.id)}
                       >
-                        ✏ {isTh ? 'แก้ไขสต็อก' : 'Edit Stock'}
+                        {isTh ? 'แก้ไขสต็อก' : 'Edit Stock'}
                       </button>
                     )}
                     <button
@@ -147,12 +152,12 @@ export default function FarmerRequests({
               return (
                 <div key={req.id} className="card" style={{ padding: '14px 18px', opacity: 0.65 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ color: '#1a5c38', fontSize: 16 }}>✓</span>
+                    <span style={{ color: 'var(--success)', fontSize: 14, fontWeight: 700 }}>✓</span>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, color: '#374151' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
                         {isTh ? typeInfo.th : typeInfo.en}
                         {(req.productName || item?.productName) && (
-                          <span style={{ color: '#94a3b8', fontWeight: 400 }}>
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
                             {' · '}{item?.productName ?? req.productName}
                           </span>
                         )}
@@ -171,7 +176,7 @@ export default function FarmerRequests({
 
       {requests.length === 0 && (
         <div style={{ textAlign: 'center', marginTop: 32 }}>
-          <p style={{ color: '#94a3b8', fontSize: 14 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
             {isTh
               ? 'คำขอจาก DDP จะปรากฏที่นี่เมื่อ DDP ตรวจสอบสต็อกของคุณ'
               : 'DDP requests will appear here once they review your stock.'}

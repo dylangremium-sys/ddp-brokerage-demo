@@ -109,11 +109,11 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
 
       {(riskAlertFarms.length > 0 || riskAlertInventory.length > 0) && (
         <div style={{ marginTop: 24 }}>
-          <div className="section-label-row"><div className="section-label" style={{ color: '#dc2626' }}>Action Required</div></div>
+          <div className="section-label-row"><div className="section-label" style={{ color: 'var(--error)' }}>Action Required</div></div>
           <div className="card" style={{ padding: '16px 20px' }}>
             {riskAlertFarms.map(f => (
               <div key={f.id} className="risk-alert-row">
-                <span className="risk-icon" style={{ fontSize: 14, color: '#64748b' }}>Farm</span>
+                <span className="risk-icon" style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Farm</span>
                 <span className="risk-name">{f.tradingName}</span>
                 <span className={`badge ${FARM_STATUS_CLASS[f.status]}`}>{f.status}</span>
                 <button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Open Review</button>
@@ -121,7 +121,7 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
             ))}
             {riskAlertInventory.map(i => (
               <div key={i.id} className="risk-alert-row">
-                <span className="risk-icon" style={{ fontSize: 14, color: '#64748b' }}>Batch</span>
+                <span className="risk-icon" style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Batch</span>
                 <span className="risk-name">{i.productName} — {i.farmName}</span>
                 <span className="badge badge-missing">Missing Document</span>
                 <button className="btn btn-review" onClick={() => onReviewItem(i.id)}>Open Review</button>

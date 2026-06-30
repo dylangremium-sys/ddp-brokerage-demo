@@ -130,19 +130,19 @@ export default function FarmerMyStock({
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '14px 18px', marginBottom: 16, width: '100%', textAlign: 'left',
-            border: '1.5px solid #fcd34d', background: '#fffbeb', cursor: 'pointer',
-            borderRadius: 10,
+            border: '1.5px solid rgba(184,120,46,0.4)', background: 'rgba(184,120,46,0.06)', cursor: 'pointer',
+            borderRadius: 8,
           }}
         >
           <div>
-            <div style={{ fontWeight: 700, color: '#92400e', fontSize: 14 }}>
-              ⚠ {openRequestCount} {isTh ? 'คำขอจาก DDP ที่รอดำเนินการ' : 'open requests from DDP'}
+            <div style={{ fontWeight: 700, color: 'var(--warning)', fontSize: 13.5 }}>
+              {openRequestCount} {isTh ? 'คำขอจาก DDP ที่รอดำเนินการ' : 'open requests from DDP'}
             </div>
-            <div style={{ fontSize: 13, color: '#a16207', marginTop: 2 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--warning)', marginTop: 2, opacity: 0.75 }}>
               {isTh ? 'แตะที่นี่เพื่อดูและดำเนินการ' : 'Tap to view and take action'}
             </div>
           </div>
-          <span style={{ color: '#d97706', fontSize: 18 }}>→</span>
+          <span style={{ color: 'var(--warning)', fontSize: 16 }}>→</span>
         </button>
       )}
 
@@ -171,7 +171,12 @@ export default function FarmerMyStock({
 
       {filtered.length === 0 && (
         <div className="empty-state-hero">
-          <div className="empty-state-icon">📦</div>
+          <div className="empty-state-icon">
+            <svg width="44" height="44" viewBox="0 0 20 20" fill="none" stroke="var(--border)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 11.5V18M4 8v6.5l6 3.5 6-3.5V8L10 4.5 4 8z"/>
+              <path d="M16 8l-6 3.5L4 8"/>
+            </svg>
+          </div>
           <p className="empty-state-message">
             {inventory.length === 0
               ? (isTh ? 'ยังไม่มีสต็อก กดปุ่มด้านบนเพื่อเพิ่มสต็อกแรก' : 'No stock yet. Add your first listing above.')
@@ -229,7 +234,7 @@ export default function FarmerMyStock({
                           type="button"
                           onClick={() => handleCoaClick(item.id)}
                           disabled={uploadingId === item.id}
-                          style={{ marginLeft: 6, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#64748b', padding: 0 }}
+                          style={{ marginLeft: 6, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', padding: 0 }}
                           title={isTh ? 'แทนที่ไฟล์ COA' : 'Replace COA'}
                         >
                           {uploadingId === item.id ? '…' : '↑'}
@@ -242,7 +247,7 @@ export default function FarmerMyStock({
                       <button
                         type="button"
                         className="pill"
-                        style={{ cursor: 'pointer', border: '1px dashed #94a3b8', background: 'none', color: '#475569' }}
+                        style={{ cursor: 'pointer', border: '1px dashed var(--text-muted)', background: 'none', color: 'var(--text-muted)' }}
                         onClick={() => handleCoaClick(item.id)}
                         disabled={uploadingId === item.id}
                       >
@@ -251,7 +256,7 @@ export default function FarmerMyStock({
                           : (isTh ? '📎 อัปโหลด COA' : '📎 Upload COA')}
                       </button>
                     )
-                    : <span className="pill" style={{ color: '#94a3b8' }}>{isTh ? 'ไม่มี COA' : 'No COA'}</span>
+                    : <span className="pill" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>{isTh ? 'ไม่มี COA' : 'No COA'}</span>
                 }
                 {item.harvestDate && (
                   <span className="pill">{isTh ? 'เก็บเกี่ยว' : 'Harvest'} {item.harvestDate}</span>
@@ -275,10 +280,10 @@ export default function FarmerMyStock({
                   onClick={() => onEdit(item.id)}
                   style={{ fontSize: 13 }}
                 >
-                  {isDraft ? (isTh ? '📝 ต่อเนื่อง' : '📝 Continue') : (isTh ? '✏ แก้ไข' : '✏ Edit')}
+                  {isDraft ? (isTh ? 'ต่อเนื่อง' : 'Continue') : (isTh ? 'แก้ไข' : 'Edit')}
                 </button>
                 {item.submittedAt && (
-                  <span style={{ fontSize: 12, color: '#94a3b8', alignSelf: 'center' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', alignSelf: 'center' }}>
                     {isTh ? 'อัปเดต' : 'Updated'} {new Date(item.submittedAt).toLocaleDateString()}
                   </span>
                 )}

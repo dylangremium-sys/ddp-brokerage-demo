@@ -100,7 +100,7 @@ export default function DDPFarmReview({ farm, onBack, onAction }: Props) {
         <div>
           <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — FARM REVIEW</div>
           <h1 className="page-title">{farm.tradingName || farm.legalBusinessName}</h1>
-          <p className="page-desc" style={{ color: '#93c5fd' }}>{farm.province}{farm.district ? `, ${farm.district}` : ''} · {farm.farmType}</p>
+          <p className="page-desc">{farm.province}{farm.district ? `, ${farm.district}` : ''} · {farm.farmType}</p>
         </div>
         <button className="btn btn-ghost" onClick={onBack}>← Back to Farm Profiles</button>
       </div>

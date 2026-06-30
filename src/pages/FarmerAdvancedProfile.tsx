@@ -83,8 +83,8 @@ export default function FarmerAdvancedProfile({ lang, farms, onSave, onBack }: P
 
       {noFarm ? (
         <div className="card form-card" style={{ textAlign: 'center', padding: 40 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🌿</div>
-          <p style={{ color: '#475569', marginBottom: 20 }}>
+          <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>◈</div>
+          <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
             {lang === 'th'
               ? 'กรุณาสร้างโปรไฟล์ฟาร์มขั้นพื้นฐานก่อน แล้วกลับมาเพิ่มรายละเอียดขั้นสูง'
               : 'Complete your basic farm profile first, then return here to add advanced details.'}

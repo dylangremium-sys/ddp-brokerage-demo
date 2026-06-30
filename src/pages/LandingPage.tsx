@@ -14,10 +14,14 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
       <div className="landing-hero">
         <div className="landing-hero-inner">
           <div className="landing-logo-row">
-            <span className="brand-logo" style={{ fontSize: 18, padding: '6px 14px' }}>DDP</span>
-            <span style={{ color: '#94a3b8', fontSize: 13 }}>Supply Intelligence</span>
+            <svg width="52" height="38" viewBox="0 0 40 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="0.75" y="0.75" width="38.5" height="28.5" rx="3.25" fill="#07130F" stroke="#C6A15B" strokeWidth="1.5"/>
+              <text x="20" y="20.5" textAnchor="middle" fill="#C6A15B" fontSize="12" fontWeight="800"
+                fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" letterSpacing="2.5">DDP</text>
+            </svg>
+            <span style={{ color: '#C6A15B', fontSize: 12, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase' }}>Verified Supply</span>
           </div>
-          <h1 className="landing-headline">DDP Supply Intelligence</h1>
+          <h1 className="landing-headline">DDP Brokerage</h1>
           <div className="landing-tagline">{t.landingTagline}</div>
           <p className="landing-hero-text">{t.landingHero1}</p>
           <p className="landing-hero-text">{t.landingHero2}</p>

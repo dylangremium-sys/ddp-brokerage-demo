@@ -213,10 +213,10 @@ export default function FarmerSubmitInventory({
     return (
       <div className="page-wrap auth-page" style={{ textAlign: 'center', paddingTop: 40 }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-        <h2 style={{ color: '#1e293b', marginBottom: 8 }}>
+        <h2 style={{ color: 'var(--text)', marginBottom: 8 }}>
           {isTh ? 'ส่งเรียบร้อยแล้ว' : 'Submitted for Review'}
         </h2>
-        <p style={{ color: '#64748b', marginBottom: 28, maxWidth: 360, margin: '0 auto 28px', lineHeight: 1.6 }}>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 28, maxWidth: 360, margin: '0 auto 28px', lineHeight: 1.6 }}>
           {isTh
             ? 'DDP จะตรวจสอบสินค้าของคุณ ดูสถานะได้ที่สต็อกของฉัน'
             : 'DDP will review your stock. Track status in My Stock.'}
@@ -279,13 +279,13 @@ export default function FarmerSubmitInventory({
             </Field>
           )}
           {farms.length <= 1 && selectedFarm && (
-            <div style={{ fontSize: 14, color: '#475569', padding: '8px 0' }}>
-              🌿 {selectedFarm.tradingName || selectedFarm.primaryContact}
+            <div style={{ fontSize: 13.5, color: 'var(--text-muted)', padding: '8px 0' }}>
+              {selectedFarm.tradingName || selectedFarm.primaryContact}
               {selectedFarm.province ? ` · ${selectedFarm.province}` : ''}
             </div>
           )}
           {farms.length === 0 && (
-            <div style={{ fontSize: 13, color: '#dc2626' }}>
+            <div style={{ fontSize: 13, color: 'var(--error)' }}>
               {isTh ? 'กรุณาสร้างโปรไฟล์ฟาร์มก่อน' : 'Create a farm profile first to link this stock.'}
             </div>
           )}
@@ -364,7 +364,7 @@ export default function FarmerSubmitInventory({
                 onChange={e => set('askingPrice', e.target.value)}
                 placeholder="0"
                 min="0"
-                style={priceAboveRange ? { borderColor: '#f59e0b' } : priceBelowRange ? { borderColor: '#94a3b8' } : {}}
+                style={priceAboveRange ? { borderColor: 'var(--warning)' } : priceBelowRange ? { borderColor: 'var(--border)' } : {}}
               />
             </Field>
             <Field label={isTh ? 'ปริมาณขั้นต่ำ (กก.)' : 'Min. order (kg)'}>
@@ -559,14 +559,14 @@ export default function FarmerSubmitInventory({
                 <img
                   src={url}
                   alt=""
-                  style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid #e2e8f0' }}
+                  style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }}
                 />
                 <button
                   type="button"
                   onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
                   style={{
                     position: 'absolute', top: -6, right: -6,
-                    background: '#dc2626', color: '#fff',
+                    background: 'var(--error)', color: 'var(--text)',
                     border: 'none', borderRadius: '50%',
                     width: 20, height: 20, cursor: 'pointer',
                     fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
