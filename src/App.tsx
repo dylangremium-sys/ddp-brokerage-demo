@@ -31,7 +31,6 @@ import {
   subscribeToAuthChanges,
   type UserProfile,
 } from './services/auth'
-import { T } from './translations'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark } from './types'
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/LandingPage'
@@ -52,6 +51,11 @@ import DDPInventoryDashboard from './pages/DDPInventoryDashboard'
 import DDPInventoryReview from './pages/DDPInventoryReview'
 import DDPMasterInventory from './pages/DDPMasterInventory'
 import DDPBuyerPreview from './pages/DDPBuyerPreview'
+import LangToggle from './components/shared/LangToggle'
+import UserBadge from './components/shared/UserBadge'
+import AccessDenied from './components/shared/AccessDenied'
+import FarmerNav from './components/farmer/FarmerNav'
+import AdminNav from './components/admin/AdminNav'
 
 const FARMER_PAGES: Page[] = [
   'landing', 'login', 'signup', 'farmer-register',
@@ -60,42 +64,6 @@ const FARMER_PAGES: Page[] = [
 ]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer']
 const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
-
-// ─── Sub-components ──────────────────────────────────────────────────────────
-
-function LangToggle({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void }) {
-  return (
-    <div className="lang-toggle">
-      <button className={`lang-btn${lang === 'en' ? ' lang-active' : ''}`} onClick={() => setLang('en')}>EN</button>
-      <button className={`lang-btn${lang === 'th' ? ' lang-active' : ''}`} onClick={() => setLang('th')}>ไทย</button>
-    </div>
-  )
-}
-
-function UserBadge({ profile, onSignOut }: { profile: UserProfile; onSignOut: () => void }) {
-  return (
-    <div className="user-badge">
-      <span className={`user-role-chip ${profile.role === 'ddp_admin' ? 'chip-admin' : 'chip-farmer'}`}>
-        {profile.role === 'ddp_admin' ? 'Admin' : 'Farmer'}
-      </span>
-      <span className="user-email">{profile.displayName || profile.email}</span>
-      <button className="nav-reset-btn" onClick={onSignOut}>Sign out</button>
-    </div>
-  )
-}
-
-function AccessDenied({ onBack }: { onBack: () => void }) {
-  return (
-    <div className="page-wrap" style={{ textAlign: 'center', paddingTop: 80 }}>
-      <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-      <h2 style={{ color: '#1e293b', marginBottom: 12 }}>Access Denied</h2>
-      <p style={{ color: '#64748b', marginBottom: 28, maxWidth: 380, margin: '0 auto 28px' }}>
-        You don't have permission to view this page. DDP Admin access is required.
-      </p>
-      <button className="btn btn-primary" onClick={onBack}>Go back</button>
-    </div>
-  )
-}
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -448,55 +416,11 @@ export default function App() {
           </div>
 
           <div className="navbar-links">
-            {showFarmerNav && (
-              <div className="nav-group">
-                <span className="nav-group-label">{T[lang].farmerGroupLabel}</span>
-                <button
-                  className={`nav-btn${page === 'farmer-dashboard' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('farmer-dashboard')}
-                >{T[lang].navDashboard}</button>
-                <button
-                  className={`nav-btn${page === 'farmer-onboarding' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('farmer-onboarding')}
-                >{T[lang].buildProfile}</button>
-                <button
-                  className={`nav-btn${page === 'farmer-my-stock' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('farmer-my-stock')}
-                >{T[lang].myStock}</button>
-                <button
-                  className={`nav-btn${page === 'farmer-status' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('farmer-status')}
-                >{T[lang].myActivity}</button>
-              </div>
-            )}
+            {showFarmerNav && <FarmerNav lang={lang} page={page} goTo={goTo} />}
 
             {showFarmerNav && showDDPNav && <div className="nav-sep" />}
 
-            {showDDPNav && (
-              <div className="nav-group">
-                <span className="nav-group-label ddp-label">DDP</span>
-                <button
-                  className={`nav-btn ddp-nav-btn${page === 'ddp-overview' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('ddp-overview')}
-                >Overview</button>
-                <button
-                  className={`nav-btn ddp-nav-btn${page === 'ddp-farms' || page === 'ddp-farm-review' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('ddp-farms')}
-                >Farm Profiles</button>
-                <button
-                  className={`nav-btn ddp-nav-btn${page === 'ddp-inventory' || page === 'ddp-inventory-review' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('ddp-inventory')}
-                >Inventory Review</button>
-                <button
-                  className={`nav-btn ddp-nav-btn${page === 'ddp-master' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('ddp-master')}
-                >Master Inventory</button>
-                <button
-                  className={`nav-btn ddp-nav-btn${page === 'ddp-buyer' ? ' nav-active' : ''}`}
-                  onClick={() => goTo('ddp-buyer')}
-                >Buyer Preview</button>
-              </div>
-            )}
+            {showDDPNav && <AdminNav page={page} goTo={goTo} />}
           </div>
 
           <div className="navbar-right">
