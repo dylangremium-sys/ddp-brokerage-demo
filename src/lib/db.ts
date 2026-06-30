@@ -7,7 +7,7 @@ import {
   resetDemo as lsResetDemo,
   SEED_BENCHMARKS,
 } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark } from '../types'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, PartnerTier } from '../types'
 
 export { isSupabaseConfigured }
 
@@ -522,6 +522,308 @@ export async function loadMarketBenchmarksFromDB(): Promise<MarketBenchmark[]> {
 
 export function getApprovedInventory(): InventoryItem[] {
   return lsLoadInventory().filter(i => i.status === 'Approved')
+}
+
+// ---------------------------------------------------------------------------
+// Row mappers — convert raw Supabase rows to frontend shapes.
+// ---------------------------------------------------------------------------
+
+function toInventoryStatus(raw: unknown): InventoryStatus {
+  const valid: InventoryStatus[] = ['Pending Review', 'Approved', 'Missing Document', 'Rejected']
+  return valid.includes(raw as InventoryStatus) ? (raw as InventoryStatus) : 'Pending Review'
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function batchRowToInventoryItem(row: Record<string, any>, farmName?: string): InventoryItem {
+  const farm = row.farms as { farm_name?: string; trading_name?: string } | null
+  const name = farmName ?? farm?.trading_name ?? farm?.farm_name ?? ''
+  return {
+    id: row.id as string,
+    farmerName: name,
+    farmName: name,
+    farmId: row.farm_id as string ?? undefined,
+    location: row.location as string ?? '',
+    productName: row.product_name as string ?? '',
+    quantityKg: (row.quantity_kg as number) ?? 0,
+    harvestDate: row.harvest_date as string ?? '',
+    cureDate: row.cure_date as string ?? '',
+    batchNumber: row.batch_number as string ?? '',
+    thcPct: (row.thc_percent as number) ?? 0,
+    cbdPct: (row.cbd_percent as number) ?? 0,
+    moisturePct: (row.moisture_percent as number) ?? 0,
+    waterActivity: String(row.water_activity ?? ''),
+    qualityGrade: row.quality_grade as string ?? '',
+    pricePerKg: (row.price_per_kg as number) ?? 0,
+    certFileName: row.coa_file_name as string ?? '',
+    photoUrl: row.photo_url as string ?? '',
+    storageConditions: row.storage_conditions as string ?? '',
+    notes: row.notes as string ?? '',
+    status: toInventoryStatus(row.status),
+    submittedAt: row.created_at as string ?? new Date().toISOString(),
+    stockStatus: row.stock_status as StockStatus ?? undefined,
+    productType: row.product_type as ProductType ?? undefined,
+    unit: (row.unit as 'g' | 'kg') ?? 'kg',
+    minimumOrderKg: row.minimum_order_kg as number ?? undefined,
+    totalTerpenesPct: row.total_terpenes_pct as number ?? undefined,
+    expiryDate: row.expiry_date as string ?? undefined,
+    clientVisible: (row.client_visible as boolean) ?? false,
+    coaAvailable: (row.coa_available as boolean) ?? false,
+    labName: row.lab_name as string ?? undefined,
+    reportNumber: row.report_number as string ?? undefined,
+    sampleName: row.sample_name as string ?? undefined,
+    testDate: row.test_date as string ?? undefined,
+    heavyMetalsStatus: row.heavy_metals_status as TestStatus ?? undefined,
+    pesticidesStatus: row.pesticides_status as TestStatus ?? undefined,
+    microbialStatus: row.microbial_status as TestStatus ?? undefined,
+    mycotoxinsStatus: row.mycotoxins_status as TestStatus ?? undefined,
+    photoUrls: (row.photo_urls as string[]) ?? undefined,
+    farmerNotes: row.farmer_notes as string ?? undefined,
+    ownerNotes: row.owner_notes as string ?? undefined,
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function farmRowToProfile(row: Record<string, any>): FarmProfile {
+  // farm_profiles is returned as an array by the PostgREST join; take the first.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fp = (Array.isArray(row.farm_profiles) ? row.farm_profiles[0] : row.farm_profiles) as Record<string, any> ?? {}
+  const bi  = (fp.business_info          as Record<string, string>) ?? {}
+  const own = (fp.ownership              as Record<string, string>) ?? {}
+  const lic = (fp.licenses               as Record<string, string>) ?? {}
+  const fac = (fp.facility               as Record<string, string>) ?? {}
+  const cul = (fp.cultivation            as Record<string, string>) ?? {}
+  const str = (fp.strains                as Record<string, string>) ?? {}
+  const lab = (fp.lab_testing            as Record<string, string>) ?? {}
+  const exp = (fp.export_readiness_data  as Record<string, string>) ?? {}
+  const mon = (fp.monthly_reporting      as Record<string, string>) ?? {}
+
+  return {
+    id: row.id as string,
+    status: (row.status as FarmStatus) ?? 'Submitted to DDP',
+    submittedAt: (row.created_at as string) ?? new Date().toISOString(),
+    completionPct: (row.completion_percentage as number) ?? 0,
+    partnerTier: ((row.partner_tier as string) ?? 'Pending') as PartnerTier,
+    legalBusinessName: bi.legalBusinessName ?? (row.legal_business_name as string) ?? '',
+    tradingName: bi.tradingName ?? (row.trading_name as string) ?? (row.farm_name as string) ?? '',
+    registrationNumber: bi.registrationNumber ?? '',
+    taxNumber: bi.taxNumber ?? '',
+    dateEstablished: bi.dateEstablished ?? '',
+    province: bi.province ?? (row.province as string) ?? '',
+    district: bi.district ?? (row.district as string) ?? '',
+    gpsCoordinates: bi.gpsCoordinates ?? (row.gps_coordinates as string) ?? '',
+    registeredAddress: bi.registeredAddress ?? '',
+    operationalAddress: bi.operationalAddress ?? '',
+    website: bi.website ?? '',
+    facebook: bi.facebook ?? '',
+    lineId: bi.lineId ?? '',
+    whatsapp: bi.whatsapp ?? '',
+    email: bi.email ?? (row.email as string) ?? '',
+    primaryContact: bi.primaryContact ?? (row.primary_contact as string) ?? '',
+    position: bi.position ?? '',
+    mobileNumber: bi.mobileNumber ?? (row.mobile_number as string) ?? '',
+    secondaryContact: bi.secondaryContact ?? '',
+    emergencyContact: bi.emergencyContact ?? '',
+    ownerName: own.ownerName ?? '',
+    nationality: own.nationality ?? '',
+    ownershipPct: own.ownershipPct ?? '',
+    additionalShareholders: own.additionalShareholders ?? '',
+    ownershipBreakdown: own.ownershipBreakdown ?? '',
+    ultimateBeneficialOwners: own.ultimateBeneficialOwners ?? '',
+    parentCompany: own.parentCompany ?? '',
+    subsidiaries: own.subsidiaries ?? '',
+    foreignInvestors: own.foreignInvestors ?? '',
+    strategicPartners: own.strategicPartners ?? '',
+    exportPartners: own.exportPartners ?? '',
+    cultivationLicence: lic.cultivationLicence ?? '',
+    processingLicence: lic.processingLicence ?? '',
+    manufacturingLicence: lic.manufacturingLicence ?? '',
+    researchLicence: lic.researchLicence ?? '',
+    medicalCannabisLicence: lic.medicalCannabisLicence ?? '',
+    exportLicence: lic.exportLicence ?? '',
+    importLicence: lic.importLicence ?? '',
+    gmpCert: lic.gmpCert ?? '',
+    gapCert: lic.gapCert ?? '',
+    gacpCert: lic.gacpCert ?? '',
+    organicCert: lic.organicCert ?? '',
+    isoCerts: lic.isoCerts ?? '',
+    otherCerts: lic.otherCerts ?? '',
+    documentExpiry: lic.documentExpiry ?? '',
+    farmType: fac.farmType ?? '',
+    totalLandArea: fac.totalLandArea ?? '',
+    cultivationArea: fac.cultivationArea ?? '',
+    floweringArea: fac.floweringArea ?? '',
+    nurseryArea: fac.nurseryArea ?? '',
+    motherPlantArea: fac.motherPlantArea ?? '',
+    processingArea: fac.processingArea ?? '',
+    dryingArea: fac.dryingArea ?? '',
+    storageArea: fac.storageArea ?? '',
+    securityArea: fac.securityArea ?? '',
+    expansionCapacity: fac.expansionCapacity ?? '',
+    facilityPhotoUrl: fac.facilityPhotoUrl ?? '',
+    activeRooms: cul.activeRooms ?? '',
+    harvestsPerYear: cul.harvestsPerYear ?? '',
+    avgYieldPerHarvest: cul.avgYieldPerHarvest ?? '',
+    annualCapacity: cul.annualCapacity ?? '',
+    currentInventory: cul.currentInventory ?? '',
+    projectedInventory: cul.projectedInventory ?? '',
+    productionUtilisation: cul.productionUtilisation ?? '',
+    maxProductionCapacity: cul.maxProductionCapacity ?? '',
+    cultivationMethod: cul.cultivationMethod ?? '',
+    fertiliserProgram: cul.fertiliserProgram ?? '',
+    nutrientBrands: cul.nutrientBrands ?? '',
+    pestManagement: cul.pestManagement ?? '',
+    ipmProcedures: cul.ipmProcedures ?? '',
+    waterSource: cul.waterSource ?? '',
+    waterTestingFrequency: cul.waterTestingFrequency ?? '',
+    waterAnalysisFile: cul.waterAnalysisFile ?? '',
+    mainStrains: str.mainStrains ?? '',
+    breeder: str.breeder ?? '',
+    geneticLineage: str.geneticLineage ?? '',
+    typicalThc: str.typicalThc ?? '',
+    typicalCbd: str.typicalCbd ?? '',
+    dominantTerpenes: str.dominantTerpenes ?? '',
+    harvestCycle: str.harvestCycle ?? '',
+    yieldPerSqm: str.yieldPerSqm ?? '',
+    qtyAvailableNow: str.qtyAvailableNow ?? '',
+    qtyAvailable30: str.qtyAvailable30 ?? '',
+    qtyAvailable60: str.qtyAvailable60 ?? '',
+    qtyAvailable90: str.qtyAvailable90 ?? '',
+    qtyAvailable180: str.qtyAvailable180 ?? '',
+    productPhotoUrl: str.productPhotoUrl ?? '',
+    coaFiles: lab.coaFiles ?? '',
+    heavyMetalsTested: lab.heavyMetalsTested ?? '',
+    pesticidesTested: lab.pesticidesTested ?? '',
+    mycotoxinsTested: lab.mycotoxinsTested ?? '',
+    microbiologyTested: lab.microbiologyTested ?? '',
+    waterActivityTested: lab.waterActivityTested ?? '',
+    batchTrackingSystem: lab.batchTrackingSystem ?? '',
+    seedToSaleSystem: lab.seedToSaleSystem ?? '',
+    sopsAvailable: lab.sopsAvailable ?? '',
+    recallProcedure: lab.recallProcedure ?? '',
+    wasteDisposal: lab.wasteDisposal ?? '',
+    employeeTraining: lab.employeeTraining ?? '',
+    securityProtocols: lab.securityProtocols ?? '',
+    visitorProcedures: lab.visitorProcedures ?? '',
+    incidentReporting: lab.incidentReporting ?? '',
+    capaProgram: lab.capaProgram ?? '',
+    internalAudits: lab.internalAudits ?? '',
+    externalAudits: lab.externalAudits ?? '',
+    suppliedEU: exp.suppliedEU ?? '',
+    suppliedPharma: exp.suppliedPharma ?? '',
+    suppliedGMPProcessors: exp.suppliedGMPProcessors ?? '',
+    existingSopLibrary: exp.existingSopLibrary ?? '',
+    existingQA: exp.existingQA ?? '',
+    existingQC: exp.existingQC ?? '',
+    qualifiedPerson: exp.qualifiedPerson ?? '',
+    stabilityProgram: exp.stabilityProgram ?? '',
+    changeControl: exp.changeControl ?? '',
+    deviationProcedures: exp.deviationProcedures ?? '',
+    riskManagement: exp.riskManagement ?? '',
+    documentationControl: exp.documentationControl ?? '',
+    countriesExported: exp.countriesExported ?? '',
+    freightProviders: exp.freightProviders ?? '',
+    customsBrokers: exp.customsBrokers ?? '',
+    incotermsFamiliarity: exp.incotermsFamiliarity ?? '',
+    packagingStandards: exp.packagingStandards ?? '',
+    labellingStandards: exp.labellingStandards ?? '',
+    shippingCapacity: exp.shippingCapacity ?? '',
+    interestedExclusive: exp.interestedExclusive ?? '',
+    interestedNonExclusive: exp.interestedNonExclusive ?? '',
+    interestedEUGMP: exp.interestedEUGMP ?? '',
+    interestedLongTerm: exp.interestedLongTerm ?? '',
+    interestedJV: exp.interestedJV ?? '',
+    monthlyReportingAgreement: mon.monthlyReportingAgreement ?? '',
+    scoreCompliance: 0,
+    scoreDocumentation: 0,
+    scoreFacilityQuality: 0,
+    scoreProductQuality: 0,
+    scoreExportReadiness: 0,
+    scoreReliability: 0,
+    scoreCommunication: 0,
+    scoreScalability: 0,
+    scoreGMPReadiness: 0,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Supabase read functions — used in Supabase-configured mode only.
+// Demo mode (no env vars) continues to use localStorage via lsLoad* above.
+// ---------------------------------------------------------------------------
+
+// Fetch all farms + their profile JSON blobs. Used by admin pages.
+export async function loadFarmsFromDB(): Promise<FarmProfile[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('farms')
+    .select(`
+      *,
+      farm_profiles (
+        business_info,
+        ownership,
+        licenses,
+        facility,
+        cultivation,
+        strains,
+        lab_testing,
+        export_readiness_data,
+        monthly_reporting
+      )
+    `)
+    .order('created_at', { ascending: false })
+  if (error) {
+    console.warn('loadFarmsFromDB:', error.message)
+    return []
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((row: any) => farmRowToProfile(row))
+}
+
+// Fetch all inventory batches. Used by admin pages.
+export async function loadInventoryFromDB(): Promise<InventoryItem[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('inventory_batches')
+    .select('*, farms(farm_name, trading_name)')
+    .order('created_at', { ascending: false })
+  if (error) {
+    console.warn('loadInventoryFromDB:', error.message)
+    return []
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((row: any) => batchRowToInventoryItem(row))
+}
+
+// Fetch the actual inventory rows for a specific farmer's scope.
+// Called after getFarmerScope() resolves so the farmer sees their real batches.
+export async function loadFarmerInventoryFromDB(
+  itemIds: Set<string>,
+  farmIds: Set<string>,
+): Promise<InventoryItem[]> {
+  if (!supabase) return []
+  const idList   = [...itemIds].filter(isValidUUID)
+  const farmList = [...farmIds].filter(isValidUUID)
+  if (idList.length === 0 && farmList.length === 0) return []
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase as any)
+    .from('inventory_batches')
+    .select('*, farms(farm_name, trading_name)')
+
+  if (idList.length > 0 && farmList.length > 0) {
+    query = query.or(`id.in.(${idList.join(',')}),farm_id.in.(${farmList.join(',')})`)
+  } else if (idList.length > 0) {
+    query = query.in('id', idList)
+  } else {
+    query = query.in('farm_id', farmList)
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false })
+  if (error) {
+    console.warn('loadFarmerInventoryFromDB:', error.message)
+    return []
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((row: any) => batchRowToInventoryItem(row))
 }
 
 // ---------------------------------------------------------------------------

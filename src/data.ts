@@ -4,6 +4,12 @@ export const INV_KEY = 'ddp_inventory'
 export const FARM_KEY = 'ddp_farms'
 export const FARM_DRAFT_KEY = 'ddp_farm_draft'
 
+// In Supabase mode, skip localStorage auto-seeding — data comes from the DB.
+const sbConfigured = !!(
+  (import.meta.env as Record<string, string | undefined>).VITE_SUPABASE_URL &&
+  (import.meta.env as Record<string, string | undefined>).VITE_SUPABASE_ANON_KEY
+)
+
 export function calcCompletion(f: Partial<FarmProfile>): number {
   const fields = [
     f.legalBusinessName, f.tradingName, f.province, f.district, f.email,
@@ -549,6 +555,8 @@ export const SEED_INVENTORY: InventoryItem[] = [
 ]
 
 export function loadInventory(): InventoryItem[] {
+  // Supabase mode: return empty so the DB fetch populates state, not stale seed data.
+  if (sbConfigured) return []
   const raw = localStorage.getItem(INV_KEY)
   if (raw) return JSON.parse(raw)
   localStorage.setItem(INV_KEY, JSON.stringify(SEED_INVENTORY))
@@ -560,6 +568,8 @@ export function saveInventory(items: InventoryItem[]) {
 }
 
 export function loadFarms(): FarmProfile[] {
+  // Supabase mode: return empty so the DB fetch populates state, not stale seed data.
+  if (sbConfigured) return []
   const raw = localStorage.getItem(FARM_KEY)
   if (raw) return JSON.parse(raw)
   localStorage.setItem(FARM_KEY, JSON.stringify(SEED_FARMS))

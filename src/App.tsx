@@ -14,6 +14,9 @@ import {
   resolveReviewRequest,
   loadReviewRequestsFromDB,
   loadMarketBenchmarksFromDB,
+  loadFarmsFromDB,
+  loadInventoryFromDB,
+  loadFarmerInventoryFromDB,
   resetDemoData,
   isSupabaseConfigured,
   getFarmerScope,
@@ -132,22 +135,40 @@ export default function App() {
     return unsubscribe
   }, [])
 
-  // ── Load farmer scope when a farmer signs in ─────────────────────────────
+  // ── Load farmer scope + actual inventory rows when a farmer signs in ────────
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'farmer') return
     getFarmerScope(currentProfile.id)
-      .then(scope => {
+      .then(async scope => {
         setFarmerScope(scope)
-        // Once we have scope, load review requests from Supabase to override localStorage
-        return loadReviewRequestsFromDB(currentProfile.id, scope.farmIds, scope.itemIds)
-      })
-      .then(dbRequests => {
+        const [dbInventory, dbRequests] = await Promise.all([
+          loadFarmerInventoryFromDB(scope.itemIds, scope.farmIds),
+          loadReviewRequestsFromDB(currentProfile.id, scope.farmIds, scope.itemIds),
+        ])
+        // Merge Supabase rows into state, replacing any matching IDs from localStorage.
+        if (dbInventory.length > 0) {
+          setInventory(prev => {
+            const sbIds = new Set(dbInventory.map(i => i.id))
+            return [...dbInventory, ...prev.filter(i => !sbIds.has(i.id))]
+          })
+        }
         if (dbRequests.length > 0) setReviewRequests(dbRequests)
       })
       .catch(err => {
-        console.warn('getFarmerScope / loadReviewRequestsFromDB failed:', err)
+        console.warn('getFarmerScope / data load failed:', err)
         setFarmerScope({ farmIds: new Set(), itemIds: new Set() })
       })
+  }, [currentProfile])
+
+  // ── Load all farms + inventory from Supabase when admin signs in ────────────
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
+    Promise.all([loadFarmsFromDB(), loadInventoryFromDB()])
+      .then(([dbFarms, dbInventory]) => {
+        setFarms(dbFarms)
+        setInventory(dbInventory)
+      })
+      .catch(err => console.warn('Admin Supabase data load failed:', err))
   }, [currentProfile])
 
   // ── Load market benchmarks from Supabase once on mount ───────────────────
