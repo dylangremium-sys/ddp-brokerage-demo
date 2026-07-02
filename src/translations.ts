@@ -405,6 +405,16 @@ export const T = {
     advProfileSectionCompliance: 'Compliance Checklist',
     advProfileSectionExport: 'Export & GMP Readiness',
     advProfileSectionPartnership: 'Partnership Preferences',
+    // Login
+    loginHeading: 'Sign in',
+    loginDesc: 'Access your DDP Brokerage account.',
+    loginEmailLabel: 'Email address',
+    loginPasswordLabel: 'Password',
+    loginBtn: 'Sign in',
+    loginLoading: 'Signing in…',
+    loginSwitchPrompt: 'New farmer?',
+    loginSwitchLink: 'Create a farmer account',
+    loginAdminNote: 'DDP Admin accounts are created by the DDP team — see README for setup instructions.',
   },
   th: {
     // Nav
@@ -792,6 +802,16 @@ export const T = {
     advProfileSectionCompliance: 'รายการตรวจสอบการปฏิบัติตามกฎ',
     advProfileSectionExport: 'ความพร้อมส่งออกและ GMP',
     advProfileSectionPartnership: 'ความสนใจเป็นพันธมิตร',
+    // Login
+    loginHeading: 'เข้าสู่ระบบ',
+    loginDesc: 'เข้าถึงบัญชี DDP Brokerage ของคุณ',
+    loginEmailLabel: 'อีเมล',
+    loginPasswordLabel: 'รหัสผ่าน',
+    loginBtn: 'เข้าสู่ระบบ',
+    loginLoading: 'กำลังเข้าสู่ระบบ…',
+    loginSwitchPrompt: 'เกษตรกรรายใหม่?',
+    loginSwitchLink: 'สร้างบัญชีเกษตรกร',
+    loginAdminNote: 'บัญชี DDP Admin สร้างโดยทีม DDP — ดูรายละเอียดในเอกสาร README',
   },
 }
 

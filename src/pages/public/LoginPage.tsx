@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { signIn } from '../../services/auth'
+import { T } from '../../translations'
+import type { Lang } from '../../types'
 
 interface Props {
+  lang?: Lang
   onSuccess: () => void
   onGoSignup: () => void
 }
 
-export default function LoginPage({ onSuccess, onGoSignup }: Props) {
+export default function LoginPage({ lang = 'en', onSuccess, onGoSignup }: Props) {
+  const t = T[lang]
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -30,8 +34,8 @@ export default function LoginPage({ onSuccess, onGoSignup }: Props) {
     <div className="page-wrap auth-page">
       <div className="page-header farmer-header" style={{ maxWidth: 480, margin: '0 auto 24px' }}>
         <div className="page-eyebrow">DDP Brokerage</div>
-        <h1 className="page-title">Sign in</h1>
-        <p className="page-desc">Access your DDP Brokerage account.</p>
+        <h1 className="page-title">{t.loginHeading}</h1>
+        <p className="page-desc">{t.loginDesc}</p>
       </div>
 
       <div className="card form-card auth-card">
@@ -42,7 +46,7 @@ export default function LoginPage({ onSuccess, onGoSignup }: Props) {
         )}
         <form onSubmit={handleSubmit}>
           <label className="field">
-            <span>Email address</span>
+            <span>{t.loginEmailLabel}</span>
             <input
               type="email"
               value={email}
@@ -53,7 +57,7 @@ export default function LoginPage({ onSuccess, onGoSignup }: Props) {
             />
           </label>
           <label className="field" style={{ marginTop: 14 }}>
-            <span>Password</span>
+            <span>{t.loginPasswordLabel}</span>
             <input
               type="password"
               value={password}
@@ -68,19 +72,19 @@ export default function LoginPage({ onSuccess, onGoSignup }: Props) {
             style={{ width: '100%', marginTop: 22 }}
             disabled={loading}
           >
-            {loading ? 'Signing in…' : 'Sign in'}
+            {loading ? t.loginLoading : t.loginBtn}
           </button>
         </form>
 
         <p className="auth-switch-text">
-          New farmer?{' '}
+          {t.loginSwitchPrompt}{' '}
           <button className="link-btn" onClick={onGoSignup}>
-            Create a farmer account
+            {t.loginSwitchLink}
           </button>
         </p>
 
         <div className="auth-admin-note">
-          DDP Admin accounts are created by the DDP team — see README for setup instructions.
+          {t.loginAdminNote}
         </div>
       </div>
     </div>

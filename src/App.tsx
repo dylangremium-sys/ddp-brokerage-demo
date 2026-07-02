@@ -516,6 +516,7 @@ export default function App() {
       {page === 'login' && (
         <main className="main-content">
           <LoginPage
+            lang={lang}
             onSuccess={() => goTo('landing')}
             onGoSignup={() => goTo('signup')}
           />
