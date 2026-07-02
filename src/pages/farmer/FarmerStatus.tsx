@@ -6,12 +6,16 @@ interface Props {
   inventory: InventoryItem[]
   farms: FarmProfile[]
   onCarbonExclude?: (farmId: string, newStatus: 'excluded_by_farmer' | 'withdrawn_by_farmer') => void
+  /** False when running against a configured Supabase backend without an approved
+   *  persistence migration for carbon status — the action must not imply a save. */
+  carbonPersistenceAvailable?: boolean
 }
 
-function CarbonRow({ farm, lang, onExclude }: {
+function CarbonRow({ farm, lang, onExclude, carbonPersistenceAvailable = true }: {
   farm: FarmProfile
   lang: Lang
   onExclude?: (farmId: string, newStatus: 'excluded_by_farmer' | 'withdrawn_by_farmer') => void
+  carbonPersistenceAvailable?: boolean
 }) {
   const t = T[lang]
   const cs: CarbonProgrammeStatus = farm.carbonProgrammeStatus ?? 'not_reviewed'
@@ -35,14 +39,29 @@ function CarbonRow({ farm, lang, onExclude }: {
       <button
         type="button"
         className="btn btn-ghost"
-        style={{ fontSize: 13, padding: '6px 12px' }}
-        onClick={() => onExclude?.(farm.id, isWithdraw ? 'withdrawn_by_farmer' : 'excluded_by_farmer')}
+        style={{
+          fontSize: 13,
+          padding: '6px 12px',
+          opacity: carbonPersistenceAvailable ? 1 : 0.6,
+          cursor: carbonPersistenceAvailable ? 'pointer' : 'not-allowed',
+        }}
+        disabled={!carbonPersistenceAvailable}
+        title={carbonPersistenceAvailable ? undefined : t.carbonNotConnectedNotice}
+        onClick={() => {
+          if (!carbonPersistenceAvailable) return
+          onExclude?.(farm.id, isWithdraw ? 'withdrawn_by_farmer' : 'excluded_by_farmer')
+        }}
       >
         {isWithdraw ? t.carbonWithdrawBtn : t.carbonExcludeBtn}
       </button>
       {!isWithdraw && (
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
           {t.carbonExcludeSubtext}
+        </div>
+      )}
+      {!carbonPersistenceAvailable && (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+          ⚠ {t.carbonNotConnectedNotice}
         </div>
       )}
     </div>
@@ -67,7 +86,7 @@ const FARM_STATUS_CLASS: Record<FarmStatus, string> = {
   'Rejected': 'badge-rejected',
 }
 
-export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude }: Props) {
+export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, carbonPersistenceAvailable = true }: Props) {
   const t = T[lang]
   const myFarms = [...farms].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
   const isEmpty = myFarms.length === 0 && inventory.length === 0
@@ -176,7 +195,7 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude }
                   {t.submittedLabel}: {new Date(farm.submittedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </div>
               )}
-              <CarbonRow farm={farm} lang={lang} onExclude={onCarbonExclude} />
+              <CarbonRow farm={farm} lang={lang} onExclude={onCarbonExclude} carbonPersistenceAvailable={carbonPersistenceAvailable} />
             </div>
           ))}
         </div>

@@ -624,6 +624,7 @@ export default function App() {
                   inventory={farmerInventory}
                   farms={farmerFarms}
                   onCarbonExclude={handleFarmerCarbonExclude}
+                  carbonPersistenceAvailable={isDemo}
                 />
           )}
 

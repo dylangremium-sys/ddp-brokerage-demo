@@ -300,6 +300,7 @@ export const T = {
     carbonExcludeBtn: 'Exclude my farm from carbon programmes',
     carbonExcludeSubtext: 'I do not want my farm used for carbon offset projects.',
     carbonWithdrawBtn: 'Withdraw my farm from carbon programmes',
+    carbonNotConnectedNotice: 'Not connected to production storage yet. This choice will not be saved.',
 
     // Nav — new
     navDashboard: 'My Dashboard',
@@ -675,6 +676,7 @@ export const T = {
     carbonExcludeBtn: 'ยกเว้นฟาร์มของฉันจากโครงการคาร์บอน',
     carbonExcludeSubtext: 'ฉันไม่ต้องการให้ฟาร์มของฉันถูกนำไปใช้ในโครงการชดเชยคาร์บอน',
     carbonWithdrawBtn: 'ถอนฟาร์มของฉันออกจากโครงการคาร์บอน',
+    carbonNotConnectedNotice: 'ยังไม่เชื่อมต่อกับระบบจัดเก็บข้อมูลจริง ตัวเลือกนี้จะไม่ถูกบันทึก',
 
     // Nav — new
     navDashboard: 'แดชบอร์ดของฉัน',
