@@ -23,28 +23,6 @@ const CHECKLIST: { key: string; label: string; pass: (i: InventoryItem) => boole
   { key: 'notes',   label: 'Farmer notes present',        pass: i => !!(i.farmerNotes || i.notes) },
 ]
 
-const BUYER_CARDS = [
-  {
-    flag: '🇨🇿', buyer: 'Czech Processor',
-    interest: 'Interested in Grade A Mango — requesting batch documentation and COA review.',
-    tags: ['Grade A', 'Mango', 'COA Required'],
-  },
-  {
-    flag: '🇨🇭', buyer: 'Swiss Importer',
-    interest: 'Requires verified batch documentation and certificate of analysis for all available strains.',
-    tags: ['All Strains', 'COA Required', 'Verified Batch'],
-  },
-  {
-    flag: '🇩🇪', buyer: 'German Distributor',
-    interest: 'Requesting monthly supply estimate and pricing schedule.',
-    tags: ['Supply Estimate', 'Pricing', 'Monthly Commitment'],
-  },
-  {
-    flag: '🇬🇧', buyer: 'UK Medical Buyer',
-    interest: 'Interested in export-ready batches only. Requires GMP documentation.',
-    tags: ['Export Ready', 'GMP Required', 'Medical Grade'],
-  },
-]
 
 function na(val: string | number | undefined | null, suffix = ''): string {
   if (val === undefined || val === null || val === '' || val === 0) return '—'
@@ -395,22 +373,10 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
         </div>
       ) : (
         <>
-          <div className="buyer-cards-grid">
-            {BUYER_CARDS.map((bc, i) => (
-              <div key={i} className="buyer-card">
-                <div className="buyer-card-flag">{bc.flag}</div>
-                <div className="buyer-card-body">
-                  <div className="buyer-card-name">{bc.buyer}</div>
-                  <p className="buyer-card-interest">{bc.interest}</p>
-                  <div className="buyer-card-tags">
-                    {bc.tags.map((tag, j) => <span key={j} className="buyer-tag">{tag}</span>)}
-                  </div>
-                </div>
-                <div className="buyer-card-status">
-                  <span className="badge badge-pending">Interest Received</span>
-                </div>
-              </div>
-            ))}
+          <div className="card" style={{ padding: '24px 28px', color: 'var(--text-muted)', fontSize: 14 }}>
+            <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>Buyer Interest Signals</div>
+            <p style={{ margin: 0 }}>Qualified buyer interest is managed by DDP. Buyer records will appear here when connected.</p>
+            <p style={{ margin: '8px 0 0', fontSize: 12 }}>This prototype shows where verified buyer demand signals will be displayed once real buyer records are connected.</p>
           </div>
 
           <div className="section-label-row" style={{ marginTop: 32 }}>
