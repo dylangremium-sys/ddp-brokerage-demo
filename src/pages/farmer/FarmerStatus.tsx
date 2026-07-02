@@ -1,5 +1,5 @@
-import { T, FARM_STATUS_LABEL, INVENTORY_STATUS_LABEL } from '../translations'
-import type { Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus } from '../types'
+import { T, FARM_STATUS_LABEL, INVENTORY_STATUS_LABEL } from '../../translations'
+import type { Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus } from '../../types'
 
 interface Props {
   lang: Lang

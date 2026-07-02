@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import type { Lang, InventoryItem } from '../types'
+import type { Lang, InventoryItem } from '../../types'
 
 interface Props {
   lang: Lang

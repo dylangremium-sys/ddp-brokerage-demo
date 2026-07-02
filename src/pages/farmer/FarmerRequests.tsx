@@ -1,4 +1,4 @@
-import type { Lang, ReviewRequest, InventoryItem } from '../types'
+import type { Lang, ReviewRequest, InventoryItem } from '../../types'
 
 interface Props {
   lang: Lang
