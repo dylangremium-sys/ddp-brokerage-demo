@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { saveFarmDraft } from '../data'
-import type { Lang, FarmProfile } from '../types'
+import { saveFarmDraft } from '../../data'
+import type { Lang, FarmProfile } from '../../types'
 
 const THAI_PROVINCES = [
   'Amnat Charoen', 'Ang Thong', 'Bangkok', 'Bueng Kan', 'Buri Ram',
