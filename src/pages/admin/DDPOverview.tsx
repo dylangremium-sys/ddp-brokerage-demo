@@ -1,5 +1,5 @@
-import { farmTotalScore } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus } from '../types'
+import { farmTotalScore } from '../../data'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus } from '../../types'
 
 interface Props {
   farms: FarmProfile[]

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FarmProfile, FarmStatus } from '../types'
+import type { FarmProfile, FarmStatus } from '../../types'
 
 interface Props {
   farms: FarmProfile[]
