@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { T } from '../translations'
-import { calcCompletion } from '../data'
-import type { Lang, FarmProfile } from '../types'
+import { T } from '../../translations'
+import { calcCompletion } from '../../data'
+import type { Lang, FarmProfile } from '../../types'
 
 interface Props {
   lang: Lang

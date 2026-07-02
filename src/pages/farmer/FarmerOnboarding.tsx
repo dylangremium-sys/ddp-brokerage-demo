@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { T } from '../translations'
-import { calcCompletion, loadFarmDraft, saveFarmDraft, clearFarmDraft } from '../data'
-import type { Lang, FarmProfile } from '../types'
-import type { UserProfile } from '../services/auth'
+import { T } from '../../translations'
+import { calcCompletion, loadFarmDraft, saveFarmDraft, clearFarmDraft } from '../../data'
+import type { Lang, FarmProfile } from '../../types'
+import type { UserProfile } from '../../services/auth'
 
 interface Props {
   lang: Lang
