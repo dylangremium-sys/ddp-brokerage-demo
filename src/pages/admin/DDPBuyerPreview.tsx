@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import type { FarmProfile, InventoryItem } from '../types'
-import { DDPVerifiedSupplySeal } from '../components/logos'
+import type { FarmProfile, InventoryItem } from '../../types'
+import { DDPVerifiedSupplySeal } from '../../components/logos'
 
 interface Props {
   inventory: InventoryItem[]
