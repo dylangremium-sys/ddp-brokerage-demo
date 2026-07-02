@@ -1,7 +1,7 @@
-import { T } from '../translations'
-import { calcCompletion, loadFarmDraft } from '../data'
-import type { Lang, FarmProfile } from '../types'
-import type { UserProfile } from '../services/auth'
+import { T } from '../../translations'
+import { calcCompletion, loadFarmDraft } from '../../data'
+import type { Lang, FarmProfile } from '../../types'
+import type { UserProfile } from '../../services/auth'
 
 function IconFarm() {
   return (

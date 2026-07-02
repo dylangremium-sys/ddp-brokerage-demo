@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import type {
   Lang, InventoryItem, FarmProfile, ProductType, TestStatus, MarketBenchmark, ReviewRequest
-} from '../types'
+} from '../../types'
 
 interface Props {
   lang: Lang
