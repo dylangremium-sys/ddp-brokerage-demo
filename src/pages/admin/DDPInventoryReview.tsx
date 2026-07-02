@@ -86,7 +86,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
       <div className="page-header ddp-header review-page-header">
         <div>
           <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — BATCH REVIEW</div>
-          <h1 className="page-title">{item.productName}</h1>
+          <h1 className="page-title">{item.productName || 'Unnamed batch'}</h1>
           <p className="page-desc">{item.farmName} · {item.location}</p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
@@ -119,7 +119,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
             <div className="detail-block">
               <div className="detail-block-title">Product Details</div>
               <div className="detail-rows">
-                <div className="detail-row"><span className="dl">Product</span><span className="dv">{item.productName}</span></div>
+                <div className="detail-row"><span className="dl">Product</span><span className="dv">{item.productName || 'Unnamed batch'}</span></div>
                 <div className="detail-row"><span className="dl">Farmer</span><span className="dv">{item.farmerName}</span></div>
                 <div className="detail-row"><span className="dl">Farm Name</span><span className="dv">{item.farmName}</span></div>
                 <div className="detail-row"><span className="dl">Location</span><span className="dv">{item.location}</span></div>
@@ -149,8 +149,13 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                   <span className="dl">COA / Certificate</span>
                   <span className="dv" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     {item.certFileName || item.coaStoragePath
-                      ? <span className="doc-name">📄 {item.certFileName || 'COA file'}</span>
-                      : <span className="text-missing">✗ Not provided</span>}
+                      ? (
+                        <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span className="doc-name">📄 COA attached</span>
+                          {item.certFileName && <span className="td-muted">{item.certFileName}</span>}
+                        </span>
+                      )
+                      : <span className="text-missing">✗ COA missing</span>}
                     {item.coaStoragePath && onGetCoaUrl && (
                       <button
                         type="button"
@@ -159,7 +164,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                         onClick={handleViewCoa}
                         disabled={coaLoading}
                       >
-                        {coaLoading ? 'Loading…' : '🔗 View PDF'}
+                        {coaLoading ? 'Loading…' : '🔗 View file'}
                       </button>
                     )}
                   </span>
@@ -251,7 +256,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
               ) : (
                 <button
                   className="btn"
-                  style={{ background: 'rgba(198,161,91,0.1)', color: 'var(--gold)', border: '1px solid rgba(198,161,91,0.35)', width: '100%', fontSize: 13 }}
+                  style={{ background: 'var(--bg-elevated)', color: 'var(--text)', border: '1px solid var(--border)', width: '100%', fontSize: 13 }}
                   onClick={() => onAction(item.id, 'client-visible')}
                   disabled={item.status !== 'Approved'}
                   title={item.status !== 'Approved' ? 'Approve the batch first' : ''}
@@ -268,7 +273,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                   <div className="alert-success-sm" style={{ marginBottom: 10 }}>✓ Request sent</div>
                 )}
                 <div className="field" style={{ marginBottom: 10 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Request type</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Request type</span>
                   <select
                     value={reqType}
                     onChange={e => setReqType(e.target.value as RequestType)}
@@ -280,7 +285,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                   </select>
                 </div>
                 <div className="field" style={{ marginBottom: 10 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Message to farmer</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Message to farmer</span>
                   <textarea
                     rows={3}
                     value={reqMsg}
@@ -291,7 +296,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                 </div>
                 <button
                   className="btn"
-                  style={{ background: 'var(--bg-elevated)', color: 'var(--gold)', border: '1px solid rgba(198,161,91,0.3)', width: '100%', fontSize: 13 }}
+                  style={{ background: 'var(--bg-elevated)', color: 'var(--text)', border: '1px solid var(--border)', width: '100%', fontSize: 13 }}
                   onClick={handleSendRequest}
                   disabled={!reqMsg.trim()}
                 >

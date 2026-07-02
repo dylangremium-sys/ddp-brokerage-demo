@@ -397,16 +397,18 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .btn-review {
   background: var(--bg-elevated);
-  color: var(--gold);
-  border: 1px solid rgba(198,161,91,0.25);
+  color: var(--text);
+  border: 1px solid var(--border);
   font-size: 12px;
   padding: 6px 13px;
   white-space: nowrap;
+  font-weight: 600;
 }
 
 .btn-review:hover {
   background: var(--bg-card);
-  border-color: var(--gold);
+  border-color: rgba(46,125,91,0.55);
+  color: var(--text);
 }
 
 .btn-approve {
@@ -582,9 +584,9 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
-  padding: 10px 12px;
+  padding: 12px 12px;
   text-align: left;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
@@ -592,7 +594,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .inv-table tbody tr {
   border-bottom: 1px solid var(--border);
-  transition: background 0.1s;
+  transition: background 0.15s;
 }
 
 .inv-table tbody tr:last-child {
@@ -601,12 +603,22 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .inv-table tbody tr:hover {
   background: var(--bg-elevated);
+  box-shadow: inset 3px 0 0 rgba(46,125,91,0.4);
 }
 
 .inv-table td {
-  padding: 12px 12px;
+  padding: 14px 12px;
   color: var(--text);
   vertical-align: middle;
+}
+
+.inv-table td:first-child,
+.inv-table th:first-child {
+  padding-left: 18px;
+}
+
+.inv-table .td-num {
+  text-align: right;
 }
 
 .inv-table th:last-child,
@@ -621,7 +633,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 .inv-table tbody td:last-child { background: var(--bg-card); }
 .inv-table tbody tr:hover td:last-child { background: var(--bg-elevated); }
 
-.td-bold { font-weight: 600; color: var(--text); }
+.td-bold { font-weight: 700; color: var(--text); font-size: 13.5px; }
 .td-muted { color: var(--text-muted); font-size: 12.5px; }
 .td-num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; font-weight: 500; color: var(--text); }
 .td-mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--text-muted); }
@@ -923,7 +935,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   background:
     radial-gradient(ellipse 70% 50% at 50% 60%, rgba(198,161,91,0.04) 0%, transparent 70%),
     linear-gradient(160deg, #07130F 0%, #0A1A12 45%, #102019 100%);
-  padding: 80px 32px 72px;
+  padding: 56px 32px 48px;
   text-align: center;
   color: var(--text);
   border-bottom: 1px solid var(--border);
@@ -939,7 +951,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 
 .landing-headline {
@@ -970,7 +982,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   display: flex;
   gap: 14px;
   justify-content: center;
-  margin-top: 32px;
+  margin-top: 22px;
   flex-wrap: wrap;
 }
 
@@ -1087,8 +1099,8 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   height: 34px;
   border-radius: 50%;
   background: var(--bg-elevated);
-  border: 1.5px solid var(--gold);
-  color: var(--gold);
+  border: 1.5px solid var(--border);
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: 700;
   display: flex;
@@ -1860,8 +1872,8 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   height: 46px;
   border-radius: 50%;
   background: var(--bg-elevated);
-  border: 1.5px solid var(--gold);
-  color: var(--gold);
+  border: 1.5px solid var(--border);
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: 800;
   display: flex;
@@ -1919,9 +1931,9 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 }
 
 .filter-tab.filter-active {
-  background: var(--gold);
-  color: #07130F;
-  border-color: var(--gold);
+  background: rgba(198,161,91,0.14);
+  color: var(--gold);
+  border-color: rgba(198,161,91,0.45);
   font-weight: 700;
 }
 

@@ -1,10 +1,21 @@
+import { useState } from 'react'
 import { farmTotalScore } from '../../data'
-import type { FarmProfile } from '../../types'
+import type { FarmProfile, CarbonProgrammeStatus } from '../../types'
+
+const CARBON_ADMIN_LABELS: Record<CarbonProgrammeStatus, string> = {
+  not_reviewed: 'Not reviewed',
+  admin_reviewing: 'Under DDP review',
+  eligible_internal: 'Internally eligible',
+  excluded_by_farmer: 'Excluded by farmer',
+  withdrawn_by_farmer: 'Withdrawn by farmer',
+  ineligible: 'Ineligible',
+}
 
 interface Props {
   farm: FarmProfile
   onBack: () => void
   onAction: (farmId: string, action: string) => void
+  onCarbonAction?: (farmId: string, status: CarbonProgrammeStatus) => void
 }
 
 function DetailRow({ label, value }: { label: string; value: string | React.ReactNode }) {
@@ -69,8 +80,11 @@ function tierFromScore(total: number): string {
   return 'Watchlist'
 }
 
-export default function DDPFarmReview({ farm, onBack, onAction }: Props) {
+export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction }: Props) {
   const totalScore = farmTotalScore(farm)
+  const [carbonStatus, setCarbonStatus] = useState<CarbonProgrammeStatus>(
+    farm.carbonProgrammeStatus ?? 'not_reviewed'
+  )
   const tier = tierFromScore(totalScore)
 
   const negativeFlags: string[] = []
@@ -303,6 +317,34 @@ export default function DDPFarmReview({ farm, onBack, onAction }: Props) {
               <button className="btn btn-watchlist" onClick={() => onAction(farm.id, 'watchlist')}>Flag for Watchlist</button>
               <button className="btn btn-strategic" onClick={() => onAction(farm.id, 'strategic')}>Designate as Strategic Partner</button>
               <button className="btn btn-reject" onClick={() => onAction(farm.id, 'reject')}>Reject Farm Profile</button>
+            </div>
+
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border-color)' }}>
+              <div className="decision-title" style={{ marginBottom: 6 }}>Carbon Programme</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                This status is managed by DDP. Farmers can only exclude themselves.
+              </div>
+              {(carbonStatus === 'excluded_by_farmer' || carbonStatus === 'withdrawn_by_farmer') && (
+                <div className="alert alert-warning" style={{ fontSize: 12, marginBottom: 10 }}>
+                  ⚠ Farmer has set this status. Do not override without farmer consent.
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
+                Current: <strong>{CARBON_ADMIN_LABELS[carbonStatus]}</strong>
+              </div>
+              <select
+                value={carbonStatus}
+                onChange={e => {
+                  const s = e.target.value as CarbonProgrammeStatus
+                  setCarbonStatus(s)
+                  onCarbonAction?.(farm.id, s)
+                }}
+                style={{ width: '100%', marginTop: 6 }}
+              >
+                {(Object.keys(CARBON_ADMIN_LABELS) as CarbonProgrammeStatus[]).map(v => (
+                  <option key={v} value={v}>{CARBON_ADMIN_LABELS[v]}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

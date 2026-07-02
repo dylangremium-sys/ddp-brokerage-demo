@@ -1,5 +1,14 @@
 import { useState } from 'react'
-import type { FarmProfile, FarmStatus } from '../../types'
+import type { FarmProfile, FarmStatus, CarbonProgrammeStatus } from '../../types'
+
+const CARBON_STATUS_LABEL: Record<CarbonProgrammeStatus, string> = {
+  not_reviewed: 'Not reviewed',
+  admin_reviewing: 'Under DDP review',
+  eligible_internal: 'Internally eligible',
+  excluded_by_farmer: 'Excluded by farmer',
+  withdrawn_by_farmer: 'Withdrawn by farmer',
+  ineligible: 'Ineligible',
+}
 
 interface Props {
   farms: FarmProfile[]
@@ -88,19 +97,20 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
                 <th>Export Readiness</th>
                 <th>Risk Level</th>
                 <th>Partner Tier</th>
+                <th>Carbon</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={8} className="empty-table-cell">No farm profiles match this filter.</td></tr>
+                <tr><td colSpan={9} className="empty-table-cell">No farm profiles match this filter.</td></tr>
               ) : filtered.map(farm => {
                 const risk = riskLevel(farm)
                 const exp = exportReadiness(farm)
                 return (
                   <tr key={farm.id}>
-                    <td className="td-bold">{farm.tradingName || farm.legalBusinessName}</td>
-                    <td>{farm.province}</td>
+                    <td className="td-bold">{farm.tradingName || farm.legalBusinessName || 'Unnamed farm profile'}</td>
+                    <td className="td-muted">{farm.province || '—'}</td>
                     <td>
                       <div className="completion-cell">
                         <span className="completion-pct-text">{farm.completionPct}%</span>
@@ -122,6 +132,11 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
                     <td>
                       <span className={`farm-tier-badge tier-${farm.partnerTier.toLowerCase().replace(/ /g, '-')}`}>
                         {farm.partnerTier}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="text-muted" style={{ fontSize: 12 }}>
+                        {CARBON_STATUS_LABEL[farm.carbonProgrammeStatus ?? 'not_reviewed']}
                       </span>
                     </td>
                     <td>

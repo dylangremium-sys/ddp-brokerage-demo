@@ -31,7 +31,7 @@ import {
   subscribeToAuthChanges,
   type UserProfile,
 } from './services/auth'
-import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark } from './types'
+import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus } from './types'
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
 import LoginPage from './pages/public/LoginPage'
@@ -347,6 +347,20 @@ export default function App() {
     goTo('ddp-farms')
   }
 
+  function handleFarmerCarbonExclude(farmId: string, newStatus: 'excluded_by_farmer' | 'withdrawn_by_farmer') {
+    setFarms(prev => prev.map(f => f.id === farmId ? { ...f, carbonProgrammeStatus: newStatus } : f))
+    if (isSupabaseConfigured) {
+      console.warn('Carbon exclusion: Production persistence requires approved SQL/RLS migration. Local state updated only.')
+    }
+  }
+
+  function handleAdminCarbonAction(farmId: string, newStatus: CarbonProgrammeStatus) {
+    setFarms(prev => prev.map(f => f.id === farmId ? { ...f, carbonProgrammeStatus: newStatus } : f))
+    if (isSupabaseConfigured) {
+      console.warn('Carbon programme status: Production persistence requires approved SQL/RLS migration. Local state updated only.')
+    }
+  }
+
   function handleInventoryAction(itemId: string, action: string) {
     const statusMap: Record<string, InventoryStatus> = {
       'approve': 'Approved',
@@ -582,6 +596,7 @@ export default function App() {
                   lang={lang}
                   inventory={farmerInventory}
                   farms={farmerFarms}
+                  onCarbonExclude={handleFarmerCarbonExclude}
                 />
           )}
 
@@ -611,6 +626,7 @@ export default function App() {
               farm={reviewFarm}
               onBack={() => goTo('ddp-farms')}
               onAction={handleFarmAction}
+              onCarbonAction={handleAdminCarbonAction}
             />
           )}
 

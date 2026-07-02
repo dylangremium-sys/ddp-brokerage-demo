@@ -56,6 +56,14 @@ export type ProductType = 'flower' | 'trim' | 'biomass' | 'extract' | 'other'
 
 export type TestStatus = 'pass' | 'fail' | 'not_tested' | ''
 
+export type CarbonProgrammeStatus =
+  | 'not_reviewed'
+  | 'admin_reviewing'
+  | 'eligible_internal'
+  | 'excluded_by_farmer'
+  | 'withdrawn_by_farmer'
+  | 'ineligible'
+
 export interface ReviewRequest {
   id: string
   stockItemId?: string
@@ -273,6 +281,8 @@ export interface FarmProfile {
   // Registration & pricing extras
   role?: string
   priceNotes?: string
+  // Carbon programme (farmer exclusion / DDP internal review)
+  carbonProgrammeStatus?: CarbonProgrammeStatus
   // DDP internal scores
   scoreCompliance: number
   scoreDocumentation: number

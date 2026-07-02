@@ -1,10 +1,52 @@
 import { T, FARM_STATUS_LABEL, INVENTORY_STATUS_LABEL } from '../../translations'
-import type { Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus } from '../../types'
+import type { Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, CarbonProgrammeStatus } from '../../types'
 
 interface Props {
   lang: Lang
   inventory: InventoryItem[]
   farms: FarmProfile[]
+  onCarbonExclude?: (farmId: string, newStatus: 'excluded_by_farmer' | 'withdrawn_by_farmer') => void
+}
+
+function CarbonRow({ farm, lang, onExclude }: {
+  farm: FarmProfile
+  lang: Lang
+  onExclude?: (farmId: string, newStatus: 'excluded_by_farmer' | 'withdrawn_by_farmer') => void
+}) {
+  const t = T[lang]
+  const cs: CarbonProgrammeStatus = farm.carbonProgrammeStatus ?? 'not_reviewed'
+
+  if (cs === 'not_reviewed' || cs === 'ineligible') return null
+
+  if (cs === 'excluded_by_farmer' || cs === 'withdrawn_by_farmer') {
+    return (
+      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)', fontSize: 13, color: 'var(--text-muted)' }}>
+        {t.carbonProgrammeNotIncluded}
+      </div>
+    )
+  }
+
+  const isWithdraw = cs === 'eligible_internal'
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
+        {t.carbonProgrammeUnderReview}
+      </div>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        style={{ fontSize: 13, padding: '6px 12px' }}
+        onClick={() => onExclude?.(farm.id, isWithdraw ? 'withdrawn_by_farmer' : 'excluded_by_farmer')}
+      >
+        {isWithdraw ? t.carbonWithdrawBtn : t.carbonExcludeBtn}
+      </button>
+      {!isWithdraw && (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+          {t.carbonExcludeSubtext}
+        </div>
+      )}
+    </div>
+  )
 }
 
 const STATUS_CLASS: Record<InventoryStatus, string> = {
@@ -25,7 +67,7 @@ const FARM_STATUS_CLASS: Record<FarmStatus, string> = {
   'Rejected': 'badge-rejected',
 }
 
-export default function FarmerStatus({ lang, inventory, farms }: Props) {
+export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude }: Props) {
   const t = T[lang]
   const myFarms = [...farms].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
   const isEmpty = myFarms.length === 0 && inventory.length === 0
@@ -69,7 +111,7 @@ export default function FarmerStatus({ lang, inventory, farms }: Props) {
         <div className="empty-state-hero">
           <div className="empty-state-icon">📋</div>
           <p className="empty-state-message">
-            No submissions yet. Register your farm or submit an inventory batch to begin.
+            {t.statusEmptyMsg}
           </p>
         </div>
       )}
@@ -111,9 +153,10 @@ export default function FarmerStatus({ lang, inventory, farms }: Props) {
               )}
               {farm.submittedAt && (
                 <div className="submitted-date">
-                  Submitted: {new Date(farm.submittedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {t.submittedLabel}: {new Date(farm.submittedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </div>
               )}
+              <CarbonRow farm={farm} lang={lang} onExclude={onCarbonExclude} />
             </div>
           ))}
         </div>

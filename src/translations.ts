@@ -290,6 +290,15 @@ export const T = {
     farmApprovedMsg: 'Your farm profile has been approved by DDP. You may now submit inventory batches.',
     farmWatchlistMsg: 'Your farm profile is under additional monitoring. Contact your DDP representative for details.',
     farmRejectedMsg: 'Your farm registration was not approved. Please contact your DDP representative for guidance.',
+    statusEmptyMsg: 'No submissions yet. Register your farm or submit an inventory batch to begin.',
+    submittedLabel: 'Submitted',
+
+    // Carbon programme (farmer-facing)
+    carbonProgrammeUnderReview: 'Carbon Programme: Under DDP review',
+    carbonProgrammeNotIncluded: 'Carbon Programme: Not included',
+    carbonExcludeBtn: 'Exclude my farm from carbon programmes',
+    carbonExcludeSubtext: 'I do not want my farm used for carbon offset projects.',
+    carbonWithdrawBtn: 'Withdraw my farm from carbon programmes',
 
     // Nav — new
     navDashboard: 'My Dashboard',
@@ -655,6 +664,15 @@ export const T = {
     farmApprovedMsg: 'โปรไฟล์ฟาร์มของคุณได้รับการอนุมัติจาก DDP แล้ว',
     farmWatchlistMsg: 'โปรไฟล์ฟาร์มของคุณอยู่ภายใต้การติดตาม ติดต่อ DDP เพื่อรายละเอียด',
     farmRejectedMsg: 'โปรไฟล์ฟาร์มของคุณไม่ผ่านการอนุมัติ ติดต่อ DDP เพื่อรายละเอียด',
+    statusEmptyMsg: 'ยังไม่มีรายการ ลงทะเบียนฟาร์มหรือส่งรายการสินค้าเพื่อเริ่มต้น',
+    submittedLabel: 'วันที่ส่ง',
+
+    // Carbon programme (farmer-facing)
+    carbonProgrammeUnderReview: 'โครงการคาร์บอน: อยู่ระหว่างการพิจารณาของ DDP',
+    carbonProgrammeNotIncluded: 'โครงการคาร์บอน: ไม่ได้รวม',
+    carbonExcludeBtn: 'ยกเว้นฟาร์มของฉันจากโครงการคาร์บอน',
+    carbonExcludeSubtext: 'ฉันไม่ต้องการให้ฟาร์มของฉันถูกนำไปใช้ในโครงการชดเชยคาร์บอน',
+    carbonWithdrawBtn: 'ถอนฟาร์มของฉันออกจากโครงการคาร์บอน',
 
     // Nav — new
     navDashboard: 'แดชบอร์ดของฉัน',
