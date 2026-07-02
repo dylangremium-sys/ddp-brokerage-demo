@@ -35,10 +35,19 @@ export const T = {
 
     // Landing
     landingTagline: 'Licensed Cannabis Supply Intelligence Platform',
-    landingHero1: 'A controlled supply-chain platform for licensed cannabis operators, verified suppliers, and regulated buyers.',
-    landingHero2: 'DDP manages the complete intake workflow — farm registration, compliance scoring, batch verification, and approved inventory — in one auditable system.',
+    landingHeadline: 'Verified cannabis supply intelligence',
+    landingHero1: 'DDP verifies licensed farms, reviews compliance documentation, and confirms COA-backed batches before any inventory is approved.',
+    landingHero2: 'Approved inventory is tracked in a controlled Master Inventory and prepared into buyer-ready summaries for qualified buyers — every step logged and auditable.',
     landingEnterFarmer: 'Supplier & Farmer Portal',
     landingEnterDDP: 'Operations Dashboard',
+    landingAccessFarmerDesc: 'Register your farm, submit compliance documents, and track inventory batches.',
+    landingAccessDDPDesc: 'Review farm compliance, verify batches, and manage the Master Inventory.',
+    landingProofTitle: 'Platform Functions',
+    landingProof1: 'Farm profile intake',
+    landingProof2: 'Compliance document review',
+    landingProof3: 'COA-backed batch verification',
+    landingProof4: 'Master inventory',
+    landingProof5: 'Buyer pack generation',
     landingCard1Title: 'Supplier Submits Profile',
     landingCard1Desc: 'Licensed farm profiles, regulatory documents, facility data, and batch inventory submitted securely to DDP.',
     landingCard2Title: 'DDP Verifies & Scores',
@@ -52,7 +61,7 @@ export const T = {
     landingStep4: 'DDP Review',
     landingStep5: 'Master Inventory',
     landingStep6: 'Buyer Prep',
-    landingDisclaimer: 'This platform is for licensed cannabis operators only. For use in jurisdictions where cultivation, processing, and supply of cannabis is lawfully permitted. This is a demonstration prototype — not a live commercial platform.',
+    landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted. Access is limited to verified partners during the current onboarding phase.',
 
     // Onboarding
     eyebrow: 'SUPPLIER & FARMER PORTAL',
@@ -413,10 +422,19 @@ export const T = {
 
     // Landing
     landingTagline: 'แพลตฟอร์มข้อมูลอัจฉริยะด้านการจัดหา',
-    landingHero1: 'ข้อมูลสินค้าจากฟาร์มเข้าสู่การควบคุมของ DDP',
-    landingHero2: 'DDP เป็นแหล่งข้อมูลที่เชื่อถือได้สำหรับโปรไฟล์ฟาร์มที่ผ่านการรับรอง เอกสารการปฏิบัติตามกฎ ข้อมูลแบทช์ และสินค้าคงคลัง',
+    landingHeadline: 'ข้อมูลอัจฉริยะด้านการจัดหากัญชาที่ผ่านการรับรอง',
+    landingHero1: 'DDP ตรวจสอบฟาร์มที่ได้รับใบอนุญาต ตรวจเอกสารการปฏิบัติตามกฎ และยืนยันแบทช์ที่มี COA รองรับ ก่อนอนุมัติสินค้าคงคลังทุกรายการ',
+    landingHero2: 'สินค้าคงคลังที่ผ่านการอนุมัติจะถูกจัดเก็บในคลังสินค้าหลักที่ควบคุมได้ และจัดเตรียมเป็นสรุปข้อมูลพร้อมสำหรับผู้ซื้อที่ผ่านการรับรอง — ทุกขั้นตอนถูกบันทึกและตรวจสอบย้อนกลับได้',
     landingEnterFarmer: 'เข้าสู่พอร์ทัลเกษตรกร',
     landingEnterDDP: 'เข้าสู่แดชบอร์ด DDP',
+    landingAccessFarmerDesc: 'ลงทะเบียนฟาร์ม ส่งเอกสารการปฏิบัติตามกฎ และติดตามสินค้าคงคลัง',
+    landingAccessDDPDesc: 'ตรวจสอบการปฏิบัติตามกฎของฟาร์ม ยืนยันแบทช์ และจัดการคลังสินค้าหลัก',
+    landingProofTitle: 'ฟังก์ชันของแพลตฟอร์ม',
+    landingProof1: 'รับข้อมูลโปรไฟล์ฟาร์ม',
+    landingProof2: 'ตรวจสอบเอกสารการปฏิบัติตามกฎ',
+    landingProof3: 'ยืนยันแบทช์ด้วย COA',
+    landingProof4: 'คลังสินค้าหลัก',
+    landingProof5: 'จัดทำแพ็กข้อมูลสำหรับผู้ซื้อ',
     landingCard1Title: 'เกษตรกรส่งข้อมูล',
     landingCard1Desc: 'โปรไฟล์ฟาร์ม ใบอนุญาต ข้อมูลสิ่งอำนวยความสะดวก ข้อมูลสายพันธุ์ และสินค้าคงคลัง',
     landingCard2Title: 'DDP ตรวจสอบและให้คะแนน',
@@ -430,7 +448,7 @@ export const T = {
     landingStep4: 'DDP ตรวจสอบ',
     landingStep5: 'คลังสินค้าหลัก',
     landingStep6: 'เตรียมผู้ซื้อ',
-    landingDisclaimer: 'นี่คือต้นแบบสำหรับการนำเสนอ ไม่ใช่แพลตฟอร์มจริง',
+    landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย การเข้าถึงจำกัดเฉพาะพันธมิตรที่ผ่านการตรวจสอบในระยะเริ่มต้นนี้',
 
     // Onboarding
     eyebrow: 'พอร์ทัลเกษตรกร',

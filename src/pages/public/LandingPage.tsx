@@ -1,6 +1,6 @@
 import { T } from '../../translations'
 import type { Lang } from '../../types'
-import { DDPHeroWordmark } from '../../components/logos'
+import { DDPMonogramLogo } from '../../components/logos'
 
 interface Props {
   lang: Lang
@@ -10,24 +10,56 @@ interface Props {
 
 export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) {
   const t = T[lang]
+  const proofItems = [t.landingProof1, t.landingProof2, t.landingProof3, t.landingProof4, t.landingProof5]
+
   return (
     <div className="landing-page">
       <div className="landing-hero">
         <div className="landing-hero-inner">
-          <div className="landing-logo-row" style={{ justifyContent: 'center', marginBottom: 8 }}>
-            <DDPHeroWordmark />
+          <div className="landing-hero-content">
+            <div className="landing-hero-brand-row">
+              <DDPMonogramLogo height={40} />
+              <span className="landing-tagline">{t.landingTagline}</span>
+            </div>
+            <h1 className="landing-headline">{t.landingHeadline}</h1>
+            <p className="landing-hero-text">{t.landingHero1}</p>
+            <p className="landing-hero-text">{t.landingHero2}</p>
           </div>
-          <div className="landing-tagline">{t.landingTagline}</div>
-          <p className="landing-hero-text">{t.landingHero1}</p>
-          <p className="landing-hero-text">{t.landingHero2}</p>
-          <div className="landing-cta-row">
-            <button className="btn btn-farmer-cta" onClick={onEnterFarmer}>{t.landingEnterFarmer}</button>
-            <button className="btn btn-ddp-cta" onClick={onEnterDDP}>{t.landingEnterDDP}</button>
+
+          <div className="landing-access-grid">
+            <button type="button" className="access-module access-module-primary" onClick={onEnterFarmer}>
+              <span className="access-module-icon">🌿</span>
+              <span className="access-module-body">
+                <span className="access-module-title">{t.landingEnterFarmer}</span>
+                <span className="access-module-desc">{t.landingAccessFarmerDesc}</span>
+              </span>
+              <span className="access-module-arrow">→</span>
+            </button>
+            <button type="button" className="access-module access-module-secondary" onClick={onEnterDDP}>
+              <span className="access-module-icon">🔒</span>
+              <span className="access-module-body">
+                <span className="access-module-title">{t.landingEnterDDP}</span>
+                <span className="access-module-desc">{t.landingAccessDDPDesc}</span>
+              </span>
+              <span className="access-module-arrow">→</span>
+            </button>
           </div>
         </div>
       </div>
 
       <div className="landing-body">
+        <div className="proof-strip">
+          <div className="proof-strip-title">{t.landingProofTitle}</div>
+          <div className="proof-strip-items">
+            {proofItems.map((item, i) => (
+              <div key={i} className="proof-strip-item">
+                <span className="proof-strip-dot" />
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="concept-cards">
           <div className="concept-card">
             <div className="concept-icon-num">01</div>
