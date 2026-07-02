@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FarmProfile, InventoryItem, InventoryStatus, ReviewRequest } from '../types'
+import type { FarmProfile, InventoryItem, InventoryStatus, ReviewRequest } from '../../types'
 
 type RequestType = ReviewRequest['requestType']
 
