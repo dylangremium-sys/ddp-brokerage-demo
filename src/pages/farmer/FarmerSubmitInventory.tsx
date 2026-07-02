@@ -476,7 +476,7 @@ export default function FarmerSubmitInventory({
           {form.coaAvailable && (
             <>
               <div style={{ marginBottom: 14 }}>
-                <div className="field-label">{isTh ? 'อัปโหลดไฟล์ COA (PDF / รูป)' : 'Upload COA file (PDF / image)'}</div>
+                <div className="field-label">{isTh ? 'ชื่อไฟล์ COA' : 'COA file name'}</div>
                 <input
                   ref={coaInputRef}
                   type="file"
@@ -503,7 +503,11 @@ export default function FarmerSubmitInventory({
                     📎 {isTh ? 'เลือกไฟล์' : 'Choose file'}
                   </button>
                 )}
-                <span className="field-hint">{isTh ? 'PDF, JPG, หรือ PNG' : 'PDF, JPG, or PNG'}</span>
+                <span className="field-hint">
+                  {isTh
+                    ? 'ระบบจะบันทึกชื่อไฟล์สำหรับรายการนี้เท่านั้น กรุณาอัปโหลดไฟล์ COA PDF จริงจากหน้า My Stock หลังส่งรายการ'
+                    : 'File name saved for this submission. Upload the actual COA PDF from My Stock after submitting.'}
+                </span>
               </div>
 
               <div className="form-grid-2">
