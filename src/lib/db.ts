@@ -53,6 +53,22 @@ async function sbUpdate(
   }
 }
 
+async function sbUpsertOn(table: string, data: Record<string, unknown>, onConflict: string): Promise<void> {
+  const { error } = await supabase!.from(table).upsert(data, { onConflict })
+  if (error) {
+    console.error(`Supabase error [${table} upsert on ${onConflict}]:`, error)
+    throw new Error(error.message)
+  }
+}
+
+async function sbUpsertIgnore(table: string, data: Record<string, unknown>, onConflict: string): Promise<void> {
+  const { error } = await supabase!.from(table).upsert(data, { onConflict, ignoreDuplicates: true })
+  if (error) {
+    console.error(`Supabase error [${table} upsert ignore on ${onConflict}]:`, error)
+    throw new Error(error.message)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Farm Profiles
 // ---------------------------------------------------------------------------
@@ -89,9 +105,6 @@ export async function createFarmProfile(farm: FarmProfile, userId?: string): Pro
     email: farm.email,
     status: farm.status,
     completion_percentage: farm.completionPct,
-    compliance_status: null,
-    export_readiness: null,
-    risk_level: null,
     partner_tier: farm.partnerTier,
     created_by: userId ?? null,
     updated_at: new Date().toISOString(),
@@ -101,7 +114,7 @@ export async function createFarmProfile(farm: FarmProfile, userId?: string): Pro
   console.log('Creating farm_profile for farm id:', farm.id)
 
   // 2. farm_profiles row (full profile data split into JSONB sections)
-  await sbInsert('farm_profiles', {
+  await sbUpsertOn('farm_profiles', {
     farm_id: farm.id,
     business_info: {
       legalBusinessName: farm.legalBusinessName,
@@ -251,16 +264,17 @@ export async function createFarmProfile(farm: FarmProfile, userId?: string): Pro
     monthly_reporting: {
       monthlyReportingAgreement: farm.monthlyReportingAgreement,
     },
-  })
+    updated_at: new Date().toISOString(),
+  }, 'farm_id')
 
   // 3. farm_memberships — link the creating user as farm owner
   if (userId && isValidUUID(userId)) {
     console.log('Creating farm_membership for farm id:', farm.id, 'user id:', userId)
-    await sbInsert('farm_memberships', {
+    await sbUpsertIgnore('farm_memberships', {
       farm_id: farm.id,
       user_id: userId,
       role: 'owner',
-    })
+    }, 'farm_id,user_id')
   }
 }
 
