@@ -22,6 +22,14 @@ export default function FarmerNav({ lang, page, goTo }: {
         onClick={() => goTo('farmer-my-stock')}
       >{T[lang].myStock}</button>
       <button
+        className={`nav-btn${page === 'farmer-requests' ? ' nav-active' : ''}`}
+        onClick={() => goTo('farmer-requests')}
+      >{T[lang].requestsLabel}</button>
+      <button
+        className={`nav-btn${page === 'farmer-advanced-profile' ? ' nav-active' : ''}`}
+        onClick={() => goTo('farmer-advanced-profile')}
+      >{T[lang].advancedProfile}</button>
+      <button
         className={`nav-btn${page === 'farmer-status' ? ' nav-active' : ''}`}
         onClick={() => goTo('farmer-status')}
       >{T[lang].myActivity}</button>
