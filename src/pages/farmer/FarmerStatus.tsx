@@ -72,6 +72,26 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude }
   const myFarms = [...farms].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
   const isEmpty = myFarms.length === 0 && inventory.length === 0
 
+  const activityEvents = [
+    ...myFarms.map(farm => ({
+      id: `farm-${farm.id}`,
+      date: farm.submittedAt,
+      label: farm.tradingName || farm.legalBusinessName,
+      kind: 'farm' as const,
+      status: farm.status,
+    })),
+    ...inventory.map(item => ({
+      id: `inventory-${item.id}`,
+      date: item.submittedAt,
+      label: item.productName + (item.batchNumber ? ` · ${item.batchNumber}` : ''),
+      kind: 'inventory' as const,
+      status: item.status,
+    })),
+  ]
+    .filter(event => Boolean(event.date))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 8)
+
   function farmMsg(status: FarmStatus): string {
     if (status === 'Submitted to DDP' || status === 'Under Review') return t.farmPendingMsg
     if (status === 'More Information Required') return t.farmMoreInfoMsg
@@ -202,6 +222,43 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude }
             )
           })}
         </div>
+      )}
+
+      {/* Recent Activity — derived timeline, newest first, max 8 events */}
+      {!isEmpty && activityEvents.length > 0 && (
+        <>
+          <div className="section-label-row" style={{ marginTop: 32 }}>
+            <div className="section-label">{t.recentActivitySection}</div>
+          </div>
+          <div className="status-list">
+            {activityEvents.map(event => (
+              <div key={event.id} className="card status-card">
+                <div className="status-card-top">
+                  <div>
+                    <div className="status-product">{event.label}</div>
+                    <div className="status-meta">
+                      {event.kind === 'farm' ? t.farmStatusSection : t.inventoryStatusSection}
+                      {' · '}
+                      {new Date(event.date).toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-GB', {
+                        day: 'numeric', month: 'short', year: 'numeric',
+                      })}
+                    </div>
+                  </div>
+                  <span className={`badge ${
+                    event.kind === 'farm'
+                      ? (FARM_STATUS_CLASS[event.status as FarmStatus] ?? 'badge-gray')
+                      : (STATUS_CLASS[event.status as InventoryStatus] ?? 'badge-pending')
+                  }`}>
+                    {event.kind === 'farm'
+                      ? (FARM_STATUS_LABEL[event.status as FarmStatus]?.[lang] ?? event.status)
+                      : (INVENTORY_STATUS_LABEL[event.status as InventoryStatus]?.[lang] ?? event.status)
+                    }
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
