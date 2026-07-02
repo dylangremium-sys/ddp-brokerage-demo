@@ -40,7 +40,7 @@ export default function DDPInventoryDashboard({ inventory, onReview }: Props) {
       <div className="card table-card">
         <div className="table-card-title">All Inventory Submissions — {inventory.length} {inventory.length === 1 ? 'batch' : 'batches'}</div>
         <div className="table-scroll">
-          <table className="inv-table">
+          <table className="inv-table inv-table--cards">
             <thead>
               <tr>
                 <th>Product / Strain</th>
@@ -62,21 +62,21 @@ export default function DDPInventoryDashboard({ inventory, onReview }: Props) {
                 <tr><td colSpan={12} className="empty-table-cell">No inventory submissions yet. Batches submitted by suppliers will appear here.</td></tr>
               ) : inventory.map(item => (
                 <tr key={item.id}>
-                  <td className="td-bold">{item.productName}</td>
-                  <td>{item.farmName}</td>
-                  <td className="td-muted">{item.location}</td>
-                  <td className="td-num">{item.quantityKg.toLocaleString()}</td>
-                  <td className="td-mono">{item.batchNumber || '—'}</td>
-                  <td className="td-num">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
-                  <td className="td-num">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
-                  <td className="td-num">{item.moisturePct > 0 ? `${item.moisturePct}%` : '—'}</td>
-                  <td><span className="grade-chip">Grade {item.qualityGrade}</span></td>
-                  <td>
+                  <td className="td-bold" data-label="Product / Strain">{item.productName}</td>
+                  <td data-label="Farm">{item.farmName}</td>
+                  <td className="td-muted" data-label="Location">{item.location}</td>
+                  <td className="td-num" data-label="Qty (kg)">{item.quantityKg.toLocaleString()}</td>
+                  <td className="td-mono" data-label="Batch No.">{item.batchNumber || '—'}</td>
+                  <td className="td-num" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
+                  <td className="td-num" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
+                  <td className="td-num" data-label="Moisture %">{item.moisturePct > 0 ? `${item.moisturePct}%` : '—'}</td>
+                  <td data-label="Grade"><span className="grade-chip">Grade {item.qualityGrade}</span></td>
+                  <td data-label="COA">
                     {item.certFileName
                       ? <span className="coa-present">COA provided</span>
                       : <span className="coa-missing">COA missing</span>}
                   </td>
-                  <td><span className={`badge ${STATUS_CLASS[item.status]}`}>{item.status}</span></td>
+                  <td data-label="Status"><span className={`badge ${STATUS_CLASS[item.status]}`}>{item.status}</span></td>
                   <td>
                     <button className="btn btn-review" onClick={() => onReview(item.id)}>Open Review</button>
                   </td>

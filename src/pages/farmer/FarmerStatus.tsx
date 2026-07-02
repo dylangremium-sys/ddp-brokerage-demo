@@ -24,7 +24,7 @@ function CarbonRow({ farm, lang, onExclude, carbonPersistenceAvailable = true }:
 
   if (cs === 'excluded_by_farmer' || cs === 'withdrawn_by_farmer') {
     return (
-      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)', fontSize: 13, color: 'var(--text-muted)' }}>
+      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text-muted)' }}>
         {t.carbonProgrammeNotIncluded}
       </div>
     )
@@ -32,7 +32,7 @@ function CarbonRow({ farm, lang, onExclude, carbonPersistenceAvailable = true }:
 
   const isWithdraw = cs === 'eligible_internal'
   return (
-    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
         {t.carbonProgrammeUnderReview}
       </div>

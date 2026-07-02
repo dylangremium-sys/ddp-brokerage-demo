@@ -87,7 +87,7 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
       <div className="card table-card">
         <div className="table-card-title">Farm Profile Registry — {filtered.length} {filtered.length === 1 ? 'farm' : 'farms'}</div>
         <div className="table-scroll">
-          <table className="inv-table">
+          <table className="inv-table inv-table--cards">
             <thead>
               <tr>
                 <th>Farm Name</th>
@@ -109,9 +109,9 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
                 const exp = exportReadiness(farm)
                 return (
                   <tr key={farm.id}>
-                    <td className="td-bold">{farm.tradingName || farm.legalBusinessName || 'Unnamed farm profile'}</td>
-                    <td className="td-muted">{farm.province || '—'}</td>
-                    <td>
+                    <td className="td-bold" data-label="Farm Name">{farm.tradingName || farm.legalBusinessName || 'Unnamed farm profile'}</td>
+                    <td className="td-muted" data-label="Province">{farm.province || '—'}</td>
+                    <td data-label="Completeness">
                       <div className="completion-cell">
                         <span className="completion-pct-text">{farm.completionPct}%</span>
                         <div className="completion-bar-track-sm">
@@ -122,19 +122,19 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
                         </div>
                       </div>
                     </td>
-                    <td><span className={`badge ${STATUS_CLASS[farm.status]}`}>{farm.status}</span></td>
-                    <td>
+                    <td data-label="Status"><span className={`badge ${STATUS_CLASS[farm.status]}`}>{farm.status}</span></td>
+                    <td data-label="Export Readiness">
                       <span className={`readiness-chip readiness-${exp.toLowerCase()}`}>{exp}</span>
                     </td>
-                    <td>
+                    <td data-label="Risk Level">
                       <span className={`risk-chip ${risk.cls}`}>{risk.label}</span>
                     </td>
-                    <td>
+                    <td data-label="Partner Tier">
                       <span className={`farm-tier-badge tier-${farm.partnerTier.toLowerCase().replace(/ /g, '-')}`}>
                         {farm.partnerTier}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Carbon">
                       <span className="text-muted" style={{ fontSize: 12 }}>
                         {CARBON_STATUS_LABEL[farm.carbonProgrammeStatus ?? 'not_reviewed']}
                       </span>

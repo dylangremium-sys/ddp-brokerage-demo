@@ -309,13 +309,11 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
               {passCount}/{CHECKLIST.length} passed
             </span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '6px 20px' }}>
+          <div className="pack-check-grid">
             {checkResults.map(c => (
-              <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
-                <span style={{ color: c.result ? 'var(--success)' : '#cbd5e1', fontWeight: 700, flexShrink: 0 }}>
-                  {c.result ? '✓' : '○'}
-                </span>
-                <span style={{ color: c.result ? 'var(--text)' : 'var(--text-muted)' }}>{c.label}</span>
+              <div key={c.key} className={`pack-check-item${c.result ? ' pack-check-pass' : ''}`}>
+                <span className="pack-check-mark">{c.result ? '✓' : '○'}</span>
+                <span>{c.label}</span>
               </div>
             ))}
           </div>
@@ -363,7 +361,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
         <span className="disclaimer-icon" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '1px', color: 'var(--warning)' }}>NOTE</span>
         <div>
           <strong>Buyer Preview — Not Yet Live</strong> — Buyer access, pricing, messaging, and transactions are not yet active.
-          To generate a buyer information pack for a specific batch, use the <strong>📋 Buyer Pack</strong> button in Master Inventory.
+          To generate a buyer information pack for a specific batch, use the <strong>Generate Buyer Pack</strong> action in Master Inventory.
         </div>
       </div>
 
@@ -389,7 +387,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
 
           <div className="card table-card">
             <div className="table-scroll">
-              <table className="inv-table">
+              <table className="inv-table inv-table--cards">
                 <thead>
                   <tr>
                     <th>Product</th>
@@ -405,14 +403,14 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
                 <tbody>
                   {approved.map(item => (
                     <tr key={item.id}>
-                      <td className="td-bold">{item.productName}</td>
-                      <td>{item.farmName}</td>
-                      <td className="td-num">{item.quantityKg.toLocaleString()}</td>
-                      <td className="td-num">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
-                      <td className="td-num">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
-                      <td><span className="grade-chip">Grade {item.qualityGrade}</span></td>
-                      <td>{item.certFileName || item.coaStoragePath ? <span className="coa-present">✓</span> : <span className="coa-missing">✗</span>}</td>
-                      <td className="td-mono">{item.batchNumber || '—'}</td>
+                      <td className="td-bold" data-label="Product">{item.productName}</td>
+                      <td data-label="Farm">{item.farmName}</td>
+                      <td className="td-num" data-label="Quantity (kg)">{item.quantityKg.toLocaleString()}</td>
+                      <td className="td-num" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
+                      <td className="td-num" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
+                      <td data-label="Grade"><span className="grade-chip">Grade {item.qualityGrade}</span></td>
+                      <td data-label="COA">{item.certFileName || item.coaStoragePath ? <span className="coa-present">✓</span> : <span className="coa-missing">✗</span>}</td>
+                      <td className="td-mono" data-label="Batch">{item.batchNumber || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -322,7 +322,7 @@ export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, 
               <button className="btn btn-reject" onClick={() => onAction(farm.id, 'reject')}>Reject Farm Profile</button>
             </div>
 
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
               <div className="decision-title" style={{ marginBottom: 6 }}>Carbon Programme</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
                 This status is managed by DDP. Farmers can only exclude themselves.
@@ -341,6 +341,7 @@ export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, 
                 Current: <strong>{CARBON_ADMIN_LABELS[carbonStatus]}</strong>
               </div>
               <select
+                className="select-control"
                 value={carbonStatus}
                 disabled={!carbonPersistenceAvailable}
                 title={carbonPersistenceAvailable ? undefined : 'Not connected to production storage yet.'}
@@ -353,7 +354,6 @@ export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, 
                 style={{
                   width: '100%',
                   marginTop: 6,
-                  opacity: carbonPersistenceAvailable ? 1 : 0.6,
                   cursor: carbonPersistenceAvailable ? 'pointer' : 'not-allowed',
                 }}
               >

@@ -96,18 +96,18 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
         </div>
       ) : (
         <div className="card table-card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px 0', flexWrap: 'wrap' }}>
+          <div className="toolbar-row">
             <input
               type="search"
+              className="toolbar-input"
               placeholder="Search product, farm, or batch…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              style={{ flex: '1 1 200px', fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}
             />
             <select
+              className="toolbar-select"
               value={sortKey}
               onChange={e => setSortKey(e.target.value as SortKey)}
-              style={{ fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}
             >
               <option value="default">Sort: Default</option>
               <option value="quantity">Sort: Quantity ↓</option>
@@ -115,13 +115,13 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
               <option value="price">Sort: Price/kg ↓</option>
               <option value="farm">Sort: Farm A–Z</option>
             </select>
-            <span style={{ fontSize: 12.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+            <span className="toolbar-count">
               {sorted.length} of {approved.length} {approved.length === 1 ? 'batch' : 'batches'}
             </span>
           </div>
-          <div className="table-card-title" style={{ paddingTop: 10 }}>Verified Inventory — DDP Controlled</div>
+          <div className="table-card-title">Verified Inventory — DDP Controlled</div>
           <div className="table-scroll">
-            <table className="inv-table">
+            <table className="inv-table inv-table--cards">
               <thead>
                 <tr>
                   <th>Product</th>
@@ -144,16 +144,16 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                   <tr><td colSpan={onBuyerPack ? 13 : 12} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>No batches match your search.</td></tr>
                 ) : sorted.map(item => (
                   <tr key={item.id}>
-                    <td className="td-bold">{item.productName || 'Unnamed batch'}</td>
-                    <td>{item.farmName || 'Unnamed farm'}</td>
-                    <td className="td-muted">{getProvince(item)}</td>
-                    <td className="td-num">{item.quantityKg.toLocaleString()}</td>
-                    <td className="td-mono">{item.batchNumber || '—'}</td>
-                    <td className="td-num">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
-                    <td className="td-num">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
-                    <td className="td-num">{item.moisturePct > 0 ? `${item.moisturePct}%` : '—'}</td>
-                    <td><span className="grade-chip">Grade {item.qualityGrade}</span></td>
-                    <td>
+                    <td className="td-bold" data-label="Product">{item.productName || 'Unnamed batch'}</td>
+                    <td data-label="Farm">{item.farmName || 'Unnamed farm'}</td>
+                    <td className="td-muted" data-label="Province">{getProvince(item)}</td>
+                    <td className="td-num" data-label="Quantity (kg)">{item.quantityKg.toLocaleString()}</td>
+                    <td className="td-mono" data-label="Batch">{item.batchNumber || '—'}</td>
+                    <td className="td-num" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
+                    <td className="td-num" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
+                    <td className="td-num" data-label="Moisture %">{item.moisturePct > 0 ? `${item.moisturePct}%` : '—'}</td>
+                    <td data-label="Grade"><span className="grade-chip">Grade {item.qualityGrade}</span></td>
+                    <td data-label="COA">
                       {item.certFileName || item.coaStoragePath
                         ? (
                           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -173,21 +173,20 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                         )
                         : <span className="coa-missing">✗ COA missing</span>}
                     </td>
-                    <td>
+                    <td data-label="Farm Tier">
                       <span className={`farm-tier-badge tier-${getTier(item).toLowerCase().replace(/ /g, '-')}`}>
                         {getTier(item)}
                       </span>
                     </td>
-                    <td><span className="badge badge-approved">Approved</span></td>
+                    <td data-label="Status"><span className="badge badge-approved">Approved</span></td>
                     {onBuyerPack && (
                       <td>
                         <button
                           type="button"
-                          className="btn btn-ghost"
-                          style={{ fontSize: 11, padding: '2px 10px', whiteSpace: 'nowrap' }}
+                          className="btn btn-pack"
                           onClick={() => onBuyerPack(item.id)}
                         >
-                          📋 Generate Buyer Pack
+                          Generate Buyer Pack
                         </button>
                       </td>
                     )}

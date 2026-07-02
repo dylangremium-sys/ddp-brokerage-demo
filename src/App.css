@@ -2682,6 +2682,196 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   width: 130px;
 }
 
+/* ── Table filter toolbar ── */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 13px 18px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-input,
+.toolbar-select {
+  font-size: 13px;
+  padding: 7px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.toolbar-input { flex: 1 1 220px; min-width: 0; }
+
+.toolbar-input:focus,
+.toolbar-select:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(198,161,91,0.12);
+}
+
+.toolbar-input::placeholder { color: var(--text-muted); opacity: 0.6; }
+.toolbar-select option { background: var(--bg-elevated); color: var(--text); }
+
+.toolbar-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+@media (max-width: 600px) {
+  .toolbar-select { flex: 1 1 100%; }
+  .toolbar-count { margin-left: 0; }
+}
+
+/* ── Controlled buyer-pack action ── */
+.btn-pack {
+  background: rgba(198,161,91,0.10);
+  color: var(--gold);
+  border: 1px solid rgba(198,161,91,0.45);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 12px;
+  min-height: 0;
+  border-radius: 5px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.btn-pack:hover {
+  background: rgba(198,161,91,0.18);
+  border-color: var(--gold);
+  box-shadow: 0 1px 6px rgba(198,161,91,0.15);
+}
+
+/* ── Standalone dark select (outside .field) ── */
+.select-control {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 11px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.select-control:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(198,161,91,0.12);
+}
+.select-control option { background: var(--bg-elevated); color: var(--text); }
+.select-control:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── Buyer pack compliance checklist ── */
+.pack-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 6px 20px;
+}
+.pack-check-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.pack-check-item.pack-check-pass { color: var(--text); }
+.pack-check-mark {
+  font-weight: 700;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+.pack-check-pass .pack-check-mark { color: var(--success); opacity: 1; }
+
+/* ── Compact table variant (short tables inside split grids) ── */
+.inv-table--compact { min-width: 0; }
+.inv-table--compact th:last-child,
+.inv-table--compact td:last-child {
+  position: static;
+  box-shadow: none;
+  min-width: 0;
+}
+
+/* ── Mobile card layout for opted-in tables ── */
+@media (max-width: 720px) {
+  .inv-table--cards { min-width: 0; display: block; }
+  .inv-table--cards thead { display: none; }
+  .inv-table--cards tbody { display: block; padding: 10px 12px; }
+  .inv-table--cards tbody tr {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    margin-bottom: 10px;
+    padding: 4px 0;
+  }
+  .inv-table--cards tbody tr:last-child { margin-bottom: 0; border-bottom: 1px solid var(--border); }
+  .inv-table--cards tbody tr:hover {
+    background: var(--bg-card);
+    box-shadow: none;
+  }
+  .inv-table--cards td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 14px;
+    border-bottom: 1px solid rgba(38,54,45,0.5);
+    text-align: right;
+  }
+  .inv-table--cards td:first-child { padding-left: 14px; }
+  .inv-table--cards td:last-child { border-bottom: none; }
+  .inv-table--cards td::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    text-align: left;
+    flex-shrink: 0;
+  }
+  .inv-table--cards td:not([data-label])::before { content: none; }
+  .inv-table--cards td:not([data-label]) { justify-content: center; }
+  .inv-table--cards th:last-child,
+  .inv-table--cards td:last-child {
+    position: static;
+    box-shadow: none;
+    min-width: 0;
+  }
+  .inv-table--cards tbody td:last-child { background: transparent; }
+  .inv-table--cards tbody tr:hover td:last-child { background: transparent; }
+  .inv-table--cards .btn-review,
+  .inv-table--cards .btn-pack { width: 100%; justify-content: center; }
+  .inv-table--cards .empty-table-cell { justify-content: center; text-align: center; }
+  .inv-table--cards .completion-cell { justify-content: flex-end; min-width: 0; flex: 1; }
+}
+
+/* ── Review header stacking on narrow screens ── */
+@media (max-width: 700px) {
+  .review-page-header { flex-direction: column; gap: 14px; }
+}
+
+/* ── Compact panel padding on small screens ── */
+@media (max-width: 600px) {
+  .page-header { padding: 20px 18px; }
+  .master-banner { padding: 24px 20px; }
+  .master-title { font-size: 23px; }
+  .buyer-pack-card { padding: 20px 18px; }
+  .review-card { padding: 20px 16px; }
+  .detail-section-title { padding-left: 16px; padding-right: 16px; }
+  .detail-section-body { padding-left: 16px; padding-right: 16px; }
+  .buyer-pack-actions { flex-direction: column; align-items: stretch; }
+  .buyer-pack-actions > div { flex-direction: column; }
+  .buyer-pack-actions .btn { width: 100%; }
+}
+
 /* Elements hidden on screen but shown when printing */
 .print-only { display: none; }
 

@@ -66,7 +66,8 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
         <div>
           <div className="section-label-row"><div className="section-label">Recent Farm Registrations</div></div>
           <div className="card table-card">
-            <table className="inv-table">
+            <div className="table-scroll">
+            <table className="inv-table inv-table--compact">
               <thead><tr><th>Farm</th><th>Province</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {recentFarms.length === 0 ? (
@@ -81,13 +82,15 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
 
         <div>
           <div className="section-label-row"><div className="section-label">Recent Inventory Batches</div></div>
           <div className="card table-card">
-            <table className="inv-table">
+            <div className="table-scroll">
+            <table className="inv-table inv-table--compact">
               <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {recentInventory.length === 0 ? (
@@ -103,6 +106,7 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>
@@ -135,7 +139,8 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
         <div>
           <div className="section-label-row"><div className="section-label">Largest Approved Batches</div></div>
           <div className="card table-card">
-            <table className="inv-table">
+            <div className="table-scroll">
+            <table className="inv-table inv-table--compact">
               <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Grade</th><th>Status</th></tr></thead>
               <tbody>
                 {topInventory.length === 0 ? (
@@ -151,6 +156,7 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
 
