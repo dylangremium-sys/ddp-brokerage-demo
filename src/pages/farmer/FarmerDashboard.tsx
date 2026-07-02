@@ -82,6 +82,15 @@ export default function FarmerDashboard({
     : draft
       ? calcCompletion(draft)
       : 0
+  const activeProfile = latestFarm ?? draft
+  const missingHints: string[] = []
+  if (activeProfile) {
+    if (!activeProfile.cultivationLicence?.trim()) missingHints.push(t.missingCultivationLicence)
+    if (!activeProfile.exportLicence?.trim())      missingHints.push(t.missingExportLicence)
+    if (!activeProfile.gmpCert?.trim())            missingHints.push(t.missingGMPCert)
+    if (!activeProfile.coaFiles?.trim())           missingHints.push(t.missingCOA)
+  }
+
   const displayName = currentProfile?.displayName
     || currentProfile?.phoneNumber
     || draft?.primaryContact
@@ -112,6 +121,13 @@ export default function FarmerDashboard({
           </div>
           {completionPct < 60 && (
             <div className="dashboard-completion-hint">{t.dashboardCompletionHint}</div>
+          )}
+          {missingHints.length > 0 && (
+            <div className="dashboard-completion-hint">
+              {missingHints.map(hint => (
+                <div key={hint}>• {hint}</div>
+              ))}
+            </div>
           )}
         </div>
       </div>
