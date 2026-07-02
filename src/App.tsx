@@ -485,7 +485,7 @@ export default function App() {
               <span className="brand-name">Brokerage</span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {isDemo && <LangToggle lang={lang} setLang={setLang} />}
+              <LangToggle lang={lang} setLang={setLang} />
               {!isDemo && isSignedIn && (
                 <UserBadge profile={currentProfile!} onSignOut={handleSignOut} />
               )}
