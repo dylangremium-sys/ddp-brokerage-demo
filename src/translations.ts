@@ -293,6 +293,8 @@ export const T = {
     farmRejectedMsg: 'Your farm registration was not approved. Please contact your DDP representative for guidance.',
     statusEmptyMsg: 'No submissions yet. Register your farm or submit an inventory batch to begin.',
     submittedLabel: 'Submitted',
+    unnamedFarmProfile: 'Unnamed farm profile',
+    unnamedBatch: 'Unnamed batch',
 
     // Carbon programme (farmer-facing)
     carbonProgrammeUnderReview: 'Carbon Programme: Under DDP review',
@@ -669,6 +671,8 @@ export const T = {
     farmRejectedMsg: 'โปรไฟล์ฟาร์มของคุณไม่ผ่านการอนุมัติ ติดต่อ DDP เพื่อรายละเอียด',
     statusEmptyMsg: 'ยังไม่มีรายการ ลงทะเบียนฟาร์มหรือส่งรายการสินค้าเพื่อเริ่มต้น',
     submittedLabel: 'วันที่ส่ง',
+    unnamedFarmProfile: 'โปรไฟล์ฟาร์มที่ยังไม่มีชื่อ',
+    unnamedBatch: 'แบทช์ที่ยังไม่มีชื่อ',
 
     // Carbon programme (farmer-facing)
     carbonProgrammeUnderReview: 'โครงการคาร์บอน: อยู่ระหว่างการพิจารณาของ DDP',

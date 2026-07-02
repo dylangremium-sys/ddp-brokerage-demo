@@ -335,7 +335,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
   )
 }
 
-// ─── Default export: prototype buyer dashboard or pack ─────────────────────────
+// ─── Default export: buyer preview dashboard or pack ─────────────────────────
 
 export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack, onGetCoaUrl }: Props) {
   if (selectedItem) {
@@ -356,13 +356,13 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
       <div className="page-header ddp-header">
         <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — COMMERCIAL INTELLIGENCE</div>
         <h1 className="page-title">Qualified Buyer Preview</h1>
-        <p className="page-desc">Prototype view of buyer interest signals. DDP controls all buyer access, communications, and commercial terms.</p>
+        <p className="page-desc">Indicative buyer-facing summary. DDP controls all buyer access, communications, and commercial terms.</p>
       </div>
 
       <div className="disclaimer-box">
         <span className="disclaimer-icon" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '1px', color: 'var(--warning)' }}>NOTE</span>
         <div>
-          <strong>PROTOTYPE MODULE</strong> — Buyer access, pricing, messaging, and transactions are not active in this demonstration.
+          <strong>Buyer Preview — Not Yet Live</strong> — Buyer access, pricing, messaging, and transactions are not yet active.
           To generate a buyer information pack for a specific batch, use the <strong>📋 Buyer Pack</strong> button in Master Inventory.
         </div>
       </div>
@@ -376,7 +376,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
           <div className="card" style={{ padding: '24px 28px', color: 'var(--text-muted)', fontSize: 14 }}>
             <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>Buyer Interest Signals</div>
             <p style={{ margin: 0 }}>Qualified buyer interest is managed by DDP. Buyer records will appear here when connected.</p>
-            <p style={{ margin: '8px 0 0', fontSize: 12 }}>This prototype shows where verified buyer demand signals will be displayed once real buyer records are connected.</p>
+            <p style={{ margin: '8px 0 0', fontSize: 12 }}>This section will display verified buyer demand signals once buyer records are connected.</p>
           </div>
 
           <div className="section-label-row" style={{ marginTop: 32 }}>

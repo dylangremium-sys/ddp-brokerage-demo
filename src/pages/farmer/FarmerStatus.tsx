@@ -95,14 +95,14 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
     ...myFarms.map(farm => ({
       id: `farm-${farm.id}`,
       date: farm.submittedAt,
-      label: farm.tradingName || farm.legalBusinessName,
+      label: farm.tradingName || farm.legalBusinessName || t.unnamedFarmProfile,
       kind: 'farm' as const,
       status: farm.status,
     })),
     ...inventory.map(item => ({
       id: `inventory-${item.id}`,
       date: item.submittedAt,
-      label: item.productName + (item.batchNumber ? ` · ${item.batchNumber}` : ''),
+      label: (item.productName || t.unnamedBatch) + (item.batchNumber ? ` · ${item.batchNumber}` : ''),
       kind: 'inventory' as const,
       status: item.status,
     })),
@@ -168,8 +168,8 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
             <div key={farm.id} className="card status-card">
               <div className="status-card-top">
                 <div>
-                  <div className="status-product">{farm.tradingName || farm.legalBusinessName}</div>
-                  <div className="status-meta">{farm.province}{farm.district ? `, ${farm.district}` : ''}</div>
+                  <div className="status-product">{farm.tradingName || farm.legalBusinessName || t.unnamedFarmProfile}</div>
+                  <div className="status-meta">{farm.province || '—'}{farm.district ? `, ${farm.district}` : ''}</div>
                 </div>
                 <span className={`badge ${FARM_STATUS_CLASS[farm.status] ?? 'badge-gray'}`}>
                   {FARM_STATUS_LABEL[farm.status]?.[lang] ?? farm.status}
@@ -216,9 +216,9 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
               <div key={item.id} className="card status-card">
                 <div className="status-card-top">
                   <div>
-                    <div className="status-product">{item.productName}</div>
+                    <div className="status-product">{item.productName || t.unnamedBatch}</div>
                     <div className="status-meta">
-                      {item.farmName} · {item.location} · {t.batchPrefix} {item.batchNumber || '—'}
+                      {item.farmName || '—'} · {item.location || '—'} · {t.batchPrefix} {item.batchNumber || '—'}
                     </div>
                   </div>
                   <span className={`badge ${STATUS_CLASS[item.status] ?? 'badge-pending'}`}>
