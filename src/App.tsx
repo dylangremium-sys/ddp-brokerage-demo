@@ -650,10 +650,12 @@ export default function App() {
 
           {page === 'ddp-farm-review' && isAdminRole && reviewFarm && (
             <DDPFarmReview
+              key={reviewFarm.id}
               farm={reviewFarm}
               onBack={() => goTo('ddp-farms')}
               onAction={handleFarmAction}
               onCarbonAction={handleAdminCarbonAction}
+              carbonPersistenceAvailable={isDemo}
             />
           )}
 

@@ -83,11 +83,13 @@ export default function FarmerDashboard({
       ? calcCompletion(draft)
       : 0
   const activeProfile = latestFarm ?? draft
+  // Once DDP has approved the farm, stop nagging about completion — and only
+  // hint on fields that actually feed calcCompletion, so the % and the hints
+  // can never contradict each other.
+  const isApprovedProfile = activeProfile?.status === 'Approved' || activeProfile?.status === 'Strategic Partner'
   const missingHints: string[] = []
-  if (activeProfile) {
+  if (activeProfile && !isApprovedProfile) {
     if (!activeProfile.cultivationLicence?.trim()) missingHints.push(t.missingCultivationLicence)
-    if (!activeProfile.exportLicence?.trim())      missingHints.push(t.missingExportLicence)
-    if (!activeProfile.gmpCert?.trim())            missingHints.push(t.missingGMPCert)
     if (!activeProfile.coaFiles?.trim())           missingHints.push(t.missingCOA)
   }
 

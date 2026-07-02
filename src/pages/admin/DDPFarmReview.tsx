@@ -16,6 +16,9 @@ interface Props {
   onBack: () => void
   onAction: (farmId: string, action: string) => void
   onCarbonAction?: (farmId: string, status: CarbonProgrammeStatus) => void
+  /** False when running against a configured Supabase backend without an approved
+   *  persistence migration for carbon status — the control must not imply a save. */
+  carbonPersistenceAvailable?: boolean
 }
 
 function DetailRow({ label, value }: { label: string; value: string | React.ReactNode }) {
@@ -80,7 +83,7 @@ function tierFromScore(total: number): string {
   return 'Watchlist'
 }
 
-export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction }: Props) {
+export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, carbonPersistenceAvailable = true }: Props) {
   const totalScore = farmTotalScore(farm)
   const [carbonStatus, setCarbonStatus] = useState<CarbonProgrammeStatus>(
     farm.carbonProgrammeStatus ?? 'not_reviewed'
@@ -324,6 +327,11 @@ export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction }
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
                 This status is managed by DDP. Farmers can only exclude themselves.
               </div>
+              {!carbonPersistenceAvailable && (
+                <div className="alert alert-warning" style={{ fontSize: 12, marginBottom: 10 }}>
+                  ⚠ Not connected to production storage yet. Changes below will not be saved.
+                </div>
+              )}
               {(carbonStatus === 'excluded_by_farmer' || carbonStatus === 'withdrawn_by_farmer') && (
                 <div className="alert alert-warning" style={{ fontSize: 12, marginBottom: 10 }}>
                   ⚠ Farmer has set this status. Do not override without farmer consent.
@@ -334,12 +342,20 @@ export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction }
               </div>
               <select
                 value={carbonStatus}
+                disabled={!carbonPersistenceAvailable}
+                title={carbonPersistenceAvailable ? undefined : 'Not connected to production storage yet.'}
                 onChange={e => {
+                  if (!carbonPersistenceAvailable) return
                   const s = e.target.value as CarbonProgrammeStatus
                   setCarbonStatus(s)
                   onCarbonAction?.(farm.id, s)
                 }}
-                style={{ width: '100%', marginTop: 6 }}
+                style={{
+                  width: '100%',
+                  marginTop: 6,
+                  opacity: carbonPersistenceAvailable ? 1 : 0.6,
+                  cursor: carbonPersistenceAvailable ? 'pointer' : 'not-allowed',
+                }}
               >
                 {(Object.keys(CARBON_ADMIN_LABELS) as CarbonProgrammeStatus[]).map(v => (
                   <option key={v} value={v}>{CARBON_ADMIN_LABELS[v]}</option>
