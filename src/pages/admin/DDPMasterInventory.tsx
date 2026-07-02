@@ -9,10 +9,32 @@ interface Props {
   onBuyerPack?: (itemId: string) => void
 }
 
+type SortKey = 'default' | 'quantity' | 'thc' | 'price' | 'farm'
+
 export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBuyerPack }: Props) {
   const approved = inventory.filter(i => i.status === 'Approved')
   const totalKg = approved.reduce((s, i) => s + i.quantityKg, 0)
   const [coaLoadingId, setCoaLoadingId] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('default')
+
+  const filtered = approved.filter(i => {
+    if (!search.trim()) return true
+    const q = search.toLowerCase()
+    return (
+      i.productName.toLowerCase().includes(q) ||
+      i.farmName.toLowerCase().includes(q) ||
+      (i.batchNumber || '').toLowerCase().includes(q)
+    )
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortKey === 'quantity') return b.quantityKg - a.quantityKg
+    if (sortKey === 'thc') return b.thcPct - a.thcPct
+    if (sortKey === 'price') return b.pricePerKg - a.pricePerKg
+    if (sortKey === 'farm') return a.farmName.localeCompare(b.farmName)
+    return 0
+  })
 
   async function handleViewCoa(item: InventoryItem) {
     if (!onGetCoaUrl || !item.coaStoragePath) return
@@ -74,7 +96,30 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
         </div>
       ) : (
         <div className="card table-card">
-          <div className="table-card-title">Verified Inventory — DDP Controlled · {approved.length} {approved.length === 1 ? 'batch' : 'batches'}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px 0', flexWrap: 'wrap' }}>
+            <input
+              type="search"
+              placeholder="Search product, farm, or batch…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ flex: '1 1 200px', fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}
+            />
+            <select
+              value={sortKey}
+              onChange={e => setSortKey(e.target.value as SortKey)}
+              style={{ fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)' }}
+            >
+              <option value="default">Sort: Default</option>
+              <option value="quantity">Sort: Quantity ↓</option>
+              <option value="thc">Sort: THC % ↓</option>
+              <option value="price">Sort: Price/kg ↓</option>
+              <option value="farm">Sort: Farm A–Z</option>
+            </select>
+            <span style={{ fontSize: 12.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+              {sorted.length} of {approved.length} {approved.length === 1 ? 'batch' : 'batches'}
+            </span>
+          </div>
+          <div className="table-card-title" style={{ paddingTop: 10 }}>Verified Inventory — DDP Controlled</div>
           <div className="table-scroll">
             <table className="inv-table">
               <thead>
@@ -95,10 +140,12 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                 </tr>
               </thead>
               <tbody>
-                {approved.map(item => (
+                {sorted.length === 0 ? (
+                  <tr><td colSpan={onBuyerPack ? 13 : 12} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>No batches match your search.</td></tr>
+                ) : sorted.map(item => (
                   <tr key={item.id}>
-                    <td className="td-bold">{item.productName}</td>
-                    <td>{item.farmName}</td>
+                    <td className="td-bold">{item.productName || 'Unnamed batch'}</td>
+                    <td>{item.farmName || 'Unnamed farm'}</td>
                     <td className="td-muted">{getProvince(item)}</td>
                     <td className="td-num">{item.quantityKg.toLocaleString()}</td>
                     <td className="td-mono">{item.batchNumber || '—'}</td>
@@ -110,7 +157,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                       {item.certFileName || item.coaStoragePath
                         ? (
                           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span className="coa-present">✓ {item.certFileName || 'COA'}</span>
+                            <span className="coa-present">✓ COA attached</span>
                             {item.coaStoragePath && onGetCoaUrl && (
                               <button
                                 type="button"
@@ -119,12 +166,12 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                                 onClick={() => handleViewCoa(item)}
                                 disabled={coaLoadingId === item.id}
                               >
-                                {coaLoadingId === item.id ? '…' : 'View'}
+                                {coaLoadingId === item.id ? '…' : 'View file'}
                               </button>
                             )}
                           </span>
                         )
-                        : <span className="coa-missing">✗</span>}
+                        : <span className="coa-missing">✗ COA missing</span>}
                     </td>
                     <td>
                       <span className={`farm-tier-badge tier-${getTier(item).toLowerCase().replace(/ /g, '-')}`}>
@@ -140,7 +187,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                           style={{ fontSize: 11, padding: '2px 10px', whiteSpace: 'nowrap' }}
                           onClick={() => onBuyerPack(item.id)}
                         >
-                          📋 Buyer Pack
+                          📋 Generate Buyer Pack
                         </button>
                       </td>
                     )}
