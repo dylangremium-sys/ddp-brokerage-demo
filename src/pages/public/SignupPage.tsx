@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { signUpFarmer } from '../services/auth'
-import { T } from '../translations'
-import type { Lang } from '../types'
+import { signUpFarmer } from '../../services/auth'
+import { T } from '../../translations'
+import type { Lang } from '../../types'
 
 interface Props {
   lang?: Lang

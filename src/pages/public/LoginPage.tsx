@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { signIn } from '../services/auth'
+import { signIn } from '../../services/auth'
 
 interface Props {
   onSuccess: () => void

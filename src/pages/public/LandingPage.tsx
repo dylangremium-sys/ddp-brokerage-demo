@@ -1,6 +1,6 @@
-import { T } from '../translations'
-import type { Lang } from '../types'
-import { DDPHeroWordmark } from '../components/logos'
+import { T } from '../../translations'
+import type { Lang } from '../../types'
+import { DDPHeroWordmark } from '../../components/logos'
 
 interface Props {
   lang: Lang
