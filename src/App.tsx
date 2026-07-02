@@ -238,12 +238,11 @@ export default function App() {
   }
 
   // ── Data handlers ─────────────────────────────────────────────────────────
-  function handleInventorySubmit(item: InventoryItem) {
+  async function handleInventorySubmit(item: InventoryItem, coaFile?: File | null) {
     setInventory(prev => {
       const exists = prev.some(i => i.id === item.id)
       return exists ? prev.map(i => i.id === item.id ? item : i) : [item, ...prev]
     })
-    createInventoryBatch(item, currentProfile?.id).catch(onDbError)
     // Optimistically expand scope so the farmer sees their new submission immediately
     if (isFarmerRole) {
       setFarmerScope(prev => {
@@ -253,6 +252,34 @@ export default function App() {
           : base.farmIds
         return { farmIds: newFarmIds, itemIds: new Set([...base.itemIds, item.id]) }
       })
+    }
+    try {
+      await createInventoryBatch(item, currentProfile?.id)
+    } catch (err) {
+      onDbError(err)
+      return
+    }
+    if (coaFile && isSupabaseConfigured && isFarmerRole && currentProfile && item.id) {
+      try {
+        const { storagePath } = await uploadCoaFile(
+          coaFile,
+          currentProfile.id,
+          item.farmId ?? '',
+          item.id,
+        )
+        await patchInventoryBatch(item.id, {
+          coa_file_name: coaFile.name,
+          coa_available: true,
+          coa_storage_path: storagePath,
+        })
+        setInventory(prev => prev.map(i =>
+          i.id === item.id
+            ? { ...i, certFileName: coaFile.name, coaAvailable: true, coaStoragePath: storagePath }
+            : i
+        ))
+      } catch (err) {
+        onDbError(err)
+      }
     }
   }
 
@@ -550,8 +577,8 @@ export default function App() {
               lang={lang}
               farms={farmerFarms}
               initialItem={stockEditItemId ? farmerInventory.find(i => i.id === stockEditItemId) : null}
-              onSubmit={item => {
-                handleInventorySubmit(item)
+              onSubmit={async (item, coaFile) => {
+                await handleInventorySubmit(item, coaFile)
                 if (item.stockStatus !== 'draft') goTo('farmer-my-stock')
               }}
               onBack={() => goTo('farmer-my-stock')}

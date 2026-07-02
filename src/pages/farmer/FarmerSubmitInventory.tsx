@@ -7,7 +7,7 @@ interface Props {
   lang: Lang
   farms: FarmProfile[]
   initialItem?: InventoryItem | null
-  onSubmit: (item: InventoryItem) => void
+  onSubmit: (item: InventoryItem, coaFile?: File | null) => void | Promise<void>
   onBack: () => void
   marketBenchmarks?: MarketBenchmark[]
   openRequests?: ReviewRequest[]
@@ -109,6 +109,9 @@ export default function FarmerSubmitInventory({
   const [photos, setPhotos] = useState<string[]>(initialItem?.photoUrls ?? [])
   const [saved, setSaved] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [coaFile, setCoaFile] = useState<File | null>(null)
+  const [coaFileError, setCoaFileError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
   const coaInputRef = useRef<HTMLInputElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
@@ -130,7 +133,15 @@ export default function FarmerSubmitInventory({
 
   function handleCoaFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (file) set('coaFileName', file.name)
+    if (!file) return
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setCoaFileError(isTh ? 'อนุญาตเฉพาะไฟล์ PDF เท่านั้น' : 'PDF files only.')
+      if (coaInputRef.current) coaInputRef.current.value = ''
+      return
+    }
+    setCoaFileError(null)
+    set('coaFileName', file.name)
+    setCoaFile(file)
   }
 
   function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -202,11 +213,19 @@ export default function FarmerSubmitInventory({
     setTimeout(() => setSaved(false), 2500)
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.strainName.trim()) return
-    onSubmit(buildItem(false))
-    setSubmitted(true)
+    const item = buildItem(false)
+    setUploading(true)
+    try {
+      await onSubmit(item, coaFile ?? null)
+      setSubmitted(true)
+    } catch {
+      // keep page usable
+    } finally {
+      setUploading(false)
+    }
   }
 
   if (submitted) {
@@ -480,7 +499,7 @@ export default function FarmerSubmitInventory({
                 <input
                   ref={coaInputRef}
                   type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
+                  accept=".pdf,application/pdf"
                   style={{ display: 'none' }}
                   onChange={handleCoaFile}
                 />
@@ -490,7 +509,7 @@ export default function FarmerSubmitInventory({
                     <button
                       type="button"
                       className="btn-ghost-sm"
-                      onClick={() => { set('coaFileName', ''); if (coaInputRef.current) coaInputRef.current.value = '' }}
+                      onClick={() => { set('coaFileName', ''); setCoaFile(null); setCoaFileError(null); if (coaInputRef.current) coaInputRef.current.value = '' }}
                     >✕</button>
                   </div>
                 ) : (
@@ -505,9 +524,12 @@ export default function FarmerSubmitInventory({
                 )}
                 <span className="field-hint">
                   {isTh
-                    ? 'ระบบจะบันทึกชื่อไฟล์สำหรับรายการนี้เท่านั้น กรุณาอัปโหลดไฟล์ COA PDF จริงจากหน้า My Stock หลังส่งรายการ'
-                    : 'File name saved for this submission. Upload the actual COA PDF from My Stock after submitting.'}
+                    ? 'รองรับเฉพาะ PDF ในโหมดใช้งานจริง ระบบจะอัปโหลด COA เมื่อส่งรายการ และสามารถอัปโหลดหรือเปลี่ยนไฟล์ภายหลังได้จากหน้า My Stock'
+                    : 'PDF only. In live mode, the COA is uploaded when you submit. You can also upload or replace it later from My Stock.'}
                 </span>
+                {coaFileError && (
+                  <span style={{ display: 'block', color: 'var(--error)', fontSize: 12, marginTop: 4 }}>{coaFileError}</span>
+                )}
               </div>
 
               <div className="form-grid-2">
@@ -624,10 +646,12 @@ export default function FarmerSubmitInventory({
             type="submit"
             className="btn btn-primary"
             style={{ flex: 2 }}
-            disabled={!form.strainName.trim()}
+            disabled={!form.strainName.trim() || uploading}
             onClick={handleSubmit}
           >
-            {isTh ? 'ส่งให้ DDP ตรวจสอบ →' : 'Submit for Review →'}
+            {uploading
+              ? (isTh ? '⏳ กำลังส่ง…' : '⏳ Submitting…')
+              : (isTh ? 'ส่งให้ DDP ตรวจสอบ →' : 'Submit for Review →')}
           </button>
         </div>
       </form>
