@@ -126,9 +126,9 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 }
 
 .nav-btn.nav-active {
-  background: var(--bg-elevated);
-  color: var(--text);
-  border-color: var(--border);
+  background: rgba(198, 161, 91, 0.12);
+  border-color: rgba(198, 161, 91, 0.45);
+  color: var(--gold);
 }
 
 .ddp-nav-btn {
@@ -142,6 +142,11 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   color: var(--gold);
   border-color: rgba(198,161,91,0.3);
   opacity: 1;
+}
+
+.ddp-nav-btn.nav-active {
+  background: rgba(198, 161, 91, 0.12);
+  border-color: rgba(198, 161, 91, 0.45);
 }
 
 /* ── Main Content ── */
