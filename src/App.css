@@ -1210,7 +1210,8 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .workflow-arrow {
   font-size: 16px;
-  color: var(--border);
+  color: var(--gold);
+  opacity: 0.6;
   margin: 0 8px;
   margin-bottom: 18px;
 }
@@ -1859,8 +1860,10 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   .nav-sep { display: none; }
   .landing-hero { padding: 28px 20px 24px; }
   .master-stats-row { flex-direction: column; gap: 12px; }
-  .workflow-steps { flex-direction: column; align-items: center; }
-  .workflow-arrow { transform: rotate(90deg); margin: 2px 0; }
+  .workflow-steps { flex-direction: column; align-items: center; gap: 0; }
+  .workflow-step-wrap { flex-direction: column; align-items: center; }
+  .workflow-step-label { white-space: normal; text-align: center; max-width: 120px; }
+  .workflow-arrow { transform: rotate(90deg); margin: 6px 0; opacity: 0.8; }
 }
 
 .db-mode-badge {
