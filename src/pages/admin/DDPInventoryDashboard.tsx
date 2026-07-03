@@ -70,7 +70,7 @@ export default function DDPInventoryDashboard({ inventory, onReview }: Props) {
                   <td className="td-num" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
                   <td className="td-num" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
                   <td className="td-num" data-label="Moisture %">{item.moisturePct > 0 ? `${item.moisturePct}%` : '—'}</td>
-                  <td data-label="Grade"><span className="grade-chip">Grade {item.qualityGrade}</span></td>
+                  <td data-label="Grade"><span className="grade-chip">{item.qualityGrade ? `Grade ${item.qualityGrade}` : '—'}</span></td>
                   <td data-label="COA">
                     {item.certFileName
                       ? <span className="coa-present">COA provided</span>

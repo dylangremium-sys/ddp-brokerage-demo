@@ -20,7 +20,7 @@ const CHECKLIST: { key: string; label: string; pass: (i: InventoryItem) => boole
   { key: 'moist',   label: 'Moisture % recorded',         pass: i => i.moisturePct > 0 },
   { key: 'water',   label: 'Water activity recorded',     pass: i => !!i.waterActivity },
   { key: 'storage', label: 'Storage conditions supplied', pass: i => !!i.storageConditions },
-  { key: 'notes',   label: 'Farmer notes present',        pass: i => !!(i.farmerNotes || i.notes) },
+  { key: 'notes',   label: 'Batch notes on file',          pass: i => !!(i.farmerNotes || i.notes) },
 ]
 
 
@@ -94,7 +94,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
       `Farm:             ${item.farmName}`,
       `Location:         ${location}`,
       `Available Qty:    ${item.quantityKg > 0 ? `${item.quantityKg.toLocaleString()} ${item.unit ?? 'kg'}` : '—'}`,
-      `Price per kg:     ${item.pricePerKg > 0 ? `฿${item.pricePerKg.toLocaleString()}` : '—'}`,
+      `Price per kg:     ${item.pricePerKg > 0 ? `฿${item.pricePerKg.toLocaleString()} THB/kg` : '—'}`,
       '',
       `THC:              ${na(item.thcPct, '%')}`,
       `CBD:              ${na(item.cbdPct, '%')}`,
@@ -208,7 +208,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
             )}
             <div className="buyer-pack-field">
               <span className="buyer-pack-lbl">Price / kg</span>
-              <span>{item.pricePerKg > 0 ? `฿${item.pricePerKg.toLocaleString()}` : '—'}</span>
+              <span>{item.pricePerKg > 0 ? `฿${item.pricePerKg.toLocaleString()} THB/kg` : '—'}</span>
             </div>
             {item.harvestDate && (
               <div className="buyer-pack-field">
@@ -360,7 +360,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
       <div className="disclaimer-box">
         <span className="disclaimer-icon" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '1px', color: 'var(--warning)' }}>NOTE</span>
         <div>
-          <strong>Buyer Preview — Not Yet Live</strong> — Buyer access, pricing, messaging, and transactions are not yet active.
+          <strong>Buyer access controlled by DDP</strong> — Buyer-facing packs are prepared by DDP for qualified commercial review only.
           To generate a buyer information pack for a specific batch, use the <strong>Generate Buyer Pack</strong> action in Master Inventory.
         </div>
       </div>
@@ -371,12 +371,6 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
         </div>
       ) : (
         <>
-          <div className="card" style={{ padding: '24px 28px', color: 'var(--text-muted)', fontSize: 14 }}>
-            <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>Buyer Interest Signals</div>
-            <p style={{ margin: 0 }}>Qualified buyer interest is managed by DDP. Buyer records will appear here when connected.</p>
-            <p style={{ margin: '8px 0 0', fontSize: 12 }}>This section will display verified buyer demand signals once buyer records are connected.</p>
-          </div>
-
           <div className="section-label-row" style={{ marginTop: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <DDPVerifiedSupplySeal size={36} />
@@ -408,7 +402,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
                       <td className="td-num" data-label="Quantity (kg)">{item.quantityKg.toLocaleString()}</td>
                       <td className="td-num" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
                       <td className="td-num" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
-                      <td data-label="Grade"><span className="grade-chip">Grade {item.qualityGrade}</span></td>
+                      <td data-label="Grade"><span className="grade-chip">{item.qualityGrade ? `Grade ${item.qualityGrade}` : '—'}</span></td>
                       <td data-label="COA">{item.certFileName || item.coaStoragePath ? <span className="coa-present">✓</span> : <span className="coa-missing">✗</span>}</td>
                       <td className="td-mono" data-label="Batch">{item.batchNumber || '—'}</td>
                     </tr>

@@ -150,7 +150,7 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
                     <td className="td-bold">{i.productName}</td>
                     <td>{i.farmName}</td>
                     <td className="td-num">{i.quantityKg.toLocaleString()}</td>
-                    <td><span className="grade-chip">Grade {i.qualityGrade}</span></td>
+                    <td><span className="grade-chip">{i.qualityGrade ? `Grade ${i.qualityGrade}` : '—'}</span></td>
                     <td><span className={`badge ${INV_STATUS_CLASS[i.status]}`}>{i.status}</span></td>
                   </tr>
                 ))}
