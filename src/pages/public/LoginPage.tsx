@@ -82,10 +82,6 @@ export default function LoginPage({ lang = 'en', onSuccess, onGoSignup }: Props)
             {t.loginSwitchLink}
           </button>
         </p>
-
-        <div className="auth-admin-note">
-          {t.loginAdminNote}
-        </div>
       </div>
     </div>
   )

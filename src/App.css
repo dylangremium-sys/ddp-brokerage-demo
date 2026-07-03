@@ -2102,6 +2102,14 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   padding: 26px;
 }
 
+/* Auth forms use sentence-case labels — override global uppercase field rule */
+.auth-card .field > span,
+.auth-card .field > label,
+.auth-card .field-label {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .auth-switch-text {
   text-align: center;
   margin-top: 18px;
