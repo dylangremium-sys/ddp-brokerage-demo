@@ -94,13 +94,13 @@ export default function SignupPage({ lang = 'en', onSuccess, onGoLogin }: Props)
 
   return (
     <div className="page-wrap auth-page">
-      <div className="page-header farmer-header" style={{ maxWidth: 480, margin: '0 auto 24px' }}>
-        <div className="page-eyebrow">DDP Brokerage</div>
-        <h1 className="page-title">{t.joinNetwork}</h1>
-        <p className="page-desc">{t.signupTagline}</p>
-      </div>
-
       <div className="card form-card auth-card">
+        <div className="auth-card-brand">
+          <div className="page-eyebrow">DDP Brokerage</div>
+          <h1 className="auth-card-title">{t.joinNetwork}</h1>
+          <p className="page-desc">{t.signupTagline}</p>
+        </div>
+
         {error && (
           <div className="alert alert-danger" style={{ marginTop: 0, marginBottom: 16 }}>
             {error}
