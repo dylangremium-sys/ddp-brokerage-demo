@@ -75,7 +75,7 @@ export default function FarmerDashboard({
   const t = T[lang]
 
   // Use the most recent farm for profile completion, or 0 if none
-  const latestFarm = farms.length > 0 ? farms[farms.length - 1] : null
+  const latestFarm = farms.length > 0 ? farms[0] : null
   const draft = loadFarmDraft()
   const completionPct = latestFarm
     ? Math.max(latestFarm.completionPct, calcCompletion(latestFarm))
