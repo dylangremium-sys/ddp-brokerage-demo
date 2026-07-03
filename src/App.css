@@ -2093,10 +2093,24 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 .auth-page {
   max-width: 480px;
   margin: 0 auto;
+  padding-top: 40px;
 }
 
 .auth-card {
-  padding: 26px;
+  padding: 28px;
+}
+
+.auth-card-brand {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.auth-card-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 5px 0 5px;
 }
 
 /* Auth forms use sentence-case labels — override global uppercase field rule */

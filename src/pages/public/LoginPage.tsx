@@ -32,13 +32,13 @@ export default function LoginPage({ lang = 'en', onSuccess, onGoSignup }: Props)
 
   return (
     <div className="page-wrap auth-page">
-      <div className="page-header farmer-header" style={{ maxWidth: 480, margin: '0 auto 24px' }}>
-        <div className="page-eyebrow">DDP Brokerage</div>
-        <h1 className="page-title">{t.loginHeading}</h1>
-        <p className="page-desc">{t.loginDesc}</p>
-      </div>
-
       <div className="card form-card auth-card">
+        <div className="auth-card-brand">
+          <div className="page-eyebrow">DDP Brokerage</div>
+          <h1 className="auth-card-title">{t.loginHeading}</h1>
+          <p className="page-desc">{t.loginDesc}</p>
+        </div>
+
         {error && (
           <div className="alert alert-danger" style={{ marginTop: 0, marginBottom: 16 }}>
             {error}
