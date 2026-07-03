@@ -2,6 +2,25 @@ import { T } from '../../translations'
 import type { Lang } from '../../types'
 import { DDPMonogramLogo } from '../../components/logos'
 
+function FarmerPortalIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 21v-9" />
+      <path d="M12 12C11 9.5 8.5 7.5 6 7C6 10 8 12.5 12 13" />
+      <path d="M12 12C13 9.5 15.5 7.5 18 7C18 10 16 12.5 12 13" />
+    </svg>
+  )
+}
+
+function OperationsDashboardIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3L5 7v6C5 18 8.5 21 12 22C15.5 21 19 18 19 13V7Z" />
+      <polyline points="9,12.5 11,15 15,9.5" />
+    </svg>
+  )
+}
+
 interface Props {
   lang: Lang
   onEnterFarmer: () => void
@@ -28,7 +47,7 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
 
           <div className="landing-access-grid">
             <button type="button" className="access-module access-module-primary" onClick={onEnterFarmer}>
-              <span className="access-module-icon">🌿</span>
+              <span className="access-module-icon" aria-hidden="true"><FarmerPortalIcon /></span>
               <span className="access-module-body">
                 <span className="access-module-title">{t.landingEnterFarmer}</span>
                 <span className="access-module-desc">{t.landingAccessFarmerDesc}</span>
@@ -36,7 +55,7 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
               <span className="access-module-arrow">→</span>
             </button>
             <button type="button" className="access-module access-module-secondary" onClick={onEnterDDP}>
-              <span className="access-module-icon">🔒</span>
+              <span className="access-module-icon" aria-hidden="true"><OperationsDashboardIcon /></span>
               <span className="access-module-body">
                 <span className="access-module-title">{t.landingEnterDDP}</span>
                 <span className="access-module-desc">{t.landingAccessDDPDesc}</span>

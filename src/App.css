@@ -1058,15 +1058,26 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 .access-module-primary .access-module-icon {
   background: rgba(198,161,91,0.12);
   border-color: rgba(198,161,91,0.4);
+  color: var(--gold);
 }
 .access-module-primary:hover {
   border-color: var(--gold);
   box-shadow: 0 4px 16px rgba(198,161,91,0.12);
 }
 
+.access-module-secondary .access-module-icon {
+  color: var(--text-muted);
+}
+
 .access-module-secondary:hover {
   border-color: var(--text-muted);
   background: var(--bg-elevated);
+}
+
+.access-module-icon svg {
+  width: 22px;
+  height: 22px;
+  display: block;
 }
 
 .landing-body {
