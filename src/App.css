@@ -80,6 +80,20 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   text-transform: uppercase;
 }
 
+.landing-nav-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.landing-nav-descriptor {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  opacity: 0.75;
+}
+
 .navbar-links {
   display: flex;
   align-items: center;
@@ -1076,9 +1090,20 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   line-height: 1.4;
 }
 
+.access-module-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-top: 6px;
+}
+
 .access-module-arrow {
-  font-size: 16px;
-  color: var(--text-muted);
+  font-size: 14px;
   flex-shrink: 0;
   transition: transform 0.15s;
 }
@@ -1111,6 +1136,59 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   width: 22px;
   height: 22px;
   display: block;
+}
+
+/* ── Verification framework strip ── */
+.framework-strip {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+
+.framework-strip-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px 32px;
+}
+
+.framework-strip-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.framework-steps {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+}
+
+.framework-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 200px;
+  max-width: 220px;
+  text-align: center;
+}
+
+.framework-step-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.framework-connector {
+  flex: 0 0 32px;
+  height: 1px;
+  background: var(--border);
+  margin-top: 12px;
 }
 
 .landing-body {
@@ -1160,6 +1238,146 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
+}
+
+/* ── Buyer pack preview ── */
+.buyer-pack-preview {
+  max-width: 960px;
+  margin: 0 auto 28px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+}
+
+.buyer-pack-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.buyer-pack-preview-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.buyer-pack-preview-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 460px;
+}
+
+.buyer-pack-preview-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--warning);
+  background: rgba(184,120,46,0.12);
+  border: 1px solid rgba(184,120,46,0.35);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.buyer-pack-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px 20px;
+}
+
+.buyer-pack-preview-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.buyer-pack-preview-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.buyer-pack-preview-value {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.buyer-pack-preview-note {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ── Procurement readiness (real data) ── */
+.readiness-panel {
+  max-width: 960px;
+  margin: 0 auto 28px;
+}
+
+.readiness-panel-head {
+  margin-bottom: 14px;
+}
+
+.readiness-panel-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.readiness-panel-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.readiness-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+.readiness-stat {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 14px;
+  text-align: center;
+}
+
+.readiness-stat-val {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.readiness-stat-lbl {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  line-height: 1.4;
 }
 
 /* ── Concept Cards ── */
@@ -1475,6 +1693,30 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 .tier-cultivator-claimed { background: rgba(148,163,184,0.14); color: #CBD5E1; border: 1px solid rgba(148,163,184,0.35); }
 .tier-ddp-documented { background: rgba(184,120,46,0.14); color: var(--warning); border: 1px solid rgba(184,120,46,0.4); }
 .tier-certified-pharma-ready { background: var(--jade); color: #FFFFFF; border: 1px solid var(--jade); }
+
+/* ── Standardized status vocabulary (Claimed/Documented/Verified/etc.) ── */
+.status-pill {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.status-claimed { background: rgba(148,163,184,0.14); color: #CBD5E1; border: 1px solid rgba(148,163,184,0.35); }
+.status-documented { background: rgba(184,120,46,0.14); color: var(--warning); border: 1px solid rgba(184,120,46,0.4); }
+.status-verified { background: var(--jade); color: #FFFFFF; border: 1px solid var(--jade); }
+.status-buyer-ready { background: var(--jade); color: #FFFFFF; border: 1px solid var(--jade); }
+.status-missing { background: rgba(153,27,27,0.12); color: var(--error); border: 1px solid rgba(153,27,27,0.35); }
+.status-hold { background: rgba(184,120,46,0.14); color: var(--warning); border: 1px solid rgba(184,120,46,0.4); }
+.status-reject { background: rgba(153,27,27,0.12); color: var(--error); border: 1px solid rgba(153,27,27,0.35); }
+.status-review-pending { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); }
+.status-coa-received { background: rgba(46,139,103,0.12); color: var(--success); border: 1px solid rgba(46,139,103,0.35); }
+.status-coa-missing { background: rgba(153,27,27,0.12); color: var(--error); border: 1px solid rgba(153,27,27,0.35); }
+.status-progress { background: rgba(100,116,139,0.14); color: var(--accent); border: 1px solid rgba(100,116,139,0.4); }
 
 /* ── Extra badges ── */
 .badge-gray { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); }
@@ -1866,6 +2108,10 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   .landing-headline { font-size: 27px; }
   .landing-hero-inner { gap: 24px; }
   .review-data-grid { grid-template-columns: 1fr; }
+  .buyer-pack-preview-grid { grid-template-columns: repeat(2, 1fr); }
+  .readiness-stats { grid-template-columns: repeat(3, 1fr); }
+  .framework-steps { flex-wrap: wrap; row-gap: 20px; }
+  .framework-connector { display: none; }
 }
 
 @media (max-width: 768px) {
@@ -1897,6 +2143,13 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   .workflow-step-wrap { flex-direction: column; align-items: center; }
   .workflow-step-label { white-space: normal; text-align: center; max-width: 120px; }
   .workflow-arrow { transform: rotate(90deg); margin: 6px 0; opacity: 0.8; }
+  .framework-steps { flex-direction: column; align-items: center; gap: 20px; }
+  .framework-step { flex: 0 0 auto; max-width: 320px; }
+  .buyer-pack-preview-grid { grid-template-columns: 1fr; }
+  .buyer-pack-preview-head { flex-direction: column; }
+  .readiness-stats { grid-template-columns: repeat(2, 1fr); }
+  .landing-nav { height: auto; flex-wrap: wrap; padding: 10px 16px; gap: 8px; }
+  .landing-nav-descriptor { display: none; }
 }
 
 .db-mode-badge {

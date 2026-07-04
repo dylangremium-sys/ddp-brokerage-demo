@@ -33,6 +33,7 @@ import {
 } from './services/auth'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus } from './types'
 import { DDPMonogramLogo } from './components/logos'
+import { T } from './translations'
 import LandingPage from './pages/public/LandingPage'
 import LoginPage from './pages/public/LoginPage'
 import SignupPage from './pages/public/SignupPage'
@@ -434,6 +435,15 @@ export default function App() {
     : undefined
   const buyerPackItem = inventory.find(i => i.id === buyerPackItemId) ?? null
 
+  // ── Landing page procurement-readiness snapshot (real counts, not sample data) ──
+  const landingReadiness = {
+    farmsUnderReview: farms.filter(f => f.status === 'Submitted to DDP' || f.status === 'Under Review').length,
+    batchesDocumented: inventory.filter(i => !!(i.certFileName || i.coaStoragePath || i.labName || i.testDate)).length,
+    coasReceived: inventory.filter(i => !!(i.certFileName || i.coaStoragePath)).length,
+    missingFiles: inventory.filter(i => i.status === 'Missing Document').length,
+    buyerReadyInventory: inventory.filter(i => i.status === 'Approved').length,
+  }
+
   // ── Auth loading screen ───────────────────────────────────────────────────
   if (authLoading) {
     return (
@@ -483,8 +493,11 @@ export default function App() {
         <div>
           <div className="landing-nav">
             <div className="navbar-brand">
-              <DDPMonogramLogo height={34} />
-              <span className="brand-name">Brokerage</span>
+              <DDPMonogramLogo height={38} />
+              <div className="landing-nav-brand-text">
+                <span className="brand-name">Brokerage</span>
+                <span className="landing-nav-descriptor">{T[lang].landingNavDescriptor}</span>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <LangToggle lang={lang} setLang={setLang} />
@@ -502,6 +515,7 @@ export default function App() {
             lang={lang}
             onEnterFarmer={handleEnterFarmer}
             onEnterDDP={handleEnterDDP}
+            readiness={landingReadiness}
           />
         </div>
       )}

@@ -1,6 +1,7 @@
 import { T } from '../../translations'
 import type { Lang } from '../../types'
 import { DDPMonogramLogo } from '../../components/logos'
+import { StatusBadge } from '../../components/shared/StatusBadge'
 
 function FarmerPortalIcon() {
   return (
@@ -21,15 +22,32 @@ function OperationsDashboardIcon() {
   )
 }
 
+export interface LandingReadiness {
+  farmsUnderReview: number
+  batchesDocumented: number
+  coasReceived: number
+  missingFiles: number
+  buyerReadyInventory: number
+}
+
 interface Props {
   lang: Lang
   onEnterFarmer: () => void
   onEnterDDP: () => void
+  readiness: LandingReadiness
 }
 
-export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) {
+export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness }: Props) {
   const t = T[lang]
   const proofItems = [t.landingProof1, t.landingProof2, t.landingProof3, t.landingProof4, t.landingProof5]
+
+  const readinessItems = [
+    { label: t.landingReadinessFarms, value: readiness.farmsUnderReview },
+    { label: t.landingReadinessDocumented, value: readiness.batchesDocumented },
+    { label: t.landingReadinessCoa, value: readiness.coasReceived },
+    { label: t.landingReadinessMissing, value: readiness.missingFiles },
+    { label: t.landingReadinessBuyerReady, value: readiness.buyerReadyInventory },
+  ]
 
   return (
     <div className="landing-page">
@@ -51,17 +69,45 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
               <span className="access-module-body">
                 <span className="access-module-title">{t.landingEnterFarmer}</span>
                 <span className="access-module-desc">{t.landingAccessFarmerDesc}</span>
+                <span className="access-module-cta">{t.landingAccessFarmerCta} <span className="access-module-arrow">→</span></span>
               </span>
-              <span className="access-module-arrow">→</span>
             </button>
             <button type="button" className="access-module access-module-secondary" onClick={onEnterDDP}>
               <span className="access-module-icon" aria-hidden="true"><OperationsDashboardIcon /></span>
               <span className="access-module-body">
                 <span className="access-module-title">{t.landingEnterDDP}</span>
                 <span className="access-module-desc">{t.landingAccessDDPDesc}</span>
+                <span className="access-module-cta">{t.landingAccessDDPCta} <span className="access-module-arrow">→</span></span>
               </span>
-              <span className="access-module-arrow">→</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Verification framework strip ── */}
+      <div className="framework-strip">
+        <div className="framework-strip-inner">
+          <div className="framework-strip-title">{t.landingFrameworkTitle}</div>
+          <div className="framework-steps">
+            <div className="framework-step">
+              <StatusBadge status="claimed" lang={lang} />
+              <p className="framework-step-desc">{t.landingFrameworkClaimedDesc}</p>
+            </div>
+            <div className="framework-connector" aria-hidden="true" />
+            <div className="framework-step">
+              <StatusBadge status="documented" lang={lang} />
+              <p className="framework-step-desc">{t.landingFrameworkDocumentedDesc}</p>
+            </div>
+            <div className="framework-connector" aria-hidden="true" />
+            <div className="framework-step">
+              <StatusBadge status="verified" lang={lang} />
+              <p className="framework-step-desc">{t.landingFrameworkVerifiedDesc}</p>
+            </div>
+            <div className="framework-connector" aria-hidden="true" />
+            <div className="framework-step">
+              <StatusBadge status="buyer-ready" lang={lang} />
+              <p className="framework-step-desc">{t.landingFrameworkBuyerReadyDesc}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -74,6 +120,60 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
               <div key={i} className="proof-strip-item">
                 <span className="proof-strip-dot" />
                 {item}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Buyer pack preview ── */}
+        <div className="buyer-pack-preview">
+          <div className="buyer-pack-preview-head">
+            <div>
+              <div className="buyer-pack-preview-title">{t.landingBuyerPackTitle}</div>
+              <p className="buyer-pack-preview-desc">{t.landingBuyerPackDesc}</p>
+            </div>
+            <span className="buyer-pack-preview-badge">{t.landingBuyerPackBadge}</span>
+          </div>
+          <div className="buyer-pack-preview-grid">
+            <div className="buyer-pack-preview-field">
+              <span className="buyer-pack-preview-label">{t.landingBuyerPackFarmLabel}</span>
+              <StatusBadge status="documented" lang={lang} />
+            </div>
+            <div className="buyer-pack-preview-field">
+              <span className="buyer-pack-preview-label">{t.landingBuyerPackBatchLabel}</span>
+              <StatusBadge status="verified" lang={lang} />
+            </div>
+            <div className="buyer-pack-preview-field">
+              <span className="buyer-pack-preview-label">{t.landingBuyerPackCoaLabel}</span>
+              <StatusBadge status="coa-received" lang={lang} />
+            </div>
+            <div className="buyer-pack-preview-field">
+              <span className="buyer-pack-preview-label">{t.landingBuyerPackMissingLabel}</span>
+              <span className="buyer-pack-preview-value">{t.landingBuyerPackMissingValue}</span>
+            </div>
+            <div className="buyer-pack-preview-field">
+              <span className="buyer-pack-preview-label">{t.landingBuyerPackRiskLabel}</span>
+              <span className="risk-chip risk-low">{t.landingBuyerPackRiskValue}</span>
+            </div>
+            <div className="buyer-pack-preview-field">
+              <span className="buyer-pack-preview-label">{t.landingBuyerPackActionLabel}</span>
+              <StatusBadge status="progress" lang={lang} />
+            </div>
+          </div>
+          <p className="buyer-pack-preview-note">{t.landingBuyerPackActionNote}</p>
+        </div>
+
+        {/* ── Procurement readiness (real counts) ── */}
+        <div className="readiness-panel">
+          <div className="readiness-panel-head">
+            <div className="readiness-panel-title">{t.landingReadinessTitle}</div>
+            <p className="readiness-panel-desc">{t.landingReadinessDesc}</p>
+          </div>
+          <div className="readiness-stats">
+            {readinessItems.map((item, i) => (
+              <div key={i} className="readiness-stat">
+                <div className="readiness-stat-val">{item.value}</div>
+                <div className="readiness-stat-lbl">{item.label}</div>
               </div>
             ))}
           </div>
