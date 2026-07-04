@@ -550,10 +550,6 @@ export const SEED_INVENTORY: InventoryItem[] = [
     pesticidesStatus: 'pass',
     microbialStatus: 'pass',
     mycotoxinsStatus: 'pass',
-    coaFileSizeBytes: 482_331,
-    coaVerificationHash: 'SHA256:7a1f9c3e2b4d6081',
-    coaSignatoryAuthority: 'Dr. Suphachai Meesuk, Lab Director',
-    coaIssuedDate: '2025-12-19',
   },
   {
     id: 'seed-2',
@@ -585,10 +581,6 @@ export const SEED_INVENTORY: InventoryItem[] = [
     pesticidesStatus: 'pass',
     microbialStatus: 'pass',
     mycotoxinsStatus: 'fail',
-    coaFileSizeBytes: 511_204,
-    coaVerificationHash: 'SHA256:c48e02d715fa93bb',
-    coaSignatoryAuthority: 'Dr. Suphachai Meesuk, Lab Director',
-    coaIssuedDate: '2025-12-20',
   },
   {
     id: 'seed-3',

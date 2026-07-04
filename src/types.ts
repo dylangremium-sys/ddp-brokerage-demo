@@ -129,10 +129,6 @@ export interface InventoryItem {
   farmerNotes?: string
   ownerNotes?: string
   coaStoragePath?: string
-  coaFileSizeBytes?: number
-  coaVerificationHash?: string
-  coaSignatoryAuthority?: string
-  coaIssuedDate?: string
 }
 
 export interface FarmProfile {

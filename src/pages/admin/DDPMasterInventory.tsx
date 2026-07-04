@@ -202,8 +202,6 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                         variant="table-cell"
                         hasFile={!!(item.certFileName || item.coaStoragePath)}
                         fileName={item.certFileName}
-                        sizeBytes={item.coaFileSizeBytes}
-                        issuedDate={item.coaIssuedDate}
                         openable={!!(item.coaStoragePath && onGetCoaUrl)}
                         loading={coaLoadingId === item.id}
                         onOpen={() => handleViewCoa(item)}

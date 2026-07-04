@@ -372,10 +372,6 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
     mycotoxins_status: item.mycotoxinsStatus || null,
     photo_urls: storablePhotoUrls.length > 0 ? storablePhotoUrls : null,
     coa_storage_path: item.coaStoragePath ?? null,
-    coa_file_size_bytes: item.coaFileSizeBytes ?? null,
-    coa_verification_hash: item.coaVerificationHash ?? null,
-    coa_signatory_authority: item.coaSignatoryAuthority ?? null,
-    coa_issued_date: item.coaIssuedDate ?? null,
     farmer_notes: item.farmerNotes ?? null,
     owner_notes: item.ownerNotes ?? null,
   })
@@ -637,10 +633,6 @@ function batchRowToInventoryItem(row: Record<string, any>, farmName?: string): I
     farmerNotes: row.farmer_notes as string ?? undefined,
     ownerNotes: row.owner_notes as string ?? undefined,
     coaStoragePath: row.coa_storage_path as string ?? undefined,
-    coaFileSizeBytes: row.coa_file_size_bytes as number ?? undefined,
-    coaVerificationHash: row.coa_verification_hash as string ?? undefined,
-    coaSignatoryAuthority: row.coa_signatory_authority as string ?? undefined,
-    coaIssuedDate: row.coa_issued_date as string ?? undefined,
   }
 }
 

@@ -153,10 +153,6 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                     <DocumentCard
                       hasFile={!!(item.certFileName || item.coaStoragePath)}
                       fileName={item.certFileName}
-                      sizeBytes={item.coaFileSizeBytes}
-                      issuedDate={item.coaIssuedDate}
-                      verificationHash={item.coaVerificationHash}
-                      signatoryAuthority={item.coaSignatoryAuthority}
                       openable={!!(item.coaStoragePath && onGetCoaUrl)}
                       loading={coaLoading}
                       onOpen={handleViewCoa}

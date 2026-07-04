@@ -266,8 +266,6 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
               variant="buyer-pack"
               hasFile={hasCoa}
               fileName={item.certFileName}
-              sizeBytes={item.coaFileSizeBytes}
-              issuedDate={item.coaIssuedDate}
               openable={canOpenCoa}
               loading={coaLoading}
               onOpen={handleOpenCoa}
