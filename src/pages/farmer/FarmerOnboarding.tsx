@@ -24,7 +24,7 @@ const BLANK: Draft = {
   subsidiaries: '', foreignInvestors: '', strategicPartners: '', exportPartners: '',
   cultivationLicence: '', processingLicence: '', manufacturingLicence: '',
   researchLicence: '', medicalCannabisLicence: '', exportLicence: '', importLicence: '',
-  gmpCert: '', gapCert: '', gacpCert: '', organicCert: '', isoCerts: '', otherCerts: '', documentExpiry: '',
+  gmpCert: '', gapCert: '', gacpCert: '', picsCert: '', organicCert: '', isoCerts: '', otherCerts: '', documentExpiry: '',
   farmType: '', totalLandArea: '', cultivationArea: '', floweringArea: '', nurseryArea: '',
   motherPlantArea: '', processingArea: '', dryingArea: '', storageArea: '', securityArea: '',
   expansionCapacity: '', facilityPhotoUrl: '',
@@ -135,7 +135,6 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
       status: 'Submitted to DDP',
       submittedAt: now,
       completionPct: complete,
-      partnerTier: 'Pending',
       ...Object.fromEntries(
         Object.entries(BLANK).map(([k]) => [k, (form as Record<string, unknown>)[k] ?? (BLANK as Record<string, unknown>)[k]])
       ),

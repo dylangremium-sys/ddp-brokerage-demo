@@ -148,7 +148,6 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
       {/* Combined empty state — shown only when farmer has made no submissions at all */}
       {isEmpty && (
         <div className="empty-state-hero">
-          <div className="empty-state-icon">📋</div>
           <p className="empty-state-message">
             {t.statusEmptyMsg}
           </p>
@@ -234,7 +233,7 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
                   {item.waterActivity && <span className="pill">{t.waPrefix} {item.waterActivity}</span>}
                   <span className="pill">฿{item.pricePerKg}/{t.kgUnit}</span>
                   {item.harvestDate && <span className="pill">{t.harvestPrefix} {item.harvestDate}</span>}
-                  {item.certFileName && <span className="pill pill-doc">📄 {item.certFileName}</span>}
+                  {item.certFileName && <span className="pill pill-doc">{item.certFileName}</span>}
                 </div>
                 {msg && <div className={invMsgClass(item.status)} style={{ marginTop: 10 }}>{msg}</div>}
               </div>

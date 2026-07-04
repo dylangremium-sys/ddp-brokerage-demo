@@ -52,7 +52,6 @@ export default function FarmerRequests({
 
       {open.length === 0 && (
         <div className="empty-state-hero">
-          <div className="empty-state-icon">✅</div>
           <p className="empty-state-message">
             {isTh
               ? 'ไม่มีคำขอที่รอดำเนินการ ทุกอย่างเรียบร้อยดี'

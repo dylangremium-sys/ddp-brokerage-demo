@@ -1,4 +1,17 @@
-import type { InventoryItem, FarmProfile, ReviewRequest, MarketBenchmark } from './types'
+import type { InventoryItem, FarmProfile, ReviewRequest, MarketBenchmark, ComplianceVerificationTier, TestStatus } from './types'
+
+export function testStatusLabel(s?: TestStatus): string {
+  if (s === 'pass') return 'PASS'
+  if (s === 'fail') return 'FAIL'
+  if (s === 'not_tested') return 'NOT TESTED'
+  return '—'
+}
+
+export function testStatusClass(s?: TestStatus): string {
+  if (s === 'pass') return 'check-yes'
+  if (s === 'fail') return 'check-no'
+  return 'td-muted'
+}
 
 export const INV_KEY = 'ddp_inventory'
 export const FARM_KEY = 'ddp_farms'
@@ -36,6 +49,33 @@ export function farmTotalScore(f: FarmProfile): number {
   )
 }
 
+// Derives the 3-tier compliance verification status from audited, reliably-populated
+// signals (status, licence/COA presence, completion %) rather than the score fields
+// above, which are not currently persisted for Supabase-backed farms.
+export function deriveComplianceTier(f: FarmProfile): ComplianceVerificationTier {
+  const reviewed = (['Approved', 'Strategic Partner', 'Watchlist', 'Under Review'] as string[]).includes(f.status)
+  const hasCoreDocs = !!f.coaFiles && (!!f.cultivationLicence || !!f.exportLicence)
+  const pharmaReady =
+    (['Approved', 'Strategic Partner'] as string[]).includes(f.status) &&
+    !!f.gmpCert && !!f.exportLicence &&
+    (f.suppliedPharma === 'Yes' || f.suppliedGMPProcessors === 'Yes' || f.qualifiedPerson === 'Yes') &&
+    f.heavyMetalsTested === 'Yes' && f.microbiologyTested === 'Yes'
+
+  if (pharmaReady) return 'CERTIFIED_PHARMA_READY'
+  if (reviewed && hasCoreDocs && f.completionPct >= 60) return 'DDP_DOCUMENTED'
+  return 'CULTIVATOR_CLAIMED'
+}
+
+export const COMPLIANCE_TIER_LABEL: Record<ComplianceVerificationTier, string> = {
+  CULTIVATOR_CLAIMED: 'CULTIVATOR CLAIMED',
+  DDP_DOCUMENTED: 'DDP DOCUMENTED',
+  CERTIFIED_PHARMA_READY: 'CERTIFIED PHARMA-READY',
+}
+
+export function complianceTierClass(tier: ComplianceVerificationTier): string {
+  return `tier-${tier.toLowerCase().replace(/_/g, '-')}`
+}
+
 const NOW = new Date().toISOString()
 
 export const SEED_FARMS: FarmProfile[] = [
@@ -44,7 +84,6 @@ export const SEED_FARMS: FarmProfile[] = [
     status: 'Submitted to DDP',
     submittedAt: NOW,
     completionPct: 82,
-    partnerTier: 'Gold Candidate',
     legalBusinessName: 'Calli Krush Co., Ltd.',
     tradingName: 'Calli Krush',
     registrationNumber: 'TH-2021-BUR-4471',
@@ -86,6 +125,7 @@ export const SEED_FARMS: FarmProfile[] = [
     gmpCert: '',
     gapCert: 'GAP-BUR-2023.pdf',
     gacpCert: 'GACP-BUR-2023.pdf',
+    picsCert: '',
     organicCert: '',
     isoCerts: '',
     otherCerts: '',
@@ -190,7 +230,6 @@ export const SEED_FARMS: FarmProfile[] = [
     status: 'More Information Required',
     submittedAt: NOW,
     completionPct: 54,
-    partnerTier: 'Watchlist',
     legalBusinessName: 'Northern Green Farm Co., Ltd.',
     tradingName: 'Northern Green Farm',
     registrationNumber: 'TH-2022-CNX-1198',
@@ -232,6 +271,7 @@ export const SEED_FARMS: FarmProfile[] = [
     gmpCert: '',
     gapCert: '',
     gacpCert: '',
+    picsCert: '',
     organicCert: '',
     isoCerts: '',
     otherCerts: '',
@@ -336,7 +376,6 @@ export const SEED_FARMS: FarmProfile[] = [
     status: 'Approved',
     submittedAt: NOW,
     completionPct: 91,
-    partnerTier: 'Gold Partner',
     legalBusinessName: 'Korat Medical Grow Co., Ltd.',
     tradingName: 'Korat Medical Grow',
     registrationNumber: 'TH-2020-NMA-0099',
@@ -378,6 +417,7 @@ export const SEED_FARMS: FarmProfile[] = [
     gmpCert: 'GMP-NMA-2023.pdf',
     gapCert: 'GAP-NMA-2022.pdf',
     gacpCert: 'GACP-NMA-2022.pdf',
+    picsCert: 'PICS-NMA-2023.pdf',
     organicCert: 'ORG-NMA-2023.pdf',
     isoCerts: 'ISO9001-2023.pdf',
     otherCerts: 'DTTAM-NMA-2022.pdf',
@@ -503,6 +543,17 @@ export const SEED_INVENTORY: InventoryItem[] = [
     notes: 'First harvest of the season. Extra sweet variety.',
     status: 'Pending Review',
     submittedAt: new Date().toISOString(),
+    labName: 'Bureau Veritas (Thailand)',
+    reportNumber: 'BV-TH-2025-11842',
+    testDate: '2025-12-18',
+    heavyMetalsStatus: 'pass',
+    pesticidesStatus: 'pass',
+    microbialStatus: 'pass',
+    mycotoxinsStatus: 'pass',
+    coaFileSizeBytes: 482_331,
+    coaVerificationHash: 'SHA256:7a1f9c3e2b4d6081',
+    coaSignatoryAuthority: 'Dr. Suphachai Meesuk, Lab Director',
+    coaIssuedDate: '2025-12-19',
   },
   {
     id: 'seed-2',
@@ -527,6 +578,17 @@ export const SEED_INVENTORY: InventoryItem[] = [
     notes: '',
     status: 'Approved',
     submittedAt: new Date().toISOString(),
+    labName: 'Bureau Veritas (Thailand)',
+    reportNumber: 'BV-TH-2025-11901',
+    testDate: '2025-12-19',
+    heavyMetalsStatus: 'pass',
+    pesticidesStatus: 'pass',
+    microbialStatus: 'pass',
+    mycotoxinsStatus: 'fail',
+    coaFileSizeBytes: 511_204,
+    coaVerificationHash: 'SHA256:c48e02d715fa93bb',
+    coaSignatoryAuthority: 'Dr. Suphachai Meesuk, Lab Director',
+    coaIssuedDate: '2025-12-20',
   },
   {
     id: 'seed-3',

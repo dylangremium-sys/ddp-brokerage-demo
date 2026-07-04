@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { FarmProfile, InventoryItem } from '../../types'
 import { DDPVerifiedSupplySeal } from '../../components/logos'
+import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass, testStatusClass, testStatusLabel } from '../../data'
+import { DocumentCard } from '../../components/shared/DocumentCard'
 
 interface Props {
   inventory: InventoryItem[]
@@ -134,20 +136,20 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
         )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-ghost" onClick={handleCopy}>
-            {copied ? '✓ Copied' : '📋 Copy Summary'}
+            {copied ? '✓ Copied' : 'Copy Summary'}
           </button>
           {hasCoa && canOpenCoa && (
             <button type="button" className="btn btn-ghost" onClick={handleOpenCoa} disabled={coaLoading}>
-              {coaLoading ? '…' : '📄 Open COA'}
+              {coaLoading ? '…' : 'Access Certificate of Analysis (COA)'}
             </button>
           )}
           {hasPhoto && (
             <button type="button" className="btn btn-ghost" onClick={handleOpenPhoto}>
-              📷 Open Photo
+              Open Photo
             </button>
           )}
           <button type="button" className="btn btn-primary" onClick={() => window.print()}>
-            🖨 Print / Save PDF
+            Print / Save PDF
           </button>
         </div>
       </div>
@@ -168,7 +170,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
             <DDPVerifiedSupplySeal size={72} />
-            <span className="badge badge-approved" style={{ fontSize: 12, padding: '4px 10px' }}>✓ DDP Approved</span>
+            <span className="badge badge-approved" style={{ fontSize: 12, padding: '4px 10px' }}>✓ DDP Independent Audit Verified</span>
           </div>
         </div>
 
@@ -186,16 +188,16 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
               <span className="buyer-pack-lbl">Location</span>
               <span>{location}</span>
             </div>
-            {farm?.partnerTier && (
+            {farm && (
               <div className="buyer-pack-field">
-                <span className="buyer-pack-lbl">Partner Tier</span>
-                <span className={`farm-tier-badge tier-${farm.partnerTier.toLowerCase().replace(/ /g, '-')}`}>
-                  {farm.partnerTier}
+                <span className="buyer-pack-lbl">Verification Tier</span>
+                <span className={`farm-tier-badge ${complianceTierClass(deriveComplianceTier(farm))}`}>
+                  {COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm)]}
                 </span>
               </div>
             )}
 
-            <div className="detail-block-title" style={{ margin: '18px 0 10px' }}>Availability &amp; Pricing</div>
+            <div className="detail-block-title" style={{ margin: '18px 0 10px' }}>Allocatable Commercial Quantities</div>
             <div className="buyer-pack-field">
               <span className="buyer-pack-lbl">Available Qty</span>
               <span>{item.quantityKg > 0 ? `${item.quantityKg.toLocaleString()} ${item.unit ?? 'kg'}` : '—'}</span>
@@ -260,21 +262,22 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
         <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
           <div className="detail-block-title" style={{ marginBottom: 10 }}>Documents</div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            {hasCoa ? (
-              canOpenCoa ? (
-                <button type="button" className="btn btn-ghost no-print" onClick={handleOpenCoa} disabled={coaLoading}>
-                  {coaLoading ? '…' : `📄 ${item.certFileName || 'Certificate of Analysis'}`}
-                </button>
-              ) : (
-                <span className="coa-present">✓ {item.certFileName || 'COA on file'}</span>
-              )
-            ) : (
-              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>COA not yet uploaded</span>
-            )}
+            <DocumentCard
+              variant="buyer-pack"
+              hasFile={hasCoa}
+              fileName={item.certFileName}
+              sizeBytes={item.coaFileSizeBytes}
+              issuedDate={item.coaIssuedDate}
+              openable={canOpenCoa}
+              loading={coaLoading}
+              onOpen={handleOpenCoa}
+              missingText="COA not yet uploaded"
+              missingSeverity="muted"
+            />
 
             {hasPhoto ? (
               <button type="button" className="btn btn-ghost no-print" onClick={handleOpenPhoto}>
-                📷 {(item.photoUrls?.length ?? 0) > 1 ? `${item.photoUrls!.length} Product Photos` : 'Product Photo'}
+                {(item.photoUrls?.length ?? 0) > 1 ? `${item.photoUrls!.length} Product Photos` : 'Product Photo'}
               </button>
             ) : (
               <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No product photo</span>
@@ -384,27 +387,30 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
               <table className="inv-table inv-table--cards">
                 <thead>
                   <tr>
-                    <th>Product</th>
-                    <th>Farm</th>
-                    <th>Quantity (kg)</th>
+                    <th>Batch ID</th>
+                    <th>Genotype / Strain</th>
                     <th>THC %</th>
                     <th>CBD %</th>
-                    <th>Grade</th>
+                    <th>Microbial</th>
+                    <th>Heavy Metals</th>
+                    <th>Allocatable Qty (kg)</th>
                     <th>COA</th>
-                    <th>Batch</th>
                   </tr>
                 </thead>
                 <tbody>
                   {approved.map(item => (
                     <tr key={item.id}>
-                      <td className="td-bold" data-label="Product">{item.productName}</td>
-                      <td data-label="Farm">{item.farmName}</td>
-                      <td className="td-num" data-label="Quantity (kg)">{item.quantityKg.toLocaleString()}</td>
-                      <td className="td-num" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
-                      <td className="td-num" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
-                      <td data-label="Grade"><span className="grade-chip">{item.qualityGrade ? `Grade ${item.qualityGrade}` : '—'}</span></td>
+                      <td className="td-mono" data-label="Batch ID">{item.batchNumber || '—'}</td>
+                      <td data-label="Genotype / Strain">
+                        <span className="td-bold">{item.productName}</span>
+                        <br /><span className="td-muted">{item.farmName}</span>
+                      </td>
+                      <td className="td-num td-mono" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
+                      <td className="td-num td-mono" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
+                      <td data-label="Microbial"><span className={testStatusClass(item.microbialStatus)}>{testStatusLabel(item.microbialStatus)}</span></td>
+                      <td data-label="Heavy Metals"><span className={testStatusClass(item.heavyMetalsStatus)}>{testStatusLabel(item.heavyMetalsStatus)}</span></td>
+                      <td className="td-num" data-label="Allocatable Qty (kg)">{item.quantityKg.toLocaleString()}</td>
                       <td data-label="COA">{item.certFileName || item.coaStoragePath ? <span className="coa-present">✓</span> : <span className="coa-missing">✗</span>}</td>
-                      <td className="td-mono" data-label="Batch">{item.batchNumber || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

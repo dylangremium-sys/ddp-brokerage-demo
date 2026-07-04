@@ -1,4 +1,5 @@
 import type { InventoryItem, InventoryStatus } from '../../types'
+import { testStatusLabel, testStatusClass } from '../../data'
 
 interface Props {
   inventory: InventoryItem[]
@@ -43,39 +44,32 @@ export default function DDPInventoryDashboard({ inventory, onReview }: Props) {
           <table className="inv-table inv-table--cards">
             <thead>
               <tr>
-                <th>Product / Strain</th>
-                <th>Farm</th>
-                <th>Location</th>
-                <th>Qty (kg)</th>
-                <th>Batch No.</th>
+                <th>Batch ID</th>
+                <th>Genotype / Strain</th>
                 <th>THC %</th>
                 <th>CBD %</th>
-                <th>Moisture %</th>
-                <th>Grade</th>
-                <th>COA</th>
+                <th>Microbial</th>
+                <th>Heavy Metals</th>
+                <th>Allocatable Qty (kg)</th>
                 <th>Status</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {inventory.length === 0 ? (
-                <tr><td colSpan={12} className="empty-table-cell">No inventory submissions yet. Batches submitted by suppliers will appear here.</td></tr>
+                <tr><td colSpan={9} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
               ) : inventory.map(item => (
                 <tr key={item.id}>
-                  <td className="td-bold" data-label="Product / Strain">{item.productName}</td>
-                  <td data-label="Farm">{item.farmName}</td>
-                  <td className="td-muted" data-label="Location">{item.location}</td>
-                  <td className="td-num" data-label="Qty (kg)">{item.quantityKg.toLocaleString()}</td>
-                  <td className="td-mono" data-label="Batch No.">{item.batchNumber || '—'}</td>
-                  <td className="td-num" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
-                  <td className="td-num" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
-                  <td className="td-num" data-label="Moisture %">{item.moisturePct > 0 ? `${item.moisturePct}%` : '—'}</td>
-                  <td data-label="Grade"><span className="grade-chip">{item.qualityGrade ? `Grade ${item.qualityGrade}` : '—'}</span></td>
-                  <td data-label="COA">
-                    {item.certFileName
-                      ? <span className="coa-present">COA provided</span>
-                      : <span className="coa-missing">COA missing</span>}
+                  <td className="td-mono" data-label="Batch ID">{item.batchNumber || '—'}</td>
+                  <td data-label="Genotype / Strain">
+                    <span className="td-bold">{item.productName}</span>
+                    <br /><span className="td-muted">{item.farmName}</span>
                   </td>
+                  <td className="td-num td-mono" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
+                  <td className="td-num td-mono" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
+                  <td data-label="Microbial"><span className={testStatusClass(item.microbialStatus)}>{testStatusLabel(item.microbialStatus)}</span></td>
+                  <td data-label="Heavy Metals"><span className={testStatusClass(item.heavyMetalsStatus)}>{testStatusLabel(item.heavyMetalsStatus)}</span></td>
+                  <td className="td-num" data-label="Allocatable Qty (kg)">{item.quantityKg.toLocaleString()}</td>
                   <td data-label="Status"><span className={`badge ${STATUS_CLASS[item.status]}`}>{item.status}</span></td>
                   <td>
                     <button className="btn btn-review" onClick={() => onReview(item.id)}>Open Review</button>

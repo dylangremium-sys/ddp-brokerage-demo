@@ -56,6 +56,7 @@ import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
 import FarmerNav from './components/farmer/FarmerNav'
 import AdminNav from './components/admin/AdminNav'
+import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 
 const FARMER_PAGES: Page[] = [
   'landing', 'login', 'signup', 'farmer-register',
@@ -63,6 +64,7 @@ const FARMER_PAGES: Page[] = [
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer']
+const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer']
 const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
@@ -659,6 +661,12 @@ export default function App() {
               onCarbonAction={handleAdminCarbonAction}
               carbonPersistenceAvailable={isDemo}
             />
+          )}
+
+          {isAdminRole && SUPPLY_LEDGER_PAGES.includes(page) && (
+            <div className="page-wrap ddp-wrap" style={{ paddingBottom: 0 }}>
+              <SupplyLedgerTabs page={page} goTo={goTo} />
+            </div>
           )}
 
           {page === 'ddp-inventory' && isAdminRole && (

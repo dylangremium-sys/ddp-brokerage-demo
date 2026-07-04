@@ -1,6 +1,19 @@
 import { useState } from 'react'
 import type { FarmProfile, InventoryItem } from '../../types'
 import { DDPVerifiedSupplySeal } from '../../components/logos'
+import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass, testStatusClass, testStatusLabel } from '../../data'
+import { DocumentCard } from '../../components/shared/DocumentCard'
+import { FilterSidebar, RangeSlider, CertCheckboxGroup, type RangeValue } from '../../components/shared/FilterSidebar'
+
+const CERT_OPTIONS: { key: keyof FarmProfile; label: string }[] = [
+  { key: 'gmpCert', label: 'EU-GMP' },
+  { key: 'gacpCert', label: 'GACP' },
+  { key: 'picsCert', label: 'PIC/S' },
+]
+
+const THC_BOUNDS: RangeValue = { min: 0, max: 35 }
+const CBD_BOUNDS: RangeValue = { min: 0, max: 25 }
+const MOISTURE_BOUNDS: RangeValue = { min: 0, max: 15 }
 
 interface Props {
   inventory: InventoryItem[]
@@ -17,15 +30,40 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
   const [coaLoadingId, setCoaLoadingId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('default')
+  const [thcRange, setThcRange] = useState<RangeValue>(THC_BOUNDS)
+  const [cbdRange, setCbdRange] = useState<RangeValue>(CBD_BOUNDS)
+  const [moistureRange, setMoistureRange] = useState<RangeValue>(MOISTURE_BOUNDS)
+  const [certFilters, setCertFilters] = useState<string[]>([])
+
+  function toggleCert(key: string) {
+    setCertFilters(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+  }
+
+  function resetFilters() {
+    setThcRange(THC_BOUNDS)
+    setCbdRange(CBD_BOUNDS)
+    setMoistureRange(MOISTURE_BOUNDS)
+    setCertFilters([])
+  }
 
   const filtered = approved.filter(i => {
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return (
-      i.productName.toLowerCase().includes(q) ||
-      i.farmName.toLowerCase().includes(q) ||
-      (i.batchNumber || '').toLowerCase().includes(q)
-    )
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      const matchesSearch =
+        i.productName.toLowerCase().includes(q) ||
+        i.farmName.toLowerCase().includes(q) ||
+        (i.batchNumber || '').toLowerCase().includes(q)
+      if (!matchesSearch) return false
+    }
+    if (i.thcPct > 0 && (i.thcPct < thcRange.min || i.thcPct > thcRange.max)) return false
+    if (i.cbdPct > 0 && (i.cbdPct < cbdRange.min || i.cbdPct > cbdRange.max)) return false
+    if (i.moisturePct > 0 && (i.moisturePct < moistureRange.min || i.moisturePct > moistureRange.max)) return false
+    if (certFilters.length > 0) {
+      const farm = getFarm(i)
+      if (!farm) return false
+      if (!certFilters.every(key => !!farm[key as keyof FarmProfile])) return false
+    }
+    return true
   })
 
   const sorted = [...filtered].sort((a, b) => {
@@ -55,9 +93,9 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
     return item.location.split(',')[0] || '—'
   }
 
-  function getTier(item: InventoryItem): string {
+  function getTier(item: InventoryItem) {
     const farm = getFarm(item)
-    return farm?.partnerTier || '—'
+    return farm ? deriveComplianceTier(farm) : undefined
   }
 
   return (
@@ -91,10 +129,17 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
 
       {approved.length === 0 ? (
         <div className="card" style={{ padding: 48, textAlign: 'center' }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>No Verified Inventory Yet</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>NO RECORDS ON FILE</div>
           <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>Approved inventory batches from the Inventory Review screen will appear here once approved.</p>
         </div>
       ) : (
+      <div className="filter-layout">
+        <FilterSidebar onReset={resetFilters}>
+          <RangeSlider label="THC %" bounds={THC_BOUNDS} value={thcRange} onChange={setThcRange} />
+          <RangeSlider label="CBD %" bounds={CBD_BOUNDS} value={cbdRange} onChange={setCbdRange} />
+          <RangeSlider label="Moisture %" bounds={MOISTURE_BOUNDS} value={moistureRange} onChange={setMoistureRange} />
+          <CertCheckboxGroup label="Compliance Gates" options={CERT_OPTIONS} selected={certFilters} onToggle={toggleCert} />
+        </FilterSidebar>
         <div className="card table-card">
           <div className="toolbar-row">
             <input
@@ -124,59 +169,53 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
             <table className="inv-table inv-table--cards">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th>Farm</th>
-                  <th>Province</th>
-                  <th>Quantity (kg)</th>
-                  <th>Batch</th>
+                  <th>Batch ID</th>
+                  <th>Genotype / Strain</th>
                   <th>THC %</th>
                   <th>CBD %</th>
-                  <th>Moisture %</th>
-                  <th>Grade</th>
+                  <th>Microbial</th>
+                  <th>Heavy Metals</th>
+                  <th>Allocatable Qty (kg)</th>
                   <th>COA</th>
-                  <th>Farm Tier</th>
+                  <th>Verification Tier</th>
                   <th>Status</th>
-                  {onBuyerPack && <th>Export</th>}
+                  {onBuyerPack && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {sorted.length === 0 ? (
-                  <tr><td colSpan={onBuyerPack ? 13 : 12} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>No batches match your search.</td></tr>
+                  <tr><td colSpan={onBuyerPack ? 11 : 10} className="empty-table-cell">NO ASSETS MATCH SPECIFIED PROCUREMENT CRITERIA</td></tr>
                 ) : sorted.map(item => (
                   <tr key={item.id}>
-                    <td className="td-bold" data-label="Product">{item.productName || 'Unnamed batch'}</td>
-                    <td data-label="Farm">{item.farmName || 'Unnamed farm'}</td>
-                    <td className="td-muted" data-label="Province">{getProvince(item)}</td>
-                    <td className="td-num" data-label="Quantity (kg)">{item.quantityKg.toLocaleString()}</td>
-                    <td className="td-mono" data-label="Batch">{item.batchNumber || '—'}</td>
-                    <td className="td-num" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
-                    <td className="td-num" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
-                    <td className="td-num" data-label="Moisture %">{item.moisturePct > 0 ? `${item.moisturePct}%` : '—'}</td>
-                    <td data-label="Grade"><span className="grade-chip">{item.qualityGrade ? `Grade ${item.qualityGrade}` : '—'}</span></td>
-                    <td data-label="COA">
-                      {item.certFileName || item.coaStoragePath
-                        ? (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span className="coa-present">✓ COA attached</span>
-                            {item.coaStoragePath && onGetCoaUrl && (
-                              <button
-                                type="button"
-                                className="btn btn-ghost"
-                                style={{ fontSize: 11, padding: '1px 8px' }}
-                                onClick={() => handleViewCoa(item)}
-                                disabled={coaLoadingId === item.id}
-                              >
-                                {coaLoadingId === item.id ? '…' : 'View file'}
-                              </button>
-                            )}
-                          </span>
-                        )
-                        : <span className="coa-missing">✗ COA missing</span>}
+                    <td className="td-mono" data-label="Batch ID">{item.batchNumber || '—'}</td>
+                    <td data-label="Genotype / Strain">
+                      <span className="td-bold">{item.productName || 'Unnamed batch'}</span>
+                      <br /><span className="td-muted">{item.farmName || 'Unnamed farm'} · {getProvince(item)}</span>
                     </td>
-                    <td data-label="Farm Tier">
-                      <span className={`farm-tier-badge tier-${getTier(item).toLowerCase().replace(/ /g, '-')}`}>
-                        {getTier(item)}
-                      </span>
+                    <td className="td-num td-mono" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
+                    <td className="td-num td-mono" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
+                    <td data-label="Microbial"><span className={testStatusClass(item.microbialStatus)}>{testStatusLabel(item.microbialStatus)}</span></td>
+                    <td data-label="Heavy Metals"><span className={testStatusClass(item.heavyMetalsStatus)}>{testStatusLabel(item.heavyMetalsStatus)}</span></td>
+                    <td className="td-num" data-label="Allocatable Qty (kg)">{item.quantityKg.toLocaleString()}</td>
+                    <td data-label="COA">
+                      <DocumentCard
+                        variant="table-cell"
+                        hasFile={!!(item.certFileName || item.coaStoragePath)}
+                        fileName={item.certFileName}
+                        sizeBytes={item.coaFileSizeBytes}
+                        issuedDate={item.coaIssuedDate}
+                        openable={!!(item.coaStoragePath && onGetCoaUrl)}
+                        loading={coaLoadingId === item.id}
+                        onOpen={() => handleViewCoa(item)}
+                        missingText="COA missing"
+                      />
+                    </td>
+                    <td data-label="Verification Tier">
+                      {getTier(item) ? (
+                        <span className={`farm-tier-badge ${complianceTierClass(getTier(item)!)}`}>
+                          {COMPLIANCE_TIER_LABEL[getTier(item)!]}
+                        </span>
+                      ) : '—'}
                     </td>
                     <td data-label="Status"><span className="badge badge-approved">Approved</span></td>
                     {onBuyerPack && (
@@ -186,7 +225,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                           className="btn btn-pack"
                           onClick={() => onBuyerPack(item.id)}
                         >
-                          Generate Buyer Pack
+                          Initiate Procurement Sequence
                         </button>
                       </td>
                     )}
@@ -196,6 +235,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
             </table>
           </div>
         </div>
+      </div>
       )}
     </div>
   )

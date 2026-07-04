@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { farmTotalScore } from '../../data'
+import { farmTotalScore, deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass } from '../../data'
 import type { FarmProfile, CarbonProgrammeStatus } from '../../types'
 
 const CARBON_ADMIN_LABELS: Record<CarbonProgrammeStatus, string> = {
@@ -76,19 +76,12 @@ function Section({ title, children, open = true }: { title: string; children: Re
   )
 }
 
-function tierFromScore(total: number): string {
-  if (total >= 850) return 'Platinum Partner'
-  if (total >= 750) return 'Gold Partner'
-  if (total >= 650) return 'Silver Partner'
-  return 'Watchlist'
-}
-
 export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, carbonPersistenceAvailable = true }: Props) {
   const totalScore = farmTotalScore(farm)
   const [carbonStatus, setCarbonStatus] = useState<CarbonProgrammeStatus>(
     farm.carbonProgrammeStatus ?? 'not_reviewed'
   )
-  const tier = tierFromScore(totalScore)
+  const tier = deriveComplianceTier(farm)
 
   const negativeFlags: string[] = []
   const positiveFlags: string[] = []
@@ -115,7 +108,7 @@ export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, 
     <div className="page-wrap ddp-wrap">
       <div className="page-header ddp-header review-page-header">
         <div>
-          <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — FARM REVIEW</div>
+          <div className="page-eyebrow ddp-eyebrow">Facility Profile &amp; Compliance Metadata</div>
           <h1 className="page-title">{farm.tradingName || farm.legalBusinessName}</h1>
           <p className="page-desc">{farm.province}{farm.district ? `, ${farm.district}` : ''} · {farm.farmType}</p>
         </div>
@@ -167,6 +160,7 @@ export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, 
               <LicenceRow label="GMP Certification" value={farm.gmpCert} />
               <LicenceRow label="GAP Certification" value={farm.gapCert} />
               <LicenceRow label="GACP Certification" value={farm.gacpCert} />
+              <LicenceRow label="PIC/S Certification" value={farm.picsCert} />
               <LicenceRow label="Organic Certification" value={farm.organicCert} />
               <LicenceRow label="ISO Certifications" value={farm.isoCerts} />
               <LicenceRow label="Other Certifications" value={farm.otherCerts} />
@@ -273,47 +267,51 @@ export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, 
         </div>
 
         <div className="review-sidebar">
-          <div className="card decision-card sidebar-sticky">
-            <div className="decision-title">Compliance Score</div>
-            <div className="score-total-row">
-              <span className="score-total-num">{totalScore}</span>
-              <span className="score-total-denom">/ 900</span>
-              <span className={`farm-tier-badge tier-${tier.toLowerCase().replace(/ /g, '-')}`} style={{ marginLeft: 8 }}>{tier}</span>
-            </div>
-
-            <div className="score-bars-list">
-              <ScoreBar label="Compliance" score={farm.scoreCompliance} />
-              <ScoreBar label="Documentation" score={farm.scoreDocumentation} />
-              <ScoreBar label="Facility Quality" score={farm.scoreFacilityQuality} />
-              <ScoreBar label="Product Quality" score={farm.scoreProductQuality} />
-              <ScoreBar label="Export Readiness" score={farm.scoreExportReadiness} />
-              <ScoreBar label="Reliability" score={farm.scoreReliability} />
-              <ScoreBar label="Communication" score={farm.scoreCommunication} />
-              <ScoreBar label="Scalability" score={farm.scoreScalability} />
-              <ScoreBar label="GMP Readiness" score={farm.scoreGMPReadiness} />
-            </div>
-
-            {(negativeFlags.length > 0 || positiveFlags.length > 0) && (
-              <div className="risk-flags-section">
-                {negativeFlags.length > 0 && (
-                  <div>
-                    <div className="risk-flags-label risk-negative-label">Risk Flags</div>
-                    <ul className="risk-flags-list">
-                      {negativeFlags.map((f, i) => <li key={i} className="risk-flag-negative">⚠ {f}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {positiveFlags.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <div className="risk-flags-label risk-positive-label">Positive Signals</div>
-                    <ul className="risk-flags-list">
-                      {positiveFlags.map((f, i) => <li key={i} className="risk-flag-positive">✓ {f}</li>)}
-                    </ul>
-                  </div>
-                )}
+          <div className="card ledger-card">
+            <div className="ledger-scroll">
+              <div className="decision-title">Compliance Score</div>
+              <div className="score-total-row">
+                <span className="score-total-num">{totalScore}</span>
+                <span className="score-total-denom">/ 900</span>
+                <span className={`farm-tier-badge ${complianceTierClass(tier)}`} style={{ marginLeft: 8 }}>{COMPLIANCE_TIER_LABEL[tier]}</span>
               </div>
-            )}
 
+              <div className="score-bars-list">
+                <ScoreBar label="Compliance" score={farm.scoreCompliance} />
+                <ScoreBar label="Documentation" score={farm.scoreDocumentation} />
+                <ScoreBar label="Facility Quality" score={farm.scoreFacilityQuality} />
+                <ScoreBar label="Product Quality" score={farm.scoreProductQuality} />
+                <ScoreBar label="Export Readiness" score={farm.scoreExportReadiness} />
+                <ScoreBar label="Reliability" score={farm.scoreReliability} />
+                <ScoreBar label="Communication" score={farm.scoreCommunication} />
+                <ScoreBar label="Scalability" score={farm.scoreScalability} />
+                <ScoreBar label="GMP Readiness" score={farm.scoreGMPReadiness} />
+              </div>
+
+              {(negativeFlags.length > 0 || positiveFlags.length > 0) && (
+                <div className="risk-flags-section">
+                  {negativeFlags.length > 0 && (
+                    <div>
+                      <div className="risk-flags-label risk-negative-label">Risk Flags</div>
+                      <ul className="risk-flags-list">
+                        {negativeFlags.map((f, i) => <li key={i} className="risk-flag-negative">⚠ {f}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {positiveFlags.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div className="risk-flags-label risk-positive-label">Positive Signals</div>
+                      <ul className="risk-flags-list">
+                        {positiveFlags.map((f, i) => <li key={i} className="risk-flag-positive">✓ {f}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card decision-card sidebar-sticky">
             <div className="decision-actions">
               <button className="btn btn-approve" onClick={() => onAction(farm.id, 'approve')}>Approve Farm Profile</button>
               <button className="btn btn-missing" onClick={() => onAction(farm.id, 'request-info')}>Request Additional Information</button>
