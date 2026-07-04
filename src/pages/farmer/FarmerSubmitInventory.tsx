@@ -231,7 +231,10 @@ export default function FarmerSubmitInventory({
   if (submitted) {
     return (
       <div className="page-wrap auth-page" style={{ textAlign: 'center', paddingTop: 40 }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" style={{ margin: '0 auto 16px' }} aria-hidden="true">
+          <circle cx="12" cy="12" r="9.5" stroke="var(--success)" strokeWidth="1.5"/>
+          <path d="M7.5 12.5l2.8 2.8L16.5 9" stroke="var(--success)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
         <h2 style={{ color: 'var(--text)', marginBottom: 8 }}>
           {isTh ? 'ส่งเรียบร้อยแล้ว' : 'Submitted for Review'}
         </h2>
@@ -505,7 +508,7 @@ export default function FarmerSubmitInventory({
                 />
                 {form.coaFileName ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-                    <span className="pill pill-doc">📄 {form.coaFileName}</span>
+                    <span className="pill pill-doc">{form.coaFileName}</span>
                     <button
                       type="button"
                       className="btn-ghost-sm"
@@ -519,7 +522,7 @@ export default function FarmerSubmitInventory({
                     style={{ marginTop: 4 }}
                     onClick={() => coaInputRef.current?.click()}
                   >
-                    📎 {isTh ? 'เลือกไฟล์' : 'Choose file'}
+                    {isTh ? 'เลือกไฟล์' : 'Choose file'}
                   </button>
                 )}
                 <span className="field-hint">
@@ -606,7 +609,7 @@ export default function FarmerSubmitInventory({
             className="btn btn-ghost-dark"
             onClick={() => photoInputRef.current?.click()}
           >
-            📷 {isTh ? 'ถ่ายรูปหรือเลือกรูป' : 'Take photo or choose image'}
+            {isTh ? 'ถ่ายรูปหรือเลือกรูป' : 'Take photo or choose image'}
           </button>
           <span className="field-hint">{isTh ? 'รูปดอก บรรจุภัณฑ์ หรือป้ายแบทช์' : 'Bud close-up, packaging, or batch label'}</span>
         </div>
@@ -640,7 +643,7 @@ export default function FarmerSubmitInventory({
           >
             {saved
               ? (isTh ? '✓ บันทึกแล้ว' : '✓ Saved')
-              : (isTh ? '💾 บันทึกร่าง' : '💾 Save Draft')}
+              : (isTh ? 'บันทึกร่าง' : 'Save Draft')}
           </button>
           <button
             type="submit"
@@ -650,7 +653,7 @@ export default function FarmerSubmitInventory({
             onClick={handleSubmit}
           >
             {uploading
-              ? (isTh ? '⏳ กำลังส่ง…' : '⏳ Submitting…')
+              ? (isTh ? 'กำลังส่ง…' : 'Submitting…')
               : (isTh ? 'ส่งให้ DDP ตรวจสอบ →' : 'Submit for Review →')}
           </button>
         </div>

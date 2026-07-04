@@ -210,7 +210,7 @@ export default function FarmerMyStock({
                   <span className={`badge ${si.cls}`}>{isTh ? si.th : si.en}</span>
                   {item.clientVisible && (
                     <span className="badge badge-blue" style={{ fontSize: 10 }}>
-                      {isTh ? '👁 มองเห็นโดยผู้ซื้อ' : '👁 Buyer visible'}
+                      {isTh ? 'มองเห็นโดยผู้ซื้อ' : 'Buyer visible'}
                     </span>
                   )}
                 </div>
@@ -228,7 +228,7 @@ export default function FarmerMyStock({
                 {item.certFileName || item.coaAvailable || item.coaStoragePath
                   ? (
                     <span className="pill pill-doc">
-                      📄 {item.certFileName || 'COA'}
+                      {item.certFileName || 'COA'}
                       {onCoaUpload && (
                         <button
                           type="button"
@@ -252,8 +252,8 @@ export default function FarmerMyStock({
                         disabled={uploadingId === item.id}
                       >
                         {uploadingId === item.id
-                          ? (isTh ? '⏳ กำลังอัปโหลด…' : '⏳ Uploading…')
-                          : (isTh ? '📎 อัปโหลด COA' : '📎 Upload COA')}
+                          ? (isTh ? 'กำลังอัปโหลด…' : 'Uploading…')
+                          : (isTh ? 'อัปโหลด COA' : 'Upload COA')}
                       </button>
                     )
                     : <span className="pill" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>{isTh ? 'ไม่มี COA' : 'No COA'}</span>
@@ -262,7 +262,7 @@ export default function FarmerMyStock({
                   <span className="pill">{isTh ? 'เก็บเกี่ยว' : 'Harvest'} {item.harvestDate}</span>
                 )}
                 {(item.photoUrls?.length ?? 0) > 0 && (
-                  <span className="pill">📷 {item.photoUrls!.length}</span>
+                  <span className="pill">{item.photoUrls!.length} photo{item.photoUrls!.length === 1 ? '' : 's'}</span>
                 )}
               </div>
 

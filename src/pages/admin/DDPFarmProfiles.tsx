@@ -1,5 +1,13 @@
 import { useState } from 'react'
 import type { FarmProfile, FarmStatus, CarbonProgrammeStatus } from '../../types'
+import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass } from '../../data'
+import { FilterSidebar, CertCheckboxGroup } from '../../components/shared/FilterSidebar'
+
+const CERT_OPTIONS: { key: keyof FarmProfile; label: string }[] = [
+  { key: 'gmpCert', label: 'EU-GMP' },
+  { key: 'gacpCert', label: 'GACP' },
+  { key: 'picsCert', label: 'PIC/S' },
+]
 
 const CARBON_STATUS_LABEL: Record<CarbonProgrammeStatus, string> = {
   not_reviewed: 'Not reviewed',
@@ -42,13 +50,19 @@ type FilterStatus = 'All' | 'Pending' | 'Approved' | 'Watchlist' | 'Rejected'
 
 export default function DDPFarmProfiles({ farms, onReview }: Props) {
   const [filter, setFilter] = useState<FilterStatus>('All')
+  const [certFilters, setCertFilters] = useState<string[]>([])
+
+  function toggleCert(key: string) {
+    setCertFilters(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+  }
 
   const filtered = farms.filter(f => {
-    if (filter === 'All') return true
-    if (filter === 'Pending') return f.status === 'Submitted to DDP' || f.status === 'Under Review'
-    if (filter === 'Approved') return f.status === 'Approved' || f.status === 'Strategic Partner'
-    if (filter === 'Watchlist') return f.status === 'Watchlist'
-    if (filter === 'Rejected') return f.status === 'Rejected' || f.status === 'More Information Required'
+    if (filter === 'All') { /* no status filter */ }
+    else if (filter === 'Pending') { if (!(f.status === 'Submitted to DDP' || f.status === 'Under Review')) return false }
+    else if (filter === 'Approved') { if (!(f.status === 'Approved' || f.status === 'Strategic Partner')) return false }
+    else if (filter === 'Watchlist') { if (f.status !== 'Watchlist') return false }
+    else if (filter === 'Rejected') { if (!(f.status === 'Rejected' || f.status === 'More Information Required')) return false }
+    if (certFilters.length > 0 && !certFilters.every(key => !!f[key as keyof FarmProfile])) return false
     return true
   })
 
@@ -84,6 +98,10 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
         ))}
       </div>
 
+      <div className="filter-layout">
+        <FilterSidebar onReset={() => setCertFilters([])}>
+          <CertCheckboxGroup label="Compliance Gates" options={CERT_OPTIONS} selected={certFilters} onToggle={toggleCert} />
+        </FilterSidebar>
       <div className="card table-card">
         <div className="table-card-title">Farm Profile Registry — {filtered.length} {filtered.length === 1 ? 'farm' : 'farms'}</div>
         <div className="table-scroll">
@@ -96,14 +114,14 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
                 <th>Status</th>
                 <th>Export Readiness</th>
                 <th>Risk Level</th>
-                <th>Partner Tier</th>
+                <th>Verification Tier</th>
                 <th>Carbon</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={9} className="empty-table-cell">No farm profiles match this filter.</td></tr>
+                <tr><td colSpan={9} className="empty-table-cell">NO ASSETS MATCH SPECIFIED PROCUREMENT CRITERIA</td></tr>
               ) : filtered.map(farm => {
                 const risk = riskLevel(farm)
                 const exp = exportReadiness(farm)
@@ -129,9 +147,9 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
                     <td data-label="Risk Level">
                       <span className={`risk-chip ${risk.cls}`}>{risk.label}</span>
                     </td>
-                    <td data-label="Partner Tier">
-                      <span className={`farm-tier-badge tier-${farm.partnerTier.toLowerCase().replace(/ /g, '-')}`}>
-                        {farm.partnerTier}
+                    <td data-label="Verification Tier">
+                      <span className={`farm-tier-badge ${complianceTierClass(deriveComplianceTier(farm))}`}>
+                        {COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm)]}
                       </span>
                     </td>
                     <td data-label="Carbon">
@@ -148,6 +166,7 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
   )

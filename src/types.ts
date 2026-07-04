@@ -14,13 +14,10 @@ export type FarmStatus =
   | 'Strategic Partner'
   | 'Rejected'
 
-export type PartnerTier =
-  | 'Platinum Partner'
-  | 'Gold Partner'
-  | 'Silver Partner'
-  | 'Watchlist'
-  | 'Gold Candidate'
-  | 'Pending'
+export type ComplianceVerificationTier =
+  | 'CULTIVATOR_CLAIMED'
+  | 'DDP_DOCUMENTED'
+  | 'CERTIFIED_PHARMA_READY'
 
 export type Page =
   | 'landing'
@@ -139,7 +136,6 @@ export interface FarmProfile {
   status: FarmStatus
   submittedAt: string
   completionPct: number
-  partnerTier: PartnerTier
   // Step 1
   legalBusinessName: string
   tradingName: string
@@ -184,6 +180,7 @@ export interface FarmProfile {
   gmpCert: string
   gapCert: string
   gacpCert: string
+  picsCert: string
   organicCert: string
   isoCerts: string
   otherCerts: string

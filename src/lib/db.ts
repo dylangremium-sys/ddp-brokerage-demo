@@ -7,7 +7,7 @@ import {
   resetDemo as lsResetDemo,
   SEED_BENCHMARKS,
 } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, PartnerTier } from '../types'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus } from '../types'
 
 export { isSupabaseConfigured }
 
@@ -105,7 +105,6 @@ export async function createFarmProfile(farm: FarmProfile, userId?: string): Pro
     email: farm.email,
     status: farm.status,
     completion_percentage: farm.completionPct,
-    partner_tier: farm.partnerTier,
     created_by: userId ?? null,
     updated_at: new Date().toISOString(),
   })
@@ -162,6 +161,7 @@ export async function createFarmProfile(farm: FarmProfile, userId?: string): Pro
       gmpCert: farm.gmpCert,
       gapCert: farm.gapCert,
       gacpCert: farm.gacpCert,
+      picsCert: farm.picsCert,
       organicCert: farm.organicCert,
       isoCerts: farm.isoCerts,
       otherCerts: farm.otherCerts,
@@ -656,7 +656,6 @@ function farmRowToProfile(row: Record<string, any>): FarmProfile {
     status: (row.status as FarmStatus) ?? 'Submitted to DDP',
     submittedAt: (row.created_at as string) ?? new Date().toISOString(),
     completionPct: (row.completion_percentage as number) ?? 0,
-    partnerTier: ((row.partner_tier as string) ?? 'Pending') as PartnerTier,
     legalBusinessName: bi.legalBusinessName ?? (row.legal_business_name as string) ?? '',
     tradingName: bi.tradingName ?? (row.trading_name as string) ?? (row.farm_name as string) ?? '',
     registrationNumber: bi.registrationNumber ?? '',
@@ -698,6 +697,7 @@ function farmRowToProfile(row: Record<string, any>): FarmProfile {
     gmpCert: lic.gmpCert ?? '',
     gapCert: lic.gapCert ?? '',
     gacpCert: lic.gacpCert ?? '',
+    picsCert: lic.picsCert ?? '',
     organicCert: lic.organicCert ?? '',
     isoCerts: lic.isoCerts ?? '',
     otherCerts: lic.otherCerts ?? '',

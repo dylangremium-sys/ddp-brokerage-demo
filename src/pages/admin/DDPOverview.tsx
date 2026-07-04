@@ -71,7 +71,7 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
               <thead><tr><th>Farm</th><th>Province</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {recentFarms.length === 0 ? (
-                  <tr><td colSpan={4} className="empty-table-cell">No farm registrations yet.</td></tr>
+                  <tr><td colSpan={4} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
                 ) : recentFarms.map(f => (
                   <tr key={f.id}>
                     <td className="td-bold">{f.tradingName}</td>
@@ -94,7 +94,7 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
               <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {recentInventory.length === 0 ? (
-                  <tr><td colSpan={5} className="empty-table-cell">No inventory batches submitted yet.</td></tr>
+                  <tr><td colSpan={5} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
                 ) : recentInventory.map(i => (
                   <tr key={i.id}>
                     <td className="td-bold">{i.productName}</td>
@@ -144,7 +144,7 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
               <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Grade</th><th>Status</th></tr></thead>
               <tbody>
                 {topInventory.length === 0 ? (
-                  <tr><td colSpan={5} className="empty-table-cell">No inventory batches yet.</td></tr>
+                  <tr><td colSpan={5} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
                 ) : topInventory.map(i => (
                   <tr key={i.id}>
                     <td className="td-bold">{i.productName}</td>
@@ -164,7 +164,7 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
           <div className="section-label-row"><div className="section-label">Top-Scored Farm Profiles</div></div>
           <div className="card" style={{ overflow: 'hidden' }}>
             {topFarms.length === 0
-              ? <div className="empty-table-cell">No farm profiles submitted yet.</div>
+              ? <div className="empty-table-cell">NO RECORDS ON FILE</div>
               : topFarms.map(f => {
               const total = farmTotalScore(f)
               const avg = Math.round(total / 9)

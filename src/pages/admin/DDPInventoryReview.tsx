@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { FarmProfile, InventoryItem, InventoryStatus, ReviewRequest } from '../../types'
+import { deriveComplianceTier, COMPLIANCE_TIER_LABEL } from '../../data'
+import { DocumentCard } from '../../components/shared/DocumentCard'
 
 type RequestType = ReviewRequest['requestType']
 
@@ -94,7 +96,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <span className={`badge ${STATUS_CLASS[item.status]}`}>{item.status}</span>
             {item.clientVisible && (
-              <span className="badge badge-blue">👁 Buyer Visible</span>
+              <span className="badge badge-blue">Buyer Visible</span>
             )}
           </div>
         </div>
@@ -110,7 +112,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                   <div className="detail-row"><span className="dl">Farm</span><span className="dv">{farm.tradingName}</span></div>
                   <div className="detail-row"><span className="dl">Province</span><span className="dv">{farm.province}</span></div>
                   <div className="detail-row"><span className="dl">Farm Status</span><span className="dv"><span className={`badge badge-sm`}>{farm.status}</span></span></div>
-                  <div className="detail-row"><span className="dl">Partner Tier</span><span className="dv">{farm.partnerTier}</span></div>
+                  <div className="detail-row"><span className="dl">Verification Tier</span><span className="dv">{COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm)]}</span></div>
                   <div className="detail-row"><span className="dl">Profile Completion</span><span className="dv">{farm.completionPct}%</span></div>
                 </div>
               </div>
@@ -147,26 +149,15 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
               <div className="detail-rows">
                 <div className="detail-row">
                   <span className="dl">COA / Certificate</span>
-                  <span className="dv" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {item.certFileName || item.coaStoragePath
-                      ? (
-                        <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span className="doc-name">📄 COA attached</span>
-                          {item.certFileName && <span className="td-muted">{item.certFileName}</span>}
-                        </span>
-                      )
-                      : <span className="text-missing">✗ COA missing</span>}
-                    {item.coaStoragePath && onGetCoaUrl && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        style={{ fontSize: 12, padding: '2px 10px' }}
-                        onClick={handleViewCoa}
-                        disabled={coaLoading}
-                      >
-                        {coaLoading ? 'Loading…' : '🔗 View file'}
-                      </button>
-                    )}
+                  <span className="dv">
+                    <DocumentCard
+                      hasFile={!!(item.certFileName || item.coaStoragePath)}
+                      fileName={item.certFileName}
+                      openable={!!(item.coaStoragePath && onGetCoaUrl)}
+                      loading={coaLoading}
+                      onOpen={handleViewCoa}
+                      missingText="COA missing"
+                    />
                   </span>
                 </div>
                 <div className="detail-row">
@@ -184,21 +175,6 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
               <div className="detail-block">
                 <div className="detail-block-title">Photo Preview</div>
                 <img src={item.photoUrl} alt="Product" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
-              </div>
-            )}
-
-            {(item.heavyMetalsStatus || item.pesticidesStatus || item.microbialStatus || item.mycotoxinsStatus) && (
-              <div className="detail-block">
-                <div className="detail-block-title">COA Test Results</div>
-                <div className="detail-rows">
-                  {item.labName && <div className="detail-row"><span className="dl">Lab</span><span className="dv">{item.labName}</span></div>}
-                  {item.reportNumber && <div className="detail-row"><span className="dl">Report #</span><span className="dv mono">{item.reportNumber}</span></div>}
-                  {item.testDate && <div className="detail-row"><span className="dl">Test Date</span><span className="dv">{item.testDate}</span></div>}
-                  {item.heavyMetalsStatus && <div className="detail-row"><span className="dl">Heavy Metals</span><span className={`dv ${item.heavyMetalsStatus === 'pass' ? 'check-yes' : item.heavyMetalsStatus === 'fail' ? 'check-no' : ''}`}>{item.heavyMetalsStatus}</span></div>}
-                  {item.pesticidesStatus && <div className="detail-row"><span className="dl">Pesticides</span><span className={`dv ${item.pesticidesStatus === 'pass' ? 'check-yes' : item.pesticidesStatus === 'fail' ? 'check-no' : ''}`}>{item.pesticidesStatus}</span></div>}
-                  {item.microbialStatus && <div className="detail-row"><span className="dl">Microbial</span><span className={`dv ${item.microbialStatus === 'pass' ? 'check-yes' : item.microbialStatus === 'fail' ? 'check-no' : ''}`}>{item.microbialStatus}</span></div>}
-                  {item.mycotoxinsStatus && <div className="detail-row"><span className="dl">Mycotoxins</span><span className={`dv ${item.mycotoxinsStatus === 'pass' ? 'check-yes' : item.mycotoxinsStatus === 'fail' ? 'check-no' : ''}`}>{item.mycotoxinsStatus}</span></div>}
-                </div>
               </div>
             )}
 
@@ -220,19 +196,39 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
               </div>
               {item.farmerNotes && <p className="notes-body" style={{ marginTop: 12 }}><strong>Farmer:</strong> {item.farmerNotes}</p>}
               {item.notes && !item.farmerNotes && <p className="notes-body" style={{ marginTop: 12 }}>{item.notes}</p>}
-              {item.ownerNotes && <p className="notes-body" style={{ marginTop: 12, borderLeft: '2px solid var(--gold)' }}><strong>Internal:</strong> {item.ownerNotes}</p>}
+              {item.ownerNotes && <p className="notes-body" style={{ marginTop: 12, borderLeft: '2px solid var(--accent)' }}><strong>Internal:</strong> {item.ownerNotes}</p>}
             </div>
 
-            <div className="detail-block" style={{ borderBottom: 'none' }}>
-              <div className="detail-block-title">Batch Compliance Checklist — {passCount}/{checks.length} checks passed</div>
-              <div className="compliance-checklist">
-                {checks.map((c, i) => <CheckRow key={i} label={c.label} pass={c.pass} />)}
-              </div>
-            </div>
           </div>
         </div>
 
         <div className="review-sidebar">
+          <div className="card ledger-card">
+            <div className="ledger-scroll">
+              {(item.heavyMetalsStatus || item.pesticidesStatus || item.microbialStatus || item.mycotoxinsStatus) && (
+                <div className="detail-block">
+                  <div className="detail-block-title">COA Test Results</div>
+                  <div className="detail-rows">
+                    {item.labName && <div className="detail-row"><span className="dl">Lab</span><span className="dv">{item.labName}</span></div>}
+                    {item.reportNumber && <div className="detail-row"><span className="dl">Report #</span><span className="dv mono">{item.reportNumber}</span></div>}
+                    {item.testDate && <div className="detail-row"><span className="dl">Test Date</span><span className="dv">{item.testDate}</span></div>}
+                    {item.heavyMetalsStatus && <div className="detail-row"><span className="dl">Heavy Metals</span><span className={`dv ${item.heavyMetalsStatus === 'pass' ? 'check-yes' : item.heavyMetalsStatus === 'fail' ? 'check-no' : ''}`}>{item.heavyMetalsStatus}</span></div>}
+                    {item.pesticidesStatus && <div className="detail-row"><span className="dl">Pesticides</span><span className={`dv ${item.pesticidesStatus === 'pass' ? 'check-yes' : item.pesticidesStatus === 'fail' ? 'check-no' : ''}`}>{item.pesticidesStatus}</span></div>}
+                    {item.microbialStatus && <div className="detail-row"><span className="dl">Microbial</span><span className={`dv ${item.microbialStatus === 'pass' ? 'check-yes' : item.microbialStatus === 'fail' ? 'check-no' : ''}`}>{item.microbialStatus}</span></div>}
+                    {item.mycotoxinsStatus && <div className="detail-row"><span className="dl">Mycotoxins</span><span className={`dv ${item.mycotoxinsStatus === 'pass' ? 'check-yes' : item.mycotoxinsStatus === 'fail' ? 'check-no' : ''}`}>{item.mycotoxinsStatus}</span></div>}
+                  </div>
+                </div>
+              )}
+
+              <div className="detail-block" style={{ borderBottom: 'none' }}>
+                <div className="detail-block-title">Batch Compliance Checklist — {passCount}/{checks.length} checks passed</div>
+                <div className="compliance-checklist">
+                  {checks.map((c, i) => <CheckRow key={i} label={c.label} pass={c.pass} />)}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="card decision-card sidebar-sticky">
             <div className="decision-title">Review Decision</div>
             <p className="decision-desc">Select an action to update this batch status. The supplier will see this change immediately.</p>
@@ -248,7 +244,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
               {item.clientVisible ? (
                 <button
                   className="btn"
-                  style={{ background: 'rgba(46,125,91,0.12)', color: 'var(--success)', border: '1px solid rgba(79,163,122,0.35)', width: '100%', fontSize: 13, marginBottom: 0 }}
+                  style={{ background: 'rgba(46,139,103,0.12)', color: 'var(--success)', border: '1px solid rgba(46,139,103,0.35)', width: '100%', fontSize: 13, marginBottom: 0 }}
                   onClick={() => onAction(item.id, 'client-hide')}
                 >
                   Hide from Buyers
