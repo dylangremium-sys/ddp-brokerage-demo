@@ -36,14 +36,14 @@ export const T = {
     // Landing
     landingTagline: 'Licensed Cannabis Supply Platform',
     landingNavDescriptor: 'Licensed Cannabis Supply Review',
-    landingHeadline: 'Licensed Thai Cannabis Supply — Documented and Buyer-Ready',
-    landingHero1: 'DDP organizes licensed Thai farm supply into a single, reviewed record — every batch documented and scored before it reaches a buyer.',
+    landingHeadline: 'Thai Cannabis Supply, Made Buyer-Ready',
+    landingHero1: 'DDP turns farm stock, batch records, COAs, and pricing into clear review packs for serious buyers.',
     landingEnterFarmer: 'Supplier Intake Portal',
     landingEnterDDP: 'DDP Verification Console',
-    landingAccessFarmerDesc: 'Submit your farm profile, stock, and documents for DDP review.',
+    landingAccessFarmerDesc: 'Simple intake for farmers. Clear review tools for DDP and buyers.',
     landingAccessDDPDesc: 'For DDP staff — review and scoring console.',
-    landingAccessFarmerCta: 'Begin Supplier Intake',
-    landingAccessDDPCta: 'Open Review Console',
+    landingAccessFarmerCta: 'Submit Stock',
+    landingAccessDDPCta: 'Review Supply',
 
     // Landing — Hero product mockup
     landingHeroMockEyebrow: 'Buyer Pack Ready',
@@ -60,13 +60,13 @@ export const T = {
     // Landing — How It Works
     landingFrameworkTitle: 'How It Works',
     landingFrameworkClaimedLabel: 'Claimed',
-    landingFrameworkClaimedDesc: 'Farmer submits stock',
+    landingFrameworkClaimedDesc: 'Stock submitted',
     landingFrameworkDocumentedLabel: 'Documented',
-    landingFrameworkDocumentedDesc: 'DDP checks documents and COA',
+    landingFrameworkDocumentedDesc: 'Documents checked',
     landingFrameworkVerifiedLabel: 'Verified',
-    landingFrameworkVerifiedDesc: 'Batch becomes verified',
+    landingFrameworkVerifiedDesc: 'Batch reviewed',
     landingFrameworkBuyerReadyLabel: 'Buyer-Ready',
-    landingFrameworkBuyerReadyDesc: 'Buyer receives the pack',
+    landingFrameworkBuyerReadyDesc: 'Buyer pack ready',
 
     // Landing — Buyer pack preview
     landingBuyerPackBadge: 'Sample Buyer Pack',
@@ -109,8 +109,7 @@ export const T = {
 
     // Landing — About Us
     landingAboutTitle: 'About Us',
-    landingAboutText1: 'DDP organizes Thai cannabis farm supply into a structured, buyer-ready record.',
-    landingAboutText2: 'We help separate farm claims, received documents, and reviewed information — so serious buyers can assess batches with less confusion.',
+    landingAboutText1: 'DDP turns Thai farm supply, batch records, COAs, and pricing into a clear buyer-ready review pack — helping serious buyers understand what is claimed, what is documented, and what is ready to progress.',
 
     landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted. Access is limited to verified partners during the current onboarding phase.',
 
@@ -498,14 +497,14 @@ export const T = {
     // Landing
     landingTagline: 'แพลตฟอร์มจัดหากัญชาที่ได้รับใบอนุญาต',
     landingNavDescriptor: 'การตรวจสอบห่วงโซ่อุปทานกัญชาที่ได้รับใบอนุญาต',
-    landingHeadline: 'อุปทานกัญชาไทยที่ได้รับใบอนุญาต — มีเอกสารรองรับและพร้อมสำหรับผู้ซื้อ',
-    landingHero1: 'DDP รวบรวมข้อมูลฟาร์มไทยที่ได้รับใบอนุญาตไว้ในที่เดียว ทุกแบทช์ผ่านการตรวจสอบเอกสารและให้คะแนนก่อนถึงมือผู้ซื้อ',
+    landingHeadline: 'อุปทานกัญชาไทย พร้อมสำหรับผู้ซื้อ',
+    landingHero1: 'DDP เปลี่ยนสต็อกฟาร์ม บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลที่ชัดเจนสำหรับผู้ซื้อจริงจัง',
     landingEnterFarmer: 'พอร์ทัลรับข้อมูลซัพพลายเออร์',
     landingEnterDDP: 'คอนโซลตรวจสอบของ DDP',
-    landingAccessFarmerDesc: 'ส่งโปรไฟล์ฟาร์ม สต็อก และเอกสารเพื่อให้ DDP ตรวจสอบ',
+    landingAccessFarmerDesc: 'ระบบรับข้อมูลที่ง่ายสำหรับเกษตรกร เครื่องมือตรวจสอบที่ชัดเจนสำหรับ DDP และผู้ซื้อ',
     landingAccessDDPDesc: 'สำหรับทีมงาน DDP — คอนโซลตรวจสอบและให้คะแนน',
-    landingAccessFarmerCta: 'เริ่มการรับข้อมูลซัพพลายเออร์',
-    landingAccessDDPCta: 'เปิดคอนโซลตรวจสอบ',
+    landingAccessFarmerCta: 'ส่งสต็อก',
+    landingAccessDDPCta: 'ตรวจสอบอุปทาน',
 
     // Landing — Hero product mockup
     landingHeroMockEyebrow: 'Buyer Pack พร้อมแล้ว',
@@ -522,13 +521,13 @@ export const T = {
     // Landing — How It Works
     landingFrameworkTitle: 'ขั้นตอนการทำงาน',
     landingFrameworkClaimedLabel: 'แจ้งเอง',
-    landingFrameworkClaimedDesc: 'เกษตรกรแจ้งสต็อก',
+    landingFrameworkClaimedDesc: 'ส่งสต็อกแล้ว',
     landingFrameworkDocumentedLabel: 'มีเอกสารรองรับ',
-    landingFrameworkDocumentedDesc: 'DDP ตรวจสอบเอกสารและ COA',
+    landingFrameworkDocumentedDesc: 'ตรวจสอบเอกสารแล้ว',
     landingFrameworkVerifiedLabel: 'ตรวจสอบแล้ว',
-    landingFrameworkVerifiedDesc: 'แบทช์ได้รับการตรวจสอบแล้ว',
+    landingFrameworkVerifiedDesc: 'ตรวจสอบแบทช์แล้ว',
     landingFrameworkBuyerReadyLabel: 'พร้อมสำหรับผู้ซื้อ',
-    landingFrameworkBuyerReadyDesc: 'ผู้ซื้อได้รับแพ็ก',
+    landingFrameworkBuyerReadyDesc: 'แพ็กสำหรับผู้ซื้อพร้อมแล้ว',
 
     // Landing — Buyer pack preview
     landingBuyerPackBadge: 'ตัวอย่าง Buyer Pack',
@@ -571,8 +570,7 @@ export const T = {
 
     // Landing — About Us
     landingAboutTitle: 'เกี่ยวกับเรา',
-    landingAboutText1: 'DDP จัดระเบียบอุปทานฟาร์มกัญชาไทยให้เป็นข้อมูลที่มีโครงสร้างและพร้อมสำหรับผู้ซื้อ',
-    landingAboutText2: 'เราช่วยแยกข้อมูลที่ฟาร์มแจ้ง เอกสารที่ได้รับ และข้อมูลที่ตรวจสอบแล้วออกจากกัน เพื่อให้ผู้ซื้อจริงจังประเมินแบทช์ได้ง่ายขึ้นและสับสนน้อยลง',
+    landingAboutText1: 'DDP เปลี่ยนข้อมูลอุปทานฟาร์มไทย บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลพร้อมสำหรับผู้ซื้อที่ชัดเจน — ช่วยให้ผู้ซื้อจริงจังเข้าใจว่าอะไรคือข้อมูลที่แจ้งเอง อะไรมีเอกสารรองรับ และอะไรพร้อมดำเนินการต่อ',
 
     landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย การเข้าถึงจำกัดเฉพาะพันธมิตรที่ผ่านการตรวจสอบในระยะเริ่มต้นนี้',
 
