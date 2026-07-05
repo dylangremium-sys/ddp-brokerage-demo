@@ -102,6 +102,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
       `CBD:              ${na(item.cbdPct, '%')}`,
       `Moisture:         ${na(item.moisturePct, '%')}`,
       `Water Activity:   ${na(item.waterActivity)}`,
+      `(Lab values as documented by the farm from its COA — DDP review required before commercial reliance)`,
       `Storage:          ${na(item.storageConditions)}`,
       '',
       `Compliance:       ${passCount}/${CHECKLIST.length} checks passed`,
@@ -228,7 +229,10 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
 
           {/* Right: Lab values, storage */}
           <div>
-            <div className="detail-block-title" style={{ marginBottom: 10 }}>Lab Values</div>
+            <div className="detail-block-title" style={{ marginBottom: 4 }}>Lab Values</div>
+            <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '0 0 10px' }}>
+              COA values documented by the farm. DDP review required before relying on these figures commercially.
+            </p>
             <div className="buyer-pack-field"><span className="buyer-pack-lbl">THC</span><span>{na(item.thcPct, '%')}</span></div>
             <div className="buyer-pack-field"><span className="buyer-pack-lbl">CBD</span><span>{na(item.cbdPct, '%')}</span></div>
             <div className="buyer-pack-field"><span className="buyer-pack-lbl">Moisture</span><span>{na(item.moisturePct, '%')}</span></div>
@@ -379,6 +383,9 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
             </div>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Visible only to qualified buyers approved by DDP</span>
           </div>
+          <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+            Batch status reflects DDP approval. THC/CBD/contaminant values are as documented by the farm from its COA — confirm with DDP before commercial reliance.
+          </p>
 
           <div className="card table-card">
             <div className="table-scroll">

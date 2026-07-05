@@ -334,7 +334,10 @@ export default function FarmerSubmitInventory({
           </div>
 
           <div className="form-grid-2" style={{ marginTop: 14 }}>
-            <Field label={isTh ? 'THC (ถ้าทราบ)' : 'THC level, if known'}>
+            <Field
+              label={isTh ? 'THC จาก COA (ถ้ามี)' : 'THC from COA'}
+              hint={isTh ? 'กรอกจากใบ COA หากมี' : 'From your COA, if you have one'}
+            >
               <input
                 type="number"
                 inputMode="decimal"
@@ -344,7 +347,10 @@ export default function FarmerSubmitInventory({
                 min="0" max="100" step="0.01"
               />
             </Field>
-            <Field label={isTh ? 'CBD (ถ้าทราบ)' : 'CBD level, if known'}>
+            <Field
+              label={isTh ? 'CBD จาก COA (ถ้ามี)' : 'CBD from COA'}
+              hint={isTh ? 'กรอกจากใบ COA หากมี' : 'From your COA, if you have one'}
+            >
               <input
                 type="number"
                 inputMode="decimal"
@@ -446,10 +452,15 @@ export default function FarmerSubmitInventory({
 
         <div className="card form-card" style={{ marginBottom: 16 }}>
           <SectionTitle>{isTh ? 'COA (ใบรับรองผลตรวจ)' : 'COA (Lab Report)'}</SectionTitle>
-          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '-6px 0 14px' }}>
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '-6px 0 6px' }}>
             {isTh
-              ? 'รายละเอียดด้านล่างส่วนใหญ่มาจากใบ COA ของคุณ กรอกเท่าที่มี'
-              : "Most of the details below come from your COA. Fill in what you have."}
+              ? 'กรอกค่าต่อไปนี้จากใบ COA ของคุณ หากมี'
+              : 'Enter these values from your COA if you have one.'}
+          </p>
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 14px' }}>
+            {isTh
+              ? 'หากยังไม่มีใบ COA สามารถเว้นว่างไว้ได้ DDP จะตรวจสอบเอกสารให้ภายหลัง'
+              : 'If you do not have a COA, leave these blank. DDP can review documents later.'}
           </p>
 
           <div style={{ marginBottom: 14 }}>
@@ -524,7 +535,7 @@ export default function FarmerSubmitInventory({
               </div>
 
               <div className="form-grid-2" style={{ marginTop: 14 }}>
-                <Field label={isTh ? 'ความชื้น %' : 'Moisture %'}>
+                <Field label={isTh ? 'ความชื้นจาก COA %' : 'Moisture from COA %'}>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -544,7 +555,7 @@ export default function FarmerSubmitInventory({
                     min="0" max="30" step="0.01"
                   />
                 </Field>
-                <Field label={isTh ? 'วอเตอร์แอคทิวิตี้ (aw)' : 'Water activity (aw)'} hint={isTh ? 'เช่น 0.55' : 'e.g. 0.55'}>
+                <Field label={isTh ? 'วอเตอร์แอคทิวิตี้จาก COA (aw)' : 'Water activity from COA (aw)'} hint={isTh ? 'เช่น 0.55' : 'e.g. 0.55'}>
                   <input
                     type="number"
                     inputMode="decimal"

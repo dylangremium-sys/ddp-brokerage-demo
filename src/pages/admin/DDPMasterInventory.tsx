@@ -107,6 +107,9 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
               <div className="master-eyebrow">DDP VERIFIED INVENTORY</div>
               <h1 className="master-title">Master Inventory</h1>
               <p className="master-desc">Verified and approved stock — controlled by DDP and ready for qualified buyer engagement.</p>
+              <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '4px 0 0', maxWidth: 560 }}>
+                THC / CBD / contaminant values are COA values documented by the farm; DDP review required before commercial reliance.
+              </p>
             </div>
             <DDPVerifiedSupplySeal size={68} />
           </div>

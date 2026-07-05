@@ -338,6 +338,13 @@ export default function App() {
     }).catch(onDbError)
   }
 
+  function handleSaveOwnerNote(itemId: string, note: string) {
+    setInventory(prev => prev.map(i =>
+      i.id === itemId ? { ...i, ownerNotes: note } : i
+    ))
+    patchInventoryBatch(itemId, { owner_notes: note }).catch(onDbError)
+  }
+
   function handleEditStock(itemId: string) {
     setStockEditItemId(itemId)
     goTo('farmer-stock-form')
@@ -702,6 +709,7 @@ export default function App() {
               }}
               onSendRequest={handleSendReviewRequest}
               onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
+              onSaveNote={handleSaveOwnerNote}
             />
           )}
 

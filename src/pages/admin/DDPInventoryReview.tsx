@@ -22,6 +22,7 @@ interface Props {
   onAction: (itemId: string, action: string) => void
   onSendRequest?: (req: Omit<ReviewRequest, 'id' | 'createdAt'>) => void
   onGetCoaUrl?: (storagePath: string) => Promise<string | null>
+  onSaveNote?: (itemId: string, note: string) => void
 }
 
 const STATUS_CLASS: Record<InventoryStatus, string> = {
@@ -40,11 +41,21 @@ function CheckRow({ label, pass }: { label: string; pass: boolean }) {
   )
 }
 
-export default function DDPInventoryReview({ item, farm, onBack, onAction, onSendRequest, onGetCoaUrl }: Props) {
+export default function DDPInventoryReview({ item, farm, onBack, onAction, onSendRequest, onGetCoaUrl, onSaveNote }: Props) {
   const [reqType, setReqType] = useState<RequestType>('general')
   const [reqMsg, setReqMsg] = useState('')
   const [reqSent, setReqSent] = useState(false)
   const [coaLoading, setCoaLoading] = useState(false)
+  const [note, setNote] = useState(item.ownerNotes ?? '')
+  const [noteSaved, setNoteSaved] = useState(false)
+  const hasCoaOnFile = !!(item.certFileName || item.coaStoragePath)
+
+  function handleSaveNote() {
+    if (!onSaveNote) return
+    onSaveNote(item.id, note.trim())
+    setNoteSaved(true)
+    setTimeout(() => setNoteSaved(false), 2500)
+  }
 
   async function handleViewCoa() {
     if (!onGetCoaUrl || !item.coaStoragePath) return
@@ -135,6 +146,10 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
 
             <div className="detail-block">
               <div className="detail-block-title">Batch & Lab Values</div>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '-4px 0 10px' }}>
+                Farmer-entered — typed by the supplier from their COA, not yet independently checked by DDP.
+                Compare these figures against the uploaded COA before approving.
+              </p>
               <div className="detail-rows">
                 <div className="detail-row"><span className="dl">Batch Number</span><span className="dv mono">{item.batchNumber || '—'}</span></div>
                 <div className="detail-row"><span className="dl">THC %</span><span className="dv">{item.thcPct > 0 ? `${item.thcPct}%` : <span className="text-missing">Not recorded</span>}</span></div>
@@ -207,7 +222,15 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
             <div className="ledger-scroll">
               {(item.heavyMetalsStatus || item.pesticidesStatus || item.microbialStatus || item.mycotoxinsStatus) && (
                 <div className="detail-block">
-                  <div className="detail-block-title">COA Test Results</div>
+                  <div className="detail-block-title" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    COA Test Results
+                    <span className={`badge badge-sm ${hasCoaOnFile ? 'badge-pending' : 'badge-missing'}`}>
+                      {hasCoaOnFile ? 'COA uploaded — pending DDP check' : 'No COA on file'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '-2px 0 10px' }}>
+                    Farmer-entered from their COA. Open the COA above and confirm these figures match before relying on them.
+                  </p>
                   <div className="detail-rows">
                     {item.labName && <div className="detail-row"><span className="dl">Lab</span><span className="dv">{item.labName}</span></div>}
                     {item.reportNumber && <div className="detail-row"><span className="dl">Report #</span><span className="dv mono">{item.reportNumber}</span></div>}
@@ -217,6 +240,30 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                     {item.microbialStatus && <div className="detail-row"><span className="dl">Microbial</span><span className={`dv ${item.microbialStatus === 'pass' ? 'check-yes' : item.microbialStatus === 'fail' ? 'check-no' : ''}`}>{item.microbialStatus}</span></div>}
                     {item.mycotoxinsStatus && <div className="detail-row"><span className="dl">Mycotoxins</span><span className={`dv ${item.mycotoxinsStatus === 'pass' ? 'check-yes' : item.mycotoxinsStatus === 'fail' ? 'check-no' : ''}`}>{item.mycotoxinsStatus}</span></div>}
                   </div>
+                </div>
+              )}
+
+              {onSaveNote && (
+                <div className="detail-block">
+                  <div className="detail-block-title">Internal Note</div>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '-2px 0 10px' }}>
+                    Once you've compared the typed values against the uploaded COA, record it here — e.g. "COA checked against typed values."
+                  </p>
+                  <textarea
+                    rows={3}
+                    value={note}
+                    onChange={e => setNote(e.target.value)}
+                    placeholder="COA checked against typed values."
+                    style={{ width: '100%', fontSize: 13 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ marginTop: 8, fontSize: 13 }}
+                    onClick={handleSaveNote}
+                  >
+                    {noteSaved ? '✓ Note saved' : 'Save Note'}
+                  </button>
                 </div>
               )}
 
