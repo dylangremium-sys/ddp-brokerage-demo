@@ -276,7 +276,6 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
         <div className="about-section">
           <div className="about-section-title">{t.landingAboutTitle}</div>
           <p className="about-section-text">{t.landingAboutText1}</p>
-          <p className="about-section-text">{t.landingAboutText2}</p>
         </div>
 
         <div className="legal-strip">{t.landingDisclaimer}</div>
