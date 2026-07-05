@@ -291,8 +291,9 @@ export default function FarmerSubmitInventory({
       )}
 
       <form>
+        {/* Section 1 — Product basics */}
         <div className="card form-card" style={{ marginBottom: 16 }}>
-          <SectionTitle>{isTh ? 'ข้อมูลฟาร์ม' : 'Farm'}</SectionTitle>
+          <SectionTitle>{isTh ? '1. ข้อมูลสินค้าเบื้องต้น' : '1. Product basics'}</SectionTitle>
 
           {farms.length > 1 && (
             <Field label={isTh ? 'เลือกฟาร์ม' : 'Select farm'}>
@@ -312,8 +313,6 @@ export default function FarmerSubmitInventory({
               {isTh ? 'กรุณาสร้างโปรไฟล์ฟาร์มก่อน' : 'Create a farm profile first to link this stock.'}
             </div>
           )}
-
-          <SectionTitle style={{ marginTop: 20 } as React.CSSProperties}>{isTh ? 'สินค้าที่มีอยู่' : 'What stock do you have available?'}</SectionTitle>
 
           <Field label={isTh ? 'ชื่อสายพันธุ์ / สินค้า *' : 'Strain / product name *'}>
             <input
@@ -335,7 +334,7 @@ export default function FarmerSubmitInventory({
 
           <div className="form-grid-2" style={{ marginTop: 14 }}>
             <Field
-              label={isTh ? 'THC จาก COA (ถ้ามี)' : 'THC from COA'}
+              label={isTh ? 'THC จาก COA (ถ้ามี)' : 'THC level, if known'}
               hint={isTh ? 'กรอกจากใบ COA หากมี' : 'From your COA, if you have one'}
             >
               <input
@@ -348,7 +347,7 @@ export default function FarmerSubmitInventory({
               />
             </Field>
             <Field
-              label={isTh ? 'CBD จาก COA (ถ้ามี)' : 'CBD from COA'}
+              label={isTh ? 'CBD จาก COA (ถ้ามี)' : 'CBD level, if known'}
               hint={isTh ? 'กรอกจากใบ COA หากมี' : 'From your COA, if you have one'}
             >
               <input
@@ -362,7 +361,20 @@ export default function FarmerSubmitInventory({
             </Field>
           </div>
 
-          <div className="form-grid-2" style={{ marginTop: 14 }}>
+          <Field label={isTh ? 'เลขแบทช์ (ไม่บังคับ)' : 'Batch number, optional'} hint={isTh ? 'ตามที่ระบุในใบ COA' : 'As shown on COA'}>
+            <input
+              value={form.batchNumber}
+              onChange={e => set('batchNumber', e.target.value)}
+              placeholder={isTh ? 'เช่น PG-2025-001' : 'e.g. PG-2025-001'}
+            />
+          </Field>
+        </div>
+
+        {/* Section 2 — Quantity and price */}
+        <div className="card form-card" style={{ marginBottom: 16 }}>
+          <SectionTitle>{isTh ? '2. ปริมาณและราคา' : '2. Quantity and price'}</SectionTitle>
+
+          <div className="form-grid-2">
             <Field label={isTh ? 'ปริมาณที่มีอยู่' : 'Available quantity'}>
               <input
                 type="number"
@@ -426,8 +438,13 @@ export default function FarmerSubmitInventory({
                 : `⚠ Your price is above DDP's current market range (฿${benchmark!.priceMin.toLocaleString()}–฿${benchmark!.priceMax.toLocaleString()}/kg)`}
             </div>
           )}
+        </div>
 
-          <div className="form-grid-2" style={{ marginTop: 14 }}>
+        {/* Section 3 — Harvest and curing */}
+        <div className="card form-card" style={{ marginBottom: 16 }}>
+          <SectionTitle>{isTh ? '3. เก็บเกี่ยวและบ่ม' : '3. Harvest and curing'}</SectionTitle>
+
+          <div className="form-grid-2">
             <Field label={isTh ? 'วันที่เก็บเกี่ยว' : 'Harvest date'}>
               <input type="date" value={form.harvestDate} onChange={e => set('harvestDate', e.target.value)} />
             </Field>
@@ -437,21 +454,22 @@ export default function FarmerSubmitInventory({
           </div>
 
           <div className="form-grid-2" style={{ marginTop: 14 }}>
-            <Field label={isTh ? 'เลขแบทช์ (ไม่บังคับ)' : 'Batch number, optional'} hint={isTh ? 'ตามที่ระบุในใบ COA' : 'As shown on COA'}>
-              <input
-                value={form.batchNumber}
-                onChange={e => set('batchNumber', e.target.value)}
-                placeholder={isTh ? 'เช่น PG-2025-001' : 'e.g. PG-2025-001'}
-              />
-            </Field>
             <Field label={isTh ? 'วันหมดอายุ (ไม่บังคับ)' : 'Expiry date, optional'}>
               <input type="date" value={form.expiryDate} onChange={e => set('expiryDate', e.target.value)} />
+            </Field>
+            <Field label={isTh ? 'สภาพการเก็บรักษา' : 'Storage conditions'} hint={isTh ? 'เช่น ห้องเย็น 15°C ความชื้นต่ำกว่า 60%' : 'e.g. Cool room 15°C, humidity below 60%'}>
+              <input
+                value={form.storageConditions}
+                onChange={e => set('storageConditions', e.target.value)}
+                placeholder={isTh ? 'เช่น ห้องเย็น 15°C ความชื้นต่ำกว่า 60%' : 'e.g. Cool room 15°C, RH < 60%'}
+              />
             </Field>
           </div>
         </div>
 
+        {/* Section 4 — Documents */}
         <div className="card form-card" style={{ marginBottom: 16 }}>
-          <SectionTitle>{isTh ? 'COA (ใบรับรองผลตรวจ)' : 'COA (Lab Report)'}</SectionTitle>
+          <SectionTitle>{isTh ? '4. เอกสาร (COA)' : '4. Documents (COA)'}</SectionTitle>
           <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '-6px 0 6px' }}>
             {isTh
               ? 'กรอกค่าต่อไปนี้จากใบ COA ของคุณ หากมี'
@@ -590,7 +608,7 @@ export default function FarmerSubmitInventory({
         </div>
 
         <div className="card form-card" style={{ marginBottom: 16 }}>
-          <SectionTitle>{isTh ? 'รูปภาพสินค้า' : 'Product Photos'}</SectionTitle>
+          <SectionTitle>{isTh ? '5. รูปภาพ' : '5. Photos'}</SectionTitle>
           <input
             ref={photoInputRef}
             type="file"
@@ -631,17 +649,28 @@ export default function FarmerSubmitInventory({
           <span className="field-hint">{isTh ? 'รูปดอก บรรจุภัณฑ์ หรือป้ายแบทช์' : 'Bud close-up, packaging, or batch label'}</span>
         </div>
 
+        {/* Section 6 — Review and submit */}
         <div className="card form-card" style={{ marginBottom: 24 }}>
-          <SectionTitle>{isTh ? 'บันทึก' : 'Notes'}</SectionTitle>
-          <Field label={isTh ? 'สภาพการเก็บรักษา' : 'Storage conditions'} hint={isTh ? 'เช่น ห้องเย็น 15°C ความชื้นต่ำกว่า 60%' : 'e.g. Cool room 15°C, humidity below 60%'}>
-            <input
-              value={form.storageConditions}
-              onChange={e => set('storageConditions', e.target.value)}
-              placeholder={isTh ? 'เช่น ห้องเย็น 15°C ความชื้นต่ำกว่า 60%' : 'e.g. Cool room 15°C, RH < 60%, dark storage'}
-            />
-          </Field>
-          <label className="field" style={{ marginTop: 14 }}>
-            <span>{isTh ? 'บันทึกของเกษตรกร (มองเห็นเฉพาะ DDP)' : 'Farmer notes (visible to DDP only)'}</span>
+          <SectionTitle>{isTh ? '6. ตรวจสอบและส่ง' : '6. Review and submit'}</SectionTitle>
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '-6px 0 12px' }}>
+            {isTh ? 'ตรวจสอบข้อมูลก่อนส่งให้ DDP' : 'Check your details before sending to DDP.'}
+          </p>
+
+          <div className="review-summary">
+            {form.strainName && <div className="review-pill">✓ {isTh ? 'สินค้า' : 'Product'}: {form.strainName}</div>}
+            <div className="review-pill">✓ {isTh ? 'ประเภท' : 'Type'}: {PRODUCT_TYPES.find(p => p.key === form.productType)?.[isTh ? 'th' : 'en']}</div>
+            {form.quantityAvailable && <div className="review-pill">✓ {isTh ? 'ปริมาณ' : 'Quantity'}: {form.quantityAvailable} {form.unit}</div>}
+            {form.askingPrice && <div className="review-pill">✓ {isTh ? 'ราคา' : 'Price'}: ฿{form.askingPrice}/{form.unit}</div>}
+            {form.harvestDate && <div className="review-pill">✓ {isTh ? 'เก็บเกี่ยว' : 'Harvest'}: {form.harvestDate}</div>}
+            {form.cureDate && <div className="review-pill">✓ {isTh ? 'บ่ม' : 'Curing'}: {form.cureDate}</div>}
+            <div className="review-pill">
+              {form.coaAvailable ? '✓' : '—'} {isTh ? 'COA' : 'COA'}: {form.coaAvailable ? (form.coaFileName || (isTh ? 'มี' : 'Yes')) : (isTh ? 'ยังไม่มี' : 'Not yet')}
+            </div>
+            <div className="review-pill">{photos.length > 0 ? '✓' : '—'} {isTh ? 'รูปภาพ' : 'Photos'}: {photos.length}</div>
+          </div>
+
+          <label className="field" style={{ marginTop: 16 }}>
+            <span>{isTh ? 'บันทึกเพิ่มเติมสำหรับ DDP (ไม่บังคับ)' : 'Additional notes for DDP, optional'}</span>
             <textarea
               rows={3}
               value={form.farmerNotes}
