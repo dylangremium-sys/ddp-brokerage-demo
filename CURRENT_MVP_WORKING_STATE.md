@@ -27,13 +27,13 @@
 
 ### Admin — Master Inventory
 - Approved batches appear with correct data
-- Stats row: batch count, total kg, verified farm count
+- Stats row: batch count, total kg, farms with approved stock
 - COA View button opens signed Supabase Storage URL (live mode)
 - Export column visible with 📋 Buyer Pack button per approved row
 
 ### Buyer Pack
 - Opens from Master Inventory per approved batch
-- Header: product name, farm, batch number, DDP Approved badge, DDP Verified Supply Seal
+- Header: product name, farm, batch number, DDP Approved badge, DDP Reviewed Supply Seal
 - Farm & Origin section: farm name, province, partner tier
 - Availability & Pricing section: quantity, price per kg, minimum order, unit
 - Lab Values: THC %, CBD %, moisture %, water activity
@@ -43,13 +43,13 @@
 - Open Photo: opens image in new tab (data URL → blob URL conversion for demo mode)
 - Copy Summary: copies plain-text buyer summary to clipboard
 - Print / Save PDF: triggers browser print dialog with non-print elements hidden
-- Compliance checklist: 10/10 passes for the validated demo batch (FARM-LINK-001)
+- Compliance checklist: evidence-controlled, 11-item review (checklist now separates COA claimed by farm from COA file received); pass count for the validated demo batch (FARM-LINK-001) not re-verified against the current 11-item checklist
 - Back button returns to Master Inventory
 
 ### Branding
 - DDP Monogram Logo in navbar
 - DDP Hero Wordmark on landing page
-- DDP Verified Supply Seal in Master Inventory banner and Buyer Pack header
+- DDP Reviewed Supply Seal in Master Inventory banner and Buyer Pack header
 
 ---
 
@@ -63,9 +63,9 @@
 | Location | Chiang Mai, Thailand |
 | Status | Approved |
 | Quantity | 29 kg |
-| Compliance | 10/10 |
+| Compliance | 11-item checklist |
 
-**Master Inventory totals at time of validation:** 3 approved batches · 89 kg · 1 verified farm
+**Master Inventory totals at time of validation:** 3 approved batches · 89 kg · 1 farm with approved stock
 
 ---
 
