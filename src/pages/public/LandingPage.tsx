@@ -31,22 +31,62 @@ function WhyIcon() {
   )
 }
 
-export interface LandingReadiness {
-  farmsUnderReview: number
-  batchesDocumented: number
-  coasReceived: number
-  missingFiles: number
-  buyerReadyInventory: number
+function DocumentIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2.5h8l4 4v14a1 1 0 01-1 1H6a1 1 0 01-1-1v-17a1 1 0 011-1z" />
+      <path d="M14 2.5v4h4" />
+      <path d="M8 13h8M8 16.5h8M8 9.5h3" />
+    </svg>
+  )
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2.5l7.5 3v6c0 5-3.2 8.3-7.5 10-4.3-1.7-7.5-5-7.5-10v-6l7.5-3z" />
+      <path d="M8.75 12.25l2.25 2.25 4.25-4.5" />
+    </svg>
+  )
+}
+
+function BriefcaseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="7.5" width="18" height="12" rx="1.5" />
+      <path d="M8.5 7.5V5.5a1.5 1.5 0 011.5-1.5h4a1.5 1.5 0 011.5 1.5v2" />
+      <path d="M3 12.5h18" />
+      <path d="M10.5 12.5v2h3v-2" />
+    </svg>
+  )
+}
+
+function BoxIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
+      <path d="M4 7.5L12 12l8-4.5" />
+      <path d="M12 12v9" />
+    </svg>
+  )
+}
+
+function FlagIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 21V3.5" />
+      <path d="M5 4.5h13l-3 4.5 3 4.5H5" />
+    </svg>
+  )
 }
 
 interface Props {
   lang: Lang
   onEnterFarmer: () => void
   onEnterDDP: () => void
-  readiness: LandingReadiness
 }
 
-export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness }: Props) {
+export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) {
   const t = T[lang]
 
   const whyItems = [
@@ -56,12 +96,12 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness
     { title: t.landingWhy4Title, desc: t.landingWhy4Desc },
   ]
 
-  const readinessItems = [
-    { label: t.landingReadinessFarms, value: readiness.farmsUnderReview },
-    { label: t.landingReadinessDocumented, value: readiness.batchesDocumented },
-    { label: t.landingReadinessCoa, value: readiness.coasReceived },
-    { label: t.landingReadinessMissing, value: readiness.missingFiles },
-    { label: t.landingReadinessBuyerReady, value: readiness.buyerReadyInventory },
+  const orgItems = [
+    { icon: <FarmerPortalIcon />, title: t.landingOrgItem1Title, desc: t.landingOrgItem1Desc },
+    { icon: <BoxIcon />, title: t.landingOrgItem2Title, desc: t.landingOrgItem2Desc },
+    { icon: <DocumentIcon />, title: t.landingOrgItem3Title, desc: t.landingOrgItem3Desc },
+    { icon: <BriefcaseIcon />, title: t.landingOrgItem4Title, desc: t.landingOrgItem4Desc },
+    { icon: <FlagIcon />, title: t.landingOrgItem5Title, desc: t.landingOrgItem5Desc },
   ]
 
   return (
@@ -75,25 +115,57 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness
             </div>
             <h1 className="landing-headline">{t.landingHeadline}</h1>
             <p className="landing-hero-text">{t.landingHero1}</p>
+
+            <div className="landing-hero-ctas">
+              <button type="button" className="btn btn-primary btn-lg landing-hero-cta-primary" onClick={onEnterFarmer}>
+                <span aria-hidden="true"><FarmerPortalIcon /></span>
+                {t.landingAccessFarmerCta}
+                <span className="access-module-arrow">→</span>
+              </button>
+              <button type="button" className="landing-hero-cta-secondary" onClick={onEnterDDP}>
+                <span aria-hidden="true"><OperationsDashboardIcon /></span>
+                {t.landingAccessDDPCta}
+                <span className="access-module-arrow">→</span>
+              </button>
+            </div>
+            <p className="landing-hero-cta-caption">{t.landingAccessFarmerDesc}</p>
           </div>
 
-          <div className="landing-access-grid">
-            <button type="button" className="access-module access-module-primary" onClick={onEnterFarmer}>
-              <span className="access-module-icon" aria-hidden="true"><FarmerPortalIcon /></span>
-              <span className="access-module-body">
-                <span className="access-module-title">{t.landingEnterFarmer}</span>
-                <span className="access-module-desc">{t.landingAccessFarmerDesc}</span>
-                <span className="access-module-cta">{t.landingAccessFarmerCta} <span className="access-module-arrow">→</span></span>
-              </span>
-            </button>
-            <button type="button" className="access-module access-module-secondary" onClick={onEnterDDP}>
-              <span className="access-module-icon" aria-hidden="true"><OperationsDashboardIcon /></span>
-              <span className="access-module-body">
-                <span className="access-module-title">{t.landingEnterDDP}</span>
-                <span className="access-module-desc">{t.landingAccessDDPDesc}</span>
-                <span className="access-module-cta">{t.landingAccessDDPCta} <span className="access-module-arrow">→</span></span>
-              </span>
-            </button>
+          <div className="hero-visual">
+            <div className="hero-mock-card">
+              <div className="hero-mock-chrome">
+                <span className="hero-mock-chrome-dot" />
+                <span className="hero-mock-chrome-dot" />
+                <span className="hero-mock-chrome-dot" />
+                <span className="hero-mock-badge">{t.landingHeroMockEyebrow}</span>
+              </div>
+              <div className="hero-mock-grid">
+                <div className="hero-mock-field">
+                  <span className="hero-mock-label">{t.landingHeroMockFarmLabel}</span>
+                  <span className="hero-mock-value">{t.landingHeroMockFarmValue}</span>
+                </div>
+                <div className="hero-mock-field">
+                  <span className="hero-mock-label">{t.landingHeroMockBatchLabel}</span>
+                  <span className="hero-mock-value">{t.landingHeroMockBatchValue}</span>
+                </div>
+                <div className="hero-mock-field">
+                  <span className="hero-mock-label">{t.landingHeroMockThcLabel}</span>
+                  <span className="hero-mock-value">{t.landingHeroMockThcValue}</span>
+                </div>
+                <div className="hero-mock-field">
+                  <span className="hero-mock-label">{t.landingHeroMockCoaLabel}</span>
+                  <StatusBadge status="coa-received" lang={lang} />
+                </div>
+                <div className="hero-mock-field">
+                  <span className="hero-mock-label">{t.landingHeroMockStatusLabel}</span>
+                  <StatusBadge status="verified" lang={lang} />
+                </div>
+                <div className="hero-mock-field">
+                  <span className="hero-mock-label">{t.landingHeroMockActionLabel}</span>
+                  <StatusBadge status="progress" lang={lang} />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -104,21 +176,25 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness
           <div className="framework-strip-title">{t.landingFrameworkTitle}</div>
           <div className="framework-steps">
             <div className="framework-step">
+              <span className="framework-step-icon" aria-hidden="true"><FarmerPortalIcon /></span>
               <StatusBadge status="claimed" lang={lang} />
               <p className="framework-step-desc">{t.landingFrameworkClaimedDesc}</p>
             </div>
             <div className="framework-connector" aria-hidden="true" />
             <div className="framework-step">
+              <span className="framework-step-icon" aria-hidden="true"><DocumentIcon /></span>
               <StatusBadge status="documented" lang={lang} />
               <p className="framework-step-desc">{t.landingFrameworkDocumentedDesc}</p>
             </div>
             <div className="framework-connector" aria-hidden="true" />
             <div className="framework-step">
+              <span className="framework-step-icon" aria-hidden="true"><ShieldIcon /></span>
               <StatusBadge status="verified" lang={lang} />
               <p className="framework-step-desc">{t.landingFrameworkVerifiedDesc}</p>
             </div>
             <div className="framework-connector" aria-hidden="true" />
             <div className="framework-step">
+              <span className="framework-step-icon" aria-hidden="true"><BriefcaseIcon /></span>
               <StatusBadge status="buyer-ready" lang={lang} />
               <p className="framework-step-desc">{t.landingFrameworkBuyerReadyDesc}</p>
             </div>
@@ -129,12 +205,12 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness
       <div className="landing-body">
         {/* ── Buyer pack preview ── */}
         <div className="buyer-pack-preview">
+          <div className="buyer-pack-preview-eyebrow">{t.landingBuyerPackBadge}</div>
           <div className="buyer-pack-preview-head">
             <div>
               <div className="buyer-pack-preview-title">{t.landingBuyerPackTitle}</div>
               <p className="buyer-pack-preview-desc">{t.landingBuyerPackDesc}</p>
             </div>
-            <span className="buyer-pack-preview-badge">{t.landingBuyerPackBadge}</span>
           </div>
           <div className="buyer-pack-preview-grid">
             <div className="buyer-pack-preview-field">
@@ -165,17 +241,18 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness
           <p className="buyer-pack-preview-note">{t.landingBuyerPackActionNote}</p>
         </div>
 
-        {/* ── Procurement readiness (real counts) ── */}
-        <div className="readiness-panel">
-          <div className="readiness-panel-head">
-            <div className="readiness-panel-title">{t.landingReadinessTitle}</div>
-            <p className="readiness-panel-desc">{t.landingReadinessDesc}</p>
+        {/* ── What DDP organizes (static — no live counts on the public page) ── */}
+        <div className="org-panel">
+          <div className="org-panel-head">
+            <div className="org-panel-title">{t.landingOrgTitle}</div>
+            <p className="org-panel-desc">{t.landingOrgDesc}</p>
           </div>
-          <div className="readiness-stats">
-            {readinessItems.map((item, i) => (
-              <div key={i} className="readiness-stat">
-                <div className="readiness-stat-val">{item.value}</div>
-                <div className="readiness-stat-lbl">{item.label}</div>
+          <div className="org-grid">
+            {orgItems.map((item, i) => (
+              <div key={i} className="org-item">
+                <span className="org-item-icon" aria-hidden="true">{item.icon}</span>
+                <div className="org-item-title">{item.title}</div>
+                <div className="org-item-desc">{item.desc}</div>
               </div>
             ))}
           </div>
