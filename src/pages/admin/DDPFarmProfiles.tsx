@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FarmProfile, FarmStatus, CarbonProgrammeStatus } from '../../types'
+import type { FarmProfile, FarmStatus, CarbonProgrammeStatus, InventoryItem } from '../../types'
 import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass } from '../../data'
 import { FilterSidebar, CertCheckboxGroup } from '../../components/shared/FilterSidebar'
 
@@ -20,6 +20,7 @@ const CARBON_STATUS_LABEL: Record<CarbonProgrammeStatus, string> = {
 
 interface Props {
   farms: FarmProfile[]
+  inventory?: InventoryItem[]
   onReview: (farmId: string) => void
 }
 
@@ -48,7 +49,7 @@ function exportReadiness(farm: FarmProfile): string {
 
 type FilterStatus = 'All' | 'Pending' | 'Approved' | 'Watchlist' | 'Rejected'
 
-export default function DDPFarmProfiles({ farms, onReview }: Props) {
+export default function DDPFarmProfiles({ farms, inventory = [], onReview }: Props) {
   const [filter, setFilter] = useState<FilterStatus>('All')
   const [certFilters, setCertFilters] = useState<string[]>([])
 
@@ -112,9 +113,9 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
                 <th>Province</th>
                 <th>Profile Completeness</th>
                 <th>Status</th>
-                <th>Export Readiness</th>
+                <th>Export Signal</th>
                 <th>Risk Level</th>
-                <th>Verification Tier</th>
+                <th>Compliance Tier</th>
                 <th>Carbon</th>
                 <th></th>
               </tr>
@@ -141,15 +142,15 @@ export default function DDPFarmProfiles({ farms, onReview }: Props) {
                       </div>
                     </td>
                     <td data-label="Status"><span className={`badge ${STATUS_CLASS[farm.status]}`}>{farm.status}</span></td>
-                    <td data-label="Export Readiness">
+                    <td data-label="Export Signal">
                       <span className={`readiness-chip readiness-${exp.toLowerCase()}`}>{exp}</span>
                     </td>
                     <td data-label="Risk Level">
                       <span className={`risk-chip ${risk.cls}`}>{risk.label}</span>
                     </td>
-                    <td data-label="Verification Tier">
-                      <span className={`farm-tier-badge ${complianceTierClass(deriveComplianceTier(farm))}`}>
-                        {COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm)]}
+                    <td data-label="Compliance Tier">
+                      <span className={`farm-tier-badge ${complianceTierClass(deriveComplianceTier(farm, inventory))}`}>
+                        {COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm, inventory)]}
                       </span>
                     </td>
                     <td data-label="Carbon">

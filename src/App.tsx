@@ -662,6 +662,7 @@ export default function App() {
           {page === 'ddp-farms' && isAdminRole && (
             <DDPFarmProfiles
               farms={farms}
+              inventory={inventory}
               onReview={handleReviewFarm}
             />
           )}
@@ -670,6 +671,7 @@ export default function App() {
             <DDPFarmReview
               key={reviewFarm.id}
               farm={reviewFarm}
+              inventory={inventory}
               onBack={() => goTo('ddp-farms')}
               onAction={handleFarmAction}
               onCarbonAction={handleAdminCarbonAction}

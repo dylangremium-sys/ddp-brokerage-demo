@@ -57,9 +57,9 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
         <SummaryCard val={approvedFarms} lbl="Approved Farms" cls="s-approved" />
         <SummaryCard val={watchlistFarms} lbl="Watchlist" cls="s-missing" />
         <SummaryCard val={`${totalKg.toLocaleString()} kg`} lbl="Total Submitted Stock" cls="s-total" />
-        <SummaryCard val={`${approvedKg.toLocaleString()} kg`} lbl="Verified Stock" cls="s-approved" />
+        <SummaryCard val={`${approvedKg.toLocaleString()} kg`} lbl="Approved Stock" cls="s-approved" />
         <SummaryCard val={missingDocItems} lbl="Missing Documents" cls="s-missing" />
-        <SummaryCard val={exportReadyFarms} lbl="Export-Ready Farms" cls="s-farms" />
+        <SummaryCard val={exportReadyFarms} lbl="Export Document Review" cls="s-farms" />
       </div>
 
       <div className="overview-grid">

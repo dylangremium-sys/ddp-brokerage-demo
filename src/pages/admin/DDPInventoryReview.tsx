@@ -123,7 +123,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                   <div className="detail-row"><span className="dl">Farm</span><span className="dv">{farm.tradingName}</span></div>
                   <div className="detail-row"><span className="dl">Province</span><span className="dv">{farm.province}</span></div>
                   <div className="detail-row"><span className="dl">Farm Status</span><span className="dv"><span className={`badge badge-sm`}>{farm.status}</span></span></div>
-                  <div className="detail-row"><span className="dl">Verification Tier</span><span className="dv">{COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm)]}</span></div>
+                  <div className="detail-row"><span className="dl">Compliance Tier</span><span className="dv">{COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm, [item])]}</span></div>
                   <div className="detail-row"><span className="dl">Profile Completion</span><span className="dv">{farm.completionPct}%</span></div>
                 </div>
               </div>

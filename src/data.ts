@@ -1,5 +1,5 @@
 import type { InventoryItem, FarmProfile, ReviewRequest, MarketBenchmark, ComplianceVerificationTier, TestStatus } from './types'
-import { REQUIREMENT_OVERRIDE_KEY, RISK_OVERRIDE_KEY, DECISION_KEY } from './lib/procurementControl'
+import { REQUIREMENT_OVERRIDE_KEY, RISK_OVERRIDE_KEY, DECISION_KEY, getFarmInventory } from './lib/procurementControl'
 
 export function testStatusLabel(s?: TestStatus): string {
   if (s === 'pass') return 'PASS'
@@ -50,17 +50,27 @@ export function farmTotalScore(f: FarmProfile): number {
   )
 }
 
-// Derives the 3-tier compliance verification status from audited, reliably-populated
-// signals (status, licence/COA presence, completion %) rather than the score fields
-// above, which are not currently persisted for Supabase-backed farms.
-export function deriveComplianceTier(f: FarmProfile): ComplianceVerificationTier {
+// Derives the 3-tier compliance status from audited, reliably-populated signals
+// (status, licence/COA presence, completion %, and — critically — whether a real
+// COA file has actually been received for one of the farm's batches) rather than
+// the score fields above, which are not currently persisted for Supabase-backed
+// farms. `f.coaFiles` and `f.gmpCert` etc. are free text typed by the farm, not a
+// received document, so they can only ever support a "claimed" reading on their
+// own; a farm can only clear DDP_DOCUMENTED or CERTIFIED_PHARMA_READY once at
+// least one of its batches has a real uploaded COA (InventoryItem.coaStoragePath).
+// Callers that can't supply `inventory` (no batch context available) will always
+// see the conservative CULTIVATOR_CLAIMED tier rather than an overclaimed one.
+export function deriveComplianceTier(f: FarmProfile, inventory: InventoryItem[] = []): ComplianceVerificationTier {
   const reviewed = (['Approved', 'Strategic Partner', 'Watchlist', 'Under Review'] as string[]).includes(f.status)
-  const hasCoreDocs = !!f.coaFiles && (!!f.cultivationLicence || !!f.exportLicence)
+  const hasReceivedCoaFile = getFarmInventory(f, inventory).some(b => !!b.coaStoragePath)
+  const hasLicenceClaim = !!f.cultivationLicence || !!f.exportLicence
+  const hasCoreDocs = hasReceivedCoaFile && hasLicenceClaim
   const pharmaReady =
     (['Approved', 'Strategic Partner'] as string[]).includes(f.status) &&
     !!f.gmpCert && !!f.exportLicence &&
     (f.suppliedPharma === 'Yes' || f.suppliedGMPProcessors === 'Yes' || f.qualifiedPerson === 'Yes') &&
-    f.heavyMetalsTested === 'Yes' && f.microbiologyTested === 'Yes'
+    f.heavyMetalsTested === 'Yes' && f.microbiologyTested === 'Yes' &&
+    hasReceivedCoaFile
 
   if (pharmaReady) return 'CERTIFIED_PHARMA_READY'
   if (reviewed && hasCoreDocs && f.completionPct >= 60) return 'DDP_DOCUMENTED'

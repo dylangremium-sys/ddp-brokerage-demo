@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { farmTotalScore, deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass } from '../../data'
-import type { FarmProfile, CarbonProgrammeStatus } from '../../types'
+import type { FarmProfile, CarbonProgrammeStatus, InventoryItem } from '../../types'
 
 const CARBON_ADMIN_LABELS: Record<CarbonProgrammeStatus, string> = {
   not_reviewed: 'Not reviewed',
@@ -13,6 +13,7 @@ const CARBON_ADMIN_LABELS: Record<CarbonProgrammeStatus, string> = {
 
 interface Props {
   farm: FarmProfile
+  inventory?: InventoryItem[]
   onBack: () => void
   onAction: (farmId: string, action: string) => void
   onCarbonAction?: (farmId: string, status: CarbonProgrammeStatus) => void
@@ -76,12 +77,12 @@ function Section({ title, children, open = true }: { title: string; children: Re
   )
 }
 
-export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, carbonPersistenceAvailable = true }: Props) {
+export default function DDPFarmReview({ farm, inventory = [], onBack, onAction, onCarbonAction, carbonPersistenceAvailable = true }: Props) {
   const totalScore = farmTotalScore(farm)
   const [carbonStatus, setCarbonStatus] = useState<CarbonProgrammeStatus>(
     farm.carbonProgrammeStatus ?? 'not_reviewed'
   )
-  const tier = deriveComplianceTier(farm)
+  const tier = deriveComplianceTier(farm, inventory)
 
   const negativeFlags: string[] = []
   const positiveFlags: string[] = []
@@ -98,7 +99,7 @@ export default function DDPFarmReview({ farm, onBack, onAction, onCarbonAction, 
   if (farm.exportLicence) positiveFlags.push('Export licence held')
   if (farm.interestedEUGMP === 'Yes' || farm.suppliedEU === 'Yes') positiveFlags.push('High export potential')
   if (parseInt(farm.annualCapacity) > 1000) positiveFlags.push('Strong production capacity')
-  if (farm.gmpCert) positiveFlags.push('GMP certified')
+  if (farm.gmpCert) positiveFlags.push('GMP certificate declared')
   if (farm.interestedExclusive === 'Yes' && farm.monthlyReportingAgreement === 'Yes') {
     positiveFlags.push('Strategic partner candidate')
   }

@@ -23,7 +23,8 @@ interface Props {
 
 const CHECKLIST: { key: string; label: string; pass: (i: InventoryItem) => boolean }[] = [
   { key: 'batch',    label: 'Batch number assigned',      pass: i => !!i.batchNumber },
-  { key: 'coa',     label: 'COA on file',                 pass: i => !!(i.certFileName || i.coaAvailable || i.coaStoragePath) },
+  { key: 'coa_claimed', label: 'COA claimed by farm',      pass: i => !!(i.certFileName || i.coaAvailable) },
+  { key: 'coa_file',    label: 'COA file received',        pass: i => !!i.coaStoragePath },
   { key: 'lab',     label: 'Lab name recorded',           pass: i => !!i.labName },
   { key: 'date',    label: 'Test date recorded',          pass: i => !!i.testDate },
   { key: 'thc',     label: 'THC % recorded',              pass: i => i.thcPct > 0 },
@@ -87,7 +88,10 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
   const checkResults = CHECKLIST.map(c => ({ ...c, result: c.pass(item) }))
   const passCount = checkResults.filter(c => c.result).length
 
-  const hasCoa = !!(item.certFileName || item.coaAvailable || item.coaStoragePath)
+  // A claimed filename/checkbox is not a received document — only a real
+  // storage path means DDP actually has the file. Buyer-facing COA display
+  // must key off the file, not the claim.
+  const hasCoaFile = !!item.coaStoragePath
   const canOpenCoa = !!(item.coaStoragePath && onGetCoaUrl)
   const hasPhoto = (item.photoUrls?.length ?? 0) > 0 || !!item.photoUrl
   const previewPhoto = item.photoUrls?.[0] ?? item.photoUrl ?? null
@@ -140,7 +144,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
       `Compliance:       ${passCount}/${CHECKLIST.length} checks passed`,
       `DDP Status:       ${packStatusLabel}`,
       '',
-      `COA:              ${hasCoa ? (item.certFileName || 'On file — request from DDP') : 'Not yet uploaded'}`,
+      `COA:              ${hasCoaFile ? (item.certFileName || 'On file — request from DDP') : 'Not yet received by DDP'}`,
       `Photo:            ${hasPhoto ? 'Available — request from DDP' : 'Not available'}`,
       '',
       'All commercial terms are managed exclusively by DDP Brokerage.',
@@ -171,7 +175,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
           <button type="button" className="btn btn-ghost" onClick={handleCopy}>
             {copied ? '✓ Copied' : 'Copy Summary'}
           </button>
-          {hasCoa && canOpenCoa && (
+          {hasCoaFile && canOpenCoa && (
             <button type="button" className="btn btn-ghost" onClick={handleOpenCoa} disabled={coaLoading}>
               {coaLoading ? '…' : 'Access Certificate of Analysis (COA)'}
             </button>
@@ -234,9 +238,9 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
             </div>
             {farm && (
               <div className="buyer-pack-field">
-                <span className="buyer-pack-lbl">Verification Tier</span>
-                <span className={`farm-tier-badge ${complianceTierClass(deriveComplianceTier(farm))}`}>
-                  {COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm)]}
+                <span className="buyer-pack-lbl">Compliance Tier</span>
+                <span className={`farm-tier-badge ${complianceTierClass(deriveComplianceTier(farm, [item]))}`}>
+                  {COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm, [item])]}
                 </span>
               </div>
             )}
@@ -311,12 +315,12 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <DocumentCard
               variant="buyer-pack"
-              hasFile={hasCoa}
+              hasFile={hasCoaFile}
               fileName={item.certFileName}
               openable={canOpenCoa}
               loading={coaLoading}
               onOpen={handleOpenCoa}
-              missingText="COA not yet uploaded"
+              missingText="COA not yet received by DDP"
               missingSeverity="muted"
             />
 
@@ -330,7 +334,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
 
             {/* Print-only static labels replace interactive buttons */}
             <span className="print-only" style={{ fontSize: 12, color: '#555' }}>
-              COA: {hasCoa ? (item.certFileName || 'On file — request from DDP') : 'Not yet uploaded'}
+              COA: {hasCoaFile ? (item.certFileName || 'On file — request from DDP') : 'Not yet received by DDP'}
               {' · '}
               Photo: {hasPhoto ? 'Available — request from DDP' : 'Not available'}
             </span>
@@ -353,7 +357,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
         <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
             <div className="detail-block-title" style={{ marginBottom: 0 }}>DDP Compliance Checklist</div>
-            <span className={`badge ${passCount === CHECKLIST.length ? 'badge-approved' : passCount >= 7 ? 'badge-pending' : 'badge-rejected'}`}>
+            <span className={`badge ${passCount === CHECKLIST.length ? 'badge-approved' : passCount >= Math.ceil(CHECKLIST.length * 0.7) ? 'badge-pending' : 'badge-rejected'}`}>
               {passCount}/{CHECKLIST.length} passed
             </span>
           </div>

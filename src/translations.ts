@@ -63,7 +63,7 @@ export const T = {
     landingFrameworkClaimedDesc: 'Stock submitted',
     landingFrameworkDocumentedLabel: 'Documented',
     landingFrameworkDocumentedDesc: 'Documents checked',
-    landingFrameworkVerifiedLabel: 'Verified',
+    landingFrameworkVerifiedLabel: 'Reviewed',
     landingFrameworkVerifiedDesc: 'Batch reviewed',
     landingFrameworkBuyerReadyLabel: 'Buyer-Ready',
     landingFrameworkBuyerReadyDesc: 'Buyer pack ready',
@@ -84,7 +84,7 @@ export const T = {
 
     // Landing — Why DDP
     landingWhyTitle: 'Why DDP',
-    landingWhy1Title: 'Verified Supply',
+    landingWhy1Title: 'Reviewed Supply',
     landingWhy1Desc: 'Checked against documents and COA before listing.',
     landingWhy2Title: 'Documented Farms',
     landingWhy2Desc: 'Profiles, licences, and history on record.',
@@ -97,7 +97,7 @@ export const T = {
     landingOrgTitle: 'What DDP Organizes',
     landingOrgDesc: 'The building blocks behind every buyer-ready batch.',
     landingOrgItem1Title: 'Farm Profiles',
-    landingOrgItem1Desc: 'Verified grower details',
+    landingOrgItem1Desc: 'Documented grower details',
     landingOrgItem2Title: 'Inventory Batches',
     landingOrgItem2Desc: 'Stock ready for review',
     landingOrgItem3Title: 'COA Documents',
@@ -524,7 +524,8 @@ export const T = {
     landingFrameworkClaimedDesc: 'ส่งสต็อกแล้ว',
     landingFrameworkDocumentedLabel: 'มีเอกสารรองรับ',
     landingFrameworkDocumentedDesc: 'ตรวจสอบเอกสารแล้ว',
-    landingFrameworkVerifiedLabel: 'ตรวจสอบแล้ว',
+    // NOTE: downgraded from "verified" (ตรวจสอบแล้ว) to "reviewed" (ตรวจทานแล้ว) to match the English change — needs native speaker review
+    landingFrameworkVerifiedLabel: 'ตรวจทานแล้ว',
     landingFrameworkVerifiedDesc: 'ตรวจสอบแบทช์แล้ว',
     landingFrameworkBuyerReadyLabel: 'พร้อมสำหรับผู้ซื้อ',
     landingFrameworkBuyerReadyDesc: 'แพ็กสำหรับผู้ซื้อพร้อมแล้ว',
@@ -545,7 +546,8 @@ export const T = {
 
     // Landing — Why DDP
     landingWhyTitle: 'ทำไมต้อง DDP',
-    landingWhy1Title: 'อุปทานที่ตรวจสอบแล้ว',
+    // NOTE: downgraded from "verified" to "reviewed" to match the English change — needs native speaker review
+    landingWhy1Title: 'อุปทานที่ตรวจทานแล้ว',
     landingWhy1Desc: 'ตรวจสอบกับเอกสารและ COA ก่อนขึ้นบัญชี',
     landingWhy2Title: 'ฟาร์มมีเอกสารรองรับ',
     landingWhy2Desc: 'โปรไฟล์ ใบอนุญาต และประวัติถูกบันทึกไว้',
@@ -558,7 +560,8 @@ export const T = {
     landingOrgTitle: 'สิ่งที่ DDP จัดระเบียบ',
     landingOrgDesc: 'ส่วนประกอบเบื้องหลังทุกแบทช์ที่พร้อมสำหรับผู้ซื้อ',
     landingOrgItem1Title: 'โปรไฟล์ฟาร์ม',
-    landingOrgItem1Desc: 'ข้อมูลผู้ปลูกที่ตรวจสอบแล้ว',
+    // NOTE: downgraded from "verified" to "documented" to match the English change — needs native speaker review
+    landingOrgItem1Desc: 'ข้อมูลผู้ปลูกที่มีการบันทึกไว้',
     landingOrgItem2Title: 'แบทช์สินค้าคงคลัง',
     landingOrgItem2Desc: 'สต็อกที่พร้อมตรวจสอบ',
     landingOrgItem3Title: 'เอกสาร COA',

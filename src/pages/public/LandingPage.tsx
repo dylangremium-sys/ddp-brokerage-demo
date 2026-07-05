@@ -158,7 +158,7 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
                 </div>
                 <div className="hero-mock-field">
                   <span className="hero-mock-label">{t.landingHeroMockStatusLabel}</span>
-                  <StatusBadge status="verified" lang={lang} />
+                  <StatusBadge status="reviewed" lang={lang} />
                 </div>
                 <div className="hero-mock-field">
                   <span className="hero-mock-label">{t.landingHeroMockActionLabel}</span>
@@ -189,7 +189,7 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
             <div className="framework-connector" aria-hidden="true" />
             <div className="framework-step">
               <span className="framework-step-icon" aria-hidden="true"><ShieldIcon /></span>
-              <StatusBadge status="verified" lang={lang} />
+              <StatusBadge status="reviewed" lang={lang} />
               <p className="framework-step-desc">{t.landingFrameworkVerifiedDesc}</p>
             </div>
             <div className="framework-connector" aria-hidden="true" />

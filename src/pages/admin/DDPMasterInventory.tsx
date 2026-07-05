@@ -95,7 +95,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
 
   function getTier(item: InventoryItem) {
     const farm = getFarm(item)
-    return farm ? deriveComplianceTier(farm) : undefined
+    return farm ? deriveComplianceTier(farm, inventory) : undefined
   }
 
   return (
@@ -104,9 +104,9 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
         <div className="master-banner-inner">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <div className="master-eyebrow">DDP VERIFIED INVENTORY</div>
+              <div className="master-eyebrow">DDP APPROVED INVENTORY</div>
               <h1 className="master-title">Master Inventory</h1>
-              <p className="master-desc">Verified and approved stock — controlled by DDP and ready for qualified buyer engagement.</p>
+              <p className="master-desc">Approved stock — controlled by DDP and ready for qualified buyer engagement.</p>
               <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '4px 0 0', maxWidth: 560 }}>
                 THC / CBD / contaminant values are COA values documented by the farm; DDP review required before commercial reliance.
               </p>
@@ -120,11 +120,11 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
             </div>
             <div className="master-stat">
               <div className="master-stat-val">{totalKg.toLocaleString()} kg</div>
-              <div className="master-stat-lbl">Total Verified Stock</div>
+              <div className="master-stat-lbl">Total Approved Stock</div>
             </div>
             <div className="master-stat">
               <div className="master-stat-val">{new Set(approved.map(i => i.farmName)).size}</div>
-              <div className="master-stat-lbl">Verified Farms</div>
+              <div className="master-stat-lbl">Farms with Approved Stock</div>
             </div>
           </div>
         </div>
@@ -167,7 +167,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
               {sorted.length} of {approved.length} {approved.length === 1 ? 'batch' : 'batches'}
             </span>
           </div>
-          <div className="table-card-title">Verified Inventory — DDP Controlled</div>
+          <div className="table-card-title">Approved Inventory — DDP Controlled</div>
           <div className="table-scroll">
             <table className="inv-table inv-table--cards">
               <thead>
@@ -180,7 +180,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                   <th>Heavy Metals</th>
                   <th>Allocatable Qty (kg)</th>
                   <th>COA</th>
-                  <th>Verification Tier</th>
+                  <th>Compliance Tier</th>
                   <th>Status</th>
                   {onBuyerPack && <th>Actions</th>}
                 </tr>
@@ -211,7 +211,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                         missingText="COA missing"
                       />
                     </td>
-                    <td data-label="Verification Tier">
+                    <td data-label="Compliance Tier">
                       {getTier(item) ? (
                         <span className={`farm-tier-badge ${complianceTierClass(getTier(item)!)}`}>
                           {COMPLIANCE_TIER_LABEL[getTier(item)!]}
