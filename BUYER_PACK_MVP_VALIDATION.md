@@ -30,8 +30,8 @@
 ## Validated Master Inventory State
 
 - Approved batches: 3
-- Total verified stock: 89 kg
-- Verified farms: 1
+- Total approved stock: 89 kg
+- Farms with approved stock: 1
 - Export column visible: yes
 - Buyer Pack button visible: yes (📋 Buyer Pack per approved row)
 
@@ -51,7 +51,7 @@
 | Open Photo opens image in new tab | ✓ |
 | Copy Summary works | ✓ |
 | Print / Save PDF works | ✓ |
-| Compliance checklist | ✓ 10/10 |
+| Compliance checklist | ✓ 11-item checklist (this batch was validated under the prior 10-item checklist, before the COA-item split) |
 
 ---
 

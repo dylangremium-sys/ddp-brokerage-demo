@@ -59,9 +59,11 @@
 | Sign in as DDP admin | ✓ |
 | Inventory Review — batch visible in table | ✓ |
 | Open Review panel for batch | ✓ |
-| Compliance checklist — 10/10 passes | ✓ |
+| Compliance checklist — full pass under the 10-item checklist that existed at this validation (the checklist has since expanded to 11 items) | ✓ |
 
 **Compliance checklist items (all passing):**
+
+*(This list reflects the checklist as it existed at the time of this validation. The checklist now has 11 items — it separates "COA on file" into "COA claimed by farm" and "COA file received" — so this pass count is not re-verified against the current checklist.)*
 
 1. Batch number assigned ✓
 2. COA on file ✓
@@ -102,7 +104,7 @@ Build the ability for DDP admin to generate a structured buyer-facing data pack 
 - Optional NDA gate before PDF is downloadable
 - Track which buyers have viewed / downloaded which batches
 
-This closes the commercial loop: farmer submits → DDP approves → buyer receives verified pack.
+This closes the commercial loop: farmer submits → DDP approves → buyer receives reviewed pack.
 
 ---
 
@@ -110,6 +112,6 @@ This closes the commercial loop: farmer submits → DDP approves → buyer recei
 
 The end-to-end MVP workflow is validated:
 
-> **Farmer creates and submits stock** → **DDP reviews and achieves 10/10 compliance** → **DDP approves** → **Batch appears in verified Master Inventory** → **COA accessible via signed private URL**
+> **Farmer creates and submits stock** → **DDP reviews and passes compliance checklist** → **DDP approves** → **Batch appears in approved-stock Master Inventory** → **COA accessible via signed private URL**
 
 All Supabase RLS policies, storage policies, and Security Advisor warnings are resolved. Demo mode (no env vars) continues to work via localStorage/seed fallback. The codebase is stable and ready for the next feature phase.
