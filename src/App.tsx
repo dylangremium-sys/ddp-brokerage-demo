@@ -52,6 +52,9 @@ import DDPInventoryDashboard from './pages/admin/DDPInventoryDashboard'
 import DDPInventoryReview from './pages/admin/DDPInventoryReview'
 import DDPMasterInventory from './pages/admin/DDPMasterInventory'
 import DDPBuyerPreview from './pages/admin/DDPBuyerPreview'
+import DDPMissingDocuments from './pages/admin/DDPMissingDocuments'
+import DDPCoaIntelligence from './pages/admin/DDPCoaIntelligence'
+import DDPRiskRegister from './pages/admin/DDPRiskRegister'
 import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
@@ -64,8 +67,8 @@ const FARMER_PAGES: Page[] = [
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer']
-const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer']
+const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
+const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
@@ -709,6 +712,23 @@ export default function App() {
               farms={farms}
               onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
               onBuyerPack={handleOpenBuyerPack}
+            />
+          )}
+
+          {page === 'ddp-missing-documents' && isAdminRole && (
+            <DDPMissingDocuments farms={farms} inventory={inventory} />
+          )}
+
+          {page === 'ddp-coa-intelligence' && isAdminRole && (
+            <DDPCoaIntelligence inventory={inventory} farms={farms} />
+          )}
+
+          {page === 'ddp-risk-register' && isAdminRole && (
+            <DDPRiskRegister
+              farms={farms}
+              inventory={inventory}
+              onReviewFarm={handleReviewFarm}
+              onReviewItem={handleReviewItem}
             />
           )}
 

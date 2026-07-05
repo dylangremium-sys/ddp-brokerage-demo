@@ -1,8 +1,17 @@
 import { useState } from 'react'
-import type { FarmProfile, InventoryItem } from '../../types'
+import type { FarmProfile, InventoryItem, ProcurementDecision } from '../../types'
 import { DDPVerifiedSupplySeal } from '../../components/logos'
 import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass, testStatusClass, testStatusLabel } from '../../data'
 import { DocumentCard } from '../../components/shared/DocumentCard'
+import {
+  deriveFarmDocumentRequirements,
+  applyRequirementOverrides,
+  deriveAutoRisks,
+  applyRiskOverrides,
+  loadProcurementDecisions,
+  saveProcurementDecision,
+  PROCUREMENT_DECISION_LABELS,
+} from '../../lib/procurementControl'
 
 interface Props {
   inventory: InventoryItem[]
@@ -41,12 +50,30 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
 }) {
   const [coaLoading, setCoaLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const storedDecision = loadProcurementDecisions()[item.id]
+  const [decision, setDecision] = useState<ProcurementDecision | ''>(storedDecision?.decision ?? '')
+  const [decisionSaved, setDecisionSaved] = useState(false)
 
   const farm = farms?.find(f =>
     (item.farmId && f.id === item.farmId) ||
     f.tradingName === item.farmName ||
     f.legalBusinessName === item.farmName
   )
+
+  const requirements = farm ? applyRequirementOverrides(deriveFarmDocumentRequirements(farm, [item])) : []
+  const missingRequirements = requirements.filter(r => r.status === 'missing')
+  const blockerRequirements = requirements.filter(r => r.status === 'rejected' || r.status === 'expired')
+  const receivedCount = requirements.filter(r => r.status === 'documented' || r.status === 'reviewed' || r.status === 'verified').length
+  const risks = applyRiskOverrides(deriveAutoRisks(farm ? [farm] : [], [item]))
+    .filter(r => r.batchId === item.id || (!!farm && r.farmId === farm.id))
+  const unresolvedRisks = risks.filter(r => r.status !== 'resolved' && r.status !== 'accepted')
+
+  function handleSaveDecision() {
+    if (!decision) return
+    saveProcurementDecision(item.id, decision)
+    setDecisionSaved(true)
+    setTimeout(() => setDecisionSaved(false), 2000)
+  }
 
   const location = farm?.province
     ? `${farm.province}, Thailand`
@@ -171,8 +198,17 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
             <DDPVerifiedSupplySeal size={72} />
-            <span className="badge badge-approved" style={{ fontSize: 12, padding: '4px 10px' }}>✓ DDP Independent Audit Verified</span>
+            <span className="badge badge-approved" style={{ fontSize: 12, padding: '4px 10px' }}>✓ DDP Reviewed — Approved for Buyer Disclosure</span>
           </div>
+        </div>
+
+        {/* Executive summary placeholder */}
+        <div className="detail-block">
+          <div className="detail-block-title" style={{ marginBottom: 6 }}>Executive Summary</div>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0, fontStyle: 'italic' }}>
+            Placeholder — to be completed by DDP staff before distribution to a qualified buyer. Summarise farm standing,
+            batch readiness, open risks, and the recommended decision below in plain language.
+          </p>
         </div>
 
         {/* Two-column detail grid */}
@@ -322,6 +358,69 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Missing document matrix summary */}
+        {farm && (
+          <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+            <div className="detail-block-title" style={{ marginBottom: 10 }}>Missing Document Matrix — Summary</div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: blockerRequirements.length + missingRequirements.length > 0 ? 10 : 0 }}>
+              <span style={{ fontSize: 13 }}>{receivedCount}/{requirements.length} requirements received</span>
+              {missingRequirements.length > 0 && <span className="status-pill status-missing">{missingRequirements.length} Missing</span>}
+              {blockerRequirements.length > 0 && <span className="status-pill status-reject">{blockerRequirements.length} Blocker</span>}
+            </div>
+            {missingRequirements.length > 0 && (
+              <ul className="no-print" style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--text-muted)' }}>
+                {missingRequirements.map(r => <li key={r.type}>{r.type.replace(/_/g, ' ')}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Risk register summary */}
+        <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <div className="detail-block-title" style={{ marginBottom: 10 }}>Risk Register — Summary</div>
+          {unresolvedRisks.length === 0 ? (
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>No unresolved risks on file for this batch.</p>
+          ) : (
+            <div className="detail-rows">
+              {unresolvedRisks.map(r => (
+                <div className="detail-row" key={r.riskId}>
+                  <span className="dl">{r.severity.toUpperCase()}</span>
+                  <span className="dv" style={{ textAlign: 'right' }}>{r.issue}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Recommended decision */}
+        <div className="no-print" style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <div className="detail-block-title" style={{ marginBottom: 10 }}>Recommended Decision</div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <select value={decision} onChange={e => setDecision(e.target.value as ProcurementDecision)} style={{ fontSize: 13 }}>
+              <option value="">Select a decision…</option>
+              {Object.entries(PROCUREMENT_DECISION_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+            <button type="button" className="btn btn-ghost" onClick={handleSaveDecision} disabled={!decision}>
+              {decisionSaved ? '✓ Saved' : 'Record Decision'}
+            </button>
+            {storedDecision && !decisionSaved && (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Last recorded: {PROCUREMENT_DECISION_LABELS[storedDecision.decision]} ({new Date(storedDecision.decidedAt).toLocaleDateString()})
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Safety disclaimer */}
+        <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+            DDP separates farm claims from documented evidence and verified findings. Buyer decisions should be based only
+            on reviewed documents and qualified-party confirmation.
+          </p>
         </div>
 
         {/* Footer */}

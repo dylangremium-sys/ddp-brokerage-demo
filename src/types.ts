@@ -19,6 +19,99 @@ export type ComplianceVerificationTier =
   | 'DDP_DOCUMENTED'
   | 'CERTIFIED_PHARMA_READY'
 
+// ─── Procurement authority model ────────────────────────────────────────────
+// Every farm/batch/document claim must be labelled with one of these evidence
+// levels. Nothing in the UI may imply "verified" unless the underlying data
+// actually supports that level — see deriveDocumentRequirement /
+// deriveCoaIntelligence in lib/procurementControl.ts for how each level is
+// assigned from real fields (never invented).
+export type EvidenceStatus =
+  | 'claimed'     // stated by farm/contact, not yet backed by file
+  | 'documented'  // supported by a received file/document
+  | 'reviewed'    // internally reviewed by DDP for obvious gaps
+  | 'verified'    // independently checked/confirmed by a qualified party
+  | 'missing'     // required but not received
+  | 'rejected'    // unsuitable or failed review
+  | 'expired'     // was on file but has passed its validity date
+
+// A DDP staff decision made against a farm, batch, or buyer pack.
+export type ProcurementDecision =
+  | 'progress'
+  | 'hold'
+  | 'reject'
+  | 'request_documents'
+  | 'request_fresh_coa'
+  | 'request_inventory_proof'
+  | 'escalate_review'
+
+export type DocumentRequirementType =
+  | 'farm_identity'
+  | 'farm_license'
+  | 'coa'
+  | 'batch_number'
+  | 'inventory_quantity_proof'
+  | 'inventory_photos'
+  | 'inventory_video'
+  | 'storage_evidence'
+  | 'chain_of_custody'
+  | 'gacp_evidence'
+  | 'gmp_evidence'
+  | 'export_readiness_docs'
+  | 'responsible_contact'
+
+export interface DocumentRequirement {
+  farmId: string
+  batchId?: string
+  type: DocumentRequirementType
+  status: EvidenceStatus
+  notes?: string
+  lastUpdated?: string
+  /** Filename, storage path, or other pointer to the underlying evidence, if any. */
+  reference?: string
+}
+
+// Structured COA fields for procurement review. Populated only from data
+// already present on an InventoryItem — see deriveCoaIntelligence(). If no
+// real parsed value exists for a field, it is left undefined rather than
+// invented.
+export interface CoaIntelligence {
+  batchId: string
+  sampleName?: string
+  strainName?: string
+  batchNumber?: string
+  reportNumber?: string
+  labName?: string
+  reportDate?: string
+  manufacturingDate?: string
+  expiryDate?: string
+  totalThcPercent?: number
+  totalCbdPercent?: number
+  totalTerpenesPercent?: number
+  moisturePercent?: number
+  pesticidesStatus?: TestStatus
+  heavyMetalsStatus?: TestStatus
+  mycotoxinsStatus?: TestStatus
+  microbialStatus?: TestStatus
+  sourceDocument?: string
+  evidenceStatus: EvidenceStatus
+  redFlags: string[]
+}
+
+export type RiskSeverity = 'low' | 'medium' | 'high' | 'blocker'
+export type RiskStatus = 'open' | 'in_review' | 'resolved' | 'accepted'
+
+export interface RiskRegisterEntry {
+  riskId: string
+  farmId?: string
+  batchId?: string
+  severity: RiskSeverity
+  issue: string
+  requiredAction: string
+  owner: string
+  status: RiskStatus
+  evidenceStatus: EvidenceStatus
+}
+
 export type Page =
   | 'landing'
   | 'login'
@@ -38,6 +131,9 @@ export type Page =
   | 'ddp-inventory-review'
   | 'ddp-master'
   | 'ddp-buyer'
+  | 'ddp-missing-documents'
+  | 'ddp-coa-intelligence'
+  | 'ddp-risk-register'
 
 export type StockStatus =
   | 'draft'
