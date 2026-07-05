@@ -67,6 +67,11 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
   const risks = applyRiskOverrides(deriveAutoRisks(farm ? [farm] : [], [item]))
     .filter(r => r.batchId === item.id || (!!farm && r.farmId === farm.id))
   const unresolvedRisks = risks.filter(r => r.status !== 'resolved' && r.status !== 'accepted')
+  // A pack may only claim "approved for disclosure" once there is no unresolved
+  // blocker-level requirement or risk behind it — otherwise it must read as
+  // still pending a DDP decision.
+  const hasBlockingIssues = blockerRequirements.length > 0 || unresolvedRisks.some(r => r.severity === 'blocker')
+  const packStatusLabel = hasBlockingIssues ? 'Decision Required' : 'DDP Reviewed — Approved for Buyer Disclosure'
 
   function handleSaveDecision() {
     if (!decision) return
@@ -115,7 +120,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
   function buildSummaryText() {
     const date = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     return [
-      'DDP VERIFIED BATCH — BUYER SUMMARY',
+      'DDP BUYER PACK — BATCH SUMMARY',
       `Generated: ${date}`,
       '',
       `Product:          ${item.productName}`,
@@ -133,7 +138,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
       `Storage:          ${na(item.storageConditions)}`,
       '',
       `Compliance:       ${passCount}/${CHECKLIST.length} checks passed`,
-      `DDP Status:       Approved`,
+      `DDP Status:       ${packStatusLabel}`,
       '',
       `COA:              ${hasCoa ? (item.certFileName || 'On file — request from DDP') : 'Not yet uploaded'}`,
       `Photo:            ${hasPhoto ? 'Available — request from DDP' : 'Not available'}`,
@@ -188,7 +193,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
         {/* Header */}
         <div className="buyer-pack-header">
           <div style={{ flex: 1 }}>
-            <div className="buyer-pack-eyebrow">DDP VERIFIED BATCH · BUYER INFORMATION PACK</div>
+            <div className="buyer-pack-eyebrow">DDP BUYER PACK · BATCH INFORMATION</div>
             <h1 className="buyer-pack-title">{item.productName}</h1>
             <div className="buyer-pack-sub">
               {item.farmName}
@@ -198,16 +203,18 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
             <DDPVerifiedSupplySeal size={72} />
-            <span className="badge badge-approved" style={{ fontSize: 12, padding: '4px 10px' }}>✓ DDP Reviewed — Approved for Buyer Disclosure</span>
+            <span className={`badge ${hasBlockingIssues ? 'badge-pending' : 'badge-approved'}`} style={{ fontSize: 12, padding: '4px 10px' }}>
+              {hasBlockingIssues ? 'Decision Required' : '✓ DDP Reviewed — Approved for Buyer Disclosure'}
+            </span>
           </div>
         </div>
 
-        {/* Executive summary placeholder */}
-        <div className="detail-block">
-          <div className="detail-block-title" style={{ marginBottom: 6 }}>Executive Summary</div>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0, fontStyle: 'italic' }}>
-            Placeholder — to be completed by DDP staff before distribution to a qualified buyer. Summarise farm standing,
-            batch readiness, open risks, and the recommended decision below in plain language.
+        {/* Executive summary — internal draft, never printed/distributed unfinished */}
+        <div className="detail-block no-print">
+          <div className="detail-block-title" style={{ marginBottom: 6 }}>Executive Summary (Internal Draft)</div>
+          <p style={{ fontSize: 13, color: 'var(--warning)', margin: 0 }}>
+            INTERNAL — Executive summary not yet completed. Decision Required: this pack must not be issued to a buyer
+            until DDP staff complete this section (farm standing, batch readiness, open risks, recommended decision).
           </p>
         </div>
 
@@ -363,7 +370,10 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
         {/* Missing document matrix summary */}
         {farm && (
           <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-            <div className="detail-block-title" style={{ marginBottom: 10 }}>Missing Document Matrix — Summary</div>
+            <div className="detail-block-title" style={{ marginBottom: 10 }}>Missing Document Matrix — This Batch</div>
+            <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '-4px 0 10px' }}>
+              Scoped to this batch only — see the full Missing Document Matrix for the farm's complete requirement picture.
+            </p>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: blockerRequirements.length + missingRequirements.length > 0 ? 10 : 0 }}>
               <span style={{ fontSize: 13 }}>{receivedCount}/{requirements.length} requirements received</span>
               {missingRequirements.length > 0 && <span className="status-pill status-missing">{missingRequirements.length} Missing</span>}
@@ -419,7 +429,8 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
         <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
           <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
             DDP separates farm claims from documented evidence and verified findings. Buyer decisions should be based only
-            on reviewed documents and qualified-party confirmation.
+            on reviewed documents and qualified-party confirmation. COA results apply to the submitted sample as received
+            and do not by themselves verify the full commercial batch, storage condition, or chain of custody.
           </p>
         </div>
 
@@ -478,7 +489,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
           <div className="section-label-row" style={{ marginTop: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <DDPVerifiedSupplySeal size={36} />
-              <div className="section-label">Verified Available Inventory</div>
+              <div className="section-label">DDP-Approved Available Inventory</div>
             </div>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Visible only to qualified buyers approved by DDP</span>
           </div>

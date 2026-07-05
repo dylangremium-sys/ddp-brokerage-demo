@@ -38,6 +38,16 @@ const MATRIX_CLASS: Record<MatrixLabel, string> = {
 
 const OVERRIDE_OPTIONS: EvidenceStatus[] = ['claimed', 'documented', 'reviewed', 'verified', 'missing', 'rejected', 'expired']
 
+const OVERRIDE_LABEL: Record<EvidenceStatus, string> = {
+  claimed: 'Claimed',
+  documented: 'Documented',
+  reviewed: 'Reviewed',
+  verified: 'Verified',
+  missing: 'Missing',
+  rejected: 'Rejected',
+  expired: 'Expired',
+}
+
 export default function DDPMissingDocuments({ farms, inventory }: Props) {
   const [openFarmId, setOpenFarmId] = useState<string | null>(null)
   const [, forceRerender] = useState(0)
@@ -94,7 +104,7 @@ export default function DDPMissingDocuments({ farms, inventory }: Props) {
                     <tr>
                       <td className="td-bold">{farm.tradingName}</td>
                       <td className="td-num">{receivedCount}/{DOCUMENT_REQUIREMENT_TYPES.length}</td>
-                      <td className="td-num">{missingCount}</td>
+                      <td className="td-num">{missingCount > 0 ? <span className="status-pill status-missing">{missingCount}</span> : '—'}</td>
                       <td className="td-num">{blockerCount > 0 ? <span className="status-pill status-reject">{blockerCount}</span> : '—'}</td>
                       <td>
                         <button className="btn btn-review" onClick={() => setOpenFarmId(openFarmId === farm.id ? null : farm.id)}>
@@ -114,13 +124,16 @@ export default function DDPMissingDocuments({ farms, inventory }: Props) {
                                     <span className={`status-pill ${MATRIX_CLASS[MATRIX_LABEL[req.status]]}`}>{MATRIX_LABEL[req.status]}</span>
                                     {req.reference && <span className="td-muted" style={{ fontSize: 11.5 }}>{req.reference}</span>}
                                     {req.notes && <span className="td-muted" style={{ fontSize: 11.5, maxWidth: 320, textAlign: 'right' }}>{req.notes}</span>}
-                                    <select
-                                      value={req.status}
-                                      onChange={e => handleOverride(farm.id, req.type, e.target.value as EvidenceStatus)}
-                                      style={{ fontSize: 12 }}
-                                    >
-                                      {OVERRIDE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                                    </select>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                                      Override:
+                                      <select
+                                        value={req.status}
+                                        onChange={e => handleOverride(farm.id, req.type, e.target.value as EvidenceStatus)}
+                                        style={{ fontSize: 12 }}
+                                      >
+                                        {OVERRIDE_OPTIONS.map(o => <option key={o} value={o}>{OVERRIDE_LABEL[o]}</option>)}
+                                      </select>
+                                    </label>
                                   </span>
                                 </div>
                               ))}

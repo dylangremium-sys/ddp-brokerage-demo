@@ -1,4 +1,5 @@
 import type { InventoryItem, FarmProfile, ReviewRequest, MarketBenchmark, ComplianceVerificationTier, TestStatus } from './types'
+import { REQUIREMENT_OVERRIDE_KEY, RISK_OVERRIDE_KEY, DECISION_KEY } from './lib/procurementControl'
 
 export function testStatusLabel(s?: TestStatus): string {
   if (s === 'pass') return 'PASS'
@@ -69,7 +70,7 @@ export function deriveComplianceTier(f: FarmProfile): ComplianceVerificationTier
 export const COMPLIANCE_TIER_LABEL: Record<ComplianceVerificationTier, string> = {
   CULTIVATOR_CLAIMED: 'CULTIVATOR CLAIMED',
   DDP_DOCUMENTED: 'DDP DOCUMENTED',
-  CERTIFIED_PHARMA_READY: 'CERTIFIED PHARMA-READY',
+  CERTIFIED_PHARMA_READY: 'ADVANCED DOCUMENTATION REVIEW',
 }
 
 export function complianceTierClass(tier: ComplianceVerificationTier): string {
@@ -638,6 +639,9 @@ export function resetDemo() {
   localStorage.setItem(INV_KEY, JSON.stringify(SEED_INVENTORY))
   localStorage.setItem(FARM_KEY, JSON.stringify(SEED_FARMS))
   localStorage.removeItem(FARM_DRAFT_KEY)
+  localStorage.removeItem(REQUIREMENT_OVERRIDE_KEY)
+  localStorage.removeItem(RISK_OVERRIDE_KEY)
+  localStorage.removeItem(DECISION_KEY)
 }
 
 export function loadFarmDraft(): Partial<FarmProfile> | null {

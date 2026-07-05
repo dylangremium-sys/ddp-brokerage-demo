@@ -1,6 +1,7 @@
 import type { FarmProfile, InventoryItem } from '../../types'
 import { deriveCoaIntelligence } from '../../lib/procurementControl'
 import { EvidenceBadge } from '../../components/shared/StatusBadge'
+import { testStatusClass, testStatusLabel } from '../../data'
 
 interface Props {
   inventory: InventoryItem[]
@@ -34,7 +35,8 @@ export default function DDPCoaIntelligence({ inventory, farms }: Props) {
         <div>
           All values below are as typed by the farm from its COA. Each batch's <strong>Evidence</strong> column shows whether a
           COA file was actually received, or only claimed — none of these figures are independently verified. Open the
-          source COA and compare before relying on any figure commercially.
+          source COA and compare before relying on any figure commercially. COA results apply to the submitted sample as
+          received and do not by themselves verify the full commercial batch, storage condition, or chain of custody.
         </div>
       </div>
 
@@ -84,10 +86,10 @@ export default function DDPCoaIntelligence({ inventory, farms }: Props) {
                       <td data-label="CBD %" className="td-num td-mono">{coa.totalCbdPercent ? `${coa.totalCbdPercent}%` : '—'}</td>
                       <td data-label="Terpenes %" className="td-num td-mono">{coa.totalTerpenesPercent ? `${coa.totalTerpenesPercent}%` : '—'}</td>
                       <td data-label="Moisture %" className="td-num td-mono">{coa.moisturePercent ? `${coa.moisturePercent}%` : '—'}</td>
-                      <td data-label="Heavy Metals">{na(coa.heavyMetalsStatus)}</td>
-                      <td data-label="Pesticides">{na(coa.pesticidesStatus)}</td>
-                      <td data-label="Mycotoxins">{na(coa.mycotoxinsStatus)}</td>
-                      <td data-label="Microbial">{na(coa.microbialStatus)}</td>
+                      <td data-label="Heavy Metals"><span className={testStatusClass(coa.heavyMetalsStatus)}>{testStatusLabel(coa.heavyMetalsStatus)}</span></td>
+                      <td data-label="Pesticides"><span className={testStatusClass(coa.pesticidesStatus)}>{testStatusLabel(coa.pesticidesStatus)}</span></td>
+                      <td data-label="Mycotoxins"><span className={testStatusClass(coa.mycotoxinsStatus)}>{testStatusLabel(coa.mycotoxinsStatus)}</span></td>
+                      <td data-label="Microbial"><span className={testStatusClass(coa.microbialStatus)}>{testStatusLabel(coa.microbialStatus)}</span></td>
                       <td data-label="Evidence"><EvidenceBadge status={coa.evidenceStatus} /></td>
                       <td data-label="Red Flags">
                         {coa.redFlags.length === 0

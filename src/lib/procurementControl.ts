@@ -138,7 +138,7 @@ export function deriveFarmDocumentRequirements(farm: FarmProfile, inventory: Inv
 // is a deliberate human decision, recorded locally, and never silently
 // changes what the underlying data can prove. ──────────────────────────────
 
-const REQUIREMENT_OVERRIDE_KEY = 'ddp_requirement_overrides'
+export const REQUIREMENT_OVERRIDE_KEY = 'ddp_requirement_overrides'
 
 interface RequirementOverride {
   status: EvidenceStatus
@@ -301,7 +301,7 @@ export function deriveAutoRisks(farms: FarmProfile[], inventory: InventoryItem[]
 // open -> in_review -> resolved/accepted. Kept local (no Supabase writes)
 // consistent with how carbon-programme status changes are handled elsewhere
 // pending an approved schema/RLS migration.
-const RISK_OVERRIDE_KEY = 'ddp_risk_overrides'
+export const RISK_OVERRIDE_KEY = 'ddp_risk_overrides'
 
 interface RiskOverride {
   status: RiskStatus
@@ -337,7 +337,7 @@ export function applyRiskOverrides(base: RiskRegisterEntry[]): RiskRegisterEntry
 // A DDP decision recorded against a specific batch's buyer pack. Local-only,
 // same rationale as the overrides above.
 
-const DECISION_KEY = 'ddp_procurement_decisions'
+export const DECISION_KEY = 'ddp_procurement_decisions'
 
 interface StoredDecision {
   decision: ProcurementDecision

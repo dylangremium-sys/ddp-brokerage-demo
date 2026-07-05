@@ -111,7 +111,7 @@ export function DDPVerifiedSupplySeal({ size = 80, color = 'var(--jade)' }: { si
       viewBox="0 0 120 120"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="DDP Verified Supply"
+      aria-label="DDP Reviewed Supply"
     >
       {/*
         Scalloped outer ring — 24-point polygon alternating r=57 (peaks) and r=53 (valleys).
@@ -157,7 +157,7 @@ export function DDPVerifiedSupplySeal({ size = 80, color = 'var(--jade)' }: { si
         letterSpacing="2"
       >
         <textPath href={`#${topId}`} startOffset="50%" textAnchor="middle">
-          DDP VERIFIED SUPPLY
+          DDP REVIEWED SUPPLY
         </textPath>
       </text>
 

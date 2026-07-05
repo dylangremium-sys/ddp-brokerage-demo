@@ -13,11 +13,18 @@ interface Props {
 const SEVERITY_CLASS: Record<RiskSeverity, string> = {
   low: 'badge-gray',
   medium: 'badge-pending',
-  high: 'badge-orange',
+  high: 'badge-risk-high',
   blocker: 'badge-rejected',
 }
 
 const STATUS_OPTIONS: RiskStatus[] = ['open', 'in_review', 'resolved', 'accepted']
+
+const STATUS_LABEL: Record<RiskStatus, string> = {
+  open: 'Open',
+  in_review: 'In Review',
+  resolved: 'Resolved',
+  accepted: 'Accepted',
+}
 
 export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onReviewItem }: Props) {
   const [, forceRerender] = useState(0)
@@ -101,7 +108,7 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
                       <td data-label="Evidence"><EvidenceBadge status={risk.evidenceStatus} /></td>
                       <td data-label="Status">
                         <select value={risk.status} onChange={e => handleStatusChange(risk.riskId, e.target.value as RiskStatus)} style={{ fontSize: 12.5 }}>
-                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                         </select>
                       </td>
                       <td>
