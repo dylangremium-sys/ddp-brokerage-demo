@@ -5,6 +5,10 @@
 **Duration:** 4–6 minutes  
 **Prerequisite:** Demo accounts provisioned (see HANDOVER_CHECKLIST.md)
 
+> **Disclaimer for presenters:** DDP separates farm claims, documented evidence, and
+> verified findings. Demo figures are for workflow demonstration only and do not
+> represent legal, export, pharmaceutical, or qualified-party approval.
+
 ---
 
 ## 1. Landing Page (~30 seconds)
@@ -15,9 +19,9 @@ Open the live URL. The landing page loads with two entry points:
 - **"Enter DDP Operations"** — for DDP's internal brokerage and compliance team
 
 Talking points:
-> "DDP sits between compliant Thai cannabis farms and international buyers.
+> "DDP sits between licensed Thai cannabis farms and international buyers.
 > Farmers submit their profiles, COA documents, and stock through their portal.
-> DDP's operations team reviews, approves, and packages verified supply for buyers."
+> DDP's operations team reviews, documents, and packages reviewed supply records for buyers."
 
 ---
 
@@ -83,11 +87,11 @@ The **Operations Overview** shows:
 - Total farms onboarded / pending / approved / watchlist
 - Total kg in system / approved kg
 - Items with missing documents
-- Export-ready farm count
+- Export document review count
 - Recent farm submissions and recent inventory batches
 
 > "This is DDP's internal view. The team sees everything across all farms
-> in real time — who's submitted, who's approved, and what's export-ready."
+> in real time — who's submitted, who's approved, and which farms have export documents under review."
 
 ---
 
@@ -98,7 +102,7 @@ Click **Farm Profiles** in the admin nav.
 Show the farm list with DDP compliance scores, status badges, and the ability to open a farm for review. The review panel lets DDP change farm status, add notes, and score the submission.
 
 > "DDP's analyst reviews the profile, checks the cultivation licence number,
-> verifies the COA, and updates the status — which the farmer sees immediately."
+> reviews the COA on file, and updates the status — which the farmer sees immediately."
 
 ---
 
@@ -108,8 +112,8 @@ Click **Inventory Review**.
 
 Show pending and approved batches. Click a batch to open the review panel. DDP can approve, flag missing documents, or reject with a note.
 
-> "Every batch goes through this queue. We only pass verified, documented
-> supply to buyers — no unverified product touches the buyer view."
+> "Every batch goes through this queue. We only pass reviewed, documented
+> supply to buyers — no undocumented product touches the buyer view."
 
 ---
 
@@ -119,7 +123,7 @@ Click **Master Inventory**.
 
 Show the consolidated view of all approved supply: product type, quantity, THC/CBD, farm name, batch number. This is the source of truth for what DDP can offer.
 
-> "This is DDP's live catalogue — all approved, compliant, verified supply.
+> "This is DDP's live catalogue — all DDP-approved supply, reviewed and documented by DDP.
 > When a buyer asks 'what do you have?', this is the answer."
 
 ---
@@ -132,22 +136,22 @@ Show the buyer-facing package for a specific inventory batch:
 - Farm summary (name, province, partner tier)
 - Compliance scorecard (licence, COA, export readiness, etc.)
 - Lab values (THC/CBD/terpenes)
-- DDP Verified Supply seal
+- DDP Reviewed Supply seal
 - **Print / Save PDF** button — generates a PDF buyer pack
 - **Copy Summary** button — copies a plain-text version for email/WhatsApp
 
-> "This is what a buyer receives from DDP — a verified product dossier.
-> The farmer never deals with the buyer directly. DDP handles all introductions,
-> NDA compliance, and contract facilitation."
+> "This is what a buyer receives from DDP — a reviewed product dossier showing what's
+> claimed, what's documented, and what's still outstanding. The farmer never deals with
+> the buyer directly. DDP handles all introductions, NDA compliance, and contract facilitation."
 
 ---
 
 ## Closing (15 seconds)
 
-> "DDP is the verified supply chain layer that Thai cannabis farms need
-> to access international markets. We handle compliance, documentation,
+> "DDP is the evidence-controlled supply chain layer that Thai cannabis farms need
+> to access international markets. We handle documentation review,
 > buyer matching, and contract facilitation — so farmers focus on growing
-> and buyers get verified supply they can trust."
+> and buyers get clearly evidenced supply they can trust."
 
 ---
 
