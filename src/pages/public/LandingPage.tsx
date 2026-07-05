@@ -22,6 +22,15 @@ function OperationsDashboardIcon() {
   )
 }
 
+function WhyIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9.5" />
+      <path d="M8 12.5l2.6 2.6L16.5 9" />
+    </svg>
+  )
+}
+
 export interface LandingReadiness {
   farmsUnderReview: number
   batchesDocumented: number
@@ -39,7 +48,13 @@ interface Props {
 
 export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness }: Props) {
   const t = T[lang]
-  const proofItems = [t.landingProof1, t.landingProof2, t.landingProof3, t.landingProof4, t.landingProof5]
+
+  const whyItems = [
+    { title: t.landingWhy1Title, desc: t.landingWhy1Desc },
+    { title: t.landingWhy2Title, desc: t.landingWhy2Desc },
+    { title: t.landingWhy3Title, desc: t.landingWhy3Desc },
+    { title: t.landingWhy4Title, desc: t.landingWhy4Desc },
+  ]
 
   const readinessItems = [
     { label: t.landingReadinessFarms, value: readiness.farmsUnderReview },
@@ -60,7 +75,6 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness
             </div>
             <h1 className="landing-headline">{t.landingHeadline}</h1>
             <p className="landing-hero-text">{t.landingHero1}</p>
-            <p className="landing-hero-text">{t.landingHero2}</p>
           </div>
 
           <div className="landing-access-grid">
@@ -113,18 +127,6 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness
       </div>
 
       <div className="landing-body">
-        <div className="proof-strip">
-          <div className="proof-strip-title">{t.landingProofTitle}</div>
-          <div className="proof-strip-items">
-            {proofItems.map((item, i) => (
-              <div key={i} className="proof-strip-item">
-                <span className="proof-strip-dot" />
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* ── Buyer pack preview ── */}
         <div className="buyer-pack-preview">
           <div className="buyer-pack-preview-head">
@@ -179,37 +181,25 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP, readiness
           </div>
         </div>
 
-        <div className="concept-cards">
-          <div className="concept-card">
-            <div className="concept-icon-num">01</div>
-            <div className="concept-card-title">{t.landingCard1Title}</div>
-            <p className="concept-card-desc">{t.landingCard1Desc}</p>
-          </div>
-          <div className="concept-card">
-            <div className="concept-icon-num">02</div>
-            <div className="concept-card-title">{t.landingCard2Title}</div>
-            <p className="concept-card-desc">{t.landingCard2Desc}</p>
-          </div>
-          <div className="concept-card">
-            <div className="concept-icon-num">03</div>
-            <div className="concept-card-title">{t.landingCard3Title}</div>
-            <p className="concept-card-desc">{t.landingCard3Desc}</p>
-          </div>
-        </div>
-
-        <div className="workflow-section">
-          <div className="workflow-title">{t.landingWorkflowTitle}</div>
-          <div className="workflow-steps">
-            {[t.landingStep1, t.landingStep2, t.landingStep3, t.landingStep4, t.landingStep5, t.landingStep6].map((step, i, arr) => (
-              <div key={i} className="workflow-step-wrap">
-                <div className="workflow-step">
-                  <div className="workflow-step-num">{i + 1}</div>
-                  <div className="workflow-step-label">{step}</div>
-                </div>
-                {i < arr.length - 1 && <div className="workflow-arrow">→</div>}
+        {/* ── Why DDP ── */}
+        <div className="why-ddp-section">
+          <div className="why-ddp-title">{t.landingWhyTitle}</div>
+          <div className="concept-cards">
+            {whyItems.map((item, i) => (
+              <div key={i} className="concept-card">
+                <span className="concept-icon-why" aria-hidden="true"><WhyIcon /></span>
+                <div className="concept-card-title">{item.title}</div>
+                <p className="concept-card-desc">{item.desc}</p>
               </div>
             ))}
           </div>
+        </div>
+
+        {/* ── About Us ── */}
+        <div className="about-section">
+          <div className="about-section-title">{t.landingAboutTitle}</div>
+          <p className="about-section-text">{t.landingAboutText1}</p>
+          <p className="about-section-text">{t.landingAboutText2}</p>
         </div>
 
         <div className="legal-strip">{t.landingDisclaimer}</div>

@@ -89,7 +89,11 @@ export default function FarmerDashboard({
   const isApprovedProfile = activeProfile?.status === 'Approved' || activeProfile?.status === 'Strategic Partner'
   const missingHints: string[] = []
   if (activeProfile && !isApprovedProfile) {
-    if (!activeProfile.cultivationLicence?.trim()) missingHints.push(t.missingCultivationLicence)
+    const hasAnyLicence = [
+      activeProfile.cultivationLicence, activeProfile.gapCert, activeProfile.gacpCert,
+      activeProfile.gmpCert, activeProfile.organicCert, activeProfile.otherCerts,
+    ].some(v => v?.trim())
+    if (!hasAnyLicence)                            missingHints.push(t.missingCultivationLicence)
     if (!activeProfile.coaFiles?.trim())           missingHints.push(t.missingCOA)
   }
 

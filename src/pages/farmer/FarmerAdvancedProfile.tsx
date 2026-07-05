@@ -164,21 +164,22 @@ export default function FarmerAdvancedProfile({ lang, farms, onSave, onBack }: P
           {/* C — Additional Licences */}
           <Section title={t.advProfileSectionLicences}>
             <Row2>
+              <Field label={t.processingLicence}><input value={(form.processingLicence as string) ?? ''} onChange={e => set('processingLicence', e.target.value)} placeholder="PL-…pdf" /></Field>
               <Field label={t.manufacturingLicence}><input value={(form.manufacturingLicence as string) ?? ''} onChange={e => set('manufacturingLicence', e.target.value)} placeholder="ML-…pdf" /></Field>
+            </Row2>
+            <Row2>
               <Field label={t.researchLicence}><input value={(form.researchLicence as string) ?? ''} onChange={e => set('researchLicence', e.target.value)} placeholder="RL-…pdf" /></Field>
-            </Row2>
-            <Row2>
               <Field label={t.medicalCannabisLicence}><input value={(form.medicalCannabisLicence as string) ?? ''} onChange={e => set('medicalCannabisLicence', e.target.value)} placeholder="MCL-…pdf" /></Field>
+            </Row2>
+            <Row2>
               <Field label={t.exportLicence}><input value={(form.exportLicence as string) ?? ''} onChange={e => set('exportLicence', e.target.value)} placeholder="EL-…pdf" /></Field>
-            </Row2>
-            <Row2>
               <Field label={t.importLicence}><input value={(form.importLicence as string) ?? ''} onChange={e => set('importLicence', e.target.value)} placeholder="IL-…pdf" /></Field>
-              <Field label={t.organicCert}><input value={(form.organicCert as string) ?? ''} onChange={e => set('organicCert', e.target.value)} placeholder="ORG-…pdf" /></Field>
             </Row2>
             <Row2>
+              <Field label={t.organicCert}><input value={(form.organicCert as string) ?? ''} onChange={e => set('organicCert', e.target.value)} placeholder="ORG-…pdf" /></Field>
               <Field label={t.isoCerts}><input value={(form.isoCerts as string) ?? ''} onChange={e => set('isoCerts', e.target.value)} placeholder="ISO9001-…pdf" /></Field>
-              <Field label={t.otherCerts}><input value={(form.otherCerts as string) ?? ''} onChange={e => set('otherCerts', e.target.value)} /></Field>
             </Row2>
+            <Field label={t.otherCerts}><input value={(form.otherCerts as string) ?? ''} onChange={e => set('otherCerts', e.target.value)} /></Field>
             <Field label={t.documentExpiry}><input type="date" value={(form.documentExpiry as string) ?? ''} onChange={e => set('documentExpiry', e.target.value)} /></Field>
           </Section>
 

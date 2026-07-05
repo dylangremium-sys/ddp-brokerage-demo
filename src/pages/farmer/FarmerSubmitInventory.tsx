@@ -31,7 +31,7 @@ function initForm(item: InventoryItem | null | undefined) {
   if (!item) return {
     farmId: '', strainName: '', productType: 'flower' as ProductType,
     batchNumber: '', quantityAvailable: '', unit: 'kg' as 'kg' | 'g',
-    askingPrice: '', minimumOrderKg: '', harvestDate: '', expiryDate: '',
+    askingPrice: '', minimumOrderKg: '', harvestDate: '', cureDate: '', expiryDate: '',
     moisturePct: '', totalThc: '', totalCbd: '', totalTerpenes: '',
     coaAvailable: false, labName: '', reportNumber: '', sampleName: '', testDate: '',
     heavyMetalsStatus: '' as TestStatus, pesticidesStatus: '' as TestStatus,
@@ -48,6 +48,7 @@ function initForm(item: InventoryItem | null | undefined) {
     askingPrice: item.pricePerKg ? String(item.pricePerKg) : '',
     minimumOrderKg: item.minimumOrderKg ? String(item.minimumOrderKg) : '',
     harvestDate: item.harvestDate ?? '',
+    cureDate: item.cureDate ?? '',
     expiryDate: item.expiryDate ?? '',
     moisturePct: item.moisturePct ? String(item.moisturePct) : '',
     totalThc: item.thcPct ? String(item.thcPct) : '',
@@ -169,7 +170,7 @@ export default function FarmerSubmitInventory({
       productName: form.strainName.trim(),
       quantityKg: qtyKg,
       harvestDate: form.harvestDate,
-      cureDate: '',
+      cureDate: form.cureDate,
       batchNumber: form.batchNumber,
       thcPct: parseFloat(form.totalThc) || 0,
       cbdPct: parseFloat(form.totalCbd) || 0,
@@ -312,7 +313,7 @@ export default function FarmerSubmitInventory({
             </div>
           )}
 
-          <SectionTitle style={{ marginTop: 20 } as React.CSSProperties}>{isTh ? 'ข้อมูลสินค้า' : 'Product Info'}</SectionTitle>
+          <SectionTitle style={{ marginTop: 20 } as React.CSSProperties}>{isTh ? 'สินค้าที่มีอยู่' : 'What stock do you have available?'}</SectionTitle>
 
           <Field label={isTh ? 'ชื่อสายพันธุ์ / สินค้า *' : 'Strain / product name *'}>
             <input
@@ -332,19 +333,30 @@ export default function FarmerSubmitInventory({
             />
           </div>
 
-          <Field label={isTh ? 'เลขแบทช์' : 'Batch number'} hint={isTh ? 'ตามที่ระบุในใบ COA' : 'As shown on COA'}>
-            <input
-              value={form.batchNumber}
-              onChange={e => set('batchNumber', e.target.value)}
-              placeholder={isTh ? 'เช่น PG-2025-001' : 'e.g. PG-2025-001'}
-            />
-          </Field>
-        </div>
+          <div className="form-grid-2" style={{ marginTop: 14 }}>
+            <Field label={isTh ? 'THC (ถ้าทราบ)' : 'THC level, if known'}>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.totalThc}
+                onChange={e => set('totalThc', e.target.value)}
+                placeholder="0.00 %"
+                min="0" max="100" step="0.01"
+              />
+            </Field>
+            <Field label={isTh ? 'CBD (ถ้าทราบ)' : 'CBD level, if known'}>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={form.totalCbd}
+                onChange={e => set('totalCbd', e.target.value)}
+                placeholder="0.00 %"
+                min="0" max="100" step="0.01"
+              />
+            </Field>
+          </div>
 
-        <div className="card form-card" style={{ marginBottom: 16 }}>
-          <SectionTitle>{isTh ? 'ปริมาณและราคา' : 'Quantity & Pricing'}</SectionTitle>
-
-          <div className="form-grid-2">
+          <div className="form-grid-2" style={{ marginTop: 14 }}>
             <Field label={isTh ? 'ปริมาณที่มีอยู่' : 'Available quantity'}>
               <input
                 type="number"
@@ -372,7 +384,7 @@ export default function FarmerSubmitInventory({
 
           <div className="form-grid-2" style={{ marginTop: 14 }}>
             <Field
-              label={isTh ? `ราคาที่ขอ (฿ /${form.unit})` : `Asking price (฿ per ${form.unit})`}
+              label={isTh ? `ราคา (฿ /${form.unit})` : `Price (฿ per ${form.unit})`}
               hint={
                 benchmark
                   ? `${isTh ? 'ช่วงตลาด' : 'Market range'}: ฿${(benchmark.priceMin / (form.unit === 'g' ? 1000 : 1)).toLocaleString()}–฿${(benchmark.priceMax / (form.unit === 'g' ? 1000 : 1)).toLocaleString()}/${form.unit}`
@@ -389,7 +401,7 @@ export default function FarmerSubmitInventory({
                 style={priceAboveRange ? { borderColor: 'var(--warning)' } : priceBelowRange ? { borderColor: 'var(--border)' } : {}}
               />
             </Field>
-            <Field label={isTh ? 'ปริมาณขั้นต่ำ (กก.)' : 'Min. order (kg)'}>
+            <Field label={isTh ? 'สั่งซื้อขั้นต่ำ (กก., ถ้ามี)' : 'Min. order (kg), optional'}>
               <input
                 type="number"
                 inputMode="decimal"
@@ -413,74 +425,35 @@ export default function FarmerSubmitInventory({
             <Field label={isTh ? 'วันที่เก็บเกี่ยว' : 'Harvest date'}>
               <input type="date" value={form.harvestDate} onChange={e => set('harvestDate', e.target.value)} />
             </Field>
-            <Field label={isTh ? 'วันหมดอายุ' : 'Expiry date'}>
+            <Field label={isTh ? 'วันบ่ม (ถ้ามี)' : 'Curing date, if any'}>
+              <input type="date" value={form.cureDate} onChange={e => set('cureDate', e.target.value)} />
+            </Field>
+          </div>
+
+          <div className="form-grid-2" style={{ marginTop: 14 }}>
+            <Field label={isTh ? 'เลขแบทช์ (ไม่บังคับ)' : 'Batch number, optional'} hint={isTh ? 'ตามที่ระบุในใบ COA' : 'As shown on COA'}>
+              <input
+                value={form.batchNumber}
+                onChange={e => set('batchNumber', e.target.value)}
+                placeholder={isTh ? 'เช่น PG-2025-001' : 'e.g. PG-2025-001'}
+              />
+            </Field>
+            <Field label={isTh ? 'วันหมดอายุ (ไม่บังคับ)' : 'Expiry date, optional'}>
               <input type="date" value={form.expiryDate} onChange={e => set('expiryDate', e.target.value)} />
             </Field>
           </div>
         </div>
 
         <div className="card form-card" style={{ marginBottom: 16 }}>
-          <SectionTitle>{isTh ? 'ผลห้องแล็บ' : 'Lab Values'}</SectionTitle>
-
-          <div className="form-grid-2">
-            <Field label="THC %">
-              <input
-                type="number"
-                inputMode="decimal"
-                value={form.totalThc}
-                onChange={e => set('totalThc', e.target.value)}
-                placeholder="0.00"
-                min="0" max="100" step="0.01"
-              />
-            </Field>
-            <Field label="CBD %">
-              <input
-                type="number"
-                inputMode="decimal"
-                value={form.totalCbd}
-                onChange={e => set('totalCbd', e.target.value)}
-                placeholder="0.00"
-                min="0" max="100" step="0.01"
-              />
-            </Field>
-            <Field label={isTh ? 'ความชื้น %' : 'Moisture %'}>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={form.moisturePct}
-                onChange={e => set('moisturePct', e.target.value)}
-                placeholder="0.00"
-                min="0" max="100" step="0.01"
-              />
-            </Field>
-            <Field label={isTh ? 'เทอร์พีน %' : 'Terpenes %'}>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={form.totalTerpenes}
-                onChange={e => set('totalTerpenes', e.target.value)}
-                placeholder="0.00"
-                min="0" max="30" step="0.01"
-              />
-            </Field>
-            <Field label={isTh ? 'วอเตอร์แอคทิวิตี้ (aw)' : 'Water activity (aw)'} hint={isTh ? 'เช่น 0.55' : 'e.g. 0.55'}>
-              <input
-                type="number"
-                inputMode="decimal"
-                value={form.waterActivity}
-                onChange={e => set('waterActivity', e.target.value)}
-                placeholder="0.00"
-                min="0" max="1" step="0.01"
-              />
-            </Field>
-          </div>
-        </div>
-
-        <div className="card form-card" style={{ marginBottom: 16 }}>
-          <SectionTitle>{isTh ? 'ใบรับรองการวิเคราะห์ (COA)' : 'Certificate of Analysis (COA)'}</SectionTitle>
+          <SectionTitle>{isTh ? 'COA (ใบรับรองผลตรวจ)' : 'COA (Lab Report)'}</SectionTitle>
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '-6px 0 14px' }}>
+            {isTh
+              ? 'รายละเอียดด้านล่างส่วนใหญ่มาจากใบ COA ของคุณ กรอกเท่าที่มี'
+              : "Most of the details below come from your COA. Fill in what you have."}
+          </p>
 
           <div style={{ marginBottom: 14 }}>
-            <div className="field-label">{isTh ? 'มีใบ COA ไหม?' : 'COA available?'}</div>
+            <div className="field-label">{isTh ? 'มีใบ COA ไหม?' : 'Do you have a COA?'}</div>
             <div className="role-selector">
               <button
                 type="button"
@@ -498,7 +471,7 @@ export default function FarmerSubmitInventory({
           {form.coaAvailable && (
             <>
               <div style={{ marginBottom: 14 }}>
-                <div className="field-label">{isTh ? 'ชื่อไฟล์ COA' : 'COA file name'}</div>
+                <div className="field-label">{isTh ? 'อัปโหลด COA' : 'Upload COA'}</div>
                 <input
                   ref={coaInputRef}
                   type="file"
@@ -550,8 +523,41 @@ export default function FarmerSubmitInventory({
                 </Field>
               </div>
 
+              <div className="form-grid-2" style={{ marginTop: 14 }}>
+                <Field label={isTh ? 'ความชื้น %' : 'Moisture %'}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={form.moisturePct}
+                    onChange={e => set('moisturePct', e.target.value)}
+                    placeholder="0.00"
+                    min="0" max="100" step="0.01"
+                  />
+                </Field>
+                <Field label={isTh ? 'เทอร์พีน %' : 'Terpenes %'}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={form.totalTerpenes}
+                    onChange={e => set('totalTerpenes', e.target.value)}
+                    placeholder="0.00"
+                    min="0" max="30" step="0.01"
+                  />
+                </Field>
+                <Field label={isTh ? 'วอเตอร์แอคทิวิตี้ (aw)' : 'Water activity (aw)'} hint={isTh ? 'เช่น 0.55' : 'e.g. 0.55'}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={form.waterActivity}
+                    onChange={e => set('waterActivity', e.target.value)}
+                    placeholder="0.00"
+                    min="0" max="1" step="0.01"
+                  />
+                </Field>
+              </div>
+
               <div style={{ marginTop: 16 }}>
-                <div className="detail-block-title">{isTh ? 'ผลการทดสอบ' : 'Test Results'}</div>
+                <div className="detail-block-title">{isTh ? 'ผลการทดสอบสารปนเปื้อน' : 'Contaminant Test Results'}</div>
                 {([
                   { key: 'heavyMetalsStatus', label: isTh ? 'โลหะหนัก' : 'Heavy Metals' },
                   { key: 'pesticidesStatus',  label: isTh ? 'สารกำจัดแมลง' : 'Pesticides' },

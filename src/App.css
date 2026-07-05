@@ -1185,59 +1185,41 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 }
 
 .framework-connector {
+  position: relative;
   flex: 0 0 32px;
   height: 1px;
   background: var(--border);
   margin-top: 12px;
+  overflow: hidden;
+}
+
+.framework-connector::after {
+  content: '';
+  position: absolute;
+  top: -1.5px;
+  left: 0;
+  width: 10px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: framework-flow 2.4s ease-in-out infinite;
+}
+
+@keyframes framework-flow {
+  0%   { transform: translateX(-10px); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(32px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .framework-connector::after { animation: none; opacity: 0.6; }
 }
 
 .landing-body {
   background: var(--bg-deep);
   padding: 28px 32px 40px;
   flex: 1;
-}
-
-/* ── Operational proof strip ── */
-.proof-strip {
-  max-width: 960px;
-  margin: 0 auto 28px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 14px 20px;
-}
-
-.proof-strip-title {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 1.4px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 10px;
-}
-
-.proof-strip-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-}
-
-.proof-strip-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.proof-strip-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
 }
 
 /* ── Buyer pack preview ── */
@@ -1380,13 +1362,26 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   line-height: 1.4;
 }
 
-/* ── Concept Cards ── */
-.concept-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+/* ── Why DDP ── */
+.why-ddp-section {
   max-width: 960px;
   margin: 0 auto 28px;
+}
+
+.why-ddp-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.concept-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
 }
 
 .concept-card {
@@ -1397,7 +1392,18 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   text-align: center;
 }
 
-.concept-icon { font-size: 34px; margin-bottom: 14px; }
+.concept-icon-why {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(100,116,139,0.12);
+  border: 1.5px solid rgba(100,116,139,0.35);
+  color: var(--accent);
+  margin-bottom: 12px;
+}
 
 .concept-card-title {
   font-size: 14px;
@@ -1413,70 +1419,37 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   margin: 0;
 }
 
-/* ── Workflow Steps ── */
-.workflow-section {
-  max-width: 960px;
-  margin: 0 auto 24px;
+/* ── About Us ── */
+.about-section {
+  max-width: 760px;
+  margin: 0 auto 28px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 28px;
   text-align: center;
 }
 
-.workflow-title {
+.about-section-title {
   font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 1.8px;
+  letter-spacing: 1.4px;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
-.workflow-steps {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0;
+.about-section-text {
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.7;
+  margin: 0 0 10px;
+  max-width: 560px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
-.workflow-step-wrap {
-  display: flex;
-  align-items: center;
-}
-
-.workflow-step {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.workflow-step-num {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--bg-elevated);
-  border: 1.5px solid var(--border);
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.workflow-step-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.workflow-arrow {
-  font-size: 16px;
-  color: var(--accent);
-  opacity: 0.6;
-  margin: 0 8px;
-  margin-bottom: 18px;
-}
+.about-section-text:last-child { margin-bottom: 0; }
 
 /* ── Wizard ── */
 .wizard-progress-wrap {

@@ -56,6 +56,34 @@ const TOTAL_STEPS = 9
 const FARM_TYPES = ['Indoor', 'Greenhouse', 'Outdoor', 'Mixed']
 const YES_NO = ['Yes', 'No', 'Not yet']
 
+// Maps the simple farmer-facing licence/cert dropdown to the existing FarmProfile fields.
+const LICENCE_TYPE_FIELDS = {
+  thai: 'cultivationLicence',
+  gap: 'gapCert',
+  gacp: 'gacpCert',
+  gmp: 'gmpCert',
+  organic: 'organicCert',
+  other: 'otherCerts',
+} as const
+
+type LicenceTypeKey = 'none' | keyof typeof LICENCE_TYPE_FIELDS
+
+function detectLicenceType(f: Draft): LicenceTypeKey {
+  const entry = (Object.entries(LICENCE_TYPE_FIELDS) as [Exclude<LicenceTypeKey, 'none'>, keyof Draft][])
+    .find(([, field]) => !!(f[field] as string | undefined)?.trim())
+  return entry ? entry[0] : 'none'
+}
+
+function splitLicenceValue(value: string): { number: string; doc: string } {
+  const match = value.match(/^(.*?)(?: \((.*)\))?$/)
+  return { number: match?.[1] ?? '', doc: match?.[2] ?? '' }
+}
+
+function combineLicenceValue(number: string, doc: string): string {
+  if (number && doc) return `${number} (${doc})`
+  return number || doc
+}
+
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="field">
@@ -100,6 +128,36 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
 
   function set(field: keyof Draft, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  // Simple certification / licence picker (Step 8) — writes into the existing
+  // per-type FarmProfile fields so admin views and completion scoring see no change.
+  const [licenceType, setLicenceType] = useState<LicenceTypeKey>(() => detectLicenceType(form))
+  const [licenceNumber, setLicenceNumber] = useState(() => {
+    const t0 = detectLicenceType(form)
+    return t0 === 'none' ? '' : splitLicenceValue((form[LICENCE_TYPE_FIELDS[t0]] as string) ?? '').number
+  })
+  const [licenceDoc, setLicenceDoc] = useState(() => {
+    const t0 = detectLicenceType(form)
+    return t0 === 'none' ? '' : splitLicenceValue((form[LICENCE_TYPE_FIELDS[t0]] as string) ?? '').doc
+  })
+
+  function commitLicence(nextType: LicenceTypeKey, nextNumber: string, nextDoc: string) {
+    if (nextType === 'none') return
+    set(LICENCE_TYPE_FIELDS[nextType], combineLicenceValue(nextNumber, nextDoc))
+  }
+
+  function handleLicenceTypeChange(v: LicenceTypeKey) {
+    setLicenceType(v)
+    commitLicence(v, licenceNumber, licenceDoc)
+  }
+  function handleLicenceNumberChange(v: string) {
+    setLicenceNumber(v)
+    commitLicence(licenceType, v, licenceDoc)
+  }
+  function handleLicenceDocChange(v: string) {
+    setLicenceDoc(v)
+    commitLicence(licenceType, licenceNumber, v)
   }
 
   function handleSaveDraft() {
@@ -367,31 +425,43 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
         </div>
       )}
 
-      {/* ── Step 8: Licences ── */}
+      {/* ── Step 8: Certification / Licence ── */}
       {step === 8 && (
         <div className="card form-card">
-          <Field
-            label={t.cultivationLicence}
-            hint={lang === 'th' ? 'ชื่อไฟล์ เช่น CL-CNX-2022.pdf' : 'Filename, e.g. CL-CNX-2022.pdf'}
-          >
-            <input value={form.cultivationLicence ?? ''} onChange={e => set('cultivationLicence', e.target.value)} placeholder="CL-…pdf" />
+          <Field label={t.licenceTypeLabel}>
+            <select
+              value={licenceType}
+              onChange={e => handleLicenceTypeChange(e.target.value as LicenceTypeKey)}
+            >
+              <option value="none">{t.licenceTypeNone}</option>
+              <option value="thai">{t.licenceTypeThai}</option>
+              <option value="gap">{t.licenceTypeGap}</option>
+              <option value="gacp">{t.licenceTypeGacp}</option>
+              <option value="gmp">{t.licenceTypeGmp}</option>
+              <option value="organic">{t.licenceTypeOrganic}</option>
+              <option value="other">{t.licenceTypeOther}</option>
+            </select>
           </Field>
-          <Row>
-            <Field label={t.processingLicence}>
-              <input value={form.processingLicence ?? ''} onChange={e => set('processingLicence', e.target.value)} placeholder="PL-…pdf (optional)" />
-            </Field>
-            <Field label={t.gmpCert}>
-              <input value={form.gmpCert ?? ''} onChange={e => set('gmpCert', e.target.value)} placeholder="GMP-…pdf (optional)" />
-            </Field>
-          </Row>
-          <Row>
-            <Field label={t.gapCert}>
-              <input value={form.gapCert ?? ''} onChange={e => set('gapCert', e.target.value)} placeholder="GAP-…pdf (optional)" />
-            </Field>
-            <Field label={t.gacpCert}>
-              <input value={form.gacpCert ?? ''} onChange={e => set('gacpCert', e.target.value)} placeholder="GACP-…pdf (optional)" />
-            </Field>
-          </Row>
+
+          {licenceType !== 'none' && (
+            <Row>
+              <Field label={t.licenceNumberLabel} hint={t.licenceNumberHint}>
+                <input
+                  value={licenceNumber}
+                  onChange={e => handleLicenceNumberChange(e.target.value)}
+                  placeholder="e.g. TH-2024-00123"
+                />
+              </Field>
+              <Field label={t.licenceDocLabel} hint={t.licenceDocHint}>
+                <input
+                  value={licenceDoc}
+                  onChange={e => handleLicenceDocChange(e.target.value)}
+                  placeholder="CL-CNX-2022.pdf"
+                />
+              </Field>
+            </Row>
+          )}
+
           <div className="wizard-photo-note" style={{ marginTop: 12 }}>
             {lang === 'th'
               ? 'ถ้ายังไม่มีใบอนุญาตครบ DDP จะช่วยแนะนำขั้นตอนต่อไป'
@@ -420,7 +490,9 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
             {form.mainStrains && <div className="review-pill">✓ {t.mainStrains}: {form.mainStrains}</div>}
             {form.typicalThc && <div className="review-pill">✓ THC: {form.typicalThc}</div>}
             {form.coaFiles && <div className="review-pill">✓ COA: {form.coaFiles}</div>}
-            {form.cultivationLicence && <div className="review-pill">✓ {t.cultivationLicence}: {form.cultivationLicence}</div>}
+            {licenceType !== 'none' && form[LICENCE_TYPE_FIELDS[licenceType]] && (
+              <div className="review-pill">✓ {t.licenceTypeLabel}: {form[LICENCE_TYPE_FIELDS[licenceType]]}</div>
+            )}
           </div>
 
           {/* What can be added later */}
