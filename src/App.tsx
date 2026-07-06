@@ -159,13 +159,15 @@ export default function App() {
       .catch(err => console.warn('Admin Supabase data load failed:', err))
   }, [currentProfile])
 
-  // ── Load market benchmarks from Supabase once on mount ───────────────────
+  // ── Load market benchmarks from Supabase once a farmer session exists ────
+  // (RLS restricts this table to authenticated farmers — querying it before
+  // login just produces an anonymous-read 401 with no farmer-facing benefit.)
   useEffect(() => {
-    if (!isSupabaseConfigured) return
+    if (!isSupabaseConfigured || !currentProfile) return
     loadMarketBenchmarksFromDB()
       .then(benchmarks => { if (benchmarks.length > 0) setMarketBenchmarks(benchmarks) })
       .catch(err => console.warn('loadMarketBenchmarksFromDB failed:', err))
-  }, [])
+  }, [currentProfile])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
   // In demo mode (no Supabase), everything is open — preserve existing behaviour.

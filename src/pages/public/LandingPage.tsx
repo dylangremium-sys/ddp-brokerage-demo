@@ -219,7 +219,7 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
             </div>
             <div className="buyer-pack-preview-field">
               <span className="buyer-pack-preview-label">{t.landingBuyerPackBatchLabel}</span>
-              <StatusBadge status="verified" lang={lang} />
+              <StatusBadge status="reviewed" lang={lang} />
             </div>
             <div className="buyer-pack-preview-field">
               <span className="buyer-pack-preview-label">{t.landingBuyerPackCoaLabel}</span>

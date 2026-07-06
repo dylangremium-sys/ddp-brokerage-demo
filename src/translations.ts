@@ -111,7 +111,7 @@ export const T = {
     landingAboutTitle: 'About Us',
     landingAboutText1: 'DDP turns Thai farm supply, batch records, COAs, and pricing into a clear buyer-ready review pack — helping serious buyers understand what is claimed, what is documented, and what is ready to progress.',
 
-    landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted. Access is limited to verified partners during the current onboarding phase.',
+    landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted. Access is limited to onboarded partners during the current onboarding phase.',
 
     // Onboarding
     eyebrow: 'SUPPLIER & FARMER PORTAL',
@@ -526,7 +526,7 @@ export const T = {
     landingFrameworkDocumentedDesc: 'ตรวจสอบเอกสารแล้ว',
     // NOTE: downgraded from "verified" (ตรวจสอบแล้ว) to "reviewed" (ตรวจทานแล้ว) to match the English change — needs native speaker review
     landingFrameworkVerifiedLabel: 'ตรวจทานแล้ว',
-    landingFrameworkVerifiedDesc: 'ตรวจสอบแบทช์แล้ว',
+    landingFrameworkVerifiedDesc: 'ตรวจทานแบทช์แล้ว',
     landingFrameworkBuyerReadyLabel: 'พร้อมสำหรับผู้ซื้อ',
     landingFrameworkBuyerReadyDesc: 'แพ็กสำหรับผู้ซื้อพร้อมแล้ว',
 
@@ -575,7 +575,8 @@ export const T = {
     landingAboutTitle: 'เกี่ยวกับเรา',
     landingAboutText1: 'DDP เปลี่ยนข้อมูลอุปทานฟาร์มไทย บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลพร้อมสำหรับผู้ซื้อที่ชัดเจน — ช่วยให้ผู้ซื้อจริงจังเข้าใจว่าอะไรคือข้อมูลที่แจ้งเอง อะไรมีเอกสารรองรับ และอะไรพร้อมดำเนินการต่อ',
 
-    landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย การเข้าถึงจำกัดเฉพาะพันธมิตรที่ผ่านการตรวจสอบในระยะเริ่มต้นนี้',
+    // NOTE: downgraded from "verified partners" (พันธมิตรที่ผ่านการตรวจสอบ) to "onboarded partners" (พันธมิตรที่เข้าร่วมโครงการ) to match the English change — needs native speaker review
+    landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย การเข้าถึงจำกัดเฉพาะพันธมิตรที่เข้าร่วมโครงการในระยะเริ่มต้นนี้',
 
     // Onboarding
     eyebrow: 'พอร์ทัลเกษตรกร',
