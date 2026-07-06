@@ -129,6 +129,14 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
               </button>
             </div>
             <p className="landing-hero-cta-caption">{t.landingAccessFarmerDesc}</p>
+            <a
+              className="landing-hero-buyer-link"
+              href="https://line.me/R/ti/p/@ddpbrokerage"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {t.landingAccessBuyerCta} →
+            </a>
           </div>
 
           <div className="hero-visual">
@@ -165,6 +173,7 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
                   <StatusBadge status="progress" lang={lang} />
                 </div>
               </div>
+              <p className="hero-mock-caption">{t.landingHeroMockCaption}</p>
             </div>
           </div>
         </div>
@@ -278,6 +287,7 @@ export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) 
           <p className="about-section-text">{t.landingAboutText1}</p>
         </div>
 
+        <div className="authority-strip">{t.landingAuthorityNote}</div>
         <div className="legal-strip">{t.landingDisclaimer}</div>
       </div>
     </div>

@@ -1098,6 +1098,20 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   margin: 10px 0 0;
 }
 
+.landing-hero-buyer-link {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.landing-hero-buyer-link:hover {
+  color: var(--text);
+  border-bottom-color: var(--border);
+}
+
 /* ── Hero product mockup ── */
 .hero-visual {
   flex: 1 1 340px;
@@ -1171,6 +1185,15 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   font-size: 13.5px;
   color: var(--text);
   font-weight: 600;
+}
+
+.hero-mock-caption {
+  margin: 0;
+  padding: 10px 20px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* ── Verification framework strip ── */
@@ -1723,7 +1746,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .tier-cultivator-claimed { background: rgba(148,163,184,0.14); color: #CBD5E1; border: 1px solid rgba(148,163,184,0.35); }
 .tier-ddp-documented { background: rgba(184,120,46,0.14); color: var(--warning); border: 1px solid rgba(184,120,46,0.4); }
-.tier-certified-pharma-ready { background: var(--jade); color: #FFFFFF; border: 1px solid var(--jade); }
+.tier-certified-pharma-ready { background: rgba(91,75,138,0.16); color: #9B8DD1; border: 1px solid rgba(91,75,138,0.45); }
 
 /* ── Standardized status vocabulary (Claimed/Documented/Verified/etc.) ── */
 .status-pill {
@@ -1740,7 +1763,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 .status-claimed { background: rgba(148,163,184,0.14); color: #CBD5E1; border: 1px solid rgba(148,163,184,0.35); }
 .status-documented { background: rgba(184,120,46,0.14); color: var(--warning); border: 1px solid rgba(184,120,46,0.4); }
 .status-verified { background: var(--jade); color: #FFFFFF; border: 1px solid var(--jade); }
-.status-buyer-ready { background: var(--jade); color: #FFFFFF; border: 1px solid var(--jade); }
+.status-buyer-ready { background: rgba(46,139,103,0.14); color: var(--success); border: 1px solid rgba(46,139,103,0.4); }
 .status-missing { background: rgba(153,27,27,0.12); color: var(--error); border: 1px solid rgba(153,27,27,0.35); }
 .status-hold { background: rgba(184,120,46,0.14); color: var(--warning); border: 1px solid rgba(184,120,46,0.4); }
 .status-reject { background: var(--error); color: #FFFFFF; border: 1px solid var(--error); }
@@ -2196,6 +2219,15 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   letter-spacing: 0.01em;
 }
 
+.build-id-badge {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  white-space: nowrap;
+  opacity: 0.4;
+  letter-spacing: 0.01em;
+}
+
 /* ── Demo Utility Strip ── */
 .demo-utility-strip {
   position: fixed;
@@ -2482,13 +2514,27 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   .filter-sidebar { position: static; }
 }
 
+/* ── DDP scope-of-authority note ── */
+.authority-strip {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 12px 18px;
+  margin-top: 24px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
 /* ── Legal disclaimer strip ── */
 .legal-strip {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 11px 18px;
-  margin-top: 24px;
+  margin-top: 12px;
   text-align: center;
   font-size: 12px;
   color: var(--text-muted);
