@@ -203,12 +203,13 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                     <td data-label="COA">
                       <DocumentCard
                         variant="table-cell"
-                        hasFile={!!(item.certFileName || item.coaStoragePath)}
+                        hasFile={!!item.coaStoragePath}
                         fileName={item.certFileName}
                         openable={!!(item.coaStoragePath && onGetCoaUrl)}
                         loading={coaLoadingId === item.id}
                         onOpen={() => handleViewCoa(item)}
-                        missingText="COA missing"
+                        missingText={item.certFileName ? 'COA claimed' : 'COA missing'}
+                        missingSeverity={item.certFileName ? 'muted' : 'error'}
                       />
                     </td>
                     <td data-label="Compliance Tier">

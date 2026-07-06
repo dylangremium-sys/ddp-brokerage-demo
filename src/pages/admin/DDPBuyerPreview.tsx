@@ -206,7 +206,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
-            <DDPVerifiedSupplySeal size={72} />
+            {!hasBlockingIssues && <DDPVerifiedSupplySeal size={72} />}
             <span className={`badge ${hasBlockingIssues ? 'badge-pending' : 'badge-approved'}`} style={{ fontSize: 12, padding: '4px 10px' }}>
               {hasBlockingIssues ? 'Decision Required' : '✓ DDP Reviewed — Approved for Buyer Disclosure'}
             </span>
@@ -529,7 +529,13 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
                       <td data-label="Microbial"><span className={testStatusClass(item.microbialStatus)}>{testStatusLabel(item.microbialStatus)}</span></td>
                       <td data-label="Heavy Metals"><span className={testStatusClass(item.heavyMetalsStatus)}>{testStatusLabel(item.heavyMetalsStatus)}</span></td>
                       <td className="td-num" data-label="Allocatable Qty (kg)">{item.quantityKg.toLocaleString()}</td>
-                      <td data-label="COA">{item.certFileName || item.coaStoragePath ? <span className="coa-present">✓</span> : <span className="coa-missing">✗</span>}</td>
+                      <td data-label="COA">
+                        {item.coaStoragePath
+                          ? <span className="coa-present">✓</span>
+                          : item.certFileName
+                            ? <span className="status-pill status-claimed">Claimed</span>
+                            : <span className="coa-missing">✗</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
