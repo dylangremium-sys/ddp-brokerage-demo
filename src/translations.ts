@@ -34,8 +34,8 @@ export const T = {
     resetDemo: 'Reset Demo',
 
     // Landing
-    landingTagline: 'Licensed Cannabis Supply Platform',
-    landingNavDescriptor: 'Licensed Cannabis Supply Review',
+    landingTagline: 'Buyer-Readiness Platform for Licensed Cannabis Supply',
+    landingNavDescriptor: 'Buyer-Readiness Platform',
     landingHeadline: 'Thai Cannabis Supply, Made Buyer-Ready',
     landingHero1: 'DDP turns farm stock, batch records, COAs, and pricing into clear review packs for serious buyers.',
     landingEnterFarmer: 'Supplier Intake Portal',
@@ -44,9 +44,11 @@ export const T = {
     landingAccessDDPDesc: 'For DDP staff — review and scoring console.',
     landingAccessFarmerCta: 'Submit Stock',
     landingAccessDDPCta: 'Review Supply',
+    landingAccessBuyerCta: 'Buyer or procurement partner? Contact DDP',
 
     // Landing — Hero product mockup
     landingHeroMockEyebrow: 'Buyer Pack Ready',
+    landingHeroMockCaption: 'Illustrative example — not a live batch.',
     landingHeroMockFarmLabel: 'Farm',
     landingHeroMockFarmValue: 'Thai Licensed Farm',
     landingHeroMockBatchLabel: 'Batch',
@@ -91,7 +93,7 @@ export const T = {
     landingWhy3Title: 'Buyer-Ready Batches',
     landingWhy3Desc: 'Only reviewed batches reach the Buyer Pack.',
     landingWhy4Title: 'Less Procurement Guesswork',
-    landingWhy4Desc: 'One place for what’s real, missing, and ready to buy.',
+    landingWhy4Desc: 'One place for what’s real, missing, and ready to progress.',
 
     // Landing — What DDP organizes (static, no live counts)
     landingOrgTitle: 'What DDP Organizes',
@@ -112,6 +114,7 @@ export const T = {
     landingAboutText1: 'DDP turns Thai farm supply, batch records, COAs, and pricing into a clear buyer-ready review pack — helping serious buyers understand what is claimed, what is documented, and what is ready to progress.',
 
     landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted. Access is limited to onboarded partners during the current onboarding phase.',
+    landingAuthorityNote: 'DDP organizes, consolidates, and reviews supplier documentation. DDP does not certify export readiness, pharmaceutical readiness, or legal compliance in any jurisdiction. Buyer decisions should rely only on reviewed documents and confirmation from a qualified party.',
 
     // Onboarding
     eyebrow: 'SUPPLIER & FARMER PORTAL',
@@ -495,8 +498,9 @@ export const T = {
     resetDemo: 'รีเซ็ตข้อมูลทดสอบ',
 
     // Landing
-    landingTagline: 'แพลตฟอร์มจัดหากัญชาที่ได้รับใบอนุญาต',
-    landingNavDescriptor: 'การตรวจสอบห่วงโซ่อุปทานกัญชาที่ได้รับใบอนุญาต',
+    // NOTE: downgraded/reworded from "Licensed Cannabis Supply Platform/Review" framing to match the English change — needs native speaker review
+    landingTagline: 'แพลตฟอร์มเตรียมความพร้อมสำหรับผู้ซื้อ สำหรับอุปทานกัญชาที่ได้รับใบอนุญาต',
+    landingNavDescriptor: 'แพลตฟอร์มเตรียมความพร้อมสำหรับผู้ซื้อ',
     landingHeadline: 'อุปทานกัญชาไทย พร้อมสำหรับผู้ซื้อ',
     landingHero1: 'DDP เปลี่ยนสต็อกฟาร์ม บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลที่ชัดเจนสำหรับผู้ซื้อจริงจัง',
     landingEnterFarmer: 'พอร์ทัลรับข้อมูลซัพพลายเออร์',
@@ -505,9 +509,13 @@ export const T = {
     landingAccessDDPDesc: 'สำหรับทีมงาน DDP — คอนโซลตรวจสอบและให้คะแนน',
     landingAccessFarmerCta: 'ส่งสต็อก',
     landingAccessDDPCta: 'ตรวจสอบอุปทาน',
+    // NOTE: new string — needs native speaker review
+    landingAccessBuyerCta: 'เป็นผู้ซื้อหรือพันธมิตรด้านจัดซื้อ? ติดต่อ DDP',
 
     // Landing — Hero product mockup
     landingHeroMockEyebrow: 'Buyer Pack พร้อมแล้ว',
+    // NOTE: new string — needs native speaker review
+    landingHeroMockCaption: 'ตัวอย่างประกอบ — ไม่ใช่แบทช์จริง',
     landingHeroMockFarmLabel: 'ฟาร์ม',
     landingHeroMockFarmValue: 'ฟาร์มไทยที่ได้รับใบอนุญาต',
     landingHeroMockBatchLabel: 'แบทช์',
@@ -554,7 +562,8 @@ export const T = {
     landingWhy3Title: 'แบทช์พร้อมสำหรับผู้ซื้อ',
     landingWhy3Desc: 'เฉพาะแบทช์ที่ตรวจสอบแล้วเข้าสู่ Buyer Pack',
     landingWhy4Title: 'ลดความสับสนในการจัดซื้อ',
-    landingWhy4Desc: 'ดูในที่เดียวว่าอะไรจริง ขาดหาย และพร้อมซื้อ',
+    // NOTE: downgraded from "ready to buy" (พร้อมซื้อ) to "ready to progress" (พร้อมดำเนินการต่อ) to match the English change — needs native speaker review
+    landingWhy4Desc: 'ดูในที่เดียวว่าอะไรจริง ขาดหาย และพร้อมดำเนินการต่อ',
 
     // Landing — What DDP organizes (static, no live counts)
     landingOrgTitle: 'สิ่งที่ DDP จัดระเบียบ',
@@ -577,6 +586,8 @@ export const T = {
 
     // NOTE: downgraded from "verified partners" (พันธมิตรที่ผ่านการตรวจสอบ) to "onboarded partners" (พันธมิตรที่เข้าร่วมโครงการ) to match the English change — needs native speaker review
     landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย การเข้าถึงจำกัดเฉพาะพันธมิตรที่เข้าร่วมโครงการในระยะเริ่มต้นนี้',
+    // NOTE: new string — needs native speaker review
+    landingAuthorityNote: 'DDP จัดระเบียบ รวบรวม และตรวจทานเอกสารของซัพพลายเออร์ DDP ไม่รับรองความพร้อมด้านการส่งออก ความพร้อมด้านเภสัชกรรม หรือความถูกต้องตามกฎหมายในเขตอำนาจใดๆ การตัดสินใจของผู้ซื้อควรอ้างอิงจากเอกสารที่ตรวจทานแล้วและการยืนยันจากผู้ที่มีคุณสมบัติเท่านั้น',
 
     // Onboarding
     eyebrow: 'พอร์ทัลเกษตรกร',

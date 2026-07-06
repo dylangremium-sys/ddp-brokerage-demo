@@ -81,6 +81,20 @@ export default function App() {
   const [reviewFarmId, setReviewFarmId] = useState<string | null>(null)
   const [reviewItemId, setReviewItemId] = useState<string | null>(null)
   const [dbError, setDbError] = useState<string | null>(null)
+  const [buildVersion, setBuildVersion] = useState<string | null>(null)
+
+  // Build/version identifier for release traceability — static file regenerated
+  // every build by scripts/generate-version.js, no git dependency.
+  useEffect(() => {
+    fetch('/version.json')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (data?.version && data?.builtAt) {
+          setBuildVersion(`v${data.version} · built ${new Date(data.builtAt).toISOString().slice(0, 16).replace('T', ' ')}`)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // Auth state — only meaningful when isSupabaseConfigured is true
   const [authLoading, setAuthLoading] = useState<boolean>(isSupabaseConfigured)
@@ -748,12 +762,15 @@ export default function App() {
         </main>
       )}
 
-      {isDemo && (
+      {(isDemo || buildVersion) && (
         <div className="demo-utility-strip">
-          <span className="db-mode-badge">○ Demo mode: localStorage</span>
-          <button className="demo-reset-btn" onClick={handleReset} title="Reset all demo data">
-            ↺ Reset Demo
-          </button>
+          {isDemo && <span className="db-mode-badge">○ Demo mode: localStorage</span>}
+          {buildVersion && <span className="build-id-badge">{buildVersion}</span>}
+          {isDemo && (
+            <button className="demo-reset-btn" onClick={handleReset} title="Reset all demo data">
+              ↺ Reset Demo
+            </button>
+          )}
         </div>
       )}
     </div>
