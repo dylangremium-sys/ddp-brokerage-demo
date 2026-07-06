@@ -14,7 +14,7 @@ By default all data is stored in **browser localStorage**. When Supabase environ
 | **Deployed branch** | `main` |
 | **Status** | Demo-ready |
 
-> Auth and role-based access (RLS) work is in progress on the separate `auth-rls-mvp` branch and is not part of this deployed demo.
+> Auth and role-based access foundations are present in `main`. Static repo evidence and prior live behaviour indicate RLS was implemented and tested, but the current live Supabase state should be confirmed directly in the Supabase dashboard before using real buyer or farm data.
 
 ---
 
@@ -180,7 +180,16 @@ By default Supabase requires email confirmation. For local testing, disable it:
 
 ### RLS policies
 
-Draft policies are in `AUTH_RLS_SCHEMA.sql` (Part 3), all commented out. Apply them only after:
+`AUTH_RLS_SCHEMA.sql` (Part 3) still contains an early set of draft/commented-out policy examples — that section itself was never uncommented and run as-is. It was superseded by a later, separately-written RLS rollout (`RLS_ENABLE_STAGED.sql`, `4_RLS_ENABLE_REMAINING_TABLES.sql`, and related hardening/patch files), whose commits appear directly in `main`'s own history alongside a status doc claiming the rollout was completed and tested against the live app.
+
+Static repo evidence (committed SQL, commit history, and status docs) points to RLS being live, but this has not been independently confirmed against the actual Supabase project from this codebase alone. Before relying on this for real buyer or farm data, confirm directly with a read-only query in the Supabase SQL Editor:
+
+```sql
+SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public';
+SELECT * FROM pg_policies WHERE schemaname = 'public';
+```
+
+If you ever do need to apply the `AUTH_RLS_SCHEMA.sql` Part 3 draft directly (e.g. rebuilding from scratch), only do so after:
 
 1. Auth UI is tested end-to-end.
 2. At least one `ddp_admin` profile exists.

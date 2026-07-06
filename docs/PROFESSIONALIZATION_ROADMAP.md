@@ -143,6 +143,36 @@ was left unimplemented within this pass's safe scope.
 - This entire phase requires Supabase dashboard access and explicit
   approval before any policy is touched — correctly out of scope here.
 
+**Update — follow-up RLS/security audit result:** a dedicated read-only audit
+of the SQL/migration files and commit history (no SQL run, no Supabase
+project touched) classified this as **high-confidence C: RLS appears
+implemented from committed SQL, commit history, and status docs, but current
+live `pg_tables`/`pg_policies` confirmation remains outstanding.** The
+RLS-enabling commits exist directly in `main`'s own history (not an
+abandoned branch), and a status doc claims the rollout was tested against
+the live app — but this has not been independently confirmed against the
+actual Supabase project from this codebase alone. Before real buyer/farm
+use, run this read-only confirmation directly in the Supabase SQL Editor:
+
+```sql
+SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public';
+SELECT * FROM pg_policies WHERE schemaname = 'public';
+```
+
+Additional findings from that audit:
+- No buyer role or buyer-scoped table exists in the schema at all — the
+  Buyer Preview/Buyer Pack remains a pure frontend simulation with no
+  database-level access control of its own. Buyer data-room work (a real
+  buyer role, scoped access, audit logging) remains a future phase, not
+  something to infer from this audit.
+- `FARM_RESAVE_PERSISTENCE_MIGRATION.sql` contains a pending bug in its
+  *proposed* (not yet applied) `fn_protect_farm_admin_fields()` function: it
+  checks `profiles.role = 'admin'`, while every other policy/function in the
+  codebase uses `'ddp_admin'`. As written, this function would never
+  recognize a real admin. The file is already marked "do not run
+  automatically, pending approval" — **do not run until this is reviewed and
+  fixed**, regardless of anything else in this roadmap.
+
 ### E. Phase 4 — farm onboarding upgrade
 - `FarmerOnboarding.tsx` step 8 licence field is labeled "Upload document, or
   type a reference" but the control is plain text, not a file input — a
