@@ -55,6 +55,7 @@ import DDPBuyerPreview from './pages/admin/DDPBuyerPreview'
 import DDPMissingDocuments from './pages/admin/DDPMissingDocuments'
 import DDPCoaIntelligence from './pages/admin/DDPCoaIntelligence'
 import DDPRiskRegister from './pages/admin/DDPRiskRegister'
+import DDPComplianceWatchtower from './pages/admin/DDPComplianceWatchtower'
 import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
@@ -67,7 +68,7 @@ const FARMER_PAGES: Page[] = [
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
+const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
 
@@ -757,6 +758,14 @@ export default function App() {
               selectedItem={buyerPackItem}
               onBack={() => { setBuyerPackItemId(null); goTo('ddp-master') }}
               onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
+            />
+          )}
+
+          {page === 'ddp-compliance-watchtower' && isAdminRole && (
+            <DDPComplianceWatchtower
+              farms={farms}
+              inventory={inventory}
+              currentUser={isDemo ? null : currentProfile}
             />
           )}
         </main>

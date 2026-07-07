@@ -21,6 +21,10 @@ export default function AdminNav({ page, goTo }: {
         className={`nav-btn ddp-nav-btn${SUPPLY_LEDGER_PAGES.includes(page) ? ' nav-active' : ''}`}
         onClick={() => goTo('ddp-master')}
       >Supply Ledger</button>
+      <button
+        className={`nav-btn ddp-nav-btn${page === 'ddp-compliance-watchtower' ? ' nav-active' : ''}`}
+        onClick={() => goTo('ddp-compliance-watchtower')}
+      >Compliance Watchtower</button>
     </div>
   )
 }

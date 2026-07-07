@@ -100,6 +100,187 @@ export interface CoaIntelligence {
 export type RiskSeverity = 'low' | 'medium' | 'high' | 'blocker'
 export type RiskStatus = 'open' | 'in_review' | 'resolved' | 'accepted'
 
+export type ComplianceSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical'
+export type ComplianceStatus = 'open' | 'in_review' | 'blocked' | 'resolved' | 'dismissed'
+
+export type LegalUpdateStatus =
+  | 'new'
+  | 'needs_review'
+  | 'reviewed'
+  | 'rule_suggested'
+  | 'sent_to_legal'
+  | 'archived'
+  | 'rejected'
+
+export type LegalUpdateAffectedArea =
+  | 'Thai cultivation'
+  | 'Thai cannabis control'
+  | 'Thai export'
+  | 'Czech import'
+  | 'EU pharmaceutical standards'
+  | 'GMP/GACP/GDP'
+  | 'Data protection'
+  | 'Buyer licensing'
+  | 'Farm licensing'
+  | 'COA/testing'
+  | 'Chain of custody'
+  | 'Marketing/claims'
+  | 'Other'
+
+export type ComplianceRuleEntityType =
+  | 'farm'
+  | 'batch'
+  | 'coa'
+  | 'buyer'
+  | 'document'
+  | 'shipment'
+  | 'platform_claim'
+  | 'data_protection'
+
+export type ComplianceRuleStatus =
+  | 'draft'
+  | 'suggested'
+  | 'approved'
+  | 'active'
+  | 'paused'
+  | 'retired'
+  | 'rejected'
+
+export type ExportReadinessStatus =
+  | 'not_ready'
+  | 'missing_documents'
+  | 'needs_compliance_review'
+  | 'buyer_ready_for_discussion'
+  | 'export_readiness_incomplete'
+  | 'ready_for_legal_review'
+  | 'human_approved'
+  | 'blocked'
+
+export interface RegulatorySource {
+  id: string
+  name: string
+  jurisdiction: string
+  sourceType: string
+  url: string
+  isActive: boolean
+  lastCheckedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface LegalUpdate {
+  id: string
+  sourceId?: string | null
+  title: string
+  jurisdiction: string
+  sourceName: string
+  sourceUrl: string
+  publishedAt?: string | null
+  detectedAt: string
+  rawText: string
+  summary: string
+  affectedAreas: LegalUpdateAffectedArea[]
+  aiRiskLevel?: ComplianceSeverity | null
+  status: LegalUpdateStatus
+  reviewerNotes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ComplianceReview {
+  id: string
+  legalUpdateId?: string | null
+  alertId?: string | null
+  ruleId?: string | null
+  title: string
+  reviewType: 'legal_update' | 'alert' | 'rule' | 'readiness' | 'document_status'
+  status: 'pending' | 'in_review' | 'reviewed' | 'sent_to_legal' | 'rejected' | 'archived'
+  riskLevel: ComplianceSeverity
+  affectedEntities: string[]
+  summary: string
+  recommendedAction: string
+  reviewerNotes: string
+  decision?: string | null
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ComplianceRule {
+  id: string
+  ruleCode: string
+  title: string
+  description: string
+  jurisdiction?: string | null
+  entityType: ComplianceRuleEntityType
+  severity: ComplianceSeverity
+  isBlocking: boolean
+  status: ComplianceRuleStatus
+  sourceLegalUpdateId?: string | null
+  approvedBy?: string | null
+  approvedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ComplianceAlert {
+  id: string
+  entityType: ComplianceRuleEntityType
+  entityId: string
+  ruleId?: string | null
+  legalUpdateId?: string | null
+  alertTitle: string
+  alertDetail: string
+  severity: ComplianceSeverity
+  status: ComplianceStatus
+  createdAt: string
+  resolvedAt?: string | null
+  resolutionNotes?: string | null
+}
+
+export interface ComplianceEntityStatus {
+  id: string
+  entityType: ComplianceRuleEntityType
+  entityId: string
+  readinessStatus: ExportReadinessStatus
+  riskLevel: ComplianceSeverity
+  missingRequirements: string[]
+  blockingAlertCount: number
+  lastEvaluatedAt: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ComplianceAuditLog {
+  id: string
+  actorType: 'admin' | 'ai_assistant' | 'system' | 'legal_reviewer'
+  actorId?: string | null
+  actorName: string
+  action:
+    | 'legal_update_created'
+    | 'legal_update_reviewed'
+    | 'rule_suggested'
+    | 'rule_approved'
+    | 'rule_paused'
+    | 'rule_retired'
+    | 'alert_created'
+    | 'alert_resolved'
+    | 'readiness_status_changed'
+    | 'document_status_changed'
+    | 'sent_to_legal_review'
+    | 'reviewer_note_added'
+    | 'rule_rejected'
+    | 'legal_update_archived'
+    | 'alert_dismissed'
+  entityType: string
+  entityId?: string | null
+  beforeState?: unknown
+  afterState?: unknown
+  reason?: string | null
+  createdAt: string
+}
+
 export interface RiskRegisterEntry {
   riskId: string
   farmId?: string
@@ -134,6 +315,7 @@ export type Page =
   | 'ddp-missing-documents'
   | 'ddp-coa-intelligence'
   | 'ddp-risk-register'
+  | 'ddp-compliance-watchtower'
 
 export type StockStatus =
   | 'draft'

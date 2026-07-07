@@ -562,7 +562,7 @@ export const T = {
     landingWhy3Title: 'แบทช์พร้อมสำหรับผู้ซื้อ',
     landingWhy3Desc: 'เฉพาะแบทช์ที่ตรวจสอบแล้วเข้าสู่ Buyer Pack',
     landingWhy4Title: 'ลดความสับสนในการจัดซื้อ',
-    // NOTE: downgraded from "ready to buy" (พร้อมซื้อ) to "ready to progress" (พร้อมดำเนินการต่อ) to match the English change — needs native speaker review
+    // NOTE: Thai wording downgraded to "ready to progress" (พร้อมดำเนินการต่อ) to match the English safety change — needs native speaker review
     landingWhy4Desc: 'ดูในที่เดียวว่าอะไรจริง ขาดหาย และพร้อมดำเนินการต่อ',
 
     // Landing — What DDP organizes (static, no live counts)
