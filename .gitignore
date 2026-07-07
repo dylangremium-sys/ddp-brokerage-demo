@@ -30,3 +30,5 @@ public/version.json
 *.njsproj
 *.sln
 *.sw?
+.vercel
+.env*
