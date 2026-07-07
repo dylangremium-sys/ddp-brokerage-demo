@@ -128,6 +128,31 @@ CREATE TABLE IF NOT EXISTS public.compliance_audit_log (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'compliance_reviews_alert_id_fkey'
+  ) THEN
+    ALTER TABLE public.compliance_reviews
+      ADD CONSTRAINT compliance_reviews_alert_id_fkey
+      FOREIGN KEY (alert_id)
+      REFERENCES public.compliance_alerts(id)
+      ON DELETE SET NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'compliance_reviews_rule_id_fkey'
+  ) THEN
+    ALTER TABLE public.compliance_reviews
+      ADD CONSTRAINT compliance_reviews_rule_id_fkey
+      FOREIGN KEY (rule_id)
+      REFERENCES public.compliance_rules(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_legal_updates_status ON public.legal_updates(status);
 CREATE INDEX IF NOT EXISTS idx_legal_updates_detected_at ON public.legal_updates(detected_at DESC);
 CREATE INDEX IF NOT EXISTS idx_compliance_reviews_status ON public.compliance_reviews(status);
