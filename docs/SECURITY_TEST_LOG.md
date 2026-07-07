@@ -67,6 +67,79 @@ Reviewed from local migration SQL files in the repository root
 **Caveat:** this is a review of local migration files, not a live read of
 `pg_policies` via the Supabase Dashboard or SQL editor. It is corroborated by, but not
 a substitute for, direct confirmation that the deployed database matches these files.
+**Update:** see Section 5A — this caveat has since been partially resolved by a live
+`pg_policies` comparison, which also surfaced one real mismatch.
+
+## 5A. Live pg_policies parity check
+
+- **Source:** owner-exported Supabase SQL Editor `pg_policies` query result, provided
+  as a local CSV (`tmp/live_pg_policies_snapshot.csv`, git-excluded via
+  `.git/info/exclude`, never committed).
+- **Date of check:** 2026-07-07.
+- **Policy rows reviewed:** 21 (all rows present in the export).
+- **Tables/schemas reviewed:** `public.farms`, `public.farm_memberships`,
+  `public.inventory_batches`, `public.market_price_benchmarks`, `public.profiles`,
+  `public.farmer_review_requests`, `storage.objects` (policies scoped to the
+  `farmer-documents` bucket).
+- **Fields compared per policy:** `schemaname`, `tablename`, `policyname`,
+  `permissive`, `roles`, `cmd`, `qual`, `with_check`.
+- **Local files compared against:** `RLS_ENABLE_STAGED.sql`, `AUTH_RLS_SCHEMA.sql`,
+  `FARMER_MVP_MIGRATION.sql`, `INVENTORY_BATCHES_RLS_PATCH.sql`,
+  `8_COA_UPLOAD_STORAGE_MIGRATION.sql`.
+
+**Per-table classification:**
+
+| Table | Policies (live) | Classification |
+|---|---|---|
+| `farms` | admin all, farmer insert own, farmer select own | MATCH |
+| `farm_memberships` | admin all, farmer insert own, farmer select own | MATCH |
+| `inventory_batches` | admin all, farmer select own, farmer insert own, farmer update own | **MISMATCH** |
+| `market_price_benchmarks` | admin all, farmer select visible | MATCH |
+| `profiles` | admin update role, select own or admin, update own no role change | MATCH |
+| `farmer_review_requests` | admin all, farmer select own, farmer resolve own | MATCH |
+| `storage.objects` (`farmer-documents`) | admin all, farmer read own, farmer upload own | MATCH |
+
+**MISMATCH detail — `inventory_batches: farmer insert own`:**
+- Live `with_check`: `((created_by = auth.uid()) OR has_farm_membership(farm_id))` — only
+  an ownership check.
+- `INVENTORY_BATCHES_RLS_PATCH.sql` (the file that documents itself as "the record of a
+  manual production hotfix," intended to be authoritative) specifies a stricter
+  `WITH CHECK` that additionally requires `client_visible = false`, `status NOT IN
+  ('Approved')`, and `stock_status IS NULL OR stock_status IN ('draft', 'submitted',
+  'needs_changes')`.
+- The live database does **not** enforce these three additional guardrail conditions on
+  INSERT, even though the local patch file states they were applied. In practice this
+  means a farmer's own INSERT into `inventory_batches` is not currently blocked at the
+  database level from setting `client_visible = true`, `status = 'Approved'`, or an
+  admin-only `stock_status` directly at creation time — only the corresponding `farmer
+  update own` policy (Section F of `FARMER_MVP_MIGRATION.sql`) enforces those guardrails,
+  and that policy's live `with_check` **does** match its local definition exactly.
+- All other `inventory_batches` policies (`admin all`, `farmer select own`, `farmer
+  update own`) match their local definitions exactly.
+- No further action was taken on this finding — it is recorded here for review, not
+  fixed, per this task's read-only/documentation-only scope.
+
+**Live confirmation of the DELETE-policy gap:** the live export confirms there is no
+`cmd: DELETE` (farmer-scoped) policy on `farms`, `farm_memberships`, or
+`inventory_batches` — only `ALL` (admin-only, via `is_ddp_admin()`), `SELECT`, `INSERT`,
+and (for `inventory_batches` only) `UPDATE`. This directly explains the Section 8
+cleanup result, where farmer-authenticated `DELETE` REST calls returned HTTP 204 but
+did not remove the target rows: PostgREST accepted the request, but RLS matched zero
+rows because no farmer-level DELETE policy exists, and `Prefer: return=minimal`
+suppressed any indication that zero rows were affected.
+
+**Caveats (unchanged in kind, now partially addressed):**
+- This confirms live/local parity for 6 of 7 reviewed tables/schemas and surfaces one
+  real mismatch for the 7th (`inventory_batches` INSERT guardrails) — it does not prove
+  every policy on every table in the schema is correct.
+- This is not a full security audit.
+- This is not penetration testing.
+- This does not test every table in the schema (only the 7 listed above).
+- This does not test buyer or admin workflows.
+- This does not test storage isolation with real uploaded files.
+- This does not test `UPDATE`/`DELETE` cross-farmer isolation (only confirms the
+  absence of farmer-level `DELETE` policies; it does not test `UPDATE` isolation
+  behavior between two different farmers).
 
 ## 6. Storage read-only probe
 
@@ -133,7 +206,9 @@ Results (`select=id` probes only, row contents never printed):
 - `DELETE` policies beyond the incidental discovery that farmers cannot delete these
   three tables' rows themselves.
 - Storage/document isolation using real uploaded files between two farmers.
-- Live parity check of deployed `pg_policies` against local migration files.
+- Live parity check of deployed `pg_policies` against local migration files for tables
+  beyond the 7 reviewed in Section 5A (e.g., `ddp_scores`, `risk_flags`,
+  `status_history`, `documents`, `farm_profiles`).
 - Buyer-role access model.
 - Admin-role access model.
 - Every table in the schema (only `farm_memberships`, `farmer_review_requests`,
@@ -142,9 +217,10 @@ Results (`select=id` probes only, row contents never printed):
 
 ## 10. Recommended next tests
 
-- Live Supabase policy parity check against `pg_policies` / Dashboard → Database →
-  Policies, to confirm the deployed policies match the local migration files reviewed
-  in Section 5.
+- Review and resolve the `inventory_batches: farmer insert own` mismatch documented in
+  Section 5A (missing `client_visible`/`status`/`stock_status` guardrails on INSERT).
+- Extend the live `pg_policies` parity check (Section 5A) to remaining tables not yet
+  reviewed (`ddp_scores`, `risk_flags`, `status_history`, `documents`, `farm_profiles`).
 - `UPDATE`-policy cross-farmer isolation test.
 - Storage isolation test using one harmless placeholder document per farmer.
 - Buyer-access model review before any buyer accounts are enabled.
