@@ -67,8 +67,9 @@ Reviewed from local migration SQL files in the repository root
 **Caveat:** this is a review of local migration files, not a live read of
 `pg_policies` via the Supabase Dashboard or SQL editor. It is corroborated by, but not
 a substitute for, direct confirmation that the deployed database matches these files.
-**Update:** see Section 5A — this caveat has since been partially resolved by a live
-`pg_policies` comparison, which also surfaced one real mismatch.
+**Update:** see Section 5A — this caveat has since been addressed by a live
+`pg_policies` comparison, which surfaced and led to remediation of one real mismatch
+(`inventory_batches` INSERT guardrails).
 
 ## 5A. Live pg_policies parity check
 
@@ -93,13 +94,13 @@ a substitute for, direct confirmation that the deployed database matches these f
 |---|---|---|
 | `farms` | admin all, farmer insert own, farmer select own | MATCH |
 | `farm_memberships` | admin all, farmer insert own, farmer select own | MATCH |
-| `inventory_batches` | admin all, farmer select own, farmer insert own, farmer update own | **MISMATCH** |
+| `inventory_batches` | admin all, farmer select own, farmer insert own, farmer update own | MATCH (remediated — see below) |
 | `market_price_benchmarks` | admin all, farmer select visible | MATCH |
 | `profiles` | admin update role, select own or admin, update own no role change | MATCH |
 | `farmer_review_requests` | admin all, farmer select own, farmer resolve own | MATCH |
 | `storage.objects` (`farmer-documents`) | admin all, farmer read own, farmer upload own | MATCH |
 
-**MISMATCH detail — `inventory_batches: farmer insert own`:**
+**Original mismatch detail (now remediated) — `inventory_batches: farmer insert own`:**
 - Live `with_check`: `((created_by = auth.uid()) OR has_farm_membership(farm_id))` — only
   an ownership check.
 - `INVENTORY_BATCHES_RLS_PATCH.sql` (the file that documents itself as "the record of a
@@ -116,8 +117,31 @@ a substitute for, direct confirmation that the deployed database matches these f
   and that policy's live `with_check` **does** match its local definition exactly.
 - All other `inventory_batches` policies (`admin all`, `farmer select own`, `farmer
   update own`) match their local definitions exactly.
-- No further action was taken on this finding — it is recorded here for review, not
-  fixed, per this task's read-only/documentation-only scope.
+
+**Remediation (2026-07-07):**
+- A new migration file, `INVENTORY_BATCHES_INSERT_GUARDRAIL_FIX.sql`, was prepared to
+  reapply `"inventory_batches: farmer insert own"` with the full guardrail `WITH CHECK`
+  from `INVENTORY_BATCHES_RLS_PATCH.sql`. Before creating it, the app's insert path
+  (`src/lib/db.ts`, `src/pages/farmer/FarmerSubmitInventory.tsx`, `src/data.ts`) was
+  reviewed to confirm `status` is always explicitly set to `'Pending Review'` (never
+  null, never `'Approved'`) on every real insert path, so the stricter `status NOT IN
+  ('Approved')` clause would not reject legitimate farmer submissions.
+- The owner manually applied this file via Supabase SQL Editor.
+- A fresh owner-run `pg_policies` verification query confirmed all four guardrail
+  conditions are now live on `"inventory_batches: farmer insert own"`:
+  - `created_by = auth.uid()` guard: confirmed present
+  - `has_farm_membership(farm_id)` guard: confirmed present
+  - `client_visible = false` guard: confirmed present
+  - `status NOT IN ('Approved')` guard: confirmed present
+  - `stock_status` restricted to `draft`/`submitted`/`needs_changes`/`NULL`: confirmed present
+- **Status updated: MISMATCH → MATCH.** `inventory_batches` now shows full live/local
+  parity across all four of its policies (`admin all`, `farmer select own`, `farmer
+  insert own`, `farmer update own`).
+- This remediation was verified via a fresh `pg_policies` re-check (owner-provided),
+  not by this document's authors independently querying Supabase. It has not been
+  re-tested with an actual attempted farmer INSERT carrying a disallowed value (e.g.
+  `client_visible = true`) to confirm real-world rejection — that functional check
+  remains a write-enabled test not yet performed (see Section 9).
 
 **Live confirmation of the DELETE-policy gap:** the live export confirms there is no
 `cmd: DELETE` (farmer-scoped) policy on `farms`, `farm_memberships`, or
@@ -128,10 +152,12 @@ did not remove the target rows: PostgREST accepted the request, but RLS matched 
 rows because no farmer-level DELETE policy exists, and `Prefer: return=minimal`
 suppressed any indication that zero rows were affected.
 
-**Caveats (unchanged in kind, now partially addressed):**
-- This confirms live/local parity for 6 of 7 reviewed tables/schemas and surfaces one
-  real mismatch for the 7th (`inventory_batches` INSERT guardrails) — it does not prove
-  every policy on every table in the schema is correct.
+**Caveats (unchanged in kind):**
+- This confirms live/local parity for all 7 reviewed tables/schemas, including
+  `inventory_batches` after remediation of its original INSERT guardrail mismatch —
+  it does not prove every policy on every table in the schema is correct, and it
+  does not prove no other undiscovered mismatches exist on the reviewed tables'
+  other policies or on unreviewed tables.
 - This is not a full security audit.
 - This is not penetration testing.
 - This does not test every table in the schema (only the 7 listed above).
@@ -200,6 +226,11 @@ Results (`select=id` probes only, row contents never printed):
 
 ## 9. What was not tested
 
+- A functional re-test of the remediated `inventory_batches: farmer insert own` policy
+  (Section 5A) — i.e., actually attempting a farmer INSERT with `client_visible = true`,
+  `status = 'Approved'`, or an admin-only `stock_status` to confirm live rejection.
+  Remediation was verified only via a fresh `pg_policies` metadata re-check, not a
+  live write attempt.
 - `INSERT` isolation beyond the controlled Phase 3 setup path (e.g., attempting to
   insert a row under another farmer's identity).
 - `UPDATE` policies on any table.
@@ -217,8 +248,10 @@ Results (`select=id` probes only, row contents never printed):
 
 ## 10. Recommended next tests
 
-- Review and resolve the `inventory_batches: farmer insert own` mismatch documented in
-  Section 5A (missing `client_visible`/`status`/`stock_status` guardrails on INSERT).
+- Functionally verify the `inventory_batches: farmer insert own` remediation (Section
+  5A) with an actual attempted farmer INSERT carrying a disallowed value, to confirm
+  live rejection rather than relying on metadata parity alone. This is a write-enabled
+  test requiring separate explicit authorization.
 - Extend the live `pg_policies` parity check (Section 5A) to remaining tables not yet
   reviewed (`ddp_scores`, `risk_flags`, `status_history`, `documents`, `farm_profiles`).
 - `UPDATE`-policy cross-farmer isolation test.
