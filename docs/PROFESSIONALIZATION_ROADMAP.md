@@ -360,3 +360,40 @@ its verification.
 This proof confirms the full operational loop end to end: Watchtower legal
 update → human review → approved/active rule → linked alert → Supply Ledger
 rule-impact badge — with the human-approval gate preserved throughout.
+
+### Controlled Demo Rule Impact Proof — Cleanup Closure
+
+Cleanup executed and verified against production Supabase, using the same
+admin fixture account (anon key only, no service-role key) as the proof
+itself, removing the active operational signal while preserving the
+historical record.
+
+**Actions taken:**
+- Alert `048b721f-5a01-48fb-9cd3-46d0a6cdf685` — status changed to
+  **resolved**.
+- Rule `341cf753-edf6-46eb-b55c-a98c48ecb66c` — status changed to
+  **retired**.
+- Legal update `f67a1ec1-e557-4b4d-995f-79b945f72b32` — left untouched,
+  remaining as a historical TEST/DEMO record (status `rule_suggested`).
+
+**Confirmed result:** DEMO-BATCH-001 returned to **No rule impact** in the
+Supply Ledger Compliance Rule Check column. No other rows were affected, and
+no real farm, batch, or client data was touched at any point in the proof or
+its cleanup.
+
+**Audit Log trail confirmed complete:** `rule_approved` → `alert_created` →
+`alert_resolved` → `rule_retired`.
+
+**Remaining artifacts:** the three demo records above remain in the database
+as a documented, inert historical trail — no further action is required
+unless a separate, explicitly-approved decision is made to archive the
+legal update as well.
+
+**Confirmed scope of cleanup:** no application code, environment variables,
+SQL/migrations, RLS policies, or deployments were changed or touched as part
+of this cleanup — the two status updates above were the only actions taken,
+performed the same way the admin UI itself would perform them.
+
+This closes the Controlled Demo Rule Impact Proof workstream end to end:
+proven, documented, deployed, and cleanly wound down with no lingering
+operational signal.

@@ -40,6 +40,7 @@ confirm natural phrasing before being treated as final.
 | `landingAccessBuyerCta` | 513 | Buyer or procurement partner? Contact DDP | เป็นผู้ซื้อหรือพันธมิตรด้านจัดซื้อ? ติดต่อ DDP |
 | `landingHeroMockCaption` | 518 | Illustrative example — not a live batch. | ตัวอย่างประกอบ — ไม่ใช่แบทช์จริง |
 | `landingAuthorityNote` | 590 | DDP organizes, consolidates, and reviews supplier documentation. DDP does not certify export readiness, pharmaceutical readiness, or legal compliance in any jurisdiction. Buyer decisions should rely only on reviewed documents and confirmation from a qualified party. | DDP จัดระเบียบ รวบรวม และตรวจทานเอกสารของซัพพลายเออร์ DDP ไม่รับรองความพร้อมด้านการส่งออก ความพร้อมด้านเภสัชกรรม หรือความถูกต้องตามกฎหมายในเขตอำนาจใดๆ การตัดสินใจของผู้ซื้อควรอ้างอิงจากเอกสารที่ตรวจทานแล้วและการยืนยันจากผู้ที่มีคุณสมบัติเท่านั้น |
+| `landingBuyerPackDesc` | 549 | A clear summary of farm and batch status for every DDP-reviewed batch. (reworded from "approved batch" per audit remediation — see PROFESSIONALIZATION_ROADMAP.md) | สรุปสถานะฟาร์มและแบทช์อย่างชัดเจน สำหรับทุกแบทช์ที่ DDP ตรวจสอบแล้ว |
 
 This last one (`landingAuthorityNote`) is the most important of the three to
 get right — it's the platform's explicit non-overclaiming statement. A

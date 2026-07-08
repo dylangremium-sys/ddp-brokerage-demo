@@ -74,8 +74,19 @@ export function formatComplianceLabel(value: string): string {
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
+/**
+ * The single canonical definition of "counts as human-approved/active" for a
+ * rule status. Draft/suggested/paused/retired/rejected are never enforced.
+ * Exported separately from isRuleEnforced so call sites that only have a bare
+ * status value (e.g. a pending Supabase write) don't need to re-derive the
+ * same condition independently.
+ */
+export function isEnforcedRuleStatus(status: ComplianceRuleStatus): boolean {
+  return status === 'approved' || status === 'active'
+}
+
 export function isRuleEnforced(rule: ComplianceRule): boolean {
-  return rule.status === 'approved' || rule.status === 'active'
+  return isEnforcedRuleStatus(rule.status)
 }
 
 export function createBaselineComplianceRules(now = new Date().toISOString()): ComplianceRule[] {

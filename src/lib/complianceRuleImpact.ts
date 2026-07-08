@@ -1,5 +1,6 @@
 import type { ComplianceAlert, ComplianceRule, ComplianceRuleEntityType, ComplianceSeverity } from '../types'
 import { isRuleEnforced } from './complianceRules'
+import { SAFE_RULE_IMPACT_LABEL, type SafeRuleImpactLabel } from './complianceTerminology'
 
 // Read-only join between human-approved/active compliance_rules and the
 // compliance_alerts already raised against a specific entity. Never invents
@@ -9,7 +10,7 @@ import { isRuleEnforced } from './complianceRules'
 
 export interface ComplianceRuleImpact {
   hasImpact: true
-  safeStatusLabel: 'blocked pending legal review' | 'missing evidence' | 'needs review'
+  safeStatusLabel: SafeRuleImpactLabel
   ruleCode: string
   ruleTitle: string
   severity: ComplianceSeverity
@@ -47,12 +48,12 @@ export function getComplianceRuleImpact(
   if (!relevantAlert) return null
 
   const rule = enforcedRuleById.get(relevantAlert.ruleId!)!
-  const safeStatusLabel: ComplianceRuleImpact['safeStatusLabel'] =
+  const safeStatusLabel: SafeRuleImpactLabel =
     relevantAlert.status === 'blocked'
-      ? 'blocked pending legal review'
+      ? SAFE_RULE_IMPACT_LABEL.blockedPendingLegalReview
       : rule.isBlocking
-        ? 'missing evidence'
-        : 'needs review'
+        ? SAFE_RULE_IMPACT_LABEL.missingEvidence
+        : SAFE_RULE_IMPACT_LABEL.needsReview
 
   return {
     hasImpact: true,

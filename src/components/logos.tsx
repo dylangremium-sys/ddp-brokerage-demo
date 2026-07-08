@@ -97,7 +97,9 @@ export function DDPHeroWordmark({ color = 'var(--accent)' }: { color?: string } 
 }
 
 /**
- * DDPVerifiedSupplySeal — circular compliance seal with curved text.
+ * DDPVerifiedSupplySeal — circular "DDP reviewed supply" mark with curved text.
+ * Deliberately does not use the word "compliant" or any legal/regulatory claim —
+ * it marks that DDP's own review process touched this record, nothing more.
  * Use in: COA areas, DDPBuyerPreview, DDPMasterInventory, export/compliance screens only.
  */
 export function DDPVerifiedSupplySeal({ size = 80, color = 'var(--jade)' }: { size?: number; color?: string }) {
@@ -170,7 +172,7 @@ export function DDPVerifiedSupplySeal({ size = 80, color = 'var(--jade)' }: { si
         opacity="0.75"
       >
         <textPath href={`#${btmId}`} startOffset="50%" textAnchor="middle">
-          COMPLIANT · TRACEABLE · SECURE
+          HUMAN REVIEWED · TRACEABLE
         </textPath>
       </text>
 

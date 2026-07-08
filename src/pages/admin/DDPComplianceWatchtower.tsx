@@ -19,6 +19,7 @@ import {
   RULE_ENTITY_TYPES,
   createBaselineComplianceRules,
   formatComplianceLabel,
+  isEnforcedRuleStatus,
   isRuleEnforced,
 } from '../../lib/complianceRules'
 import { deriveRuleBasedComplianceAlerts, mergeComplianceAlerts } from '../../lib/complianceAlerts'
@@ -526,8 +527,8 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     const updated: ComplianceRule = {
       ...rule,
       status,
-      approvedBy: status === 'approved' || status === 'active' ? actorName : rule.approvedBy,
-      approvedAt: status === 'approved' || status === 'active' ? now : rule.approvedAt,
+      approvedBy: isEnforcedRuleStatus(status) ? actorName : rule.approvedBy,
+      approvedAt: isEnforcedRuleStatus(status) ? now : rule.approvedAt,
       updatedAt: now,
     }
     persistRulesLocal(rules.map(item => item.id === rule.id ? updated : item))

@@ -73,7 +73,11 @@ export const T = {
     // Landing — Buyer pack preview
     landingBuyerPackBadge: 'Sample Buyer Pack',
     landingBuyerPackTitle: 'What a Buyer Receives',
-    landingBuyerPackDesc: 'A clear summary of farm and batch status for every approved batch.',
+    // NOTE: reworded from "every approved batch" — "approved" alone reads as a
+    // legal/regulatory claim to a first-time visitor with no context on DDP's
+    // internal review workflow; reworded to name DDP as the actor performing
+    // the review, per legal-language audit finding.
+    landingBuyerPackDesc: 'A clear summary of farm and batch status for every DDP-reviewed batch.',
     landingBuyerPackFarmLabel: 'Farm Status',
     landingBuyerPackBatchLabel: 'Batch Status',
     landingBuyerPackCoaLabel: 'COA Status',
@@ -541,7 +545,8 @@ export const T = {
     // Landing — Buyer pack preview
     landingBuyerPackBadge: 'ตัวอย่าง Buyer Pack',
     landingBuyerPackTitle: 'สิ่งที่ผู้ซื้อจะได้รับ',
-    landingBuyerPackDesc: 'สรุปสถานะฟาร์มและแบทช์อย่างชัดเจน สำหรับทุกแบทช์ที่ผ่านการอนุมัติ',
+    // NOTE: reworded to match the English change ("approved" → "DDP-reviewed") — needs native speaker review
+    landingBuyerPackDesc: 'สรุปสถานะฟาร์มและแบทช์อย่างชัดเจน สำหรับทุกแบทช์ที่ DDP ตรวจสอบแล้ว',
     landingBuyerPackFarmLabel: 'สถานะฟาร์ม',
     landingBuyerPackBatchLabel: 'สถานะแบทช์',
     landingBuyerPackCoaLabel: 'สถานะ COA',

@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase'
+import { isEnforcedRuleStatus } from './complianceRules'
 import type {
   ComplianceAlert,
   ComplianceAuditLog,
@@ -309,7 +310,7 @@ export async function insertRule(input: Omit<ComplianceRule, 'id' | 'createdAt' 
 
 export async function updateRuleStatus(id: string, status: ComplianceRule['status'], approvedBy: string | null): Promise<ComplianceRule> {
   const client = requireClient()
-  const isApproving = status === 'approved' || status === 'active'
+  const isApproving = isEnforcedRuleStatus(status)
   const { data, error } = await client
     .from('compliance_rules')
     .update({

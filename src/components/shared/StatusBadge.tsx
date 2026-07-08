@@ -1,5 +1,6 @@
 import type { EvidenceStatus, Lang } from '../../types'
 import type { ComplianceRuleImpact } from '../../lib/complianceRuleImpact'
+import { NO_RULE_IMPACT_LABEL, RULE_IMPACT_LABEL_CLASS } from '../../lib/complianceTerminology'
 
 export type StatusKey =
   | 'claimed'
@@ -52,12 +53,6 @@ export function EvidenceBadge({ status, lang = 'en' }: { status: EvidenceStatus;
   return <StatusBadge status={status as StatusKey} lang={lang} />
 }
 
-const RULE_IMPACT_CLASS: Record<ComplianceRuleImpact['safeStatusLabel'], string> = {
-  'blocked pending legal review': 'status-reject',
-  'missing evidence': 'status-missing',
-  'needs review': 'status-pending',
-}
-
 /**
  * Additive, clearly-separate signal for a human-approved/active compliance
  * rule's effect on one entity. Always renders a visible, neutral "No rule
@@ -67,11 +62,11 @@ const RULE_IMPACT_CLASS: Record<ComplianceRuleImpact['safeStatusLabel'], string>
  */
 export function ComplianceRuleCheckBadge({ impact }: { impact: ComplianceRuleImpact | null }) {
   if (!impact) {
-    return <span className="status-pill status-review-pending">No rule impact</span>
+    return <span className="status-pill status-review-pending">{NO_RULE_IMPACT_LABEL}</span>
   }
   return (
     <span
-      className={`status-pill ${RULE_IMPACT_CLASS[impact.safeStatusLabel]}`}
+      className={`status-pill ${RULE_IMPACT_LABEL_CLASS[impact.safeStatusLabel]}`}
       title={`${impact.ruleCode} — ${impact.ruleTitle}: ${impact.reason}`}
     >
       Compliance Rule Check: {impact.safeStatusLabel}
