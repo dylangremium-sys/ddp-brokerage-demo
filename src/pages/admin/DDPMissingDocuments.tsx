@@ -113,7 +113,7 @@ export default function DDPMissingDocuments({ farms, inventory, complianceRules 
                       <td className="td-num">{receivedCount}/{DOCUMENT_REQUIREMENT_TYPES.length}</td>
                       <td className="td-num">{missingCount > 0 ? <span className="status-pill status-missing">{missingCount}</span> : '—'}</td>
                       <td className="td-num">{blockerCount > 0 ? <span className="status-pill status-reject">{blockerCount}</span> : '—'}</td>
-                      <td>{ruleImpact ? <ComplianceRuleCheckBadge impact={ruleImpact} /> : <span className="td-muted">—</span>}</td>
+                      <td data-label="Compliance Rule Check"><ComplianceRuleCheckBadge impact={ruleImpact} /></td>
                       <td>
                         <button className="btn btn-review" onClick={() => setOpenFarmId(openFarmId === farm.id ? null : farm.id)}>
                           {openFarmId === farm.id ? 'Close' : 'Open Matrix'}

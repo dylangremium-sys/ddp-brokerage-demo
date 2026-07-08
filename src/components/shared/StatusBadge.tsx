@@ -60,12 +60,15 @@ const RULE_IMPACT_CLASS: Record<ComplianceRuleImpact['safeStatusLabel'], string>
 
 /**
  * Additive, clearly-separate signal for a human-approved/active compliance
- * rule's effect on one entity. Renders nothing when there is no impact —
- * it never fabricates a passing/compliant state and never overrides the
- * page's own evidence/risk/status badges.
+ * rule's effect on one entity. Always renders a visible, neutral "No rule
+ * impact" badge when there is none — it never fabricates a passing/compliant
+ * state, never overrides the page's own evidence/risk/status badges, and
+ * never leaves the cell visually empty (which was easy to miss on screen).
  */
 export function ComplianceRuleCheckBadge({ impact }: { impact: ComplianceRuleImpact | null }) {
-  if (!impact) return null
+  if (!impact) {
+    return <span className="status-pill status-review-pending">No rule impact</span>
+  }
   return (
     <span
       className={`status-pill ${RULE_IMPACT_CLASS[impact.safeStatusLabel]}`}

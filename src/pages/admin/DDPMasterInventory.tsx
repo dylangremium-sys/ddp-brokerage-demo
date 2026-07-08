@@ -227,7 +227,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                       ) : '—'}
                     </td>
                     <td data-label="Compliance Rule Check">
-                      {ruleImpact ? <ComplianceRuleCheckBadge impact={ruleImpact} /> : <span className="td-muted">—</span>}
+                      <ComplianceRuleCheckBadge impact={ruleImpact} />
                     </td>
                     <td data-label="Status"><span className="badge badge-approved">Approved</span></td>
                     {onBuyerPack && (

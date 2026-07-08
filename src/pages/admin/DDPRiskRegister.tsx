@@ -114,7 +114,7 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
                       <td data-label="Owner">{risk.owner}</td>
                       <td data-label="Evidence"><EvidenceBadge status={risk.evidenceStatus} /></td>
                       <td data-label="Compliance Rule Check">
-                        {ruleImpact ? <ComplianceRuleCheckBadge impact={ruleImpact} /> : <span className="td-muted">—</span>}
+                        <ComplianceRuleCheckBadge impact={ruleImpact} />
                       </td>
                       <td data-label="Status">
                         <select value={risk.status} onChange={e => handleStatusChange(risk.riskId, e.target.value as RiskStatus)} style={{ fontSize: 12.5 }}>
