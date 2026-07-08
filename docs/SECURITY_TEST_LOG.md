@@ -702,6 +702,66 @@ touched.
 - This does not prove all admin policies are correct, or that overall
   security is complete.
 
+## 8C. Admin-role Tier 2 read access — functional test (2026-07-08)
+
+This test extends the Tier 1 admin functional read access test (Section 8B)
+to the remaining 16 admin-visible public tables, using the same retained
+`ddp_admin` fixture over normal anon-key Supabase Auth. It does not test
+admin `INSERT`/`UPDATE`/`DELETE`, does not test storage admin behavior, does
+not test service-role access, does not test Supabase Dashboard/Postgres-role
+access, does not test buyer-role behavior, does not prove every field is
+covered, and does not claim overall security is complete.
+
+**Scope:** identity — the same verified admin fixture from Section 8B, no
+new fixture created. Auth method — anon key + admin email/password only, no
+service-role key, no admin API. Tables — the 16 tables not covered by Tier 1:
+`compliance_alerts`, `compliance_audit_log`, `compliance_entity_status`,
+`compliance_reviews`, `compliance_rules`, `ddp_scores`, `documents`,
+`farm_profiles`, `farmer_documents`, `farmer_photos`,
+`farmer_review_requests`, `legal_updates`, `market_price_benchmarks`,
+`regulatory_sources`, `risk_flags`, `status_history`. Read-only count-only
+checks only; no writes, no cleanup required.
+
+**Live execution result:**
+- Admin sign-in: success (HTTP 200). Own-profile role self-check: HTTP 200,
+  role confirmed `ddp_admin`.
+- Table access checks used the same `HEAD` + `Prefer: count=exact` method as
+  Tier 1 (count-only, no row bodies). HTTP 200 or 206 were both treated as
+  successful, consistent with PostgREST's expected count/range behavior.
+- All 16 tables returned a successful HTTP status confirming access:
+  - Non-zero counts (8 tables): `compliance_alerts` (1),
+    `compliance_audit_log` (5), `compliance_reviews` (2),
+    `compliance_rules` (1), `farm_profiles` (2), `legal_updates` (2),
+    `market_price_benchmarks` (5), `status_history` (7).
+  - Accessible but empty (8 tables, count = 0, HTTP status still confirmed
+    success — not treated as a failure): `compliance_entity_status`,
+    `ddp_scores`, `documents`, `farmer_documents`, `farmer_photos`,
+    `farmer_review_requests`, `regulatory_sources`, `risk_flags`.
+- No row contents were printed for any table — only HTTP status and counts.
+- No files changed, no storage operations occurred, no database writes
+  occurred, no Auth writes occurred, no service-role key was used, and no
+  admin API was used.
+- **Result: PASS** — the verified admin fixture could functionally read all
+  16 Tier 2 tables using normal anon-key Supabase Auth. Combined with
+  Section 8B, this completes read-only admin functional access coverage
+  across the 20 public non-storage tables tested in this thread.
+
+**Cleanup:** none required — this was a read-only, count-only test; no
+rows were created, updated, or deleted, and no storage objects or Auth
+state were touched.
+
+**Caveats:**
+- This is not a full security audit and not penetration testing.
+- This does not test admin `INSERT`/`UPDATE`/`DELETE` functional behavior —
+  read-only only.
+- This does not test storage admin behavior, service-role access, or
+  Supabase Dashboard/Postgres-role access as a stand-in for app-level admin
+  access.
+- This does not test buyer-role behavior (no such role exists in the
+  schema).
+- This does not prove every field within each table is covered, that all
+  admin policies are correct, or that overall security is complete.
+
 ## 9. What was not tested
 
 - `INSERT` isolation beyond the controlled Phase 3 setup path (e.g., attempting to
@@ -726,23 +786,22 @@ touched.
   permits only `'ddp_admin'` and `'farmer'`; no buyer Auth role exists in the schema
   to test. If a buyer Auth role is introduced later, it must receive its own policy
   design and testing.
-- Admin-role access model — Tier 1 read-only functional access (`profiles`,
-  `farms`, `farm_memberships`, `inventory_batches`) is now tested (Section
-  8B). Admin `INSERT`/`UPDATE`/`DELETE` functional behavior, broader admin
-  read coverage across remaining tables, and admin storage access all
-  remain untested.
+- Admin-role access model — read-only functional access across all 20
+  public non-storage tables is now tested (Tier 1: Section 8B; Tier 2:
+  Section 8C). Admin `INSERT`/`UPDATE`/`DELETE` functional behavior and
+  admin storage access remain untested.
 - Every table in the schema (only `farm_memberships`, `farmer_review_requests`,
   `farms`, `inventory_batches`, `market_price_benchmarks`, and `profiles` were probed).
 - Penetration testing of any kind.
 
 ## 10. Recommended next tests
 
-- Admin-role functional write test (`INSERT`/`UPDATE`/`DELETE`) — Tier 1 read
-  access is now tested (Section 8B); write behavior remains untested and
-  would need its own separate approved plan.
-- Broader admin read coverage across tables beyond Tier 1 (e.g.
-  `farmer_review_requests`, `farmer_documents`, `market_price_benchmarks`,
-  the Compliance Watchtower tables).
+- Admin-role functional write test (`INSERT`/`UPDATE`/`DELETE`) — read-only
+  access across all 20 public non-storage tables is now tested (Sections
+  8B, 8C); write behavior remains untested and would need its own separate
+  approved plan.
+- Admin storage access (the `farmer-documents` bucket, and any others) —
+  not yet tested from an admin session.
 - If a buyer Auth role is introduced in the future, define and test its access
   policies before enabling buyer accounts; no buyer Auth role exists today.
 - Optional: document or implement an admin-driven cleanup workflow for test data,
