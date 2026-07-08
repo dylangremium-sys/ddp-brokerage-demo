@@ -307,7 +307,82 @@ Results (Farmer A, authenticated, anon key only):
 - No storage writes occurred.
 
 **Caveat:** this account had no uploaded documents. Storage isolation with real
-uploaded Farmer A/Farmer B documents was **not tested**.
+uploaded Farmer A/Farmer B documents was **not tested** at the time — see Section 6A.
+
+## 6A. Storage isolation — farmer-documents bucket (2026-07-08)
+
+This section closes the caveat from Section 6 by testing storage isolation with
+real uploaded objects, one per farmer, using each farmer's own authenticated
+session (anon key + Farmer A's/Farmer B's own access token). It verifies isolation
+for the specific object paths tested under real anon-key farmer sessions — it does
+not prove storage policies are universally correct for every possible path, file
+type, or access pattern.
+
+**Setup note — initial attempt (INCOMPLETE):**
+- Farmer A sign-in: success (HTTP 200). Farmer B sign-in: success (HTTP 200).
+- Farmer A's upload attempt (marker file, `text/plain` content type) failed before
+  any storage object was created: `invalid_mime_type`, HTTP statusCode `415`,
+  "mime type text/plain is not supported."
+- No storage writes succeeded, so no cleanup was required. No repo files,
+  database rows, or Auth state changed. No service-role key was used.
+- Classified INCOMPLETE rather than a policy result: this was a **bucket-level
+  MIME-type allowlist rejection**, not RLS/policy-driven behavior, so it could not
+  be attributed to storage access control one way or the other.
+
+**Retry — `application/pdf` placeholder (PASS):**
+- Bucket: `farmer-documents`. Filename: `ddp-storage-isolation-check.pdf`.
+  Content type: `application/pdf`. Content: a tiny synthetic placeholder PDF
+  (marker text: "DDP TEST -- storage isolation check -- not a real document"),
+  built in memory only — never written to the repo.
+- Object paths, following the app's own upload convention
+  (`{userId}/{farmId}/{batchId}/...` from `src/lib/db.ts`) with placeholder
+  farm/batch segments:
+  - `{FarmerA_uid}/test-isolation/test-isolation/ddp-storage-isolation-check.pdf`
+  - `{FarmerB_uid}/test-isolation/test-isolation/ddp-storage-isolation-check.pdf`
+- Farmer A signed in and uploaded successfully to Farmer A's own path.
+  Farmer B signed in and uploaded successfully to Farmer B's own path.
+- Farmer A: own prefix listed as visible, own object downloadable.
+- Farmer B: own prefix listed as visible, own object downloadable.
+- Farmer A attempting to list or download Farmer B's object: **not visible, not
+  downloadable.**
+- Farmer B attempting to list or download Farmer A's object: **not visible, not
+  downloadable.**
+- No service-role key used. No admin API used. No database rows written. No Auth
+  users created or modified. No repo files changed during the test. No secrets,
+  tokens, passwords, or object contents were printed at any point.
+- **Result: PASS** — for the two tested object paths, each farmer could access
+  only their own uploaded object; cross-farmer access was blocked in both
+  directions.
+
+**Manual cleanup:**
+- The owner manually deleted both synthetic PDF objects via Supabase Dashboard →
+  Storage → `farmer-documents`. This deletion was performed by the owner directly
+  in the Dashboard, not by an automated process — farmers have no delete policy on
+  this bucket (only `admin all`, `farmer read own`, `farmer upload own`, per
+  Section 5A/5B), so farmer-token deletion was never attempted, and no
+  service-role-based cleanup was performed.
+
+**Cleanup verification (read-only):**
+- Branch `main`, local HEAD and origin/main HEAD both `df3219e`, working tree
+  clean, `.env.local` present/gitignored/untracked.
+- Farmer A sign-in: success (HTTP 200). Farmer B sign-in: success (HTTP 200).
+- Farmer A's deleted object: not visible (HTTP 200, empty list result), not
+  downloadable (HTTP 400).
+- Farmer B's deleted object: not visible (HTTP 200, empty list result), not
+  downloadable (HTTP 400).
+- No files changed, no storage writes (read-only checks only), no database/Auth
+  writes, no service-role key used, no secrets/tokens/passwords/object contents
+  printed.
+- **Cleanup verified:** both test objects are confirmed fully removed from the
+  bucket.
+
+**Caveats:**
+- This is not a full security audit and not penetration testing.
+- This does not prove `farmer-documents` storage policies are correct for every
+  possible object path, file type, or access pattern — only the two specific
+  paths tested under two real, anon-key-authenticated farmer sessions.
+- This does not test admin or buyer access to this bucket, nor storage policies
+  for any bucket other than `farmer-documents`.
 
 ## 7. Cross-farmer SELECT isolation
 
