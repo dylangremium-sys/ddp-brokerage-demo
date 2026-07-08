@@ -564,6 +564,76 @@ Results (`select=id` probes only, row contents never printed):
   either farmer.
 - Farmer A and Farmer B Auth users were retained (not deleted) as standing test fixtures.
 
+## 8A. Farmer-token DELETE rejection — functional test (2026-07-08)
+
+This test verifies only deliberate farmer-token `DELETE` rejection for
+`inventory_batches`, using the retained Farmer A fixture. It does not claim
+`DELETE` behavior is proven for `farms` or `farm_memberships`, does not claim
+admin-role `DELETE` behavior is tested, does not claim buyer-role behavior is
+tested, does not claim all `DELETE` policies are proven, and does not claim
+overall security is complete. This test formalizes, by deliberate design, the
+same mechanism first incidentally observed during Phase 5 cleanup (Section 8).
+
+**Scope:** table `inventory_batches` only, identity Farmer A only, one
+synthetic row owned by Farmer A. A pre-`DELETE` `SELECT` proved the row was
+visible, a farmer-token `DELETE` attempt was made against that row, and a
+post-`DELETE` `SELECT` proved the row remained. No `farms` `DELETE` test, no
+`farm_memberships` `DELETE` test, no admin-role `DELETE` test, no buyer-role
+test, no storage test, and no service-role key were used.
+
+**Policy finding:** no farmer-scoped `DELETE` policy exists for
+`inventory_batches` — only `admin all` (`is_ddp_admin()`) covers `DELETE`, for
+admin sessions only. Unlike `INSERT`/`UPDATE`, `DELETE` policies have no `WITH
+CHECK` clause, so classification for this test was based on row persistence
+evidence, not HTTP status alone. Either an explicit HTTP 403 / Postgres 42501
+rejection, or an HTTP 200/204 response with zero rows deleted, were both
+treated as safe outcomes, provided the row was confirmed to still exist
+afterward.
+
+**Live execution result:**
+- Farmer A signed in successfully (anon key only).
+- One synthetic setup row was inserted into `inventory_batches` (`created_by`
+  = Farmer A's own `auth.uid()`, `product_name` marker `[TEST]
+  ddp_delete_rejection_check`, `status = 'Pending Review'`, `client_visible =
+  false`, `stock_status = 'draft'`).
+- A pre-`DELETE` `SELECT` confirmed the row was visible to Farmer A (HTTP 200,
+  1 row returned).
+- Farmer A's own token attempted to `DELETE` the row: **HTTP 200, with an
+  empty response body (0 rows deleted)** — this was the actual observed
+  behavior, not an explicit 403.
+- A post-`DELETE` `SELECT` confirmed the row still existed (HTTP 200, 1 row
+  returned) — this was the deciding evidence that the `DELETE` attempt had no
+  effect.
+- No files changed, no storage operations occurred, no Auth writes occurred,
+  and no service-role key was used at any point.
+- **Result: PASS** — for this tested row and session, a farmer's own token
+  could not delete a row the farmer owned and could see, even though no
+  explicit error was returned; the row was confirmed present both before and
+  after the attempt.
+
+**Manual cleanup:** the owner manually deleted the synthetic setup row via
+Supabase Dashboard → Table Editor → `inventory_batches`. This deletion was
+performed by the owner directly, not by farmer-token `DELETE` (the capability
+this test confirmed is absent) and not via service-role key. The first two
+read-only cleanup verification attempts found the row still visible, so
+cleanup was initially incomplete; a third verification, after the owner
+re-confirmed the deletion in the Dashboard, found the row gone.
+
+**Cleanup verification (read-only):** Farmer A signed in again and queried
+for the setup row by id (`select=id` only, no row contents). The row was
+confirmed no longer visible (0 rows returned) on the final check. Row id,
+retained here only as the cleanup verification identifier consistent with
+this log's existing style: `71feb43a-bc09-4f00-9fa5-6eb915fd9f28`.
+
+**Caveats:**
+- This is not a full security audit and not penetration testing.
+- This does not prove `DELETE` behavior for `farms` or `farm_memberships` —
+  those tables share the identical "no farmer DELETE policy" structure
+  (confirmed in Sections 5A/5B/8) but were not deliberately re-tested here.
+- This does not test admin-role `DELETE` behavior, nor buyer-role behavior.
+- This does not claim all `DELETE` policies are proven, or that overall
+  security is complete.
+
 ## 9. What was not tested
 
 - `INSERT` isolation beyond the controlled Phase 3 setup path (e.g., attempting to
@@ -574,8 +644,11 @@ Results (`select=id` probes only, row contents never printed):
   own-row guardrail rejection (Section 6B) and cross-farmer isolation (Section 6C)
   are tested for the `farmer_notes`/`client_visible`/`status`/`stock_status` fields
   only — other fields and guardrail-plus-cross-farmer combinations remain untested.
-- `DELETE` policies beyond the incidental discovery that farmers cannot delete these
-  three tables' rows themselves.
+- `DELETE` policies for `farms` and `farm_memberships` — these share the identical
+  "no farmer DELETE policy" structure confirmed for `inventory_batches` (Section
+  8A), but were not deliberately re-tested. `DELETE` for `inventory_batches` itself
+  has now been deliberately tested (Section 8A) for a single farmer's own row;
+  admin-role `DELETE` behavior remains untested for all three tables.
 - Storage isolation for object paths/patterns beyond the one tested in Section 6A,
   such as the real `{userId}/{farmId}/{batchId}/...` path with an actual farm/batch,
   or admin access to farmer documents.
@@ -592,8 +665,6 @@ Results (`select=id` probes only, row contents never printed):
 
 ## 10. Recommended next tests
 
-- Deliberate farmer-token `DELETE` rejection test (confirm, by design rather than
-  incidental discovery, that farmer DELETE attempts return a genuine RLS rejection).
 - Admin-role functional access test — requires its own separate approved plan, since
   it needs a dedicated privileged test fixture not yet created in this thread.
 - If a buyer Auth role is introduced in the future, define and test its access
