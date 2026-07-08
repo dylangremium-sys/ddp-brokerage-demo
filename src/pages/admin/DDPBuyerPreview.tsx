@@ -12,6 +12,7 @@ import {
   saveProcurementDecision,
   PROCUREMENT_DECISION_LABELS,
 } from '../../lib/procurementControl'
+import { deriveBuyerApprovalGate } from '../../lib/buyerApprovalGate'
 
 interface Props {
   inventory: InventoryItem[]
@@ -68,20 +69,8 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
   const risks = applyRiskOverrides(deriveAutoRisks(farm ? [farm] : [], [item]))
     .filter(r => r.batchId === item.id || (!!farm && r.farmId === farm.id))
   const unresolvedRisks = risks.filter(r => r.status !== 'resolved' && r.status !== 'accepted')
-  // Absence of blocking issues is a necessary condition for disclosure, but it is
-  // NOT approval — a mechanical scan finding "nothing wrong" must never be
-  // presented as a human review outcome. The pack may only claim "DDP Reviewed —
-  // Approved for Buyer Disclosure" once a DDP staffer has recorded an explicit
-  // "progress" procurement decision against this batch. Absent that recorded
-  // decision, the pack must read as still pending a human call, even when no
-  // blockers are present.
   const hasBlockingIssues = blockerRequirements.length > 0 || unresolvedRisks.some(r => r.severity === 'blocker')
-  const isHumanApproved = !hasBlockingIssues && storedDecision?.decision === 'progress'
-  const packStatusLabel = hasBlockingIssues
-    ? 'Decision Required'
-    : isHumanApproved
-      ? 'DDP Reviewed — Approved for Buyer Disclosure'
-      : 'No Blocking Issues Detected — Approval Required'
+  const { isHumanApproved, packStatusLabel } = deriveBuyerApprovalGate(hasBlockingIssues, storedDecision?.decision === 'progress')
 
   function handleSaveDecision() {
     if (!decision) return
