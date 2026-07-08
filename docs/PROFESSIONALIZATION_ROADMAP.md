@@ -235,3 +235,81 @@ Additional findings from that audit:
 4. Decide whether a real buyer role/account is in scope for this product at
    all, before investing further in the Buyer Preview simulation.
 5. Archive the stale root docs and consolidate release notes into `docs/`.
+
+---
+
+## Compliance Rules Operationalization v1 — Phase 1 (Closure)
+
+*Unrelated to the lettered roadmap above (A–G), which covers an earlier,
+separate public-site/buyer-pack/auth-RLS initiative. This section documents
+a later, distinct workstream: making Compliance Watchtower rule approvals
+visible on the operational Supply Ledger pages.*
+
+**Production state at closure:**
+- Commit: `c33e6b6` ("Make compliance rule check empty state visible").
+- Deployment: READY, deployed automatically through the Vercel Git
+  integration (no manual deploy).
+- Production UI was hard-refreshed and visually verified directly.
+
+**Verified pages:**
+- Supply Ledger → Master Inventory
+- Supply Ledger → Missing Documents
+- Supply Ledger → Risk Register
+
+**Verified visible result:**
+- Each page shows an additive "Compliance Rule Check" column, separate from
+  the existing evidence/status/risk/compliance-tier columns.
+- Each row shows a neutral "NO RULE IMPACT" badge where no approved/active
+  compliance rule has an unresolved alert against that entity.
+- Existing evidence/status/risk/compliance-tier tables continue to render
+  normally — nothing pre-existing was altered.
+
+**Confirmed safety for this workstream:**
+- No SQL or migration changes.
+- No RLS changes.
+- No env var changes.
+- No service-role key usage.
+- No Supabase data changes made during UI verification.
+- No buyer-facing or public page changes.
+- No forbidden compliance/export-claim wording introduced or spotted in
+  verification screenshots.
+
+**Known limitations:**
+- No real approved/active rule currently has an alert against a real
+  production entity, so every row shows "NO RULE IMPACT" — this is the
+  correct, honest state until an admin approves a rule that produces one.
+- Entity matching is string equality on `entity_id`, not a hard foreign key.
+- Rule/alert data refreshes once per admin session load, not live.
+- This phase is read-only display only — there is no "apply rule impact" or
+  "acknowledge rule impact" action yet.
+
+**Human-review principle preserved throughout:** every visible rule impact
+still requires a human-approved compliance rule (`status = approved` or
+`active`) — the system never treats an AI-detected legal update as
+automatically accepted; a human review and an approved rule remain the only
+path to a visible operational effect.
+
+### Demo readiness baseline
+
+Current demo-safe state is read-only rule-impact visibility only. All rows
+currently show "NO RULE IMPACT" until an approved/active rule produces an
+unresolved alert against a clearly marked demo entity.
+
+**Recommended next controlled demo — "Controlled demo rule impact proof":**
+Create one clearly labelled TEST/demo legal update, take it through human
+review to an approved rule, and let that rule generate one cautious,
+unresolved alert against a single non-critical demo entity — so exactly one
+Supply Ledger row shows a cautious label (`needs review`, `missing
+evidence`, or `blocked pending legal review`) instead of "NO RULE IMPACT."
+This proves the full chain end to end: Watchtower legal update → human
+review → approved rule → generated alert → Supply Ledger rule-impact badge.
+
+Safety rules for that demo, when it is run:
+- All demo content clearly labelled TEST/DEMO in every field.
+- Cautious safe-vocabulary labels only — no real legal or compliance claim.
+- No alteration of any real buyer-facing status.
+- No forbidden wording.
+- Affects at most one clearly-marked demo entity, not real farm/batch data.
+
+This section is planning only — the demo data has not been created, and no
+production data was touched in writing this baseline.
