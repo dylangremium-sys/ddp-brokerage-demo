@@ -432,11 +432,15 @@ Results (`select=id` probes only, row contents never printed):
 - `UPDATE` policies on any table.
 - `DELETE` policies beyond the incidental discovery that farmers cannot delete these
   three tables' rows themselves.
-- Storage/document isolation using real uploaded files between two farmers.
-- Live parity check of deployed `pg_policies` against local migration files for tables
-  beyond the 7 reviewed in Section 5A (e.g., `ddp_scores`, `risk_flags`,
-  `status_history`, `documents`, `farm_profiles`).
-- Buyer-role access model.
+- Storage isolation for object paths/patterns beyond the one tested in Section 6A,
+  such as the real `{userId}/{farmId}/{batchId}/...` path with an actual farm/batch,
+  or admin access to farmer documents.
+- Live `pg_policies` parity for schema drift after 2026-07-08 is not covered unless
+  new migrations/policies are reviewed.
+- Buyer-role access model — not applicable at this time: `profiles.role` currently
+  permits only `'ddp_admin'` and `'farmer'`; no buyer Auth role exists in the schema
+  to test. If a buyer Auth role is introduced later, it must receive its own policy
+  design and testing.
 - Admin-role access model.
 - Every table in the schema (only `farm_memberships`, `farmer_review_requests`,
   `farms`, `inventory_batches`, `market_price_benchmarks`, and `profiles` were probed).
@@ -444,11 +448,16 @@ Results (`select=id` probes only, row contents never printed):
 
 ## 10. Recommended next tests
 
-- Extend the live `pg_policies` parity check (Section 5A) to remaining tables not yet
-  reviewed (`ddp_scores`, `risk_flags`, `status_history`, `documents`, `farm_profiles`).
-- `UPDATE`-policy cross-farmer isolation test.
-- Storage isolation test using one harmless placeholder document per farmer.
-- Buyer-access model review before any buyer accounts are enabled.
+- `UPDATE`-guardrail functional rejection test for `inventory_batches` (mirroring the
+  Section 5A INSERT-rejection test, but for the UPDATE guardrails).
+- Cross-farmer `UPDATE` isolation test (confirm Farmer A cannot UPDATE a row owned by
+  Farmer B, and vice versa).
+- Deliberate farmer-token `DELETE` rejection test (confirm, by design rather than
+  incidental discovery, that farmer DELETE attempts return a genuine RLS rejection).
+- Admin-role functional access test — requires its own separate approved plan, since
+  it needs a dedicated privileged test fixture not yet created in this thread.
+- If a buyer Auth role is introduced in the future, define and test its access
+  policies before enabling buyer accounts; no buyer Auth role exists today.
 - Optional: document or implement an admin-driven cleanup workflow for test data,
   since farmers cannot delete their own `farms`/`farm_memberships`/`inventory_batches`
   rows under the current policy set.
