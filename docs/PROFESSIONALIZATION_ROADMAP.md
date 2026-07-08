@@ -313,3 +313,50 @@ Safety rules for that demo, when it is run:
 
 This section is planning only — the demo data has not been created, and no
 production data was touched in writing this baseline.
+
+### Controlled Demo Rule Impact Proof — Closure
+
+Executed and verified against production Supabase on 2026-07-08, using the
+admin fixture account (anon key only, no service-role key) — the same
+approach used for the Watchtower Persistence v1 admin verification earlier
+in this project.
+
+**Demo entity used:** `inventory_batches` row **DEMO-BATCH-001**
+(`entity_id: 00000000-0000-4000-8000-000000000002`), belonging to the
+pre-existing "DDP Demo Farm" fixture. No real farm, farmer, or client data
+was used or touched.
+
+**Records created:**
+- TEST/DEMO legal update: "TEST ONLY / DEMO ONLY — Rule impact chain proof"
+  — id `f67a1ec1-e557-4b4d-995f-79b945f72b32`.
+- Active demo rule: `LEGAL_F67A1EC1_...` — id
+  `341cf753-edf6-46eb-b55c-a98c48ecb66c`, human-approved and activated
+  through the normal Review Queue → Rules tab flow.
+- Linked manual alert — id `048b721f-5a01-48fb-9cd3-46d0a6cdf685`,
+  `entity_type: batch`, `entity_id: 00000000-0000-4000-8000-000000000002`,
+  `severity: medium`, `status: open`, linked via `rule_id` to the demo rule
+  above using the rule-link field added in the prior workstream.
+
+**Confirmed Supply Ledger result:** DEMO-BATCH-001 shows a **needs review**
+badge in the Compliance Rule Check column. All other rows remain **No rule
+impact** — confirmed no duplicates and no other entity was affected.
+
+**Confirmed safety:** No real farm, batch, or client data was changed. No
+files, code, env vars, SQL, or deployments were touched in the proof or in
+its verification.
+
+**Remaining demo artifacts (not yet cleaned up):**
+- One TEST/DEMO legal update (status `rule_suggested`).
+- One active demo rule.
+- One open demo alert linked to that rule, against DEMO-BATCH-001.
+
+**Cleanup recommendation (pending separate approval):**
+- Resolve or dismiss the demo alert.
+- Pause or retire the demo rule.
+- Leave the TEST/DEMO legal update as a labelled historical record, or
+  archive it if the UI supports that action — decide and execute as its own
+  explicitly-approved step.
+
+This proof confirms the full operational loop end to end: Watchtower legal
+update → human review → approved/active rule → linked alert → Supply Ledger
+rule-impact badge — with the human-approval gate preserved throughout.
