@@ -136,6 +136,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     alertTitle: '',
     alertDetail: '',
     severity: 'medium' as ComplianceSeverity,
+    linkedRuleId: '',
   })
 
   const actorName = currentUser?.displayName || currentUser?.email || 'DDP Admin'
@@ -553,6 +554,11 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     setActionMessage(null)
     const now = new Date().toISOString()
     const status: ComplianceStatus = alertForm.severity === 'critical' ? 'blocked' : 'open'
+    // Re-validated against the current rules list at submit time (not just at
+    // selection time) so a rule that was paused/retired/rejected between
+    // opening the dropdown and clicking submit can never be linked.
+    const linkedRule = rules.find(rule => rule.id === alertForm.linkedRuleId)
+    const linkedRuleId = linkedRule && isRuleEnforced(linkedRule) ? linkedRule.id : null
 
     if (repo.isSupabaseConfigured) {
       if (!isSupabaseAdmin) {
@@ -564,7 +570,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
         const alert = await repo.insertAlert({
           entityType: alertForm.entityType,
           entityId: alertForm.entityId.trim() || 'manual-unlinked',
-          ruleId: null,
+          ruleId: linkedRuleId,
           legalUpdateId: null,
           alertTitle: alertForm.alertTitle.trim(),
           alertDetail: alertForm.alertDetail.trim(),
@@ -581,7 +587,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
           reason: 'Manual compliance alert created.',
         })
         setActionMessage({ type: 'success', text: 'Alert saved to Supabase.' })
-        setAlertForm({ entityType: 'document', entityId: '', alertTitle: '', alertDetail: '', severity: 'medium' })
+        setAlertForm({ entityType: 'document', entityId: '', alertTitle: '', alertDetail: '', severity: 'medium', linkedRuleId: '' })
       } catch (err) {
         setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to save alert.' })
       } finally {
@@ -594,7 +600,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       id: makeId('alert'),
       entityType: alertForm.entityType,
       entityId: alertForm.entityId.trim() || 'manual-unlinked',
-      ruleId: null,
+      ruleId: linkedRuleId,
       legalUpdateId: null,
       alertTitle: alertForm.alertTitle.trim(),
       alertDetail: alertForm.alertDetail.trim(),
@@ -614,7 +620,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       reason: 'Manual compliance alert created.',
     })
     setActionMessage({ type: 'success', text: 'Alert saved (local/demo mode).' })
-    setAlertForm({ entityType: 'document', entityId: '', alertTitle: '', alertDetail: '', severity: 'medium' })
+    setAlertForm({ entityType: 'document', entityId: '', alertTitle: '', alertDetail: '', severity: 'medium', linkedRuleId: '' })
   }
 
   async function updateAlertStatus(alert: ComplianceAlert, status: ComplianceStatus): Promise<void> {
@@ -941,6 +947,15 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
               <label className="field">
                 <span>Severity</span>
                 <select value={alertForm.severity} onChange={e => setAlertForm({ ...alertForm, severity: e.target.value as ComplianceSeverity })}>{COMPLIANCE_SEVERITIES.map(sev => <option key={sev} value={sev}>{statusText(sev)}</option>)}</select>
+              </label>
+              <label className="field">
+                <span>Linked approved rule</span>
+                <select value={alertForm.linkedRuleId} onChange={e => setAlertForm({ ...alertForm, linkedRuleId: e.target.value })}>
+                  <option value="">No linked rule</option>
+                  {rules.filter(isRuleEnforced).map(rule => (
+                    <option key={rule.id} value={rule.id}>{rule.ruleCode} — {rule.title}</option>
+                  ))}
+                </select>
               </label>
             </div>
             <label className="field" style={{ marginTop: 14 }}>
