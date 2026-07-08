@@ -179,12 +179,119 @@ suppressed any indication that zero rows were affected.
   other policies or on unreviewed tables.
 - This is not a full security audit.
 - This is not penetration testing.
-- This does not test every table in the schema (only the 7 listed above).
+- This does not test every table in the schema (only the 7 listed above; see
+  Section 5B for the remaining tables).
 - This does not test buyer or admin workflows.
 - This does not test storage isolation with real uploaded files.
 - This does not test `UPDATE`/`DELETE` cross-farmer isolation (only confirms the
   absence of farmer-level `DELETE` policies; it does not test `UPDATE` isolation
   behavior between two different farmers).
+
+## 5B. Extended live pg_policies parity check (remaining tables)
+
+- **Source:** owner-exported Supabase SQL Editor query result (one row per table,
+  `rowsecurity` flag plus a nested JSON array of that table's policies), provided as
+  a local CSV (`tmp/live_pg_policies_snapshot_full.csv`, git-excluded via
+  `.git/info/exclude`, never committed).
+- **Date of check:** 2026-07-08.
+- **Scope of this export:** every table in the `public` and `storage` schemas (28
+  table rows total), not limited to tables with already-known policies — this
+  closes the gap from Section 5A, which only queried a pre-selected table list.
+
+**Live table inventory vs. local migration files:**
+- **Public schema:** 20 live tables, 20 tables discoverable across local `*.sql`
+  files, identical names on both sides. No table exists live without a
+  corresponding local definition, and no locally-defined table is missing live.
+- **Storage schema:** 8 live tables — `objects` (app-relevant, reviewed below) plus
+  7 Supabase Storage extension internals (`buckets`, `buckets_analytics`,
+  `buckets_vectors`, `migrations`, `s3_multipart_uploads`,
+  `s3_multipart_uploads_parts`, `vector_indexes`). These 7 are not defined in any
+  local DDP migration file — they are managed by the Supabase Storage extension
+  itself, not application schema, so their absence from local files is expected,
+  not a finding.
+
+**`rowsecurity` findings:**
+- Tables with `rowsecurity = false`: **none**. All 28 table rows in the export show
+  `rowsecurity = true`.
+- Tables with `rowsecurity = true` and zero policies: the 7 Storage-extension
+  internal tables listed above only. This is Supabase's own default deny-all
+  posture for its internal Storage tables (not application-configured), consistent
+  with them having no admin/farmer policies defined anywhere locally either. No
+  application-schema table (`public.*` or `storage.objects`) was found with
+  `rowsecurity = true` and zero policies.
+
+**Per-table classification (14 previously-unreviewed public tables):**
+
+| Table | Live policies | Classification |
+|---|---|---|
+| `compliance_alerts` | admin all | MATCH |
+| `compliance_audit_log` | admin insert, admin select | MATCH |
+| `compliance_entity_status` | admin all | MATCH |
+| `compliance_reviews` | admin all | MATCH |
+| `compliance_rules` | admin all | MATCH |
+| `ddp_scores` | admin all, farmer select own farm | MATCH |
+| `documents` | admin all, farmer select own | MATCH |
+| `farm_profiles` | admin all, farmer insert own, farmer select own | MATCH |
+| `farmer_documents` | admin all, farmer select own, farmer insert own | MATCH (see vestigial-schema note below) |
+| `farmer_photos` | admin all, farmer select own, farmer insert own | MATCH (see vestigial-schema note below) |
+| `legal_updates` | admin all | MATCH |
+| `regulatory_sources` | admin all | MATCH |
+| `risk_flags` | admin all, farmer select own farm | MATCH |
+| `status_history` | admin all, farmer select own | MATCH |
+
+All 14 tables compared exactly against their local `CREATE POLICY` definitions
+(`4_RLS_ENABLE_REMAINING_TABLES.sql` for `ddp_scores`/`risk_flags`/`status_history`/
+`documents`; `RLS_ENABLE_STAGED.sql` for `farm_profiles`; `FARMER_MVP_MIGRATION.sql`
+Sections I/J for `farmer_documents`/`farmer_photos`; `9_COMPLIANCE_WATCHTOWER_MVP.sql`
+for the 7 compliance/legal/regulatory tables) — no mismatches, no extra live
+policies, no missing local policies found in this pass.
+
+The Compliance Watchtower tables (`compliance_alerts`, `compliance_audit_log`,
+`compliance_entity_status`, `compliance_reviews`, `compliance_rules`,
+`legal_updates`, `regulatory_sources`) are all admin-only (`is_ddp_admin()`), with
+no farmer or anonymous access path of any kind — consistent with this being an
+admin-facing feature.
+
+**`storage.objects` re-check:** still exactly 3 policies, all scoped to
+`bucket_id = 'farmer-documents'` (`admin all`, `farmer read own`, `farmer upload
+own`), matching `8_COA_UPLOAD_STORAGE_MIGRATION.sql` exactly. **No policies exist
+for any other bucket** — confirming the earlier scope assumption (only
+`farmer-documents` reviewed) was not hiding an unreviewed bucket; there simply
+isn't one with any policies.
+
+**`farmer_documents` / `farmer_photos` — REVIEW REQUIRED (possible vestigial
+schema, not a security finding):**
+- Both tables exist live with fully correct, locally-matching RLS policies
+  (admin-all, farmer-select-own, farmer-insert-own, each properly scoped via
+  `has_farm_membership`/`created_by = auth.uid()`).
+- However, a repo-wide search of `src/**/*.ts` and `src/**/*.tsx` found **zero**
+  references to either table (no `.from('farmer_documents')` or
+  `.from('farmer_photos')` anywhere in application code).
+- The app's actual document-upload path uses Supabase **Storage** (the
+  `farmer-documents` bucket via `supabase.storage.from(...)` in `src/lib/db.ts`),
+  not these two database tables.
+- This is classified as REVIEW REQUIRED rather than a pass/fail security
+  classification: the policies themselves are correct and safe as written, but the
+  tables appear to be unused/superseded schema from an earlier design iteration.
+  This is a schema-hygiene question for the app owner, not an access-control gap —
+  there is no evidence of a security failure here, only unused-but-correctly-locked
+  schema.
+
+**Caveats (in addition to Section 5A's, unchanged in kind):**
+- This extended check covers every currently-discoverable `public`/`storage` table
+  as of 2026-07-08 — it does not prove every policy's `qual`/`with_check` logic is
+  behaviorally correct (only that live matches local text), and it does not
+  functionally test any of these 14 tables the way `inventory_batches` was
+  functionally tested in Section 5A (no live INSERT/SELECT/UPDATE rejection tests
+  were run against these tables).
+- This is not a full security audit.
+- This is not penetration testing.
+- This does not prove every access path in the application is correct.
+- This does not test buyer-role or admin-role workflows functionally (only their
+  policy definitions were compared).
+- This does not test every possible mutation path (INSERT was reviewed for
+  `farm_profiles`/`farmer_documents`/`farmer_photos`; UPDATE/DELETE were not
+  separately enumerated for every table beyond noting `ALL` covers them for admin).
 
 ## 6. Storage read-only probe
 
