@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import type { FarmProfile, InventoryItem } from '../../types'
+import type { ComplianceAlert, ComplianceRule, FarmProfile, InventoryItem } from '../../types'
 import { DDPVerifiedSupplySeal } from '../../components/logos'
 import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass, testStatusClass, testStatusLabel } from '../../data'
 import { DocumentCard } from '../../components/shared/DocumentCard'
 import { FilterSidebar, RangeSlider, CertCheckboxGroup, type RangeValue } from '../../components/shared/FilterSidebar'
+import { getComplianceRuleImpact } from '../../lib/complianceRuleImpact'
+import { ComplianceRuleCheckBadge } from '../../components/shared/StatusBadge'
 
 const CERT_OPTIONS: { key: keyof FarmProfile; label: string }[] = [
   { key: 'gmpCert', label: 'EU-GMP' },
@@ -20,11 +22,13 @@ interface Props {
   farms: FarmProfile[]
   onGetCoaUrl?: (storagePath: string) => Promise<string | null>
   onBuyerPack?: (itemId: string) => void
+  complianceRules?: ComplianceRule[]
+  complianceAlerts?: ComplianceAlert[]
 }
 
 type SortKey = 'default' | 'quantity' | 'thc' | 'price' | 'farm'
 
-export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBuyerPack }: Props) {
+export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBuyerPack, complianceRules = [], complianceAlerts = [] }: Props) {
   const approved = inventory.filter(i => i.status === 'Approved')
   const totalKg = approved.reduce((s, i) => s + i.quantityKg, 0)
   const [coaLoadingId, setCoaLoadingId] = useState<string | null>(null)
@@ -181,14 +185,17 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                   <th>Allocatable Qty (kg)</th>
                   <th>COA</th>
                   <th>Compliance Tier</th>
+                  <th>Compliance Rule Check</th>
                   <th>Status</th>
                   {onBuyerPack && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {sorted.length === 0 ? (
-                  <tr><td colSpan={onBuyerPack ? 11 : 10} className="empty-table-cell">NO ASSETS MATCH SPECIFIED PROCUREMENT CRITERIA</td></tr>
-                ) : sorted.map(item => (
+                  <tr><td colSpan={onBuyerPack ? 12 : 11} className="empty-table-cell">NO ASSETS MATCH SPECIFIED PROCUREMENT CRITERIA</td></tr>
+                ) : sorted.map(item => {
+                  const ruleImpact = getComplianceRuleImpact('batch', item.id, complianceRules, complianceAlerts)
+                  return (
                   <tr key={item.id}>
                     <td className="td-mono" data-label="Batch ID">{item.batchNumber || '—'}</td>
                     <td data-label="Genotype / Strain">
@@ -219,6 +226,9 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                         </span>
                       ) : '—'}
                     </td>
+                    <td data-label="Compliance Rule Check">
+                      {ruleImpact ? <ComplianceRuleCheckBadge impact={ruleImpact} /> : <span className="td-muted">—</span>}
+                    </td>
                     <td data-label="Status"><span className="badge badge-approved">Approved</span></td>
                     {onBuyerPack && (
                       <td>
@@ -232,7 +242,8 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                       </td>
                     )}
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

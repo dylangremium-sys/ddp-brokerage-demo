@@ -31,7 +31,8 @@ import {
   subscribeToAuthChanges,
   type UserProfile,
 } from './services/auth'
-import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus } from './types'
+import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
+import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
 import { T } from './translations'
 import LandingPage from './pages/public/LandingPage'
@@ -107,6 +108,8 @@ export default function App() {
   // Review requests (owner → farmer messages) and stock edit tracking
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>(() => loadReviewRequests())
   const [marketBenchmarks, setMarketBenchmarks] = useState<MarketBenchmark[]>(() => loadMarketBenchmarks())
+  const [complianceRules, setComplianceRules] = useState<ComplianceRule[]>([])
+  const [complianceAlerts, setComplianceAlerts] = useState<ComplianceAlert[]>([])
   const [stockEditItemId, setStockEditItemId] = useState<string | null>(null)
   const [buyerPackItemId, setBuyerPackItemId] = useState<string | null>(null)
 
@@ -182,6 +185,20 @@ export default function App() {
     loadMarketBenchmarksFromDB()
       .then(benchmarks => { if (benchmarks.length > 0) setMarketBenchmarks(benchmarks) })
       .catch(err => console.warn('loadMarketBenchmarksFromDB failed:', err))
+  }, [currentProfile])
+
+  // ── Load compliance rules + alerts for admin so approved/active rules can
+  // surface a read-only "Compliance Rule Check" signal on Supply Ledger
+  // pages. Fails quietly — Supply Ledger pages already work fully without
+  // this data, and no impact is ever shown if the fetch doesn't succeed.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
+    Promise.all([fetchComplianceRules(), fetchComplianceAlerts()])
+      .then(([rules, alerts]) => {
+        setComplianceRules(rules)
+        setComplianceAlerts(alerts)
+      })
+      .catch(err => console.warn('Compliance rule impact data load failed:', err))
   }, [currentProfile])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
@@ -731,11 +748,18 @@ export default function App() {
               farms={farms}
               onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
               onBuyerPack={handleOpenBuyerPack}
+              complianceRules={complianceRules}
+              complianceAlerts={complianceAlerts}
             />
           )}
 
           {page === 'ddp-missing-documents' && isAdminRole && (
-            <DDPMissingDocuments farms={farms} inventory={inventory} />
+            <DDPMissingDocuments
+              farms={farms}
+              inventory={inventory}
+              complianceRules={complianceRules}
+              complianceAlerts={complianceAlerts}
+            />
           )}
 
           {page === 'ddp-coa-intelligence' && isAdminRole && (
@@ -748,6 +772,8 @@ export default function App() {
               inventory={inventory}
               onReviewFarm={handleReviewFarm}
               onReviewItem={handleReviewItem}
+              complianceRules={complianceRules}
+              complianceAlerts={complianceAlerts}
             />
           )}
 

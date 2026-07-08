@@ -1,13 +1,16 @@
 import { useState } from 'react'
-import type { FarmProfile, InventoryItem, RiskSeverity, RiskStatus } from '../../types'
+import type { ComplianceAlert, ComplianceRule, FarmProfile, InventoryItem, RiskSeverity, RiskStatus } from '../../types'
 import { deriveAutoRisks, applyRiskOverrides, saveRiskOverride } from '../../lib/procurementControl'
-import { EvidenceBadge } from '../../components/shared/StatusBadge'
+import { getComplianceRuleImpact } from '../../lib/complianceRuleImpact'
+import { EvidenceBadge, ComplianceRuleCheckBadge } from '../../components/shared/StatusBadge'
 
 interface Props {
   farms: FarmProfile[]
   inventory: InventoryItem[]
   onReviewFarm?: (farmId: string) => void
   onReviewItem?: (itemId: string) => void
+  complianceRules?: ComplianceRule[]
+  complianceAlerts?: ComplianceAlert[]
 }
 
 const SEVERITY_CLASS: Record<RiskSeverity, string> = {
@@ -26,7 +29,7 @@ const STATUS_LABEL: Record<RiskStatus, string> = {
   accepted: 'Accepted',
 }
 
-export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onReviewItem }: Props) {
+export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onReviewItem, complianceRules = [], complianceAlerts = [] }: Props) {
   const [, forceRerender] = useState(0)
   const [severityFilter, setSeverityFilter] = useState<RiskSeverity | 'all'>('all')
 
@@ -88,6 +91,7 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
                   <th>Required Action</th>
                   <th>Owner</th>
                   <th>Evidence</th>
+                  <th>Compliance Rule Check</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -95,6 +99,9 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
               <tbody>
                 {visible.map(risk => {
                   const item = risk.batchId ? inventory.find(i => i.id === risk.batchId) : undefined
+                  const ruleImpact = item
+                    ? getComplianceRuleImpact('batch', item.id, complianceRules, complianceAlerts)
+                    : getComplianceRuleImpact('farm', risk.farmId, complianceRules, complianceAlerts)
                   return (
                     <tr key={risk.riskId}>
                       <td data-label="Severity"><span className={`badge ${SEVERITY_CLASS[risk.severity]}`}>{risk.severity.toUpperCase()}</span></td>
@@ -106,6 +113,9 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
                       <td data-label="Required Action" style={{ maxWidth: 260 }}>{risk.requiredAction}</td>
                       <td data-label="Owner">{risk.owner}</td>
                       <td data-label="Evidence"><EvidenceBadge status={risk.evidenceStatus} /></td>
+                      <td data-label="Compliance Rule Check">
+                        {ruleImpact ? <ComplianceRuleCheckBadge impact={ruleImpact} /> : <span className="td-muted">—</span>}
+                      </td>
                       <td data-label="Status">
                         <select value={risk.status} onChange={e => handleStatusChange(risk.riskId, e.target.value as RiskStatus)} style={{ fontSize: 12.5 }}>
                           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}

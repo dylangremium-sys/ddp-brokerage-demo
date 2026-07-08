@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import type { DocumentRequirementType, EvidenceStatus, FarmProfile, InventoryItem } from '../../types'
+import type { ComplianceAlert, ComplianceRule, DocumentRequirementType, EvidenceStatus, FarmProfile, InventoryItem } from '../../types'
 import {
   DOCUMENT_REQUIREMENT_TYPES,
   DOCUMENT_REQUIREMENT_LABELS,
@@ -7,10 +7,14 @@ import {
   applyRequirementOverrides,
   saveRequirementOverride,
 } from '../../lib/procurementControl'
+import { getComplianceRuleImpact } from '../../lib/complianceRuleImpact'
+import { ComplianceRuleCheckBadge } from '../../components/shared/StatusBadge'
 
 interface Props {
   farms: FarmProfile[]
   inventory: InventoryItem[]
+  complianceRules?: ComplianceRule[]
+  complianceAlerts?: ComplianceAlert[]
 }
 
 // The matrix uses its own six-word vocabulary (per the procurement plan) —
@@ -48,7 +52,7 @@ const OVERRIDE_LABEL: Record<EvidenceStatus, string> = {
   expired: 'Expired',
 }
 
-export default function DDPMissingDocuments({ farms, inventory }: Props) {
+export default function DDPMissingDocuments({ farms, inventory, complianceRules = [], complianceAlerts = [] }: Props) {
   const [openFarmId, setOpenFarmId] = useState<string | null>(null)
   const [, forceRerender] = useState(0)
 
@@ -95,17 +99,21 @@ export default function DDPMissingDocuments({ farms, inventory }: Props) {
                   <th>Received</th>
                   <th>Missing</th>
                   <th>Blockers</th>
+                  <th>Compliance Rule Check</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ farm, blockerCount, missingCount, receivedCount, requirements }) => (
+                {rows.map(({ farm, blockerCount, missingCount, receivedCount, requirements }) => {
+                  const ruleImpact = getComplianceRuleImpact('farm', farm.id, complianceRules, complianceAlerts)
+                  return (
                   <Fragment key={farm.id}>
                     <tr>
                       <td className="td-bold">{farm.tradingName}</td>
                       <td className="td-num">{receivedCount}/{DOCUMENT_REQUIREMENT_TYPES.length}</td>
                       <td className="td-num">{missingCount > 0 ? <span className="status-pill status-missing">{missingCount}</span> : '—'}</td>
                       <td className="td-num">{blockerCount > 0 ? <span className="status-pill status-reject">{blockerCount}</span> : '—'}</td>
+                      <td>{ruleImpact ? <ComplianceRuleCheckBadge impact={ruleImpact} /> : <span className="td-muted">—</span>}</td>
                       <td>
                         <button className="btn btn-review" onClick={() => setOpenFarmId(openFarmId === farm.id ? null : farm.id)}>
                           {openFarmId === farm.id ? 'Close' : 'Open Matrix'}
@@ -114,7 +122,7 @@ export default function DDPMissingDocuments({ farms, inventory }: Props) {
                     </tr>
                     {openFarmId === farm.id && (
                       <tr>
-                        <td colSpan={5} style={{ padding: 0, background: 'var(--bg-elevated)' }}>
+                        <td colSpan={6} style={{ padding: 0, background: 'var(--bg-elevated)' }}>
                           <div style={{ padding: '16px 20px' }}>
                             <div className="detail-rows">
                               {requirements.map(req => (
@@ -143,7 +151,8 @@ export default function DDPMissingDocuments({ farms, inventory }: Props) {
                       </tr>
                     )}
                   </Fragment>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

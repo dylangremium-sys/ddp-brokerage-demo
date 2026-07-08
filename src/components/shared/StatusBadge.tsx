@@ -1,4 +1,5 @@
 import type { EvidenceStatus, Lang } from '../../types'
+import type { ComplianceRuleImpact } from '../../lib/complianceRuleImpact'
 
 export type StatusKey =
   | 'claimed'
@@ -49,4 +50,28 @@ export function StatusBadge({ status, lang = 'en' }: StatusBadgeProps) {
 /** Renders an EvidenceStatus value directly — the enum's values are a subset of StatusKey. */
 export function EvidenceBadge({ status, lang = 'en' }: { status: EvidenceStatus; lang?: Lang }) {
   return <StatusBadge status={status as StatusKey} lang={lang} />
+}
+
+const RULE_IMPACT_CLASS: Record<ComplianceRuleImpact['safeStatusLabel'], string> = {
+  'blocked pending legal review': 'status-reject',
+  'missing evidence': 'status-missing',
+  'needs review': 'status-pending',
+}
+
+/**
+ * Additive, clearly-separate signal for a human-approved/active compliance
+ * rule's effect on one entity. Renders nothing when there is no impact —
+ * it never fabricates a passing/compliant state and never overrides the
+ * page's own evidence/risk/status badges.
+ */
+export function ComplianceRuleCheckBadge({ impact }: { impact: ComplianceRuleImpact | null }) {
+  if (!impact) return null
+  return (
+    <span
+      className={`status-pill ${RULE_IMPACT_CLASS[impact.safeStatusLabel]}`}
+      title={`${impact.ruleCode} — ${impact.ruleTitle}: ${impact.reason}`}
+    >
+      Compliance Rule Check: {impact.safeStatusLabel}
+    </span>
+  )
 }
