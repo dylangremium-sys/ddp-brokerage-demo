@@ -384,6 +384,71 @@ type, or access pattern.
 - This does not test admin or buyer access to this bucket, nor storage policies
   for any bucket other than `farmer-documents`.
 
+## 6B. inventory_batches UPDATE guardrail — functional rejection test (2026-07-08)
+
+This test verifies only the tested own-row `UPDATE` guardrail behavior for Farmer
+A's anon-auth session against the `"inventory_batches: farmer update own"` policy.
+It does not prove all `UPDATE` policies are correct, does not test cross-farmer
+`UPDATE` isolation, does not test `DELETE` policy behavior, does not test
+admin-role behavior, and does not claim inventory security is complete overall.
+
+**Scope:** table `inventory_batches`, policy `"inventory_batches: farmer update
+own"`, identity Farmer A only, own-row guardrail only. No cross-farmer `UPDATE`,
+no `DELETE` test, no admin-role test, no storage test, and no service-role key
+were used at any point.
+
+**Setup nuance:** the policy's `USING` clause requires the pre-update row to
+already have `stock_status` in `('draft', 'submitted', 'needs_changes')` — a row
+with `stock_status = NULL` or an admin-only value is not eligible for farmer
+`UPDATE` at all under this clause. The setup row explicitly used `stock_status =
+'draft'` so it was genuinely `UPDATE`-eligible, avoiding a false result where the
+row simply wasn't updateable in the first place.
+
+**Live execution result:**
+- Farmer A signed in successfully (anon key only).
+- One synthetic setup row was inserted into `inventory_batches`
+  (`created_by` = Farmer A's own `auth.uid()`, `product_name` marker `[TEST]
+  ddp_update_guardrail_check`, `status = 'Pending Review'`, `client_visible =
+  false`, `stock_status = 'draft'`).
+- A baseline allowed `UPDATE` (setting the farmer-facing `farmer_notes` field)
+  succeeded and was confirmed persisted — proving the row was genuinely
+  updateable by Farmer A before testing the guardrail fields specifically.
+- Three rejected `UPDATE` attempts were made, each isolated to one guardrail
+  field:
+  - `client_visible = true` — rejected (HTTP 403, Postgres error code `42501`);
+    follow-up check confirmed the value did not persist.
+  - `status = 'Approved'` — rejected (HTTP 403, Postgres error code `42501`);
+    follow-up check confirmed the value did not persist.
+  - `stock_status = 'approved_internal'` — rejected (HTTP 403, Postgres error
+    code `42501`); follow-up check confirmed the value did not persist.
+- No disallowed value was persisted in any case. No files changed, no storage
+  operations occurred, no Auth writes occurred, and no service-role key was used.
+- **Result: PASS** — for this tested row and session, the farmer could perform
+  an allowed update but could not use `UPDATE` to self-approve
+  (`status = 'Approved'`), self-publish (`client_visible = true`), or advance to
+  an admin-only stock lifecycle state (`stock_status = 'approved_internal'`).
+
+**Manual cleanup:** the owner manually deleted the synthetic setup row via
+Supabase Dashboard → Table Editor → `inventory_batches`. This deletion was
+performed by the owner directly, not by farmer-token `DELETE` (no such policy
+exists on this table) and not via service-role key.
+
+**Cleanup verification (read-only):** Farmer A signed in again and queried for
+the setup row by id (`select=id` only, no row contents). The row was confirmed
+no longer visible (0 rows returned). Row id, retained here only as the cleanup
+verification identifier consistent with this log's existing style:
+`6530387a-1b4e-4dd1-8074-1b44ea0362ee`.
+
+**Caveats:**
+- This is not a full security audit and not penetration testing.
+- This does not prove every `UPDATE` policy on every table is correct — only
+  the one policy, one table, one field set, and one farmer session tested here.
+- This does not test cross-farmer `UPDATE` isolation (a different farmer
+  attempting to `UPDATE` this row) — that remains a separate, untested case.
+- This does not test `DELETE` policy behavior beyond what was already noted in
+  Section 8, nor admin-role `UPDATE` behavior.
+- This does not claim overall inventory security is complete.
+
 ## 7. Cross-farmer SELECT isolation
 
 Test marker used on all synthetic rows: `[TEST] ddp_cross_farmer_isolation`
