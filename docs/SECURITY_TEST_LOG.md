@@ -762,6 +762,70 @@ state were touched.
 - This does not prove every field within each table is covered, that all
   admin policies are correct, or that overall security is complete.
 
+## 8D. Admin-role UPDATE access — functional test (2026-07-08)
+
+This test verifies only one narrow admin write path: an admin `UPDATE` of
+the `owner_notes` field on one synthetic Farmer A-owned `inventory_batches`
+row. It does not test admin `INSERT`, does not test admin `DELETE`, does not
+test admin write behavior on any table other than `inventory_batches`, does
+not test storage behavior, does not test service-role access, does not use
+the admin API, and does not claim overall admin write access or security is
+complete.
+
+**Scope:** table `inventory_batches`, policy `"inventory_batches: admin
+all"` (`FOR ALL`, `USING`/`WITH CHECK` both `is_ddp_admin()`), setup
+identity Farmer A, write identity the verified admin fixture. Field updated
+— `owner_notes` only (a plain `TEXT` column with no guardrail constraint).
+Explicitly excluded from this test: `client_visible`, `status`,
+`stock_status`, `created_by`, `farm_id`.
+
+**Live execution result:**
+- Farmer A and admin both signed in successfully (anon key only). Admin
+  role self-check confirmed `ddp_admin`.
+- Farmer A inserted one synthetic setup row (`created_by` = Farmer A's own
+  `auth.uid()`, `product_name` marker `[TEST]
+  ddp_admin_update_access_check`, `status = 'Pending Review'`,
+  `client_visible = false`, `stock_status = 'draft'`) — a row the admin
+  does not own.
+- A pre-update check confirmed the row was visible with a null/empty
+  `owner_notes` baseline.
+- The admin's own token issued a single `PATCH` against that row, setting
+  only `owner_notes` to a new test-marked string. This succeeded (HTTP
+  200), and the returned row representation confirmed `client_visible`,
+  `status`, `stock_status`, and `created_by` all remained unchanged from
+  their setup values — only `owner_notes` changed.
+- A post-update check confirmed `owner_notes` persisted with the new value,
+  and the row remained visible to Farmer A afterward.
+- No files changed, no storage operations occurred, no service-role key was
+  used, and no admin API was used.
+- **Result: PASS** — the verified admin fixture could successfully `UPDATE`
+  a single harmless field on a row it does not own, with no other field
+  affected.
+
+**Manual cleanup:** the owner manually deleted the synthetic setup row via
+Supabase Dashboard → Table Editor → `inventory_batches`. This deletion was
+performed by the owner directly — not by admin-token `DELETE`, not by
+farmer-token `DELETE` (deliberately not used, consistent with "no admin
+DELETE test yet"), and not via service-role key.
+
+**Cleanup verification (read-only):** both Farmer A and the admin fixture
+signed in again and queried for the setup row by id (`select=id` only, no
+row contents). Both confirmed the row no longer visible (0 rows returned
+for each). Row id, retained here only as the cleanup verification
+identifier consistent with this log's existing style:
+`763b768a-eb92-436a-b462-4967a2424186`.
+
+**Caveats:**
+- This is not a full security audit and not penetration testing.
+- This does not test admin `INSERT` functional behavior.
+- This does not test admin `DELETE` functional behavior.
+- This does not test admin write behavior on any table other than
+  `inventory_batches`, nor any field other than `owner_notes`.
+- This does not test storage admin behavior, service-role access, or the
+  admin API.
+- This does not prove all admin write access is proven, or that overall
+  security is complete.
+
 ## 9. What was not tested
 
 - `INSERT` isolation beyond the controlled Phase 3 setup path (e.g., attempting to
@@ -788,18 +852,24 @@ state were touched.
   design and testing.
 - Admin-role access model — read-only functional access across all 20
   public non-storage tables is now tested (Tier 1: Section 8B; Tier 2:
-  Section 8C). Admin `INSERT`/`UPDATE`/`DELETE` functional behavior and
-  admin storage access remain untested.
+  Section 8C). A single narrow admin `UPDATE` path (one field, one table,
+  one row) is now tested (Section 8D). Admin `INSERT` functional behavior,
+  admin `DELETE` functional behavior, admin `UPDATE` on any table/field
+  beyond that one narrow case, and admin storage access all remain
+  untested.
 - Every table in the schema (only `farm_memberships`, `farmer_review_requests`,
   `farms`, `inventory_batches`, `market_price_benchmarks`, and `profiles` were probed).
 - Penetration testing of any kind.
 
 ## 10. Recommended next tests
 
-- Admin-role functional write test (`INSERT`/`UPDATE`/`DELETE`) — read-only
-  access across all 20 public non-storage tables is now tested (Sections
-  8B, 8C); write behavior remains untested and would need its own separate
-  approved plan.
+- Admin-role functional write tests for `INSERT` and `DELETE` — one narrow
+  `UPDATE` case is now tested (Section 8D); `INSERT` and `DELETE` from an
+  admin session remain untested and would need their own separate approved
+  plans.
+- Broader admin `UPDATE` coverage — Section 8D tested exactly one field on
+  one table; other fields, other tables, and admin `UPDATE` of a row the
+  admin already owns remain untested.
 - Admin storage access (the `farmer-documents` bucket, and any others) —
   not yet tested from an admin session.
 - If a buyer Auth role is introduced in the future, define and test its access
