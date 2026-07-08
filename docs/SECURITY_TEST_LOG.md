@@ -449,6 +449,80 @@ verification identifier consistent with this log's existing style:
   Section 8, nor admin-role `UPDATE` behavior.
 - This does not claim overall inventory security is complete.
 
+## 6C. inventory_batches cross-farmer UPDATE isolation — functional test (2026-07-08)
+
+This test verifies only tested cross-farmer `UPDATE` isolation for
+`inventory_batches`, using the two retained farmer fixtures (Farmer A and
+Farmer B) and the `farmer_notes` field only. It does not claim all `UPDATE`
+policies are proven, does not claim all fields are covered, does not claim
+`DELETE` policy behavior is proven, does not claim admin-role or buyer-role
+behavior is proven, and does not claim overall inventory security is complete.
+
+**Scope:** table `inventory_batches`, policy `"inventory_batches: farmer
+update own"`, both farmer identities, one synthetic row per farmer, own-row
+baseline `UPDATE` for each farmer, then cross-farmer `UPDATE` attempts in both
+directions, field tested: `farmer_notes` only (no guardrail-field cross-farmer
+test — that is a separate, more complex case not covered here). No `DELETE`
+test, no admin-role test, no storage test, and no service-role key were used.
+
+**Policy/behavior nuance:** both setup rows explicitly used `stock_status =
+'draft'` (same nuance as Section 6B) so each owner could genuinely update
+their own row. Cross-farmer `UPDATE` is a `USING`-clause failure (the row
+simply isn't matched by the acting farmer's ownership condition), which is a
+different failure mode from the `WITH CHECK` failures seen in Section 6B —
+it can present as HTTP 200 with zero rows affected, rather than an explicit
+HTTP 403. This was the actual observed result: both cross-farmer attempts
+returned HTTP 200 with an empty response body (0 rows), not 403. The
+deciding evidence was target-owner verification that no attacker-supplied
+value persisted on the target row — HTTP status alone was not treated as
+sufficient.
+
+**Live execution result:**
+- Farmer A and Farmer B both signed in successfully (anon key only).
+- One synthetic setup row was inserted per farmer (`created_by` = the
+  respective farmer's own `auth.uid()`, distinct `[TEST]
+  ddp_cross_update_isolation_A` / `_B` product-name markers, `status =
+  'Pending Review'`, `client_visible = false`, `stock_status = 'draft'`).
+- Each farmer's own-row baseline `UPDATE` (setting `farmer_notes`) succeeded
+  and was confirmed persisted — proving each row was genuinely updateable by
+  its owner before testing cross-farmer isolation.
+- Farmer A attempted to `UPDATE` Farmer B's row's `farmer_notes`: HTTP 200,
+  zero rows in the response body. Farmer B's own verification confirmed the
+  row's `farmer_notes` remained at Farmer B's baseline value — the attacker's
+  value did not persist.
+- Farmer B attempted to `UPDATE` Farmer A's row's `farmer_notes`: HTTP 200,
+  zero rows in the response body. Farmer A's own verification confirmed the
+  row's `farmer_notes` remained at Farmer A's baseline value — the attacker's
+  value did not persist.
+- No files changed, no storage operations occurred, no Auth writes occurred,
+  and no service-role key was used at any point.
+- **Result: PASS** — for the tested rows, sessions, and field, each farmer
+  could update only their own row; cross-farmer `UPDATE` attempts affected
+  zero rows and did not modify the target farmer's data.
+
+**Manual cleanup:** the owner manually deleted both synthetic setup rows via
+Supabase Dashboard → Table Editor → `inventory_batches`. This deletion was
+performed by the owner directly, not by farmer-token `DELETE` (no such policy
+exists on this table) and not via service-role key.
+
+**Cleanup verification (read-only):** both farmers signed in again and
+queried for their respective setup row by id (`select=id` only, no row
+contents). Both rows were confirmed no longer visible (0 rows returned for
+each). Row ids, retained here only as cleanup verification identifiers
+consistent with this log's existing style: `382cf56c-e84f-499d-bfce-2fe878f57dbc`
+(Farmer A's row), `db9b6c8b-2206-47d4-8ec7-6719f85bdcdd` (Farmer B's row).
+
+**Caveats:**
+- This is not a full security audit and not penetration testing.
+- This does not prove every `UPDATE` policy on every table is correct — only
+  the one policy, one table, one field, and two farmer sessions tested here.
+- This does not test cross-farmer `UPDATE` isolation with guardrail-field
+  combinations (e.g. an attacker also attempting to set a disallowed
+  guardrail value while targeting another farmer's row).
+- This does not test `DELETE` policy behavior, admin-role behavior, or
+  buyer-role behavior.
+- This does not claim overall inventory security is complete.
+
 ## 7. Cross-farmer SELECT isolation
 
 Test marker used on all synthetic rows: `[TEST] ddp_cross_farmer_isolation`
@@ -494,7 +568,12 @@ Results (`select=id` probes only, row contents never printed):
 
 - `INSERT` isolation beyond the controlled Phase 3 setup path (e.g., attempting to
   insert a row under another farmer's identity).
-- `UPDATE` policies on any table.
+- `UPDATE` policies on tables other than `inventory_batches` (`profiles: update own
+  no role change`, `farmer_review_requests: farmer resolve own` have only been
+  metadata-compared, never functionally exercised). For `inventory_batches` itself,
+  own-row guardrail rejection (Section 6B) and cross-farmer isolation (Section 6C)
+  are tested for the `farmer_notes`/`client_visible`/`status`/`stock_status` fields
+  only — other fields and guardrail-plus-cross-farmer combinations remain untested.
 - `DELETE` policies beyond the incidental discovery that farmers cannot delete these
   three tables' rows themselves.
 - Storage isolation for object paths/patterns beyond the one tested in Section 6A,
@@ -513,10 +592,6 @@ Results (`select=id` probes only, row contents never printed):
 
 ## 10. Recommended next tests
 
-- `UPDATE`-guardrail functional rejection test for `inventory_batches` (mirroring the
-  Section 5A INSERT-rejection test, but for the UPDATE guardrails).
-- Cross-farmer `UPDATE` isolation test (confirm Farmer A cannot UPDATE a row owned by
-  Farmer B, and vice versa).
 - Deliberate farmer-token `DELETE` rejection test (confirm, by design rather than
   incidental discovery, that farmer DELETE attempts return a genuine RLS rejection).
 - Admin-role functional access test — requires its own separate approved plan, since
