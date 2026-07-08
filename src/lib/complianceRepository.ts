@@ -1,0 +1,523 @@
+import { supabase, isSupabaseConfigured } from './supabase'
+import type {
+  ComplianceAlert,
+  ComplianceAuditLog,
+  ComplianceEntityStatus,
+  ComplianceReview,
+  ComplianceRule,
+  LegalUpdate,
+} from '../types'
+
+// Compliance Watchtower Supabase persistence.
+// All reads/writes go through the existing browser (anon-key) client from lib/supabase.
+// RLS (public.is_ddp_admin()) is the real enforcement layer; this module never uses a
+// service-role key and never bypasses RLS. Callers should still gate write actions on
+// currentUser.role === 'ddp_admin' so the UI fails closed with a clear message instead
+// of surfacing a raw Postgres RLS error.
+
+export { isSupabaseConfigured }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function asUuidOrNull(value: string | null | undefined): string | null {
+  return value && UUID_RE.test(value) ? value : null
+}
+
+function requireClient() {
+  if (!supabase) throw new Error('Supabase is not configured for this environment.')
+  return supabase
+}
+
+function raise(context: string, error: { message: string } | null): void {
+  if (error) throw new Error(`${context}: ${error.message}`)
+}
+
+// ---------- legal_updates ----------
+
+interface LegalUpdateRow {
+  id: string
+  source_id: string | null
+  title: string
+  jurisdiction: string
+  source_name: string
+  source_url: string
+  published_at: string | null
+  detected_at: string
+  raw_text: string
+  summary: string
+  affected_areas: string[]
+  ai_risk_level: string | null
+  status: string
+  reviewer_notes: string
+  created_at: string
+  updated_at: string
+}
+
+function legalUpdateFromRow(row: LegalUpdateRow): LegalUpdate {
+  return {
+    id: row.id,
+    sourceId: row.source_id,
+    title: row.title,
+    jurisdiction: row.jurisdiction,
+    sourceName: row.source_name,
+    sourceUrl: row.source_url,
+    publishedAt: row.published_at,
+    detectedAt: row.detected_at,
+    rawText: row.raw_text,
+    summary: row.summary,
+    affectedAreas: (row.affected_areas ?? []) as LegalUpdate['affectedAreas'],
+    aiRiskLevel: row.ai_risk_level as LegalUpdate['aiRiskLevel'],
+    status: row.status as LegalUpdate['status'],
+    reviewerNotes: row.reviewer_notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export async function fetchLegalUpdates(): Promise<LegalUpdate[]> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('legal_updates')
+    .select('*')
+    .order('detected_at', { ascending: false })
+  raise('Loading legal updates', error)
+  return (data as LegalUpdateRow[] ?? []).map(legalUpdateFromRow)
+}
+
+export async function insertLegalUpdate(input: Omit<LegalUpdate, 'id' | 'createdAt' | 'updatedAt' | 'detectedAt'>): Promise<LegalUpdate> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('legal_updates')
+    .insert({
+      source_id: input.sourceId ?? null,
+      title: input.title,
+      jurisdiction: input.jurisdiction,
+      source_name: input.sourceName,
+      source_url: input.sourceUrl,
+      published_at: input.publishedAt ?? null,
+      raw_text: input.rawText,
+      summary: input.summary,
+      affected_areas: input.affectedAreas,
+      ai_risk_level: input.aiRiskLevel ?? null,
+      status: input.status,
+      reviewer_notes: input.reviewerNotes,
+    })
+    .select('*')
+    .single()
+  raise('Creating legal update', error)
+  return legalUpdateFromRow(data as LegalUpdateRow)
+}
+
+export async function updateLegalUpdateStatus(id: string, status: LegalUpdate['status']): Promise<LegalUpdate> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('legal_updates')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single()
+  raise('Updating legal update status', error)
+  return legalUpdateFromRow(data as LegalUpdateRow)
+}
+
+// ---------- compliance_reviews ----------
+// Note: the applied schema does not store riskLevel/affectedEntities/summary/recommendedAction
+// for reviews. Those display-only fields are derived from the linked legal_update at read time
+// (see enrichReview) rather than persisted, to avoid an additional SQL migration.
+
+interface ComplianceReviewRow {
+  id: string
+  legal_update_id: string | null
+  alert_id: string | null
+  rule_id: string | null
+  title: string
+  review_type: string
+  status: string
+  reviewer_notes: string
+  decision: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+function reviewFromRow(row: ComplianceReviewRow): ComplianceReview {
+  return {
+    id: row.id,
+    legalUpdateId: row.legal_update_id,
+    alertId: row.alert_id,
+    ruleId: row.rule_id,
+    title: row.title,
+    reviewType: row.review_type as ComplianceReview['reviewType'],
+    status: row.status as ComplianceReview['status'],
+    riskLevel: 'info',
+    affectedEntities: [],
+    summary: '',
+    recommendedAction: '',
+    reviewerNotes: row.reviewer_notes,
+    decision: row.decision,
+    reviewedBy: row.reviewed_by,
+    reviewedAt: row.reviewed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function enrichReview(review: ComplianceReview, legalUpdates: LegalUpdate[]): ComplianceReview {
+  const linked = review.legalUpdateId ? legalUpdates.find(update => update.id === review.legalUpdateId) : undefined
+  if (!linked) return review
+  return {
+    ...review,
+    riskLevel: linked.aiRiskLevel ?? review.riskLevel,
+    affectedEntities: linked.affectedAreas,
+    summary: review.summary || linked.summary || linked.rawText.slice(0, 280),
+    recommendedAction: review.recommendedAction || (
+      (linked.aiRiskLevel === 'high' || linked.aiRiskLevel === 'critical')
+        ? 'Review before operational status changes.'
+        : 'Classify and monitor.'
+    ),
+  }
+}
+
+export async function fetchReviews(): Promise<ComplianceReview[]> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('compliance_reviews')
+    .select('*')
+    .order('created_at', { ascending: false })
+  raise('Loading review queue', error)
+  return (data as ComplianceReviewRow[] ?? []).map(reviewFromRow)
+}
+
+export async function insertReview(input: {
+  legalUpdateId: string | null
+  title: string
+  reviewType: ComplianceReview['reviewType']
+  status: ComplianceReview['status']
+  reviewerNotes: string
+}): Promise<ComplianceReview> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('compliance_reviews')
+    .insert({
+      legal_update_id: input.legalUpdateId,
+      title: input.title,
+      review_type: input.reviewType,
+      status: input.status,
+      reviewer_notes: input.reviewerNotes,
+    })
+    .select('*')
+    .single()
+  raise('Creating review item', error)
+  return reviewFromRow(data as ComplianceReviewRow)
+}
+
+export async function updateReview(id: string, patch: {
+  status: ComplianceReview['status']
+  decision: string | null
+  reviewedBy: string | null
+  reviewerNotes?: string
+}): Promise<ComplianceReview> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('compliance_reviews')
+    .update({
+      status: patch.status,
+      decision: patch.decision,
+      reviewed_by: asUuidOrNull(patch.reviewedBy),
+      reviewed_at: new Date().toISOString(),
+      ...(patch.reviewerNotes !== undefined ? { reviewer_notes: patch.reviewerNotes } : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+  raise('Updating review decision', error)
+  return reviewFromRow(data as ComplianceReviewRow)
+}
+
+// ---------- compliance_rules ----------
+
+interface ComplianceRuleRow {
+  id: string
+  rule_code: string
+  title: string
+  description: string
+  jurisdiction: string | null
+  entity_type: string
+  severity: string
+  is_blocking: boolean
+  status: string
+  source_legal_update_id: string | null
+  approved_by: string | null
+  approved_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+function ruleFromRow(row: ComplianceRuleRow): ComplianceRule {
+  return {
+    id: row.id,
+    ruleCode: row.rule_code,
+    title: row.title,
+    description: row.description,
+    jurisdiction: row.jurisdiction,
+    entityType: row.entity_type as ComplianceRule['entityType'],
+    severity: row.severity as ComplianceRule['severity'],
+    isBlocking: row.is_blocking,
+    status: row.status as ComplianceRule['status'],
+    sourceLegalUpdateId: row.source_legal_update_id,
+    approvedBy: row.approved_by,
+    approvedAt: row.approved_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export async function fetchRules(): Promise<ComplianceRule[]> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('compliance_rules')
+    .select('*')
+    .order('created_at', { ascending: false })
+  raise('Loading compliance rules', error)
+  return (data as ComplianceRuleRow[] ?? []).map(ruleFromRow)
+}
+
+export async function insertRule(input: Omit<ComplianceRule, 'id' | 'createdAt' | 'updatedAt'>): Promise<ComplianceRule> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('compliance_rules')
+    .insert({
+      rule_code: input.ruleCode,
+      title: input.title,
+      description: input.description,
+      jurisdiction: input.jurisdiction ?? null,
+      entity_type: input.entityType,
+      severity: input.severity,
+      is_blocking: input.isBlocking,
+      status: input.status,
+      source_legal_update_id: input.sourceLegalUpdateId ?? null,
+      approved_by: asUuidOrNull(input.approvedBy),
+      approved_at: input.approvedAt ?? null,
+    })
+    .select('*')
+    .single()
+  raise('Creating compliance rule', error)
+  return ruleFromRow(data as ComplianceRuleRow)
+}
+
+export async function updateRuleStatus(id: string, status: ComplianceRule['status'], approvedBy: string | null): Promise<ComplianceRule> {
+  const client = requireClient()
+  const isApproving = status === 'approved' || status === 'active'
+  const { data, error } = await client
+    .from('compliance_rules')
+    .update({
+      status,
+      ...(isApproving ? { approved_by: asUuidOrNull(approvedBy), approved_at: new Date().toISOString() } : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+  raise('Updating rule status', error)
+  return ruleFromRow(data as ComplianceRuleRow)
+}
+
+// ---------- compliance_alerts ----------
+
+interface ComplianceAlertRow {
+  id: string
+  entity_type: string
+  entity_id: string
+  rule_id: string | null
+  legal_update_id: string | null
+  alert_title: string
+  alert_detail: string
+  severity: string
+  status: string
+  created_at: string
+  resolved_at: string | null
+  resolution_notes: string | null
+}
+
+function alertFromRow(row: ComplianceAlertRow): ComplianceAlert {
+  return {
+    id: row.id,
+    entityType: row.entity_type as ComplianceAlert['entityType'],
+    entityId: row.entity_id,
+    ruleId: row.rule_id,
+    legalUpdateId: row.legal_update_id,
+    alertTitle: row.alert_title,
+    alertDetail: row.alert_detail,
+    severity: row.severity as ComplianceAlert['severity'],
+    status: row.status as ComplianceAlert['status'],
+    createdAt: row.created_at,
+    resolvedAt: row.resolved_at,
+    resolutionNotes: row.resolution_notes,
+  }
+}
+
+export async function fetchAlerts(): Promise<ComplianceAlert[]> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('compliance_alerts')
+    .select('*')
+    .order('created_at', { ascending: false })
+  raise('Loading compliance alerts', error)
+  return (data as ComplianceAlertRow[] ?? []).map(alertFromRow)
+}
+
+export async function insertAlert(input: Omit<ComplianceAlert, 'id' | 'createdAt' | 'resolvedAt' | 'resolutionNotes'>): Promise<ComplianceAlert> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('compliance_alerts')
+    .insert({
+      entity_type: input.entityType,
+      entity_id: input.entityId,
+      rule_id: input.ruleId ?? null,
+      legal_update_id: input.legalUpdateId ?? null,
+      alert_title: input.alertTitle,
+      alert_detail: input.alertDetail,
+      severity: input.severity,
+      status: input.status,
+    })
+    .select('*')
+    .single()
+  raise('Creating compliance alert', error)
+  return alertFromRow(data as ComplianceAlertRow)
+}
+
+export async function updateAlertStatus(id: string, status: ComplianceAlert['status'], resolutionNotes: string | null): Promise<ComplianceAlert> {
+  const client = requireClient()
+  const resolved = status === 'resolved' || status === 'dismissed'
+  const { data, error } = await client
+    .from('compliance_alerts')
+    .update({
+      status,
+      ...(resolved ? { resolved_at: new Date().toISOString(), resolution_notes: resolutionNotes } : {}),
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+  raise('Updating alert status', error)
+  return alertFromRow(data as ComplianceAlertRow)
+}
+
+// ---------- compliance_entity_status ----------
+
+interface ComplianceEntityStatusRow {
+  id: string
+  entity_type: string
+  entity_id: string
+  readiness_status: string
+  risk_level: string
+  missing_requirements: string[]
+  blocking_alert_count: number
+  last_evaluated_at: string
+  created_at: string
+  updated_at: string
+}
+
+function entityStatusFromRow(row: ComplianceEntityStatusRow): ComplianceEntityStatus {
+  return {
+    id: row.id,
+    entityType: row.entity_type as ComplianceEntityStatus['entityType'],
+    entityId: row.entity_id,
+    readinessStatus: row.readiness_status as ComplianceEntityStatus['readinessStatus'],
+    riskLevel: row.risk_level as ComplianceEntityStatus['riskLevel'],
+    missingRequirements: row.missing_requirements ?? [],
+    blockingAlertCount: row.blocking_alert_count,
+    lastEvaluatedAt: row.last_evaluated_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export async function upsertEntityStatus(status: Omit<ComplianceEntityStatus, 'id' | 'createdAt' | 'updatedAt'>): Promise<ComplianceEntityStatus> {
+  const client = requireClient()
+  const now = new Date().toISOString()
+  const { data, error } = await client
+    .from('compliance_entity_status')
+    .upsert({
+      entity_type: status.entityType,
+      entity_id: status.entityId,
+      readiness_status: status.readinessStatus,
+      risk_level: status.riskLevel,
+      missing_requirements: status.missingRequirements,
+      blocking_alert_count: status.blockingAlertCount,
+      last_evaluated_at: status.lastEvaluatedAt,
+      updated_at: now,
+    }, { onConflict: 'entity_type,entity_id' })
+    .select('*')
+    .single()
+  raise('Saving export readiness status', error)
+  return entityStatusFromRow(data as ComplianceEntityStatusRow)
+}
+
+// ---------- compliance_audit_log ----------
+// Insert-only from the frontend. Never update/delete (also enforced server-side by trigger).
+
+interface ComplianceAuditLogRow {
+  id: string
+  actor_type: string
+  actor_id: string | null
+  action: string
+  entity_type: string
+  entity_id: string | null
+  before_state: unknown
+  after_state: unknown
+  reason: string | null
+  created_at: string
+}
+
+function auditLogFromRow(row: ComplianceAuditLogRow, actorNameForId: (actorId: string | null) => string): ComplianceAuditLog {
+  return {
+    id: row.id,
+    actorType: row.actor_type as ComplianceAuditLog['actorType'],
+    actorId: row.actor_id,
+    actorName: actorNameForId(row.actor_id),
+    action: row.action as ComplianceAuditLog['action'],
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    beforeState: row.before_state,
+    afterState: row.after_state,
+    reason: row.reason,
+    createdAt: row.created_at,
+  }
+}
+
+export async function fetchAuditLog(actorNameForId: (actorId: string | null) => string): Promise<ComplianceAuditLog[]> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('compliance_audit_log')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(500)
+  raise('Loading audit log', error)
+  return (data as ComplianceAuditLogRow[] ?? []).map(row => auditLogFromRow(row, actorNameForId))
+}
+
+export async function insertAuditLog(
+  entry: Omit<ComplianceAuditLog, 'id' | 'actorType' | 'actorId' | 'actorName' | 'createdAt'>,
+  actorId: string | null,
+  actorNameForId: (actorId: string | null) => string,
+): Promise<ComplianceAuditLog> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('compliance_audit_log')
+    .insert({
+      actor_type: 'admin',
+      actor_id: asUuidOrNull(actorId),
+      action: entry.action,
+      entity_type: entry.entityType,
+      entity_id: entry.entityId ?? null,
+      before_state: entry.beforeState ?? null,
+      after_state: entry.afterState ?? null,
+      reason: entry.reason ?? null,
+    })
+    .select('*')
+    .single()
+  raise('Writing audit log entry', error)
+  return auditLogFromRow(data as ComplianceAuditLogRow, actorNameForId)
+}
