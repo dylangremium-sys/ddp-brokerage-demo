@@ -137,11 +137,30 @@ a substitute for, direct confirmation that the deployed database matches these f
 - **Status updated: MISMATCH → MATCH.** `inventory_batches` now shows full live/local
   parity across all four of its policies (`admin all`, `farmer select own`, `farmer
   insert own`, `farmer update own`).
-- This remediation was verified via a fresh `pg_policies` re-check (owner-provided),
-  not by this document's authors independently querying Supabase. It has not been
-  re-tested with an actual attempted farmer INSERT carrying a disallowed value (e.g.
-  `client_visible = true`) to confirm real-world rejection — that functional check
-  remains a write-enabled test not yet performed (see Section 9).
+- This remediation was initially verified via a fresh `pg_policies` re-check
+  (owner-provided), not by this document's authors independently querying Supabase.
+
+**Functional verification completed (2026-07-08):**
+- A live, write-enabled test attempted three separate farmer-authenticated INSERTs
+  against `inventory_batches`, using the retained Farmer A test identity
+  (`farmertest@ddpbrokerage.com`), anon key + Farmer A's own access token only (no
+  service-role key, no admin API). Each payload was an otherwise-valid insert
+  (`created_by = auth.uid()`, `product_name = "[TEST] ddp_insert_guardrail_check"`)
+  differing from a normal valid submission by exactly one deliberately disallowed field:
+  - Attempt 1 — `client_visible = true`: **HTTP 403, Postgres error code `42501`
+    (row-level security policy violation)**. Follow-up `SELECT id` (same marker):
+    no rows visible.
+  - Attempt 2 — `status = 'Approved'`: **HTTP 403, Postgres error code `42501`**.
+    Follow-up `SELECT id`: no rows visible.
+  - Attempt 3 — `stock_status = 'approved_internal'`: **HTTP 403, Postgres error
+    code `42501`**. Follow-up `SELECT id`: no rows visible.
+  - Database writes attempted: 3. Database writes succeeded: 0. No cleanup required.
+- All three rejections carried Postgres error code `42501`, confirming they were
+  genuine RLS/policy violations — not generic constraint, schema, or payload
+  failures, which would have been classified as inconclusive rather than a pass.
+- **Both metadata verification (`pg_policies`) and live functional rejection testing
+  now confirm the `inventory_batches` INSERT guardrail remediation.** The previous
+  caveat that this functional check was outstanding no longer applies.
 
 **Live confirmation of the DELETE-policy gap:** the live export confirms there is no
 `cmd: DELETE` (farmer-scoped) policy on `farms`, `farm_memberships`, or
@@ -226,11 +245,6 @@ Results (`select=id` probes only, row contents never printed):
 
 ## 9. What was not tested
 
-- A functional re-test of the remediated `inventory_batches: farmer insert own` policy
-  (Section 5A) — i.e., actually attempting a farmer INSERT with `client_visible = true`,
-  `status = 'Approved'`, or an admin-only `stock_status` to confirm live rejection.
-  Remediation was verified only via a fresh `pg_policies` metadata re-check, not a
-  live write attempt.
 - `INSERT` isolation beyond the controlled Phase 3 setup path (e.g., attempting to
   insert a row under another farmer's identity).
 - `UPDATE` policies on any table.
@@ -248,10 +262,6 @@ Results (`select=id` probes only, row contents never printed):
 
 ## 10. Recommended next tests
 
-- Functionally verify the `inventory_batches: farmer insert own` remediation (Section
-  5A) with an actual attempted farmer INSERT carrying a disallowed value, to confirm
-  live rejection rather than relying on metadata parity alone. This is a write-enabled
-  test requiring separate explicit authorization.
 - Extend the live `pg_policies` parity check (Section 5A) to remaining tables not yet
   reviewed (`ddp_scores`, `risk_flags`, `status_history`, `documents`, `farm_profiles`).
 - `UPDATE`-policy cross-farmer isolation test.
