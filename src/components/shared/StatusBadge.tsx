@@ -23,6 +23,10 @@ const STATUS_LABEL: Record<StatusKey, { en: string; th: string; cls: string }> =
   'claimed':          { en: 'Claimed',          th: 'แจ้งเอง',              cls: 'status-claimed' },
   'documented':       { en: 'Documented',       th: 'มีเอกสารรองรับ',       cls: 'status-documented' },
   'reviewed':         { en: 'Reviewed',         th: 'ตรวจทานแล้ว',         cls: 'status-reviewed' },
+  // 'verified' must only be rendered where the underlying data genuinely
+  // supports independent, qualified-party confirmation (see EvidenceStatus in
+  // types.ts). Check all current call sites before adding any new rendered
+  // badge that uses this key — do not assume past usage remains accurate.
   'verified':         { en: 'Verified',         th: 'ตรวจสอบแล้ว',         cls: 'status-verified' },
   'missing':          { en: 'Missing',          th: 'ไม่มีข้อมูล',          cls: 'status-missing' },
   'missing-evidence': { en: 'Missing Evidence', th: 'หลักฐานไม่ครบ',       cls: 'status-missing' },
@@ -30,7 +34,9 @@ const STATUS_LABEL: Record<StatusKey, { en: string; th: string; cls: string }> =
   'expired':          { en: 'Expired',          th: 'หมดอายุ',             cls: 'status-expired' },
   'hold':             { en: 'Hold',             th: 'ระงับชั่วคราว',       cls: 'status-hold' },
   'reject':           { en: 'Reject',           th: 'ปฏิเสธ',              cls: 'status-reject' },
-  'buyer-ready':      { en: 'Buyer-Ready',      th: 'พร้อมสำหรับผู้ซื้อ',   cls: 'status-buyer-ready' },
+  // NOTE: Thai reuses the same conservative phrase as translations.ts'
+  // landingHeadline ("Ready for Buyer Discussion") — needs native speaker review
+  'buyer-ready':      { en: 'Ready For Buyer Discussion', th: 'พร้อมสำหรับการหารือกับผู้ซื้อ', cls: 'status-buyer-ready' },
   'review-pending':   { en: 'Review Pending',   th: 'รอการตรวจสอบ',        cls: 'status-review-pending' },
   'coa-received':     { en: 'COA Received',     th: 'ได้รับ COA แล้ว',     cls: 'status-coa-received' },
   'coa-missing':      { en: 'COA Missing',      th: 'ไม่มี COA',           cls: 'status-coa-missing' },

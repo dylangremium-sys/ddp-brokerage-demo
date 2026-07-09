@@ -34,9 +34,13 @@ export const T = {
     resetDemo: 'Reset Demo',
 
     // Landing
-    landingTagline: 'Buyer-Readiness Platform for Licensed Cannabis Supply',
-    landingNavDescriptor: 'Buyer-Readiness Platform',
-    landingHeadline: 'Thai Cannabis Supply, Made Buyer-Ready',
+    // NOTE: reworded from "Buyer-Readiness Platform" — standalone "readiness"
+    // reads as a purchase-readiness/certification claim about the supply
+    // itself; reworded to describe the platform's actual function (preparing
+    // review packs for a buyer discussion), per legal-language audit finding.
+    landingTagline: 'Buyer Discussion Platform for Licensed Cannabis Supply',
+    landingNavDescriptor: 'Buyer Discussion Platform',
+    landingHeadline: 'Thai Cannabis Supply, Ready for Buyer Discussion',
     landingHero1: 'DDP turns farm stock, batch records, COAs, and pricing into clear review packs for serious buyers.',
     landingEnterFarmer: 'Supplier Intake Portal',
     landingEnterDDP: 'DDP Verification Console',
@@ -67,7 +71,7 @@ export const T = {
     landingFrameworkDocumentedDesc: 'Documents checked',
     landingFrameworkVerifiedLabel: 'Reviewed',
     landingFrameworkVerifiedDesc: 'Batch reviewed',
-    landingFrameworkBuyerReadyLabel: 'Buyer-Ready',
+    landingFrameworkBuyerReadyLabel: 'Ready For Buyer Discussion',
     landingFrameworkBuyerReadyDesc: 'Buyer pack ready',
 
     // Landing — Buyer pack preview
@@ -94,14 +98,14 @@ export const T = {
     landingWhy1Desc: 'Checked against documents and COA before listing.',
     landingWhy2Title: 'Documented Farms',
     landingWhy2Desc: 'Profiles, licences, and history on record.',
-    landingWhy3Title: 'Buyer-Ready Batches',
+    landingWhy3Title: 'Batches Ready For Buyer Discussion',
     landingWhy3Desc: 'Only reviewed batches reach the Buyer Pack.',
     landingWhy4Title: 'Less Procurement Guesswork',
     landingWhy4Desc: 'One place for what’s real, missing, and ready to progress.',
 
     // Landing — What DDP organizes (static, no live counts)
     landingOrgTitle: 'What DDP Organizes',
-    landingOrgDesc: 'The building blocks behind every buyer-ready batch.',
+    landingOrgDesc: 'The building blocks behind every batch ready for buyer discussion.',
     landingOrgItem1Title: 'Farm Profiles',
     landingOrgItem1Desc: 'Documented grower details',
     landingOrgItem2Title: 'Inventory Batches',
@@ -115,7 +119,7 @@ export const T = {
 
     // Landing — About Us
     landingAboutTitle: 'About Us',
-    landingAboutText1: 'DDP turns Thai farm supply, batch records, COAs, and pricing into a clear buyer-ready review pack — helping serious buyers understand what is claimed, what is documented, and what is ready to progress.',
+    landingAboutText1: 'DDP turns Thai farm supply, batch records, COAs, and pricing into a clear buyer-discussion review pack — helping serious buyers understand what is claimed, what is documented, and what is ready to progress.',
 
     landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted. Access is limited to onboarded partners during the current onboarding phase.',
     landingAuthorityNote: 'DDP organizes, consolidates, and reviews supplier documentation. DDP does not certify export readiness, pharmaceutical readiness, or legal compliance in any jurisdiction. Buyer decisions should rely only on reviewed documents and confirmation from a qualified party.',
@@ -502,10 +506,15 @@ export const T = {
     resetDemo: 'รีเซ็ตข้อมูลทดสอบ',
 
     // Landing
-    // NOTE: downgraded/reworded from "Licensed Cannabis Supply Platform/Review" framing to match the English change — needs native speaker review
-    landingTagline: 'แพลตฟอร์มเตรียมความพร้อมสำหรับผู้ซื้อ สำหรับอุปทานกัญชาที่ได้รับใบอนุญาต',
-    landingNavDescriptor: 'แพลตฟอร์มเตรียมความพร้อมสำหรับผู้ซื้อ',
-    landingHeadline: 'อุปทานกัญชาไทย พร้อมสำหรับผู้ซื้อ',
+    // NOTE: reworded from "แพลตฟอร์มเตรียมความพร้อมสำหรับผู้ซื้อ" ("buyer-
+    // readiness-preparation platform") to match the English "Buyer Discussion
+    // Platform" change above — conservative literal rendering, needs native
+    // speaker review before treating as final.
+    landingTagline: 'แพลตฟอร์มสำหรับการหารือกับผู้ซื้อ สำหรับอุปทานกัญชาที่ได้รับใบอนุญาต',
+    landingNavDescriptor: 'แพลตฟอร์มหารือกับผู้ซื้อ',
+    // NOTE: reworded from "พร้อมสำหรับผู้ซื้อ" ("ready for the buyer") to match
+    // "Ready for Buyer Discussion" — needs native speaker review
+    landingHeadline: 'อุปทานกัญชาไทย พร้อมสำหรับการหารือกับผู้ซื้อ',
     landingHero1: 'DDP เปลี่ยนสต็อกฟาร์ม บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลที่ชัดเจนสำหรับผู้ซื้อจริงจัง',
     landingEnterFarmer: 'พอร์ทัลรับข้อมูลซัพพลายเออร์',
     landingEnterDDP: 'คอนโซลตรวจสอบของ DDP',
@@ -539,7 +548,9 @@ export const T = {
     // NOTE: downgraded from "verified" (ตรวจสอบแล้ว) to "reviewed" (ตรวจทานแล้ว) to match the English change — needs native speaker review
     landingFrameworkVerifiedLabel: 'ตรวจทานแล้ว',
     landingFrameworkVerifiedDesc: 'ตรวจทานแบทช์แล้ว',
-    landingFrameworkBuyerReadyLabel: 'พร้อมสำหรับผู้ซื้อ',
+    // NOTE: reuses the same conservative phrase as landingHeadline above
+    // ("Ready for Buyer Discussion") — needs native speaker review
+    landingFrameworkBuyerReadyLabel: 'พร้อมสำหรับการหารือกับผู้ซื้อ',
     landingFrameworkBuyerReadyDesc: 'แพ็กสำหรับผู้ซื้อพร้อมแล้ว',
 
     // Landing — Buyer pack preview
@@ -564,7 +575,8 @@ export const T = {
     landingWhy1Desc: 'ตรวจสอบกับเอกสารและ COA ก่อนขึ้นบัญชี',
     landingWhy2Title: 'ฟาร์มมีเอกสารรองรับ',
     landingWhy2Desc: 'โปรไฟล์ ใบอนุญาต และประวัติถูกบันทึกไว้',
-    landingWhy3Title: 'แบทช์พร้อมสำหรับผู้ซื้อ',
+    // NOTE: reworded from "แบทช์พร้อมสำหรับผู้ซื้อ" to match "Batches Ready For Buyer Discussion" — needs native speaker review
+    landingWhy3Title: 'แบทช์พร้อมหารือกับผู้ซื้อ',
     landingWhy3Desc: 'เฉพาะแบทช์ที่ตรวจสอบแล้วเข้าสู่ Buyer Pack',
     landingWhy4Title: 'ลดความสับสนในการจัดซื้อ',
     // NOTE: Thai wording downgraded to "ready to progress" (พร้อมดำเนินการต่อ) to match the English safety change — needs native speaker review
@@ -572,7 +584,8 @@ export const T = {
 
     // Landing — What DDP organizes (static, no live counts)
     landingOrgTitle: 'สิ่งที่ DDP จัดระเบียบ',
-    landingOrgDesc: 'ส่วนประกอบเบื้องหลังทุกแบทช์ที่พร้อมสำหรับผู้ซื้อ',
+    // NOTE: reworded from "...ที่พร้อมสำหรับผู้ซื้อ" to match "...ready for buyer discussion" — needs native speaker review
+    landingOrgDesc: 'ส่วนประกอบเบื้องหลังทุกแบทช์ที่พร้อมหารือกับผู้ซื้อ',
     landingOrgItem1Title: 'โปรไฟล์ฟาร์ม',
     // NOTE: downgraded from "verified" to "documented" to match the English change — needs native speaker review
     landingOrgItem1Desc: 'ข้อมูลผู้ปลูกที่มีการบันทึกไว้',
@@ -587,7 +600,8 @@ export const T = {
 
     // Landing — About Us
     landingAboutTitle: 'เกี่ยวกับเรา',
-    landingAboutText1: 'DDP เปลี่ยนข้อมูลอุปทานฟาร์มไทย บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลพร้อมสำหรับผู้ซื้อที่ชัดเจน — ช่วยให้ผู้ซื้อจริงจังเข้าใจว่าอะไรคือข้อมูลที่แจ้งเอง อะไรมีเอกสารรองรับ และอะไรพร้อมดำเนินการต่อ',
+    // NOTE: reworded from "...แพ็กข้อมูลพร้อมสำหรับผู้ซื้อที่ชัดเจน..." to match "...buyer-discussion review pack..." — needs native speaker review
+    landingAboutText1: 'DDP เปลี่ยนข้อมูลอุปทานฟาร์มไทย บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลสำหรับการหารือกับผู้ซื้อที่ชัดเจน — ช่วยให้ผู้ซื้อจริงจังเข้าใจว่าอะไรคือข้อมูลที่แจ้งเอง อะไรมีเอกสารรองรับ และอะไรพร้อมดำเนินการต่อ',
 
     // NOTE: downgraded from "verified partners" (พันธมิตรที่ผ่านการตรวจสอบ) to "onboarded partners" (พันธมิตรที่เข้าร่วมโครงการ) to match the English change — needs native speaker review
     landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย การเข้าถึงจำกัดเฉพาะพันธมิตรที่เข้าร่วมโครงการในระยะเริ่มต้นนี้',
