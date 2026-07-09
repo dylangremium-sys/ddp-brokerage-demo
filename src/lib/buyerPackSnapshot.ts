@@ -211,6 +211,81 @@ export async function generateNextBuyerPackSnapshot(
   return { snapshot, previousVersion: latest ? latest.manifest.version : null }
 }
 
+// ─── Issue eligibility + input assembly (pure) ──────────────────────────────
+//
+// Assembles a snapshot input from evidence the caller already derived — it
+// never derives evidence itself (same discipline as the rest of this module).
+// Its second job is to re-assert the human-approval gate at assembly time, so
+// the gate is enforced independently of any UI button's disabled state: a
+// snapshot input is produced only when a batch is human-approved AND its
+// recorded procurement decision is exactly "progress" AND a named approver is
+// present. createBuyerPackSnapshot re-checks the same conditions downstream,
+// so this is defence-in-depth, never a weakening of the gate.
+
+/** The minimal recorded procurement decision this assembly needs. */
+export interface BuyerPackStoredDecision {
+  decision: ProcurementDecision
+  decidedAt: string
+  notes?: string
+}
+
+export interface BuyerPackSnapshotEvidenceInput {
+  packId: string
+  generatedBy: string
+  approvedBy: string
+  isHumanApproved: boolean
+  storedDecision: BuyerPackStoredDecision | null
+  inventory: InventoryItem
+  coas: BuyerPackCoaSummary
+  complianceSummary: BuyerPackComplianceSummary
+  documentChecks: BuyerPackDocumentCheckResult[]
+  risks: RiskRegisterEntry[]
+  evidenceSummary: DocumentRequirement[]
+}
+
+export type BuyerPackIssueEligibility =
+  | { eligible: false; reason: string }
+  | { eligible: true; input: Omit<CreateBuyerPackSnapshotInput, 'version'> }
+
+export function prepareBuyerPackSnapshotInput(evidence: BuyerPackSnapshotEvidenceInput): BuyerPackIssueEligibility {
+  if (!evidence.isHumanApproved) {
+    return { eligible: false, reason: 'Batch is not human-approved for buyer discussion yet.' }
+  }
+  if (!evidence.storedDecision || evidence.storedDecision.decision !== 'progress') {
+    return { eligible: false, reason: 'A recorded "Progress" procurement decision is required before issuing a buyer pack.' }
+  }
+  if (evidence.approvedBy.trim().length === 0) {
+    return { eligible: false, reason: 'An identified human approver is required to issue a buyer pack.' }
+  }
+
+  const documentSummary: BuyerPackDocumentSummary = {
+    passCount: evidence.documentChecks.filter(c => c.passed).length,
+    totalChecks: evidence.documentChecks.length,
+    results: evidence.documentChecks,
+  }
+
+  return {
+    eligible: true,
+    input: {
+      packId: evidence.packId,
+      generatedBy: evidence.generatedBy,
+      // The approval event is identified by the batch plus the moment the
+      // decision was recorded — stable for a given recorded decision.
+      approvalId: `${evidence.packId}:${evidence.storedDecision.decidedAt}`,
+      approvalTimestamp: evidence.storedDecision.decidedAt,
+      procurementDecision: evidence.storedDecision.decision,
+      approvedBy: evidence.approvedBy,
+      inventory: evidence.inventory,
+      coas: evidence.coas,
+      complianceSummary: evidence.complianceSummary,
+      procurementNotes: evidence.storedDecision.notes ?? null,
+      documentSummary,
+      risks: evidence.risks,
+      evidenceSummary: evidence.evidenceSummary,
+    },
+  }
+}
+
 export type BuyerPackSnapshotStatus = 'generated' | 'issued' | 'superseded' | 'archived'
 
 /**

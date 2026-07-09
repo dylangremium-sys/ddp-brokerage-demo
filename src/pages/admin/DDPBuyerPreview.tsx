@@ -13,6 +13,21 @@ import {
   PROCUREMENT_DECISION_LABELS,
 } from '../../lib/procurementControl'
 import { deriveBuyerApprovalGate } from '../../lib/buyerApprovalGate'
+import {
+  prepareBuyerPackSnapshotInput,
+  generateNextBuyerPackSnapshot,
+  deriveSnapshotStatus,
+  type BuyerPackSnapshot,
+} from '../../lib/buyerPackSnapshot'
+import { createLocalStorageBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotStore'
+import { appendBuyerPackAuditEvent, getBuyerPackAuditTrail } from '../../lib/buyerPackAudit'
+import { appendBuyerPackDownload } from '../../lib/buyerPackDownloads'
+
+// Single localStorage-backed repository instance for the admin session. Phase A
+// persists snapshots/audit/downloads in the browser only — tamper-evident via
+// content hashing, not durably tamper-proof; a Supabase-backed repository is a
+// separate, later phase.
+const snapshotRepo = createLocalStorageBuyerPackSnapshotRepository()
 
 interface Props {
   inventory: InventoryItem[]
@@ -20,6 +35,8 @@ interface Props {
   selectedItem?: InventoryItem | null
   onBack?: () => void
   onGetCoaUrl?: (storagePath: string) => Promise<string | null>
+  // Current admin identity, used as the named approver/generator on a snapshot.
+  approverName?: string
 }
 
 const CHECKLIST: { key: string; label: string; pass: (i: InventoryItem) => boolean }[] = [
@@ -72,11 +89,12 @@ function computeBuyerDisclosureStatus(item: InventoryItem, farms: FarmProfile[] 
 
 // ─── Buyer Pack ───────────────────────────────────────────────────────────────
 
-function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
+function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   item: InventoryItem
   farms?: FarmProfile[]
   onBack?: () => void
   onGetCoaUrl?: (storagePath: string) => Promise<string | null>
+  approverName?: string
 }) {
   const [coaLoading, setCoaLoading] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -87,12 +105,72 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
   const [decision, setDecision] = useState<ProcurementDecision | ''>(storedDecision?.decision ?? '')
   const [decisionSaved, setDecisionSaved] = useState(false)
 
+  // Latest immutable snapshot for this batch (null until one is issued).
+  const [latestSnapshot, setLatestSnapshot] = useState<BuyerPackSnapshot | null>(() => snapshotRepo.getLatest(item.id))
+  const [issuing, setIssuing] = useState(false)
+  const [issueError, setIssueError] = useState<string | null>(null)
+  const [issueNotice, setIssueNotice] = useState<string | null>(null)
+
+  const approver = (approverName && approverName.trim()) || 'DDP Admin'
+
   function handleSaveDecision() {
     if (!decision) return
     saveProcurementDecision(item.id, decision)
     setDecisionSaved(true)
     setTimeout(() => setDecisionSaved(false), 2000)
   }
+
+  async function handleIssueBuyerPack() {
+    setIssueError(null)
+    setIssueNotice(null)
+    // Assemble the snapshot input from already-derived evidence and re-assert
+    // the human-approval gate. This never bypasses the gate — both this call
+    // and createBuyerPackSnapshot downstream reject anything not explicitly
+    // human-approved with a recorded "progress" decision.
+    const eligibility = prepareBuyerPackSnapshotInput({
+      packId: item.id,
+      generatedBy: approver,
+      approvedBy: approver,
+      isHumanApproved,
+      storedDecision: storedDecision ?? null,
+      inventory: item,
+      coas: { hasCoaFile: !!item.coaStoragePath, certFileName: item.certFileName ?? null, coaStoragePath: item.coaStoragePath ?? null },
+      complianceSummary: { tier: farm ? deriveComplianceTier(farm, [item]) : 'CULTIVATOR_CLAIMED' },
+      documentChecks: CHECKLIST.map(c => ({ key: c.key, label: c.label, passed: c.pass(item) })),
+      risks: unresolvedRisks,
+      evidenceSummary: requirements,
+    })
+    if (!eligibility.eligible) {
+      setIssueError(eligibility.reason)
+      return
+    }
+
+    setIssuing(true)
+    try {
+      const { snapshot, previousVersion } = await generateNextBuyerPackSnapshot(snapshotRepo, eligibility.input)
+      appendBuyerPackAuditEvent({ packId: item.id, snapshotVersion: snapshot.manifest.version, action: 'pack_generated', user: approver })
+      if (previousVersion !== null) {
+        appendBuyerPackAuditEvent({ packId: item.id, snapshotVersion: previousVersion, action: 'pack_superseded', user: approver })
+      }
+      setLatestSnapshot(snapshot)
+      setIssueNotice(`Buyer pack v${snapshot.manifest.version} issued.`)
+    } catch (err) {
+      setIssueError(err instanceof Error ? err.message : 'Failed to issue buyer pack.')
+    } finally {
+      setIssuing(false)
+    }
+  }
+
+  // Records a download of the already-issued snapshot. No snapshot → export
+  // still works exactly as before, just without a download-history entry.
+  function recordDownload(format: string) {
+    if (!latestSnapshot) return
+    appendBuyerPackDownload({ packId: item.id, snapshotVersion: latestSnapshot.manifest.version, user: approver, format })
+  }
+
+  const snapshotStatus = latestSnapshot
+    ? deriveSnapshotStatus(snapshotRepo, getBuyerPackAuditTrail(item.id), item.id, latestSnapshot.manifest.version)
+    : null
 
   const location = farm?.province
     ? `${farm.province}, Thailand`
@@ -168,10 +246,16 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
     try {
       await navigator.clipboard.writeText(buildSummaryText())
       setCopied(true)
+      recordDownload('summary-copy')
       setTimeout(() => setCopied(false), 2000)
     } catch {
       // clipboard not available in some browser contexts
     }
+  }
+
+  function handlePrint() {
+    recordDownload('print-pdf')
+    window.print()
   }
 
   return (
@@ -198,7 +282,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
               Open Photo
             </button>
           )}
-          <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+          <button type="button" className="btn btn-primary" onClick={handlePrint}>
             Print / Save PDF
           </button>
         </div>
@@ -443,6 +527,40 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
           </div>
         </div>
 
+        {/* Issue immutable buyer pack snapshot */}
+        <div className="no-print" style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <div className="detail-block-title" style={{ marginBottom: 10 }}>Immutable Buyer Pack Record</div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => { void handleIssueBuyerPack() }}
+              disabled={!isHumanApproved || issuing}
+              title={isHumanApproved ? undefined : 'Requires no blocking issues and a recorded "Progress" decision'}
+            >
+              {issuing ? 'Issuing…' : latestSnapshot ? 'Re-Issue Buyer Pack (new version)' : 'Issue Buyer Pack'}
+            </button>
+            {!isHumanApproved && (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Enabled only after this batch is human-approved for buyer discussion.
+              </span>
+            )}
+            {issueNotice && <span style={{ fontSize: 12, color: 'var(--success, #2e7d32)' }}>{issueNotice}</span>}
+            {issueError && <span style={{ fontSize: 12, color: 'var(--warning)' }}>{issueError}</span>}
+          </div>
+          {latestSnapshot && (
+            <div className="detail-rows" style={{ marginTop: 12 }}>
+              <div className="detail-row"><span className="dl">Snapshot Version</span><span className="dv">v{latestSnapshot.manifest.version}</span></div>
+              <div className="detail-row"><span className="dl">Content Hash</span><span className="dv td-mono">{latestSnapshot.manifest.contentHash.slice(0, 12)}…</span></div>
+              <div className="detail-row"><span className="dl">Status</span><span className="dv">{snapshotStatus}</span></div>
+            </div>
+          )}
+          <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '10px 0 0' }}>
+            Issuing preserves a hashed, append-only copy of exactly what this pack shows, under the recorded human approval.
+            Stored in this browser only for now — tamper-evident, not a durable server record.
+          </p>
+        </div>
+
         {/* Safety disclaimer */}
         <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
           <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
@@ -468,7 +586,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
 
 // ─── Default export: buyer preview dashboard or pack ─────────────────────────
 
-export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack, onGetCoaUrl }: Props) {
+export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack, onGetCoaUrl, approverName }: Props) {
   if (selectedItem) {
     return (
       <BuyerPack
@@ -476,6 +594,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
         farms={farms}
         onBack={onBack}
         onGetCoaUrl={onGetCoaUrl}
+        approverName={approverName}
       />
     )
   }

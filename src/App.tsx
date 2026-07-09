@@ -800,6 +800,7 @@ export default function App() {
               selectedItem={buyerPackItem}
               onBack={() => { setBuyerPackItemId(null); goTo('ddp-master') }}
               onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
+              approverName={currentProfile?.displayName || currentProfile?.email || undefined}
             />
           )}
 
