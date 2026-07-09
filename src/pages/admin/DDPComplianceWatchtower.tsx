@@ -11,6 +11,7 @@ import type {
   InventoryItem,
   LegalUpdate,
   LegalUpdateAffectedArea,
+  RegulatorySource,
   UserProfile,
 } from '../../types'
 import {
@@ -26,6 +27,8 @@ import { deriveRuleBasedComplianceAlerts, mergeComplianceAlerts } from '../../li
 import { deriveExportReadiness } from '../../lib/complianceScoring'
 import { guardAiDraftedFields } from '../../lib/aiComplianceGuard'
 import * as repo from '../../lib/complianceRepository'
+import * as sourceRegistry from '../../lib/complianceSourceRegistry'
+import { SUPPORTED_SOURCE_TYPES, deriveRegulatorySourceStatus, type RegulatorySourceStatus } from '../../lib/complianceSourceRegistry'
 
 interface Props {
   farms: FarmProfile[]
@@ -33,7 +36,7 @@ interface Props {
   currentUser?: UserProfile | null
 }
 
-type WatchtowerTab = 'monitor' | 'queue' | 'rules' | 'readiness' | 'alerts' | 'audit'
+type WatchtowerTab = 'monitor' | 'sources' | 'queue' | 'rules' | 'readiness' | 'alerts' | 'audit'
 
 const STORAGE = {
   legalUpdates: 'ddp_compliance_legal_updates',
@@ -41,16 +44,28 @@ const STORAGE = {
   rules: 'ddp_compliance_rules',
   alerts: 'ddp_compliance_alerts',
   audit: 'ddp_compliance_audit_log',
+  sources: 'ddp_compliance_regulatory_sources',
 }
 
 const TABS: Array<{ id: WatchtowerTab; label: string }> = [
   { id: 'monitor', label: 'Legal Change Monitor' },
+  { id: 'sources', label: 'Source Registry' },
   { id: 'queue', label: 'Review Queue' },
   { id: 'rules', label: 'Compliance Rules' },
   { id: 'readiness', label: 'Export Readiness' },
   { id: 'alerts', label: 'Compliance Alerts' },
   { id: 'audit', label: 'Audit Log' },
 ]
+
+// Reuses existing status-pill CSS classes (no new CSS added). ARCHIVED is
+// mapped for type completeness even though deriveRegulatorySourceStatus()
+// never currently returns it — see that function's own comment.
+const SOURCE_STATUS_CLASS: Record<RegulatorySourceStatus, string> = {
+  ACTIVE: 'status-verified',
+  DISABLED: 'status-hold',
+  TEST: 'status-claimed',
+  ARCHIVED: 'status-missing',
+}
 
 const SEVERITY_CLASS: Record<ComplianceSeverity, string> = {
   info: 'badge-gray',
@@ -113,6 +128,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const [rules, setRules] = useState<ComplianceRule[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.rules, createBaselineComplianceRules())))
   const [storedAlerts, setStoredAlerts] = useState<ComplianceAlert[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.alerts, [])))
   const [auditLog, setAuditLog] = useState<ComplianceAuditLog[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.audit, [])))
+  const [sources, setSources] = useState<RegulatorySource[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.sources, [])))
   const [openReadinessId, setOpenReadinessId] = useState<string | null>(null)
 
   const [initialLoading, setInitialLoading] = useState(repo.isSupabaseConfigured)
@@ -140,6 +156,14 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     severity: 'medium' as ComplianceSeverity,
     linkedRuleId: '',
   })
+
+  const [sourceForm, setSourceForm] = useState({
+    name: '',
+    jurisdiction: '',
+    sourceType: SUPPORTED_SOURCE_TYPES[0] as string,
+    url: '',
+  })
+  const [editingSourceId, setEditingSourceId] = useState<string | null>(null)
 
   const actorName = currentUser?.displayName || currentUser?.email || 'DDP Admin'
   const actorId = currentUser?.id ?? 'local-admin'
@@ -174,6 +198,21 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSupabaseAdmin])
+
+  // Separate, independent effect — deliberately not folded into the
+  // Promise.all above, so the existing five-dataset load path is untouched.
+  useEffect(() => {
+    if (!isSupabaseAdmin) return
+    let cancelled = false
+    sourceRegistry.listRegulatorySources().then(list => {
+      if (cancelled) return
+      setSources(list)
+    }).catch(err => {
+      if (cancelled) return
+      setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to load regulatory sources.' })
+    })
+    return () => { cancelled = true }
   }, [isSupabaseAdmin])
 
   const autoAlerts = useMemo(() => deriveRuleBasedComplianceAlerts(farms, inventory, rules), [farms, inventory, rules])
@@ -227,6 +266,117 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   function persistAlertsLocal(next: ComplianceAlert[]): void {
     setStoredAlerts(next)
     saveStored(STORAGE.alerts, next)
+  }
+
+  function persistSourcesLocal(next: RegulatorySource[]): void {
+    setSources(next)
+    saveStored(STORAGE.sources, next)
+  }
+
+  function resetSourceForm(): void {
+    setSourceForm({ name: '', jurisdiction: '', sourceType: SUPPORTED_SOURCE_TYPES[0], url: '' })
+    setEditingSourceId(null)
+  }
+
+  function startEditSource(source: RegulatorySource): void {
+    setEditingSourceId(source.id)
+    setSourceForm({ name: source.name, jurisdiction: source.jurisdiction, sourceType: source.sourceType, url: source.url })
+    setActionMessage(null)
+  }
+
+  // Validation (including duplicate-URL detection) always runs before any
+  // write, in both Supabase and local/demo mode — via
+  // complianceSourceRegistry.ts's createRegulatorySource/
+  // updateRegulatorySource in Supabase mode, and via the same module's pure
+  // decideRegulatorySourceWrite() in local/demo mode. A rejected decision
+  // never reaches a repository call or a local state write.
+  //
+  // Note: unlike every other write path in this file, this one does not
+  // call logAudit() — compliance_audit_log's `action` column has a fixed
+  // SQL CHECK constraint with no regulatory-source-related value, and no
+  // migration is in scope for this phase. Documented gap, not a silent
+  // omission — a future migration could add source_created/source_updated/
+  // source_deactivated action values.
+  async function submitRegulatorySource(): Promise<void> {
+    setActionMessage(null)
+    const isEditing = !!editingSourceId
+
+    if (repo.isSupabaseConfigured) {
+      if (!isSupabaseAdmin) {
+        setActionMessage({ type: 'error', text: 'Admin access required to save to Supabase.' })
+        return
+      }
+      setBusy(true)
+      try {
+        const saved = isEditing
+          ? await sourceRegistry.updateRegulatorySource(editingSourceId as string, {
+              name: sourceForm.name,
+              jurisdiction: sourceForm.jurisdiction,
+              sourceType: sourceForm.sourceType,
+              url: sourceForm.url,
+            })
+          : await sourceRegistry.createRegulatorySource({
+              name: sourceForm.name,
+              jurisdiction: sourceForm.jurisdiction,
+              sourceType: sourceForm.sourceType,
+              url: sourceForm.url,
+            })
+        setSources(prev => (isEditing ? prev.map(s => (s.id === saved.id ? saved : s)) : [saved, ...prev]))
+        setActionMessage({ type: 'success', text: `Regulatory source ${isEditing ? 'updated' : 'added'}.` })
+        resetSourceForm()
+      } catch (err) {
+        setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to save regulatory source.' })
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
+    const now = new Date().toISOString()
+    const current = isEditing ? sources.find(s => s.id === editingSourceId) : undefined
+    const candidate = {
+      name: sourceForm.name.trim(),
+      jurisdiction: sourceForm.jurisdiction.trim(),
+      sourceType: sourceForm.sourceType,
+      url: sourceForm.url.trim(),
+      isActive: current?.isActive ?? true,
+    }
+    const decision = sourceRegistry.decideRegulatorySourceWrite(candidate, sources, editingSourceId ?? undefined)
+    if (decision.action === 'reject') {
+      setActionMessage({ type: 'error', text: decision.errors.join('; ') })
+      return
+    }
+    if (isEditing && current) {
+      persistSourcesLocal(sources.map(s => (s.id === editingSourceId ? { ...s, ...candidate, updatedAt: now } : s)))
+    } else {
+      const created: RegulatorySource = { id: makeId('source'), ...candidate, lastCheckedAt: null, createdAt: now, updatedAt: now }
+      persistSourcesLocal([created, ...sources])
+    }
+    setActionMessage({ type: 'success', text: `Regulatory source ${isEditing ? 'updated' : 'added'} (local/demo mode).` })
+    resetSourceForm()
+  }
+
+  async function deactivateSource(source: RegulatorySource): Promise<void> {
+    setActionMessage(null)
+    if (repo.isSupabaseConfigured) {
+      if (!isSupabaseAdmin) {
+        setActionMessage({ type: 'error', text: 'Admin access required to save to Supabase.' })
+        return
+      }
+      setBusy(true)
+      try {
+        const updated = await sourceRegistry.deactivateRegulatorySource(source.id)
+        setSources(prev => prev.map(s => (s.id === updated.id ? updated : s)))
+        setActionMessage({ type: 'success', text: 'Regulatory source deactivated.' })
+      } catch (err) {
+        setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to deactivate regulatory source.' })
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+    persistSourcesLocal(sources.map(s => (s.id === source.id ? { ...s, isActive: false, updatedAt: new Date().toISOString() } : s)))
+    setActionMessage({ type: 'success', text: 'Regulatory source deactivated (local/demo mode).' })
   }
 
   function handleAffectedAreaToggle(area: LegalUpdateAffectedArea, checked: boolean): void {
@@ -1048,6 +1198,80 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
             </table>
           </div>
         </div>
+      )}
+
+      {tab === 'sources' && (
+        <>
+          <div className="card" style={{ padding: 20, marginTop: 16 }}>
+            <h2 style={{ marginTop: 0 }}>{editingSourceId ? 'Edit Regulatory Source' : 'Add Regulatory Source'}</h2>
+            <p className="td-muted">
+              This registry is decision-support infrastructure for future monitoring — registering a source here
+              does not fetch, check, or summarise anything, and does not create a legal update, a compliance rule,
+              or any buyer-visible claim.
+            </p>
+            <div className="form-grid-3">
+              <label className="field">
+                <span>Name</span>
+                <input value={sourceForm.name} onChange={e => setSourceForm({ ...sourceForm, name: e.target.value })} />
+              </label>
+              <label className="field">
+                <span>Jurisdiction</span>
+                <input value={sourceForm.jurisdiction} onChange={e => setSourceForm({ ...sourceForm, jurisdiction: e.target.value })} />
+              </label>
+              <label className="field">
+                <span>Source type</span>
+                <select value={sourceForm.sourceType} onChange={e => setSourceForm({ ...sourceForm, sourceType: e.target.value })}>
+                  {SUPPORTED_SOURCE_TYPES.map(type => <option key={type} value={type}>{statusText(type)}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Official URL</span>
+                <input value={sourceForm.url} onChange={e => setSourceForm({ ...sourceForm, url: e.target.value })} placeholder="https://…" />
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button className="btn btn-primary" disabled={busy} onClick={() => { void submitRegulatorySource() }}>
+                {busy ? 'Saving…' : editingSourceId ? 'Save Changes' : 'Add Source'}
+              </button>
+              {editingSourceId && (
+                <button className="btn btn-review" disabled={busy} onClick={resetSourceForm}>Cancel edit</button>
+              )}
+            </div>
+          </div>
+          <div className="card table-card" style={{ marginTop: 16 }}>
+            <div className="table-scroll">
+              <table className="inv-table inv-table--cards">
+                <thead><tr><th>Name</th><th>Jurisdiction</th><th>Type</th><th>Status</th><th>Last checked</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {sources.map(source => {
+                    const status = deriveRegulatorySourceStatus(source)
+                    return (
+                      <tr key={source.id}>
+                        <td>
+                          <span className="td-bold">{source.name}</span><br />
+                          <a href={source.url} target="_blank" rel="noreferrer" className="td-muted">{source.url}</a>
+                        </td>
+                        <td>{source.jurisdiction}</td>
+                        <td>{statusText(source.sourceType)}</td>
+                        <td><span className={`status-pill ${SOURCE_STATUS_CLASS[status]}`}>{status}</span></td>
+                        <td>{source.lastCheckedAt || 'Never checked'}</td>
+                        <td>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            <button className="btn btn-review" disabled={busy} onClick={() => startEditSource(source)}>Edit</button>
+                            {source.isActive && (
+                              <button className="btn btn-review" disabled={busy} onClick={() => { void deactivateSource(source) }}>Deactivate</button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {sources.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 28 }}>No regulatory sources registered yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
