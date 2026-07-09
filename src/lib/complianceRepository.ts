@@ -7,6 +7,7 @@ import type {
   ComplianceReview,
   ComplianceRule,
   LegalUpdate,
+  RegulatorySource,
 } from '../types'
 
 // Compliance Watchtower Supabase persistence.
@@ -31,6 +32,89 @@ function requireClient() {
 
 function raise(context: string, error: { message: string } | null): void {
   if (error) throw new Error(`${context}: ${error.message}`)
+}
+
+// ---------- regulatory_sources ----------
+// Raw persistence only — no validation, no duplicate detection, no business
+// rules. Callers should go through src/lib/complianceSourceRegistry.ts,
+// which owns those concerns and calls these functions only after a source
+// candidate has already passed validation.
+
+interface RegulatorySourceRow {
+  id: string
+  name: string
+  jurisdiction: string
+  source_type: string
+  url: string
+  is_active: boolean
+  last_checked_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+function regulatorySourceFromRow(row: RegulatorySourceRow): RegulatorySource {
+  return {
+    id: row.id,
+    name: row.name,
+    jurisdiction: row.jurisdiction,
+    sourceType: row.source_type,
+    url: row.url,
+    isActive: row.is_active,
+    lastCheckedAt: row.last_checked_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export async function fetchRegulatorySources(): Promise<RegulatorySource[]> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('regulatory_sources')
+    .select('*')
+    .order('created_at', { ascending: false })
+  raise('Loading regulatory sources', error)
+  return (data as RegulatorySourceRow[] ?? []).map(regulatorySourceFromRow)
+}
+
+export async function insertRegulatorySource(
+  input: Omit<RegulatorySource, 'id' | 'lastCheckedAt' | 'createdAt' | 'updatedAt'>,
+): Promise<RegulatorySource> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('regulatory_sources')
+    .insert({
+      name: input.name,
+      jurisdiction: input.jurisdiction,
+      source_type: input.sourceType,
+      url: input.url,
+      is_active: input.isActive,
+    })
+    .select('*')
+    .single()
+  raise('Creating regulatory source', error)
+  return regulatorySourceFromRow(data as RegulatorySourceRow)
+}
+
+export async function updateRegulatorySource(
+  id: string,
+  patch: Partial<Omit<RegulatorySource, 'id' | 'lastCheckedAt' | 'createdAt' | 'updatedAt'>>,
+): Promise<RegulatorySource> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('regulatory_sources')
+    .update({
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.jurisdiction !== undefined ? { jurisdiction: patch.jurisdiction } : {}),
+      ...(patch.sourceType !== undefined ? { source_type: patch.sourceType } : {}),
+      ...(patch.url !== undefined ? { url: patch.url } : {}),
+      ...(patch.isActive !== undefined ? { is_active: patch.isActive } : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+  raise('Updating regulatory source', error)
+  return regulatorySourceFromRow(data as RegulatorySourceRow)
 }
 
 // ---------- legal_updates ----------
