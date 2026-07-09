@@ -111,6 +111,7 @@ export default function FarmerMyStock({
           <button
             style={{ marginLeft: 10, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
             onClick={() => setUploadError(null)}
+            aria-label={isTh ? 'ปิดข้อความแจ้งเตือน' : 'Dismiss'}
           >✕</button>
         </div>
       )}
@@ -236,6 +237,7 @@ export default function FarmerMyStock({
                           disabled={uploadingId === item.id}
                           style={{ marginLeft: 6, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', padding: 0 }}
                           title={isTh ? 'แทนที่ไฟล์ COA' : 'Replace COA'}
+                          aria-label={isTh ? 'แทนที่ไฟล์ COA' : 'Replace COA'}
                         >
                           {uploadingId === item.id ? '…' : '↑'}
                         </button>

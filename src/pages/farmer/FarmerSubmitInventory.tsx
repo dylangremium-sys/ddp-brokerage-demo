@@ -497,6 +497,7 @@ export default function FarmerSubmitInventory({
                       type="button"
                       className="btn-ghost-sm"
                       onClick={() => { set('coaFileName', ''); setCoaFile(null); setCoaFileError(null); if (coaInputRef.current) coaInputRef.current.value = '' }}
+                      aria-label={isTh ? 'ลบไฟล์ COA' : 'Remove COA file'}
                     >✕</button>
                   </div>
                 ) : (
@@ -604,12 +605,14 @@ export default function FarmerSubmitInventory({
               <div key={i} style={{ position: 'relative', width: 80, height: 80 }}>
                 <img
                   src={url}
-                  alt=""
+                  alt={isTh ? `รูปที่อัปโหลด ${i + 1}` : `Uploaded photo ${i + 1}`}
+                  loading="lazy"
                   style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }}
                 />
                 <button
                   type="button"
                   onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
+                  aria-label={isTh ? 'ลบรูปภาพ' : 'Remove photo'}
                   style={{
                     position: 'absolute', top: -6, right: -6,
                     background: 'var(--error)', color: 'var(--text)',

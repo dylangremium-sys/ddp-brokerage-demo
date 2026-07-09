@@ -506,7 +506,15 @@ export default function App() {
       {/* ── Navbar (all non-landing pages) ── */}
       {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
         <nav className="navbar">
-          <div className="navbar-brand" onClick={() => goTo('landing')} style={{ cursor: 'pointer' }}>
+          <div
+            className="navbar-brand"
+            onClick={() => goTo('landing')}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo('landing') } }}
+            role="button"
+            tabIndex={0}
+            aria-label="Go to home"
+            style={{ cursor: 'pointer' }}
+          >
             <DDPMonogramLogo height={48} />
             <span className="brand-name">Brokerage</span>
           </div>

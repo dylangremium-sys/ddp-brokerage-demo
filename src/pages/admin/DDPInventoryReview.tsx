@@ -189,7 +189,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
             {item.photoUrl && (
               <div className="detail-block">
                 <div className="detail-block-title">Photo Preview</div>
-                <img src={item.photoUrl} alt="Product" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
+                <img src={item.photoUrl} alt="Product" loading="lazy" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
               </div>
             )}
 
@@ -198,7 +198,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                 <div className="detail-block-title">Photos ({item.photoUrls!.length})</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {item.photoUrls!.map((url, i) => (
-                    <img key={i} src={url} alt="" style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
+                    <img key={i} src={url} alt={`Batch photo ${i + 1} of ${item.photoUrls!.length}`} loading="lazy" style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
                   ))}
                 </div>
               </div>
