@@ -29,6 +29,7 @@ import { guardAiDraftedFields } from '../../lib/aiComplianceGuard'
 import * as repo from '../../lib/complianceRepository'
 import * as sourceRegistry from '../../lib/complianceSourceRegistry'
 import { SUPPORTED_SOURCE_TYPES, deriveRegulatorySourceStatus, type RegulatorySourceStatus } from '../../lib/complianceSourceRegistry'
+import { buildMonitoringDecision, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
 
 interface Props {
   farms: FarmProfile[]
@@ -36,7 +37,7 @@ interface Props {
   currentUser?: UserProfile | null
 }
 
-type WatchtowerTab = 'monitor' | 'sources' | 'queue' | 'rules' | 'readiness' | 'alerts' | 'audit'
+type WatchtowerTab = 'monitor' | 'monitoring-queue' | 'sources' | 'queue' | 'rules' | 'readiness' | 'alerts' | 'audit'
 
 const STORAGE = {
   legalUpdates: 'ddp_compliance_legal_updates',
@@ -45,10 +46,12 @@ const STORAGE = {
   alerts: 'ddp_compliance_alerts',
   audit: 'ddp_compliance_audit_log',
   sources: 'ddp_compliance_regulatory_sources',
+  monitoringSnapshots: 'ddp_compliance_monitoring_snapshots',
 }
 
 const TABS: Array<{ id: WatchtowerTab; label: string }> = [
   { id: 'monitor', label: 'Legal Change Monitor' },
+  { id: 'monitoring-queue', label: 'Monitoring Queue' },
   { id: 'sources', label: 'Source Registry' },
   { id: 'queue', label: 'Review Queue' },
   { id: 'rules', label: 'Compliance Rules' },
@@ -164,6 +167,18 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     url: '',
   })
   const [editingSourceId, setEditingSourceId] = useState<string | null>(null)
+
+  // Monitoring Queue — manual-only. No source is ever fetched automatically;
+  // an admin pastes what they retrieved themselves and runs the Phase 1D
+  // monitoring skeleton against it. monitoringSnapshots holds the last
+  // snapshot seen per sourceId purely so repeat checks can detect
+  // unchanged/changed — it is local UI state (persisted to localStorage in
+  // demo mode only), not a new backend table.
+  const [monitoringSourceId, setMonitoringSourceId] = useState('')
+  const [monitoringContent, setMonitoringContent] = useState('')
+  const [monitoringDecision, setMonitoringDecision] = useState<MonitoringDecision | null>(null)
+  const [monitoringSnapshots, setMonitoringSnapshots] = useState<Record<string, SourceContentSnapshot>>(() => loadStored(STORAGE.monitoringSnapshots, {}))
+  const [monitoringBusy, setMonitoringBusy] = useState(false)
 
   const actorName = currentUser?.displayName || currentUser?.email || 'DDP Admin'
   const actorId = currentUser?.id ?? 'local-admin'
@@ -515,6 +530,182 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     setActionMessage({ type: 'success', text: 'Legal update and review item saved (local/demo mode).' })
     setLegalForm({ title: '', jurisdiction: '', sourceName: '', sourceUrl: '', publishedAt: '', rawText: '', summary: '', affectedAreas: [], notes: '' })
     setTab('queue')
+  }
+
+  // Pure decision only — never fetches anything, never calls Supabase, never
+  // calls an AI provider, and never writes a legal_update by itself. Persists
+  // only the resulting snapshot (checksum + retrieved timestamp) so a repeat
+  // check against the same source can tell unchanged from changed.
+  async function runMonitoringCheck(): Promise<void> {
+    setActionMessage(null)
+    const source = sources.find(s => s.id === monitoringSourceId)
+    const sourceKey = source?.id ?? monitoringSourceId.trim()
+    const previousSnapshot = monitoringSnapshots[sourceKey] ?? null
+    // Deliberately excludes sourceKey's own history — that comparison is
+    // previousSnapshot's job (unchanged vs changed). knownChecksums here is
+    // strictly for catching the same content mirrored under a *different*
+    // registered source.
+    const knownChecksums = Object.entries(monitoringSnapshots)
+      .filter(([id]) => id !== sourceKey)
+      .map(([, snapshot]) => snapshot.checksum)
+
+    const decision = await buildMonitoringDecision(sourceKey, monitoringContent, previousSnapshot, knownChecksums)
+    setMonitoringDecision(decision)
+
+    if (decision.snapshot) {
+      const nextSnapshots = { ...monitoringSnapshots, [sourceKey]: decision.snapshot }
+      setMonitoringSnapshots(nextSnapshots)
+      saveStored(STORAGE.monitoringSnapshots, nextSnapshots)
+    }
+  }
+
+  // The ONLY function in this file that may turn a monitoring decision into
+  // a legal_update — reachable only from the "Create Legal Update from
+  // Monitoring Decision" button, and only when the current decision is
+  // changed_pending_review. Reuses the exact same repo.insertLegalUpdate /
+  // repo.insertReview (Supabase) and persistLegalUpdatesLocal /
+  // persistReviewsLocal (local/demo) calls that submitLegalUpdate() above
+  // uses — this is not a second, parallel write path. The created
+  // legal_update always has status 'new' and a pending review item; nothing
+  // here ever touches compliance_rules or compliance_alerts, and nothing
+  // here approves or activates anything.
+  async function createLegalUpdateFromMonitoringDecision(): Promise<void> {
+    if (!monitoringDecision || monitoringDecision.kind !== 'changed_pending_review' || !monitoringDecision.proposedLegalUpdate) return
+    setActionMessage(null)
+
+    const proposal = monitoringDecision.proposedLegalUpdate
+    const source = sources.find(s => s.id === proposal.sourceId)
+    const title = `Source change detected: ${source?.name || proposal.sourceId}`
+    const sourceName = source?.name || proposal.sourceId
+    const sourceUrl = source?.url || ''
+    const jurisdiction = source?.jurisdiction || ''
+
+    // Same intake-safety gate submitLegalUpdate() runs before any write —
+    // an unsafe finding here means no legal_update, review, rule, alert, or
+    // audit_log entry is created for this monitoring decision.
+    const draftGuard = guardAiDraftedFields({
+      title,
+      source: sourceName,
+      rawText: proposal.rawContent,
+      summary: '',
+    })
+    if (!draftGuard.isSafe) {
+      setActionMessage({
+        type: 'error',
+        text: 'Monitored source content may imply unreviewed certification or compliance. Reword before creating a legal update.',
+      })
+      return
+    }
+
+    const now = new Date().toISOString()
+    const reviewerNotes = `Created from Monitoring Queue decision. Checksum: ${proposal.checksum}. Retrieved: ${proposal.retrievedAt}.`
+
+    setMonitoringBusy(true)
+    try {
+      if (repo.isSupabaseConfigured) {
+        if (!isSupabaseAdmin || !currentUser) {
+          setActionMessage({ type: 'error', text: 'Admin access required to save to Supabase.' })
+          return
+        }
+        const update = await repo.insertLegalUpdate({
+          sourceId: source?.id ?? null,
+          title,
+          jurisdiction,
+          sourceName,
+          sourceUrl,
+          publishedAt: null,
+          rawText: proposal.rawContent,
+          summary: '',
+          affectedAreas: [],
+          aiRiskLevel: 'info',
+          status: 'new',
+          reviewerNotes,
+        })
+        const review = await repo.insertReview({
+          legalUpdateId: update.id,
+          title: update.title,
+          reviewType: 'legal_update',
+          status: 'pending',
+          reviewerNotes: '',
+        })
+        const nextLegalUpdates = [update, ...legalUpdates]
+        setLegalUpdates(nextLegalUpdates)
+        setReviews([repo.enrichReview(review, nextLegalUpdates), ...reviews])
+        // actorType 'system' — this entry represents a monitoring-decision
+        // intake, not a human-typed one, and the existing actor_type CHECK
+        // constraint and ComplianceAuditLog['action'] union already support
+        // 'system' + 'legal_update_created' without any migration.
+        await logAudit({
+          action: 'legal_update_created',
+          entityType: 'legal_update',
+          entityId: update.id,
+          beforeState: null,
+          afterState: update,
+          reason: 'Legal update created from Monitoring Queue decision (changed_pending_review). Pending human review.',
+        }, 'system')
+        setActionMessage({ type: 'success', text: 'Legal update created from monitoring decision and saved to Supabase. Pending human review.' })
+        setMonitoringDecision(null)
+        setMonitoringContent('')
+        setTab('queue')
+        return
+      }
+
+      const update: LegalUpdate = {
+        id: makeId('legal'),
+        sourceId: source?.id ?? null,
+        title,
+        jurisdiction,
+        sourceName,
+        sourceUrl,
+        publishedAt: null,
+        detectedAt: now,
+        rawText: proposal.rawContent,
+        summary: '',
+        affectedAreas: [],
+        aiRiskLevel: 'info',
+        status: 'new',
+        reviewerNotes,
+        createdAt: now,
+        updatedAt: now,
+      }
+      const review: ComplianceReview = {
+        id: makeId('review'),
+        legalUpdateId: update.id,
+        alertId: null,
+        ruleId: null,
+        title: update.title,
+        reviewType: 'legal_update',
+        status: 'pending',
+        riskLevel: 'info',
+        affectedEntities: [],
+        summary: update.rawText.slice(0, 280),
+        recommendedAction: 'Classify and monitor.',
+        reviewerNotes: update.reviewerNotes,
+        decision: null,
+        reviewedBy: null,
+        reviewedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }
+      persistLegalUpdatesLocal([update, ...legalUpdates])
+      persistReviewsLocal([review, ...reviews])
+      await logAudit({
+        action: 'legal_update_created',
+        entityType: 'legal_update',
+        entityId: update.id,
+        beforeState: null,
+        afterState: update,
+        reason: 'Legal update created from Monitoring Queue decision (changed_pending_review). Pending human review.',
+      }, 'system')
+      setActionMessage({ type: 'success', text: 'Legal update created from monitoring decision (local/demo mode). Pending human review.' })
+      setMonitoringDecision(null)
+      setMonitoringContent('')
+      setTab('queue')
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to create legal update from monitoring decision.' })
+    } finally {
+      setMonitoringBusy(false)
+    }
   }
 
   async function updateReviewDecision(review: ComplianceReview, decision: string): Promise<void> {
@@ -1000,6 +1191,70 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
           <button className="btn btn-primary" style={{ marginTop: 18 }} disabled={busy} onClick={() => { void submitLegalUpdate() }}>
             {busy ? 'Saving…' : 'Create Legal Update + Review Item'}
           </button>
+        </div>
+      )}
+
+      {tab === 'monitoring-queue' && (
+        <div className="card" style={{ padding: 22, marginTop: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Monitoring Queue</h2>
+          <p className="td-muted">
+            Manual-only. Paste content you have retrieved yourself from a registered source below to check it
+            against the last known snapshot for that source. This performs no network fetch, no scheduled check,
+            and no AI summarisation — it only computes a checksum and compares it. A detected change proposes a
+            pending legal update for human review; it never creates or approves a compliance rule.
+          </p>
+          <div className="form-grid-3">
+            <label className="field">
+              <span>Regulatory source</span>
+              <select value={monitoringSourceId} onChange={e => { setMonitoringSourceId(e.target.value); setMonitoringDecision(null) }}>
+                <option value="">Select a registered source…</option>
+                {sources.map(source => (
+                  <option key={source.id} value={source.id}>{source.name} ({source.jurisdiction})</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="field" style={{ marginTop: 14 }}>
+            <span>Pasted source content (as currently retrieved)</span>
+            <textarea rows={8} value={monitoringContent} onChange={e => { setMonitoringContent(e.target.value); setMonitoringDecision(null) }} />
+          </label>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} disabled={monitoringBusy} onClick={() => { void runMonitoringCheck() }}>
+            {monitoringBusy ? 'Checking…' : 'Run Monitoring Check'}
+          </button>
+
+          {monitoringDecision && (
+            <div className="disclaimer-box" style={{ marginTop: 18 }}>
+              <span className="disclaimer-icon" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '1px', color: 'var(--warning)' }}>
+                {statusText(monitoringDecision.kind)}
+              </span>
+              <div>{monitoringDecision.reason}</div>
+            </div>
+          )}
+
+          {monitoringDecision?.kind === 'changed_pending_review' && monitoringDecision.proposedLegalUpdate && (
+            <div style={{ marginTop: 18 }}>
+              <div className="td-bold" style={{ marginBottom: 8 }}>Proposed legal update intake preview</div>
+              <div className="detail-rows">
+                <div className="detail-row">
+                  <span className="dl">Source</span>
+                  <span className="dv">{sources.find(s => s.id === monitoringDecision.sourceId)?.name || monitoringDecision.sourceId}</span>
+                </div>
+                <div className="detail-row"><span className="dl">Retrieved at</span><span className="dv">{monitoringDecision.proposedLegalUpdate.retrievedAt}</span></div>
+                <div className="detail-row"><span className="dl">Checksum</span><span className="dv">{monitoringDecision.proposedLegalUpdate.checksum}</span></div>
+                <div className="detail-row">
+                  <span className="dl">Normalized content preview</span>
+                  <span className="dv" style={{ whiteSpace: 'pre-wrap' }}>{monitoringDecision.proposedLegalUpdate.normalizedContent.slice(0, 600)}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="dl">Original pasted content</span>
+                  <span className="dv" style={{ whiteSpace: 'pre-wrap' }}>{monitoringDecision.proposedLegalUpdate.rawContent.slice(0, 600)}</span>
+                </div>
+              </div>
+              <button className="btn btn-primary" style={{ marginTop: 16 }} disabled={monitoringBusy} onClick={() => { void createLegalUpdateFromMonitoringDecision() }}>
+                {monitoringBusy ? 'Creating…' : 'Create Legal Update from Monitoring Decision'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
