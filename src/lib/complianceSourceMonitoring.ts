@@ -198,3 +198,94 @@ export async function buildMonitoringDecision(
     },
   }
 }
+
+// ─── Intake preparation (UI wiring, pure) ───────────────────────────────────
+
+/** Minimal shape of a registered regulatory source needed to label an intake. */
+export interface MonitoringSourceRef {
+  id: string
+  name?: string
+  url?: string
+  jurisdiction?: string
+}
+
+/**
+ * The derived legal_update fields a monitoring decision would become. `status`
+ * is the literal 'new' — same structural guarantee as ProposedLegalUpdateIntent:
+ * this preparation can never propose an 'approved'/'active' update, and carries
+ * no rule/alert field of any kind.
+ */
+export interface PreparedMonitoringIntake {
+  title: string
+  sourceId: string | null
+  sourceName: string
+  sourceUrl: string
+  jurisdiction: string
+  rawText: string
+  reviewerNotes: string
+  status: 'new'
+}
+
+export type MonitoringIntakePreparation =
+  | { outcome: 'skip'; reason: string }
+  | { outcome: 'blocked'; reason: string }
+  | { outcome: 'ready'; intake: PreparedMonitoringIntake }
+
+/** Signature of the deterministic wording guard this helper gates on. */
+export type DraftedFieldsGuard = (fields: Record<string, string>) => { isSafe: boolean }
+
+/**
+ * Pure decision/branch logic behind the "Create Legal Update from Monitoring
+ * Decision" button, extracted from DDPComplianceWatchtower so it can be unit
+ * tested without React state or any repository/network write.
+ *
+ * Guarantees enforced here (the human-review safety gate):
+ *  - Only a `changed_pending_review` decision can ever proceed; every other
+ *    decision kind returns `skip` and produces nothing.
+ *  - The deterministic wording guard is injected and MUST pass; an unsafe
+ *    finding returns `blocked`, so no legal_update/review is created.
+ *  - A `ready` result always carries status 'new' and no rule/alert field —
+ *    it can only ever become a pending-review legal_update, never an approved
+ *    or enforced rule. Rule approval/enforcement lives entirely elsewhere.
+ *
+ * The guard is passed in (rather than imported) so this module performs no
+ * AI/network/schedule work itself and callers supply the real
+ * guardAiDraftedFields implementation.
+ */
+export function prepareMonitoringLegalUpdateIntake(
+  decision: MonitoringDecision,
+  source: MonitoringSourceRef | undefined,
+  guardFields: DraftedFieldsGuard,
+): MonitoringIntakePreparation {
+  if (decision.kind !== 'changed_pending_review' || !decision.proposedLegalUpdate) {
+    return { outcome: 'skip', reason: 'decision is not changed_pending_review; nothing is created' }
+  }
+
+  const proposal = decision.proposedLegalUpdate
+  const title = `Source change detected: ${source?.name || proposal.sourceId}`
+  const sourceName = source?.name || proposal.sourceId
+  const sourceUrl = source?.url || ''
+  const jurisdiction = source?.jurisdiction || ''
+
+  const guard = guardFields({ title, source: sourceName, rawText: proposal.rawContent, summary: '' })
+  if (!guard.isSafe) {
+    return {
+      outcome: 'blocked',
+      reason: 'Monitored source content may imply unreviewed certification or compliance. Reword before creating a legal update.',
+    }
+  }
+
+  return {
+    outcome: 'ready',
+    intake: {
+      title,
+      sourceId: source?.id ?? null,
+      sourceName,
+      sourceUrl,
+      jurisdiction,
+      rawText: proposal.rawContent,
+      reviewerNotes: `Created from Monitoring Queue decision. Checksum: ${proposal.checksum}. Retrieved: ${proposal.retrievedAt}.`,
+      status: 'new',
+    },
+  }
+}

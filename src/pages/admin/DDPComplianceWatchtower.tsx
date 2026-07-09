@@ -29,7 +29,7 @@ import { guardAiDraftedFields } from '../../lib/aiComplianceGuard'
 import * as repo from '../../lib/complianceRepository'
 import * as sourceRegistry from '../../lib/complianceSourceRegistry'
 import { SUPPORTED_SOURCE_TYPES, deriveRegulatorySourceStatus, type RegulatorySourceStatus } from '../../lib/complianceSourceRegistry'
-import { buildMonitoringDecision, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
+import { buildMonitoringDecision, prepareMonitoringLegalUpdateIntake, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
 
 interface Props {
   farms: FarmProfile[]
@@ -570,35 +570,27 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   // here ever touches compliance_rules or compliance_alerts, and nothing
   // here approves or activates anything.
   async function createLegalUpdateFromMonitoringDecision(): Promise<void> {
-    if (!monitoringDecision || monitoringDecision.kind !== 'changed_pending_review' || !monitoringDecision.proposedLegalUpdate) return
+    if (!monitoringDecision) return
     setActionMessage(null)
 
-    const proposal = monitoringDecision.proposedLegalUpdate
-    const source = sources.find(s => s.id === proposal.sourceId)
-    const title = `Source change detected: ${source?.name || proposal.sourceId}`
-    const sourceName = source?.name || proposal.sourceId
-    const sourceUrl = source?.url || ''
-    const jurisdiction = source?.jurisdiction || ''
+    const source = monitoringDecision.proposedLegalUpdate
+      ? sources.find(s => s.id === monitoringDecision.proposedLegalUpdate!.sourceId)
+      : undefined
 
-    // Same intake-safety gate submitLegalUpdate() runs before any write —
-    // an unsafe finding here means no legal_update, review, rule, alert, or
-    // audit_log entry is created for this monitoring decision.
-    const draftGuard = guardAiDraftedFields({
-      title,
-      source: sourceName,
-      rawText: proposal.rawContent,
-      summary: '',
-    })
-    if (!draftGuard.isSafe) {
-      setActionMessage({
-        type: 'error',
-        text: 'Monitored source content may imply unreviewed certification or compliance. Reword before creating a legal update.',
-      })
+    // Pure decision/branch logic (title/source derivation + the intake-safety
+    // gate) is extracted to prepareMonitoringLegalUpdateIntake for unit testing.
+    // A 'skip' means the decision was not changed_pending_review; a 'blocked'
+    // means the wording guard rejected it — in either case no legal_update,
+    // review, rule, alert, or audit_log entry is created.
+    const prep = prepareMonitoringLegalUpdateIntake(monitoringDecision, source, guardAiDraftedFields)
+    if (prep.outcome === 'skip') return
+    if (prep.outcome === 'blocked') {
+      setActionMessage({ type: 'error', text: prep.reason })
       return
     }
 
+    const { title, sourceId: preparedSourceId, sourceName, sourceUrl, jurisdiction, rawText, reviewerNotes } = prep.intake
     const now = new Date().toISOString()
-    const reviewerNotes = `Created from Monitoring Queue decision. Checksum: ${proposal.checksum}. Retrieved: ${proposal.retrievedAt}.`
 
     setMonitoringBusy(true)
     try {
@@ -608,13 +600,13 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
           return
         }
         const update = await repo.insertLegalUpdate({
-          sourceId: source?.id ?? null,
+          sourceId: preparedSourceId,
           title,
           jurisdiction,
           sourceName,
           sourceUrl,
           publishedAt: null,
-          rawText: proposal.rawContent,
+          rawText,
           summary: '',
           affectedAreas: [],
           aiRiskLevel: 'info',
@@ -652,14 +644,14 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
 
       const update: LegalUpdate = {
         id: makeId('legal'),
-        sourceId: source?.id ?? null,
+        sourceId: preparedSourceId,
         title,
         jurisdiction,
         sourceName,
         sourceUrl,
         publishedAt: null,
         detectedAt: now,
-        rawText: proposal.rawContent,
+        rawText,
         summary: '',
         affectedAreas: [],
         aiRiskLevel: 'info',

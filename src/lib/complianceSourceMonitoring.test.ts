@@ -5,9 +5,12 @@ import {
   compareSourceSnapshot,
   computeSourceChecksum,
   normalizeSourceContent,
+  prepareMonitoringLegalUpdateIntake,
   shouldCreateLegalUpdateFromSourceChange,
   validateSourceContent,
+  type MonitoringSourceRef,
 } from './complianceSourceMonitoring'
+import { guardAiDraftedFields } from './aiComplianceGuard'
 
 describe('normalizeSourceContent', () => {
   it('collapses all whitespace runs (including line breaks) into single spaces, trims ends, normalizes CRLF', () => {
@@ -181,5 +184,121 @@ describe('buildMonitoringDecision — decision output only proposes pending revi
     expect(unchanged.proposedLegalUpdate).toBeUndefined()
     expect(invalid.proposedLegalUpdate).toBeUndefined()
     expect(duplicate.proposedLegalUpdate).toBeUndefined()
+  })
+})
+
+// ─── UI wiring: prepareMonitoringLegalUpdateIntake ──────────────────────────
+// These cover the branch logic behind the "Create Legal Update from Monitoring
+// Decision" button, previously reachable only through the React handler. The
+// real guardAiDraftedFields is used (not a mock) so the safety gate is
+// exercised end to end. No React, no repository, no network is involved.
+
+const SOURCE: MonitoringSourceRef = {
+  id: 'source-1',
+  name: 'Thai FDA Cannabis Notices',
+  url: 'https://example.gov.th/notices',
+  jurisdiction: 'TH',
+}
+
+// Builds a real changed_pending_review decision from arbitrary content, so the
+// prep helper is fed exactly what the UI would feed it.
+async function changedDecisionFor(content: string) {
+  const decision = await buildMonitoringDecision(SOURCE.id, content, null, [])
+  expect(decision.kind).toBe('changed_pending_review')
+  return decision
+}
+
+describe('prepareMonitoringLegalUpdateIntake — unchanged content is never actionable', () => {
+  it('returns skip (creates nothing) for an unchanged decision', async () => {
+    const previous = await buildSourceSnapshot(SOURCE.id, 'Stable notice.', '2026-01-01T00:00:00.000Z')
+    const unchanged = await buildMonitoringDecision(SOURCE.id, 'Stable notice.', previous, [])
+    expect(unchanged.kind).toBe('unchanged')
+
+    const prep = prepareMonitoringLegalUpdateIntake(unchanged, SOURCE, guardAiDraftedFields)
+    expect(prep.outcome).toBe('skip')
+    expect(prep).not.toHaveProperty('intake')
+  })
+})
+
+describe('prepareMonitoringLegalUpdateIntake — changed content proposes a pending-review legal update only', () => {
+  it('returns a ready intake with status "new" and no rule/alert field', async () => {
+    const decision = await changedDecisionFor('New quantity limit announced for licensed operators.')
+    const prep = prepareMonitoringLegalUpdateIntake(decision, SOURCE, guardAiDraftedFields)
+
+    expect(prep.outcome).toBe('ready')
+    if (prep.outcome !== 'ready') throw new Error('expected ready')
+
+    expect(prep.intake.status).toBe('new')
+    expect(prep.intake.sourceId).toBe(SOURCE.id)
+    expect(prep.intake.title).toContain(SOURCE.name!)
+    expect(prep.intake.reviewerNotes).toContain('Checksum:')
+
+    // Structural guarantee: the intake carries nothing that could approve or
+    // enforce a rule — no rule/alert/approve/active/enforce key exists.
+    const keys = Object.keys(prep.intake)
+    for (const forbidden of ['ruleId', 'rule', 'alertId', 'alert', 'approved', 'active', 'enforce']) {
+      expect(keys).not.toContain(forbidden)
+    }
+    // The only status value it can carry is the literal 'new'.
+    expect(JSON.stringify(prep.intake)).not.toMatch(/"status":"(approved|active)"/)
+  })
+
+  it('falls back to the proposal sourceId when the source is not registered', async () => {
+    const decision = await changedDecisionFor('Change with no registered source row.')
+    const prep = prepareMonitoringLegalUpdateIntake(decision, undefined, guardAiDraftedFields)
+
+    expect(prep.outcome).toBe('ready')
+    if (prep.outcome !== 'ready') throw new Error('expected ready')
+    // No registered source → sourceId is null and the label falls back to the id.
+    expect(prep.intake.sourceId).toBeNull()
+    expect(prep.intake.title).toContain(SOURCE.id)
+    expect(prep.intake.sourceUrl).toBe('')
+    expect(prep.intake.jurisdiction).toBe('')
+  })
+})
+
+describe('prepareMonitoringLegalUpdateIntake — duplicate checksum blocks creation upstream', () => {
+  it('a duplicate decision never reaches ready (returns skip, no intake)', async () => {
+    // Same content already known under a different source → duplicate decision.
+    const known = await buildSourceSnapshot('source-2', 'Mirrored notice.', '2026-01-01T00:00:00.000Z')
+    const duplicate = await buildMonitoringDecision(SOURCE.id, 'Mirrored notice.', null, [known.checksum])
+    expect(duplicate.kind).toBe('duplicate')
+
+    const prep = prepareMonitoringLegalUpdateIntake(duplicate, SOURCE, guardAiDraftedFields)
+    expect(prep.outcome).toBe('skip')
+  })
+})
+
+describe('prepareMonitoringLegalUpdateIntake — unsafe/overclaim text is rejected by the wording guard', () => {
+  it('returns blocked (creates nothing) when content implies unreviewed certification', async () => {
+    // "certified" / "guaranteed compliant" are exactly the unqualified claim
+    // words guardAiDraftedText flags.
+    const decision = await changedDecisionFor('This product is certified and guaranteed compliant for export.')
+    const prep = prepareMonitoringLegalUpdateIntake(decision, SOURCE, guardAiDraftedFields)
+
+    expect(prep.outcome).toBe('blocked')
+    if (prep.outcome !== 'blocked') throw new Error('expected blocked')
+    expect(prep.reason).toMatch(/reword/i)
+  })
+
+  it('does not block ordinary regulatory wording', async () => {
+    const decision = await changedDecisionFor('The permitted THC threshold for licensed operators has been revised.')
+    const prep = prepareMonitoringLegalUpdateIntake(decision, SOURCE, guardAiDraftedFields)
+    expect(prep.outcome).toBe('ready')
+  })
+})
+
+describe('prepareMonitoringLegalUpdateIntake — the safety gate cannot be bypassed', () => {
+  it('a custom guard reporting unsafe always blocks, even for benign text', async () => {
+    const decision = await changedDecisionFor('Perfectly benign text.')
+    const alwaysUnsafe = () => ({ isSafe: false })
+    const prep = prepareMonitoringLegalUpdateIntake(decision, SOURCE, alwaysUnsafe)
+    expect(prep.outcome).toBe('blocked')
+  })
+
+  it('no decision kind other than changed_pending_review can ever produce an intake', async () => {
+    const invalid = await buildMonitoringDecision(SOURCE.id, '', null, [])
+    const prep = prepareMonitoringLegalUpdateIntake(invalid, SOURCE, guardAiDraftedFields)
+    expect(prep.outcome).toBe('skip')
   })
 })
