@@ -42,20 +42,11 @@ function na(val: string | number | undefined | null, suffix = ''): string {
   return `${val}${suffix}`
 }
 
-// ─── Buyer Pack ───────────────────────────────────────────────────────────────
-
-function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
-  item: InventoryItem
-  farms?: FarmProfile[]
-  onBack?: () => void
-  onGetCoaUrl?: (storagePath: string) => Promise<string | null>
-}) {
-  const [coaLoading, setCoaLoading] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const storedDecision = loadProcurementDecisions()[item.id]
-  const [decision, setDecision] = useState<ProcurementDecision | ''>(storedDecision?.decision ?? '')
-  const [decisionSaved, setDecisionSaved] = useState(false)
-
+// Single source of truth for "is this batch ready to be disclosed to a
+// buyer" — used by both the single-batch pack and the aggregate inventory
+// list, so the two views can never apply different evidentiary standards to
+// the same word ("Approved") again.
+function computeBuyerDisclosureStatus(item: InventoryItem, farms: FarmProfile[] | undefined) {
   const farm = farms?.find(f =>
     (item.farmId && f.id === item.farmId) ||
     f.tradingName === item.farmName ||
@@ -70,7 +61,31 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
     .filter(r => r.batchId === item.id || (!!farm && r.farmId === farm.id))
   const unresolvedRisks = risks.filter(r => r.status !== 'resolved' && r.status !== 'accepted')
   const hasBlockingIssues = blockerRequirements.length > 0 || unresolvedRisks.some(r => r.severity === 'blocker')
+  const storedDecision = loadProcurementDecisions()[item.id]
   const { isHumanApproved, packStatusLabel } = deriveBuyerApprovalGate(hasBlockingIssues, storedDecision?.decision === 'progress')
+
+  return {
+    farm, requirements, missingRequirements, blockerRequirements, receivedCount,
+    unresolvedRisks, hasBlockingIssues, storedDecision, isHumanApproved, packStatusLabel,
+  }
+}
+
+// ─── Buyer Pack ───────────────────────────────────────────────────────────────
+
+function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
+  item: InventoryItem
+  farms?: FarmProfile[]
+  onBack?: () => void
+  onGetCoaUrl?: (storagePath: string) => Promise<string | null>
+}) {
+  const [coaLoading, setCoaLoading] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const {
+    farm, requirements, missingRequirements, blockerRequirements, receivedCount, unresolvedRisks,
+    storedDecision, isHumanApproved, packStatusLabel,
+  } = computeBuyerDisclosureStatus(item, farms)
+  const [decision, setDecision] = useState<ProcurementDecision | ''>(storedDecision?.decision ?? '')
+  const [decisionSaved, setDecisionSaved] = useState(false)
 
   function handleSaveDecision() {
     if (!decision) return
@@ -346,6 +361,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl }: {
             <img
               src={previewPhoto}
               alt="Product photo"
+              loading="lazy"
               style={{ maxWidth: 200, maxHeight: 160, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }}
             />
           </div>
@@ -464,7 +480,15 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
     )
   }
 
-  const approved = inventory.filter(i => i.status === 'Approved')
+  // Listing a batch here — under a "DDP-Approved" heading with the reviewed-supply
+  // seal next to it — is itself a buyer-visible disclosure claim. It must clear the
+  // same bar as the single-batch pack: no unresolved blocking issues AND a DDP
+  // staffer has recorded an explicit "progress" procurement decision. status ===
+  // 'Approved' alone is a necessary but not sufficient condition — see
+  // computeBuyerDisclosureStatus / deriveBuyerApprovalGate.
+  const approved = inventory
+    .filter(i => i.status === 'Approved')
+    .filter(i => computeBuyerDisclosureStatus(i, farms).isHumanApproved)
 
   return (
     <div className="page-wrap ddp-wrap">
@@ -484,7 +508,8 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
 
       {approved.length === 0 ? (
         <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
-          No approved inventory available for preview. Approve inventory batches from the Inventory Dashboard to enable this section.
+          No batches are currently approved for buyer disclosure. Approving a batch on the Inventory Dashboard is not enough on its own —
+          open its Buyer Pack from Master Inventory, confirm there are no unresolved blocking issues, and record a "Progress" decision.
         </div>
       ) : (
         <>
