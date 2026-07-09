@@ -539,7 +539,6 @@ export const T = {
     landingFrameworkClaimedDesc: 'ส่งสต็อกแล้ว',
     landingFrameworkDocumentedLabel: 'มีเอกสารรองรับ',
     landingFrameworkDocumentedDesc: 'ตรวจสอบเอกสารแล้ว',
-    // NOTE: downgraded from "verified" (ตรวจสอบแล้ว) to "reviewed" (ตรวจทานแล้ว) to match the English change — needs native speaker review
     landingFrameworkVerifiedLabel: 'ตรวจทานแล้ว',
     landingFrameworkVerifiedDesc: 'ตรวจทานแบทช์แล้ว',
     landingFrameworkBuyerReadyLabel: 'พร้อมสำหรับการหารือกับผู้ซื้อ',
@@ -548,8 +547,7 @@ export const T = {
     // Landing — Buyer pack preview
     landingBuyerPackBadge: 'ตัวอย่าง Buyer Pack',
     landingBuyerPackTitle: 'สิ่งที่ผู้ซื้อจะได้รับ',
-    // NOTE: reworded to match the English change ("approved" → "DDP-reviewed") — needs native speaker review
-    landingBuyerPackDesc: 'สรุปสถานะฟาร์มและแบทช์อย่างชัดเจน สำหรับทุกแบทช์ที่ DDP ตรวจสอบแล้ว',
+    landingBuyerPackDesc: 'สรุปสถานะฟาร์มและแบทช์อย่างชัดเจน สำหรับทุกแบทช์ที่ DDP ตรวจทานแล้ว',
     landingBuyerPackFarmLabel: 'สถานะฟาร์ม',
     landingBuyerPackBatchLabel: 'สถานะแบทช์',
     landingBuyerPackCoaLabel: 'สถานะ COA',
@@ -562,25 +560,22 @@ export const T = {
 
     // Landing — Why DDP
     landingWhyTitle: 'ทำไมต้อง DDP',
-    // NOTE: downgraded from "verified" to "reviewed" to match the English change — needs native speaker review
     landingWhy1Title: 'อุปทานที่ตรวจทานแล้ว',
     landingWhy1Desc: 'ตรวจสอบกับเอกสารและ COA ก่อนขึ้นบัญชี',
     landingWhy2Title: 'ฟาร์มมีเอกสารรองรับ',
     landingWhy2Desc: 'โปรไฟล์ ใบอนุญาต และประวัติถูกบันทึกไว้',
     landingWhy3Title: 'แบทช์พร้อมหารือกับผู้ซื้อ',
-    landingWhy3Desc: 'เฉพาะแบทช์ที่ตรวจสอบแล้วเข้าสู่ Buyer Pack',
+    landingWhy3Desc: 'เฉพาะแบทช์ที่ตรวจทานแล้วเข้าสู่ Buyer Pack',
     landingWhy4Title: 'ลดความสับสนในการจัดซื้อ',
-    // NOTE: Thai wording downgraded to "ready to progress" (พร้อมดำเนินการต่อ) to match the English safety change — needs native speaker review
     landingWhy4Desc: 'ดูในที่เดียวว่าอะไรจริง ขาดหาย และพร้อมดำเนินการต่อ',
 
     // Landing — What DDP organizes (static, no live counts)
     landingOrgTitle: 'สิ่งที่ DDP จัดระเบียบ',
     landingOrgDesc: 'ส่วนประกอบเบื้องหลังทุกแบทช์ที่พร้อมหารือกับผู้ซื้อ',
     landingOrgItem1Title: 'โปรไฟล์ฟาร์ม',
-    // NOTE: downgraded from "verified" to "documented" to match the English change — needs native speaker review
     landingOrgItem1Desc: 'ข้อมูลผู้ปลูกที่มีการบันทึกไว้',
     landingOrgItem2Title: 'แบทช์สินค้าคงคลัง',
-    landingOrgItem2Desc: 'สต็อกที่พร้อมตรวจสอบ',
+    landingOrgItem2Desc: 'สต็อกที่พร้อมตรวจทาน',
     landingOrgItem3Title: 'เอกสาร COA',
     landingOrgItem3Desc: 'ผลแล็บที่มีอยู่ในระบบ',
     landingOrgItem4Title: 'Buyer Pack',
@@ -592,9 +587,7 @@ export const T = {
     landingAboutTitle: 'เกี่ยวกับเรา',
     landingAboutText1: 'DDP เปลี่ยนข้อมูลอุปทานฟาร์มไทย บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลสำหรับการหารือกับผู้ซื้อที่ชัดเจน — ช่วยให้ผู้ซื้อจริงจังเข้าใจว่าอะไรคือข้อมูลที่แจ้งเอง อะไรมีเอกสารรองรับ และอะไรพร้อมดำเนินการต่อ',
 
-    // NOTE: downgraded from "verified partners" (พันธมิตรที่ผ่านการตรวจสอบ) to "onboarded partners" (พันธมิตรที่เข้าร่วมโครงการ) to match the English change — needs native speaker review
     landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย การเข้าถึงจำกัดเฉพาะพันธมิตรที่เข้าร่วมโครงการในระยะเริ่มต้นนี้',
-    // NOTE: new string — needs native speaker review
     landingAuthorityNote: 'DDP จัดระเบียบ รวบรวม และตรวจทานเอกสารของซัพพลายเออร์ DDP ไม่รับรองความพร้อมด้านการส่งออก ความพร้อมด้านเภสัชกรรม หรือความถูกต้องตามกฎหมายในเขตอำนาจใดๆ การตัดสินใจของผู้ซื้อควรอ้างอิงจากเอกสารที่ตรวจทานแล้วและการยืนยันจากผู้ที่มีคุณสมบัติเท่านั้น',
 
     // Onboarding

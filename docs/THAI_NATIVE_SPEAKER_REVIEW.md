@@ -17,18 +17,11 @@ speaker.
 
 ## Already changed — needs confirmation the replacement reads naturally
 
-| Key | Line | English | Old Thai | New Thai (current, needs review) |
-|---|---|---|---|---|
-| `landingFrameworkVerifiedLabel` | 528 | Reviewed | ตรวจสอบแล้ว (checked/verified) | ตรวจทานแล้ว (reviewed) |
-| `landingFrameworkVerifiedDesc` | 529 | Batch reviewed | ตรวจสอบแบทช์แล้ว | ตรวจทานแบทช์แล้ว |
-| `landingWhy1Title` | 550 | Reviewed Supply | (n/a — title itself downgraded) | อุปทานที่ตรวจทานแล้ว |
-| `landingOrgItem1Desc` | 564 | Documented grower details | (n/a — downgraded to "documented") | ข้อมูลผู้ปลูกที่มีการบันทึกไว้ |
-| `landingDisclaimer` | 588 | "...Access is limited to onboarded partners..." | พันธมิตรที่ผ่านการตรวจสอบ (partners who have passed verification/inspection) | พันธมิตรที่เข้าร่วมโครงการ (partners who have joined/onboarded) |
-| `landingWhy4Desc` | 566 | ...ready to progress. | ...พร้อมซื้อ (ready to buy) | ...พร้อมดำเนินการต่อ (ready to progress) |
-
-`landingTagline` and `landingNavDescriptor` were removed from this table —
-see "Resolved" section below; they were further reworded and confirmed by a
-later, separate review.
+All rows formerly listed in this section (`landingFrameworkVerifiedLabel`,
+`landingFrameworkVerifiedDesc`, `landingWhy1Title`, `landingOrgItem1Desc`,
+`landingDisclaimer`, `landingWhy4Desc`, `landingTagline`,
+`landingNavDescriptor`) are now resolved — see the "Resolved" sections
+below for sign-off references.
 
 ## New strings added in the Wave 1 professionalisation pass — not yet reviewed
 
@@ -41,26 +34,15 @@ confirm natural phrasing before being treated as final.
 |---|---|---|---|
 | `landingAccessBuyerCta` | 513 | Buyer or procurement partner? Contact DDP | เป็นผู้ซื้อหรือพันธมิตรด้านจัดซื้อ? ติดต่อ DDP |
 | `landingHeroMockCaption` | 518 | Illustrative example — not a live batch. | ตัวอย่างประกอบ — ไม่ใช่แบทช์จริง |
-| `landingAuthorityNote` | 590 | DDP organizes, consolidates, and reviews supplier documentation. DDP does not certify export readiness, pharmaceutical readiness, or legal compliance in any jurisdiction. Buyer decisions should rely only on reviewed documents and confirmation from a qualified party. | DDP จัดระเบียบ รวบรวม และตรวจทานเอกสารของซัพพลายเออร์ DDP ไม่รับรองความพร้อมด้านการส่งออก ความพร้อมด้านเภสัชกรรม หรือความถูกต้องตามกฎหมายในเขตอำนาจใดๆ การตัดสินใจของผู้ซื้อควรอ้างอิงจากเอกสารที่ตรวจทานแล้วและการยืนยันจากผู้ที่มีคุณสมบัติเท่านั้น |
-| `landingBuyerPackDesc` | 549 | A clear summary of farm and batch status for every DDP-reviewed batch. (reworded from "approved batch" per audit remediation — see PROFESSIONALIZATION_ROADMAP.md) | สรุปสถานะฟาร์มและแบทช์อย่างชัดเจน สำหรับทุกแบทช์ที่ DDP ตรวจสอบแล้ว |
 
-This last one (`landingAuthorityNote`) is the most important of the three to
-get right — it's the platform's explicit non-overclaiming statement. A
-mistranslation that reintroduces a stronger claim (e.g. rendering "does not
-certify" as something softer) would defeat the entire point of adding it.
+`landingAuthorityNote` and `landingBuyerPackDesc` (formerly listed here)
+are now resolved — see the "Resolved" section below.
 
 ## Not yet changed — flagged in prior audit, still open (should-fix-next)
 
-These two strings still use ตรวจสอบ (checked/verified) where the parallel
-English copy already reads "reviewed"/"ready for review." They were
-deliberately **not edited** by the last hardening pass (kept out of scope
-per "do not edit translations.ts" for this task) and are left here as the
-next actionable item.
-
-| Key | Line | English | Current Thai | Suggested replacement |
-|---|---|---|---|---|
-| `landingWhy3Desc` | 563 | Only reviewed batches reach the Buyer Pack. | เฉพาะแบทช์ที่ตรวจสอบแล้วเข้าสู่ Buyer Pack | เฉพาะแบทช์ที่ตรวจทานแล้วเข้าสู่ Buyer Pack |
-| `landingOrgItem2Desc` | 575 | Stock ready for review | สต็อกที่พร้อมตรวจสอบ | สต็อกที่พร้อมตรวจทาน |
+Both strings formerly listed here (`landingWhy3Desc`, `landingOrgItem2Desc`)
+have been changed to their suggested replacement and are now resolved —
+see the "Resolved" section below.
 
 ## Reviewed and judged safe as-is (no action needed)
 
@@ -85,6 +67,33 @@ Applied in commit `9bc43090e5212c670e553c2d57a4810b91c7466e` (wording) and
 commit `04c1c03158bcf601afbfefbfd6043178756f8c8f` (removal of the
 now-resolved `// NOTE: ... needs native speaker review` comments in
 `src/translations.ts` and `src/components/shared/StatusBadge.tsx`).
+
+## Resolved — verified→reviewed terminology (reviewer-approved)
+
+The following 10 items — covering every remaining open "verified/checked →
+reviewed" and related overclaim-risk item from the sections above — were
+reviewed and approved by a native Thai speaker:
+
+| Key | Resolution |
+|---|---|
+| `landingFrameworkVerifiedLabel` | Confirmed as-is: ตรวจทานแล้ว |
+| `landingFrameworkVerifiedDesc` | Confirmed as-is: ตรวจทานแบทช์แล้ว |
+| `landingWhy1Title` | Confirmed as-is: อุปทานที่ตรวจทานแล้ว |
+| `landingOrgItem1Desc` | Confirmed as-is: ข้อมูลผู้ปลูกที่มีการบันทึกไว้ |
+| `landingDisclaimer` | Confirmed as-is: พันธมิตรที่เข้าร่วมโครงการ |
+| `landingWhy4Desc` | Confirmed as-is: ...พร้อมดำเนินการต่อ |
+| `landingAuthorityNote` | Confirmed as-is (including ไม่รับรอง for "does not certify") |
+| `landingBuyerPackDesc` | Changed: ตรวจสอบแล้ว → ตรวจทานแล้ว, to match the already-safe English ("DDP-reviewed") and stay consistent with `landingFrameworkVerifiedLabel` elsewhere in this file |
+| `landingWhy3Desc` | Changed to the previously-suggested replacement: ตรวจสอบแล้ว → ตรวจทานแล้ว |
+| `landingOrgItem2Desc` | Changed to the previously-suggested replacement: พร้อมตรวจสอบ → พร้อมตรวจทาน |
+
+English text was not changed for any of these — only Thai. The
+corresponding `// NOTE: ... needs native speaker review` comments in
+`src/translations.ts` have been removed for all of the above.
+
+`landingAccessBuyerCta` and `landingHeroMockCaption` (see "New strings"
+section above) remain open — they contain no verified/reviewed/overclaim
+content and were out of scope for this review.
 
 ---
 
