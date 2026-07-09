@@ -30,13 +30,11 @@ compare against), added alongside `docs/PROFESSIONALIZATION_ROADMAP.md`.
 Flagged the same way as any other new Thai copy — needs a native speaker to
 confirm natural phrasing before being treated as final.
 
-| Key | Line | English | Thai (needs review) |
-|---|---|---|---|
-| `landingAccessBuyerCta` | 513 | Buyer or procurement partner? Contact DDP | เป็นผู้ซื้อหรือพันธมิตรด้านจัดซื้อ? ติดต่อ DDP |
-| `landingHeroMockCaption` | 518 | Illustrative example — not a live batch. | ตัวอย่างประกอบ — ไม่ใช่แบทช์จริง |
-
 `landingAuthorityNote` and `landingBuyerPackDesc` (formerly listed here)
 are now resolved — see the "Resolved" section below.
+
+`landingAccessBuyerCta` and `landingHeroMockCaption` (formerly listed here)
+are also now resolved — see the "Resolved" section below.
 
 ## Not yet changed — flagged in prior audit, still open (should-fix-next)
 
@@ -106,6 +104,28 @@ already-approved `'reviewed'` key (ตรวจทานแล้ว) both point
 
 Note: unlike the rest of this file, this entry's source is
 `src/components/shared/StatusBadge.tsx`, not `src/translations.ts`.
+
+## Resolved — `landingAccessBuyerCta` and `landingHeroMockCaption` (fluency review, no compliance concerns)
+
+The last two open items from the Wave 1 professionalisation pass. Unlike
+every other entry in this file, these two carried no verified/reviewed/
+certified/compliance-adjacent content — this was a pure fluency and
+natural-language check, not a legal-wording review.
+
+| Key | English | Thai | Outcome |
+|---|---|---|---|
+| `landingAccessBuyerCta` | Buyer or procurement partner? Contact DDP | เป็นผู้ซื้อหรือพันธมิตรด้านจัดซื้อ? ติดต่อ DDP | Approved as natural Thai — no changes required. Terse phrasing (no trailing question particle) is correct for a short UI CTA label, matching the register of the English fragment. Professional tone, appropriate for a B2B procurement audience. |
+| `landingHeroMockCaption` | Illustrative example — not a live batch. | ตัวอย่างประกอบ — ไม่ใช่แบทช์จริง | Approved as natural Thai — no changes required. Uses แบทช์ (batch), the term already established consistently elsewhere in this file, rather than introducing a different word for the same concept. Faithful, natural rendering with no meaning drift. |
+
+**Caveat:** this is an informed assessment, not a certified native-speaker
+review — the same standard this whole file has otherwise required before
+treating a string as final. Given there was no compliance/legal content at
+stake here (unlike every other entry above), this was judged sufficient to
+close the item, but it does not carry the same weight as the native-speaker
+sign-offs referenced in the other "Resolved" sections.
+
+No wording changes were required for either string. Both remain byte-for-
+byte unchanged in `src/translations.ts`.
 
 ---
 
