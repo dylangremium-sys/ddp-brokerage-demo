@@ -127,6 +127,41 @@ sign-offs referenced in the other "Resolved" sections.
 No wording changes were required for either string. Both remain byte-for-
 byte unchanged in `src/translations.ts`.
 
+## Open — `INVENTORY_STATUS_LABEL['Pending Review']` (src/translations.ts, not yet reviewed)
+
+Found in a follow-up sweep specifically for review-pending-related wording
+(searched for "review-pending", "Review Pending", รอการตรวจสอบ, and
+รอการตรวจทาน across `StatusBadge.tsx` and `src/translations.ts`). This is a
+**separate** constant from `StatusBadge.tsx`'s already-resolved
+`'review-pending'` key above — `INVENTORY_STATUS_LABEL` is defined in
+`src/translations.ts` (line 15) and was never touched by that fix. It is
+rendered live to farmers on `FarmerStatus.tsx` (their own inventory
+submission status list and status-history log).
+
+| Key | Source | Line | English | Current Thai | Suggested replacement |
+|---|---|---|---|---|---|
+| `INVENTORY_STATUS_LABEL['Pending Review']` | `src/translations.ts` | 15 | Pending Review | รอตรวจสอบ | รอตรวจทาน |
+
+Same underlying pattern as the already-fixed `StatusBadge.tsx` entry:
+ตรวจสอบ is the stronger "checked/verified/inspected" word; the softer
+ตรวจทาน ("reviewed/looked over") is this codebase's established safe term
+for a review/pending-review context (see `landingFrameworkVerifiedLabel`
+and the `StatusBadge.tsx` `'review-pending'` resolution above, which made
+the equivalent รอการตรวจสอบ → รอการตรวจทาน swap). English ("Pending
+Review") is not proposed to change — only the Thai.
+
+**Not yet reviewed or applied — this entry documents the finding only.**
+Per the standard process used throughout this file, the suggested
+replacement should go through the same native-speaker/legal reviewer
+sign-off before `src/translations.ts` is edited.
+
+(Note: `FARM_STATUS_LABEL['Under Review']`, also in `src/translations.ts`,
+uses a related word — กำลังตรวจสอบ, "currently being checked" — but is a
+different English key/concept ("Under Review", active work in progress,
+not "pending/awaiting") and did not match this sweep's search terms. Not
+included here; flagging only for awareness if a future sweep broadens
+scope.)
+
 ---
 
 ## How to action this
