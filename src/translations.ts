@@ -506,14 +506,8 @@ export const T = {
     resetDemo: 'รีเซ็ตข้อมูลทดสอบ',
 
     // Landing
-    // NOTE: reworded from "แพลตฟอร์มเตรียมความพร้อมสำหรับผู้ซื้อ" ("buyer-
-    // readiness-preparation platform") to match the English "Buyer Discussion
-    // Platform" change above — conservative literal rendering, needs native
-    // speaker review before treating as final.
     landingTagline: 'แพลตฟอร์มสำหรับการหารือกับผู้ซื้อ สำหรับอุปทานกัญชาที่ได้รับใบอนุญาต',
     landingNavDescriptor: 'แพลตฟอร์มหารือกับผู้ซื้อ',
-    // NOTE: reworded from "พร้อมสำหรับผู้ซื้อ" ("ready for the buyer") to match
-    // "Ready for Buyer Discussion" — needs native speaker review
     landingHeadline: 'อุปทานกัญชาไทย พร้อมสำหรับการหารือกับผู้ซื้อ',
     landingHero1: 'DDP เปลี่ยนสต็อกฟาร์ม บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลที่ชัดเจนสำหรับผู้ซื้อจริงจัง',
     landingEnterFarmer: 'พอร์ทัลรับข้อมูลซัพพลายเออร์',
@@ -548,8 +542,6 @@ export const T = {
     // NOTE: downgraded from "verified" (ตรวจสอบแล้ว) to "reviewed" (ตรวจทานแล้ว) to match the English change — needs native speaker review
     landingFrameworkVerifiedLabel: 'ตรวจทานแล้ว',
     landingFrameworkVerifiedDesc: 'ตรวจทานแบทช์แล้ว',
-    // NOTE: reuses the same conservative phrase as landingHeadline above
-    // ("Ready for Buyer Discussion") — needs native speaker review
     landingFrameworkBuyerReadyLabel: 'พร้อมสำหรับการหารือกับผู้ซื้อ',
     landingFrameworkBuyerReadyDesc: 'แพ็กสำหรับผู้ซื้อพร้อมแล้ว',
 
@@ -575,7 +567,6 @@ export const T = {
     landingWhy1Desc: 'ตรวจสอบกับเอกสารและ COA ก่อนขึ้นบัญชี',
     landingWhy2Title: 'ฟาร์มมีเอกสารรองรับ',
     landingWhy2Desc: 'โปรไฟล์ ใบอนุญาต และประวัติถูกบันทึกไว้',
-    // NOTE: reworded from "แบทช์พร้อมสำหรับผู้ซื้อ" to match "Batches Ready For Buyer Discussion" — needs native speaker review
     landingWhy3Title: 'แบทช์พร้อมหารือกับผู้ซื้อ',
     landingWhy3Desc: 'เฉพาะแบทช์ที่ตรวจสอบแล้วเข้าสู่ Buyer Pack',
     landingWhy4Title: 'ลดความสับสนในการจัดซื้อ',
@@ -584,7 +575,6 @@ export const T = {
 
     // Landing — What DDP organizes (static, no live counts)
     landingOrgTitle: 'สิ่งที่ DDP จัดระเบียบ',
-    // NOTE: reworded from "...ที่พร้อมสำหรับผู้ซื้อ" to match "...ready for buyer discussion" — needs native speaker review
     landingOrgDesc: 'ส่วนประกอบเบื้องหลังทุกแบทช์ที่พร้อมหารือกับผู้ซื้อ',
     landingOrgItem1Title: 'โปรไฟล์ฟาร์ม',
     // NOTE: downgraded from "verified" to "documented" to match the English change — needs native speaker review
@@ -600,7 +590,6 @@ export const T = {
 
     // Landing — About Us
     landingAboutTitle: 'เกี่ยวกับเรา',
-    // NOTE: reworded from "...แพ็กข้อมูลพร้อมสำหรับผู้ซื้อที่ชัดเจน..." to match "...buyer-discussion review pack..." — needs native speaker review
     landingAboutText1: 'DDP เปลี่ยนข้อมูลอุปทานฟาร์มไทย บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลสำหรับการหารือกับผู้ซื้อที่ชัดเจน — ช่วยให้ผู้ซื้อจริงจังเข้าใจว่าอะไรคือข้อมูลที่แจ้งเอง อะไรมีเอกสารรองรับ และอะไรพร้อมดำเนินการต่อ',
 
     // NOTE: downgraded from "verified partners" (พันธมิตรที่ผ่านการตรวจสอบ) to "onboarded partners" (พันธมิตรที่เข้าร่วมโครงการ) to match the English change — needs native speaker review

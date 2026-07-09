@@ -34,8 +34,6 @@ const STATUS_LABEL: Record<StatusKey, { en: string; th: string; cls: string }> =
   'expired':          { en: 'Expired',          th: 'หมดอายุ',             cls: 'status-expired' },
   'hold':             { en: 'Hold',             th: 'ระงับชั่วคราว',       cls: 'status-hold' },
   'reject':           { en: 'Reject',           th: 'ปฏิเสธ',              cls: 'status-reject' },
-  // NOTE: Thai reuses the same conservative phrase as translations.ts'
-  // landingHeadline ("Ready for Buyer Discussion") — needs native speaker review
   'buyer-ready':      { en: 'Ready For Buyer Discussion', th: 'พร้อมสำหรับการหารือกับผู้ซื้อ', cls: 'status-buyer-ready' },
   'review-pending':   { en: 'Review Pending',   th: 'รอการตรวจสอบ',        cls: 'status-review-pending' },
   'coa-received':     { en: 'COA Received',     th: 'ได้รับ COA แล้ว',     cls: 'status-coa-received' },
