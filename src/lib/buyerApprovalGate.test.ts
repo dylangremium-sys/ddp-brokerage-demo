@@ -11,7 +11,7 @@ describe('deriveBuyerApprovalGate — buyer visibility / human approval gate', (
   it('only approves once blockers are absent AND a progress decision is recorded', () => {
     const result = deriveBuyerApprovalGate(false, true)
     expect(result.isHumanApproved).toBe(true)
-    expect(result.packStatusLabel).toBe('DDP Reviewed — Approved for Buyer Disclosure')
+    expect(result.packStatusLabel).toBe('DDP Reviewed — Human Approved for Buyer Discussion')
   })
 
   it('never approves while blocking issues are present, even with a recorded progress decision', () => {

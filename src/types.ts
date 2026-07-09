@@ -17,7 +17,7 @@ export type FarmStatus =
 export type ComplianceVerificationTier =
   | 'CULTIVATOR_CLAIMED'
   | 'DDP_DOCUMENTED'
-  | 'CERTIFIED_PHARMA_READY'
+  | 'ADVANCED_DOCUMENTATION_REVIEW'
 
 // ─── Procurement authority model ────────────────────────────────────────────
 // Every farm/batch/document claim must be labelled with one of these evidence

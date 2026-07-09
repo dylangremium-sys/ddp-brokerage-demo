@@ -56,7 +56,7 @@ export function farmTotalScore(f: FarmProfile): number {
 // the score fields above, which are not currently persisted for Supabase-backed
 // farms. `f.coaFiles` and `f.gmpCert` etc. are free text typed by the farm, not a
 // received document, so they can only ever support a "claimed" reading on their
-// own; a farm can only clear DDP_DOCUMENTED or CERTIFIED_PHARMA_READY once at
+// own; a farm can only clear DDP_DOCUMENTED or ADVANCED_DOCUMENTATION_REVIEW once at
 // least one of its batches has a real uploaded COA (InventoryItem.coaStoragePath).
 // Callers that can't supply `inventory` (no batch context available) will always
 // see the conservative CULTIVATOR_CLAIMED tier rather than an overclaimed one.
@@ -72,7 +72,7 @@ export function deriveComplianceTier(f: FarmProfile, inventory: InventoryItem[] 
     f.heavyMetalsTested === 'Yes' && f.microbiologyTested === 'Yes' &&
     hasReceivedCoaFile
 
-  if (pharmaReady) return 'CERTIFIED_PHARMA_READY'
+  if (pharmaReady) return 'ADVANCED_DOCUMENTATION_REVIEW'
   if (reviewed && hasCoreDocs && f.completionPct >= 60) return 'DDP_DOCUMENTED'
   return 'CULTIVATOR_CLAIMED'
 }
@@ -80,7 +80,7 @@ export function deriveComplianceTier(f: FarmProfile, inventory: InventoryItem[] 
 export const COMPLIANCE_TIER_LABEL: Record<ComplianceVerificationTier, string> = {
   CULTIVATOR_CLAIMED: 'CULTIVATOR CLAIMED',
   DDP_DOCUMENTED: 'DDP DOCUMENTED',
-  CERTIFIED_PHARMA_READY: 'ADVANCED DOCUMENTATION REVIEW',
+  ADVANCED_DOCUMENTATION_REVIEW: 'ADVANCED DOCUMENTATION REVIEW',
 }
 
 export function complianceTierClass(tier: ComplianceVerificationTier): string {

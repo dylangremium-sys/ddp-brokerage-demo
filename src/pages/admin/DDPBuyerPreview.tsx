@@ -480,7 +480,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
     )
   }
 
-  // Listing a batch here — under a "DDP-Approved" heading with the reviewed-supply
+  // Listing a batch here — under a "Human-Approved" heading with the reviewed-supply
   // seal next to it — is itself a buyer-visible disclosure claim. It must clear the
   // same bar as the single-batch pack: no unresolved blocking issues AND a DDP
   // staffer has recorded an explicit "progress" procurement decision. status ===
@@ -508,7 +508,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
 
       {approved.length === 0 ? (
         <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
-          No batches are currently approved for buyer disclosure. Approving a batch on the Inventory Dashboard is not enough on its own —
+          No batches are currently human approved for buyer discussion. Approving a batch on the Inventory Dashboard is not enough on its own —
           open its Buyer Pack from Master Inventory, confirm there are no unresolved blocking issues, and record a "Progress" decision.
         </div>
       ) : (
@@ -516,7 +516,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
           <div className="section-label-row" style={{ marginTop: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <DDPVerifiedSupplySeal size={36} />
-              <div className="section-label">DDP-Approved Available Inventory</div>
+              <div className="section-label">Human-Approved Available Inventory</div>
             </div>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Visible only to qualified buyers approved by DDP</span>
           </div>

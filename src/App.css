@@ -1746,7 +1746,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .tier-cultivator-claimed { background: rgba(148,163,184,0.14); color: #CBD5E1; border: 1px solid rgba(148,163,184,0.35); }
 .tier-ddp-documented { background: rgba(184,120,46,0.14); color: var(--warning); border: 1px solid rgba(184,120,46,0.4); }
-.tier-certified-pharma-ready { background: rgba(91,75,138,0.16); color: #9B8DD1; border: 1px solid rgba(91,75,138,0.45); }
+.tier-advanced-documentation-review { background: rgba(91,75,138,0.16); color: #9B8DD1; border: 1px solid rgba(91,75,138,0.45); }
 
 /* ── Standardized status vocabulary (Claimed/Documented/Verified/etc.) ── */
 .status-pill {

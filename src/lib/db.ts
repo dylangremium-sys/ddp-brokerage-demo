@@ -538,10 +538,6 @@ export async function loadMarketBenchmarksFromDB(): Promise<MarketBenchmark[]> {
   }))
 }
 
-export function getApprovedInventory(): InventoryItem[] {
-  return lsLoadInventory().filter(i => i.status === 'Approved')
-}
-
 // ---------------------------------------------------------------------------
 // COA file upload and signed URL helpers
 // ---------------------------------------------------------------------------

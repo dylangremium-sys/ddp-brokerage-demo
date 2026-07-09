@@ -191,15 +191,23 @@ export default function App() {
   // surface a read-only "Compliance Rule Check" signal on Supply Ledger
   // pages. Fails quietly — Supply Ledger pages already work fully without
   // this data, and no impact is ever shown if the fetch doesn't succeed.
+  //
+  // Refetches on every Supply Ledger page entry (not just on login) — this
+  // state is a read-only snapshot separate from Compliance Watchtower's own
+  // local rule/alert state, and a rule approved/paused or an alert resolved
+  // in the Watchtower would otherwise not be reflected here until the whole
+  // app reloaded. Re-running on page navigation is the minimal fix that
+  // closes that staleness window without merging the two states.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
+    if (!SUPPLY_LEDGER_PAGES.includes(page)) return
     Promise.all([fetchComplianceRules(), fetchComplianceAlerts()])
       .then(([rules, alerts]) => {
         setComplianceRules(rules)
         setComplianceAlerts(alerts)
       })
       .catch(err => console.warn('Compliance rule impact data load failed:', err))
-  }, [currentProfile])
+  }, [currentProfile, page])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
   // In demo mode (no Supabase), everything is open — preserve existing behaviour.
