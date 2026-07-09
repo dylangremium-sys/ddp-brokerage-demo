@@ -35,7 +35,7 @@ const STATUS_LABEL: Record<StatusKey, { en: string; th: string; cls: string }> =
   'hold':             { en: 'Hold',             th: 'ระงับชั่วคราว',       cls: 'status-hold' },
   'reject':           { en: 'Reject',           th: 'ปฏิเสธ',              cls: 'status-reject' },
   'buyer-ready':      { en: 'Ready For Buyer Discussion', th: 'พร้อมสำหรับการหารือกับผู้ซื้อ', cls: 'status-buyer-ready' },
-  'review-pending':   { en: 'Review Pending',   th: 'รอการตรวจสอบ',        cls: 'status-review-pending' },
+  'review-pending':   { en: 'Review Pending',   th: 'รอการตรวจทาน',        cls: 'status-review-pending' },
   'coa-received':     { en: 'COA Received',     th: 'ได้รับ COA แล้ว',     cls: 'status-coa-received' },
   'coa-missing':      { en: 'COA Missing',      th: 'ไม่มี COA',           cls: 'status-coa-missing' },
   'progress':         { en: 'Progress',         th: 'ดำเนินการต่อ',        cls: 'status-progress' },

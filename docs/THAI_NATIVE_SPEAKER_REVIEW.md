@@ -95,6 +95,18 @@ corresponding `// NOTE: ... needs native speaker review` comments in
 section above) remain open — they contain no verified/reviewed/overclaim
 content and were out of scope for this review.
 
+## Resolved — StatusBadge.tsx `'review-pending'` (reviewer-approved)
+
+Flagged in a follow-up audit of `src/components/shared/StatusBadge.tsx` as
+the one remaining live, rendered string using the stronger ตรวจสอบ word
+where the parallel EN copy ("Review Pending") and this file's own
+already-approved `'reviewed'` key (ตรวจทานแล้ว) both point to the softer
+ตรวจทาน. Reviewed and approved: รอการตรวจสอบ → รอการตรวจทาน. English
+("Review Pending") was not changed.
+
+Note: unlike the rest of this file, this entry's source is
+`src/components/shared/StatusBadge.tsx`, not `src/translations.ts`.
+
 ---
 
 ## How to action this
