@@ -24,6 +24,7 @@ import {
 } from '../../lib/complianceRules'
 import { deriveRuleBasedComplianceAlerts, mergeComplianceAlerts } from '../../lib/complianceAlerts'
 import { deriveExportReadiness } from '../../lib/complianceScoring'
+import { guardAiDraftedFields } from '../../lib/aiComplianceGuard'
 import * as repo from '../../lib/complianceRepository'
 
 interface Props {
@@ -231,6 +232,27 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   async function submitLegalUpdate(): Promise<void> {
     if (!legalForm.title.trim()) return
     setActionMessage(null)
+
+    // Runs before any Supabase write, local write, or audit-log entry below
+    // — an unsafe finding here means no legal_update, compliance_review,
+    // compliance_rule, alert, or audit_log entry is ever created for this
+    // submission. This is an intake-safety check only; it does not change
+    // rule-enforcement or human-approval behaviour anywhere else in this
+    // file.
+    const draftGuard = guardAiDraftedFields({
+      title: legalForm.title,
+      source: legalForm.sourceName,
+      rawText: legalForm.rawText,
+      summary: legalForm.summary,
+    })
+    if (!draftGuard.isSafe) {
+      setActionMessage({
+        type: 'error',
+        text: 'Draft wording may imply unreviewed certification or compliance. Reword before review intake.',
+      })
+      return
+    }
+
     const now = new Date().toISOString()
     const riskLevel = riskFromAreas(legalForm.affectedAreas)
 

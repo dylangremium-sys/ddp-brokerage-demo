@@ -7,10 +7,13 @@
 // exists to catch unqualified overclaims, not to reject every mention of
 // these words.
 //
-// This module makes no network calls, writes nothing, and enforces nothing
-// by itself — it is a pure text check. Wiring it into the AI intake /
-// Review Queue flow is a later phase; nothing here is imported by
-// DDPComplianceWatchtower.tsx or complianceRepository.ts yet.
+// This module makes no network calls and writes nothing itself — it is a
+// pure text check. As of Phase 0B, DDPComplianceWatchtower.tsx calls
+// guardAiDraftedFields() at the top of its manual legal-update intake
+// submit handler, before any Supabase/local write or audit-log entry, and
+// blocks submission entirely on an unsafe finding. It still enforces
+// nothing beyond that single intake gate — no rule/alert/enforcement logic
+// is touched by this module.
 
 export interface AIComplianceGuardFinding {
   term: string
@@ -104,4 +107,31 @@ export function assertSafeAiDraftedText(text: string): void {
     const terms = result.findings.map(f => `"${f.term}"`).join(', ')
     throw new Error(`AI-drafted text contains unsafe unqualified claim(s): ${terms}`)
   }
+}
+
+export interface AIComplianceFieldFinding extends AIComplianceGuardFinding {
+  field: string
+}
+
+export interface AIComplianceFieldsGuardResult {
+  isSafe: boolean
+  findings: AIComplianceFieldFinding[]
+}
+
+/**
+ * Runs guardAiDraftedText() independently over each named field and
+ * aggregates the findings, tagging each with which field it came from.
+ * Fields are checked independently — never concatenated — so a negation
+ * marker at the end of one field can never mask an unsafe claim at the
+ * start of another. Empty/whitespace-only fields are skipped.
+ */
+export function guardAiDraftedFields(fields: Record<string, string>): AIComplianceFieldsGuardResult {
+  const findings: AIComplianceFieldFinding[] = []
+  for (const [field, text] of Object.entries(fields)) {
+    if (!text || !text.trim()) continue
+    for (const finding of guardAiDraftedText(text).findings) {
+      findings.push({ ...finding, field })
+    }
+  }
+  return { isSafe: findings.length === 0, findings }
 }
