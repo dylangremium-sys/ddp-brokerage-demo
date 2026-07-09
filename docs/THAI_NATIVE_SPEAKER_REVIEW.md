@@ -24,9 +24,11 @@ speaker.
 | `landingWhy1Title` | 550 | Reviewed Supply | (n/a — title itself downgraded) | อุปทานที่ตรวจทานแล้ว |
 | `landingOrgItem1Desc` | 564 | Documented grower details | (n/a — downgraded to "documented") | ข้อมูลผู้ปลูกที่มีการบันทึกไว้ |
 | `landingDisclaimer` | 588 | "...Access is limited to onboarded partners..." | พันธมิตรที่ผ่านการตรวจสอบ (partners who have passed verification/inspection) | พันธมิตรที่เข้าร่วมโครงการ (partners who have joined/onboarded) |
-| `landingTagline` | 502 | Buyer-Readiness Platform for Licensed Cannabis Supply | Licensed Cannabis Supply Platform framing | แพลตฟอร์มเตรียมความพร้อมสำหรับผู้ซื้อ สำหรับอุปทานกัญชาที่ได้รับใบอนุญาต |
-| `landingNavDescriptor` | 503 | Buyer-Readiness Platform | Licensed Cannabis Supply Review framing | แพลตฟอร์มเตรียมความพร้อมสำหรับผู้ซื้อ |
 | `landingWhy4Desc` | 566 | ...ready to progress. | ...พร้อมซื้อ (ready to buy) | ...พร้อมดำเนินการต่อ (ready to progress) |
+
+`landingTagline` and `landingNavDescriptor` were removed from this table —
+see "Resolved" section below; they were further reworded and confirmed by a
+later, separate review.
 
 ## New strings added in the Wave 1 professionalisation pass — not yet reviewed
 
@@ -65,6 +67,24 @@ next actionable item.
 | Key | Line | English | Thai | Why it's fine |
 |---|---|---|---|---|
 | `landingWhy1Desc` | 559 | Checked against documents and COA before listing. | ตรวจสอบกับเอกสารและ COA ก่อนขึ้นบัญชี | English itself says "Checked," so ตรวจสอบ (checked) matches — not an overclaim, no mismatch with the softened "reviewed" framing used elsewhere. |
+
+## Resolved — see docs/THAI_LEGAL_REVIEW_BUYER_DISCUSSION.md
+
+`landingTagline` and `landingNavDescriptor` (both listed above under
+"Already changed" in earlier revisions of this file) were reworded a second
+time as part of a separate "Buyer-Ready" → "Buyer Discussion" softening
+pass, and their new Thai wording was reviewed and approved by a Thai/legal
+reviewer — see `docs/THAI_LEGAL_REVIEW_BUYER_DISCUSSION.md` for the full
+phrase-pair list and sign-off. That pass also covered `landingHeadline`,
+`landingFrameworkBuyerReadyLabel`, `landingWhy3Title`, `landingOrgDesc`,
+`landingAboutText1`, and `StatusBadge.tsx`'s `'buyer-ready'` label — none of
+which were ever tracked as rows in this file, so there is nothing further
+to remove here for those keys.
+
+Applied in commit `9bc43090e5212c670e553c2d57a4810b91c7466e` (wording) and
+commit `04c1c03158bcf601afbfefbfd6043178756f8c8f` (removal of the
+now-resolved `// NOTE: ... needs native speaker review` comments in
+`src/translations.ts` and `src/components/shared/StatusBadge.tsx`).
 
 ---
 
