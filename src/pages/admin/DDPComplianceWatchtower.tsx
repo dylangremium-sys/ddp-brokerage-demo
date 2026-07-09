@@ -184,15 +184,22 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const activeRuleCount = rules.filter(isRuleEnforced).length
   const blockingAlertCount = alerts.filter(alert => alert.status === 'blocked').length
 
-  async function logAudit(entry: Omit<ComplianceAuditLog, 'id' | 'actorType' | 'actorId' | 'actorName' | 'createdAt'>): Promise<void> {
+  // entryActorType defaults to 'admin' so every existing call site (all of
+  // which pass only `entry`) is unchanged. A future AI-originated intake
+  // path would pass 'ai_assistant' explicitly here — no such path exists
+  // yet in this file.
+  async function logAudit(
+    entry: Omit<ComplianceAuditLog, 'id' | 'actorType' | 'actorId' | 'actorName' | 'createdAt'>,
+    entryActorType: ComplianceAuditLog['actorType'] = 'admin',
+  ): Promise<void> {
     if (isSupabaseAdmin && currentUser) {
-      const row = await repo.insertAuditLog(entry, currentUser.id, actorNameForId)
+      const row = await repo.insertAuditLog(entry, currentUser.id, actorNameForId, entryActorType)
       setAuditLog(prev => [row, ...prev])
       return
     }
     const next: ComplianceAuditLog[] = [{
       id: makeId('audit'),
-      actorType: 'admin',
+      actorType: entryActorType,
       actorId,
       actorName,
       createdAt: new Date().toISOString(),

@@ -499,24 +499,51 @@ export async function fetchAuditLog(actorNameForId: (actorId: string | null) => 
   return (data as ComplianceAuditLogRow[] ?? []).map(row => auditLogFromRow(row, actorNameForId))
 }
 
+export interface ComplianceAuditLogInsertPayload {
+  actor_type: ComplianceAuditLog['actorType']
+  actor_id: string | null
+  action: ComplianceAuditLog['action']
+  entity_type: string
+  entity_id: string | null
+  before_state: unknown
+  after_state: unknown
+  reason: string | null
+}
+
+/**
+ * Builds the exact row payload insertAuditLog() sends to Supabase. Pure and
+ * side-effect-free (no Supabase client involved) so actor-type attribution
+ * can be unit tested without a live database connection. Defaults
+ * actor_type to 'admin' so every existing call site — which passes no
+ * actorType argument — keeps writing 'admin' unchanged.
+ */
+export function buildAuditLogInsertPayload(
+  entry: Omit<ComplianceAuditLog, 'id' | 'actorType' | 'actorId' | 'actorName' | 'createdAt'>,
+  actorId: string | null,
+  actorType: ComplianceAuditLog['actorType'] = 'admin',
+): ComplianceAuditLogInsertPayload {
+  return {
+    actor_type: actorType,
+    actor_id: asUuidOrNull(actorId),
+    action: entry.action,
+    entity_type: entry.entityType,
+    entity_id: entry.entityId ?? null,
+    before_state: entry.beforeState ?? null,
+    after_state: entry.afterState ?? null,
+    reason: entry.reason ?? null,
+  }
+}
+
 export async function insertAuditLog(
   entry: Omit<ComplianceAuditLog, 'id' | 'actorType' | 'actorId' | 'actorName' | 'createdAt'>,
   actorId: string | null,
   actorNameForId: (actorId: string | null) => string,
+  actorType: ComplianceAuditLog['actorType'] = 'admin',
 ): Promise<ComplianceAuditLog> {
   const client = requireClient()
   const { data, error } = await client
     .from('compliance_audit_log')
-    .insert({
-      actor_type: 'admin',
-      actor_id: asUuidOrNull(actorId),
-      action: entry.action,
-      entity_type: entry.entityType,
-      entity_id: entry.entityId ?? null,
-      before_state: entry.beforeState ?? null,
-      after_state: entry.afterState ?? null,
-      reason: entry.reason ?? null,
-    })
+    .insert(buildAuditLogInsertPayload(entry, actorId, actorType))
     .select('*')
     .single()
   raise('Writing audit log entry', error)
