@@ -71,8 +71,8 @@ next actionable item.
 ## How to action this
 
 1. Have a native Thai speaker read each "New Thai" value above in context on
-   the live landing page (`https://ddp-brokerage-demo.onrender.com`, EN/TH
-   toggle in the top nav).
+   the live landing page (check the project's Vercel dashboard for the
+   current production URL; EN/TH toggle in the top nav).
 2. Confirm ตรวจทาน ("reviewed"/"looked over") reads as a softer, more
    accurate claim than ตรวจสอบ ("checked"/"verified"/"inspected") in each
    context — i.e. it doesn't imply DDP has independently certified or

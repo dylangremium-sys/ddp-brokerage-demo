@@ -1,7 +1,7 @@
 // Generates public/version.json before every build so the running app can
 // display which build is live — no git dependency, works identically
-// locally and on Render (unlike a git-SHA approach, which needs the build
-// container to have .git available, unverified for Render at time of writing).
+// locally and on Vercel (unlike a git-SHA approach, which needs the build
+// container to have .git available).
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'

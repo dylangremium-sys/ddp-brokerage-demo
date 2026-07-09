@@ -1,6 +1,6 @@
 # DDP Brokerage Demo Script — 5-Minute Walkthrough
 
-**Live URL:** https://ddp-brokerage-demo.onrender.com  
+**Live URL:** check the project's Vercel dashboard for the current production URL<br>
 **Audience:** Buyers, investors, or new operator partners  
 **Duration:** 4–6 minutes  
 **Prerequisite:** Demo accounts provisioned (see HANDOVER_CHECKLIST.md)
