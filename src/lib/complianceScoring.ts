@@ -1,4 +1,5 @@
 import type { ComplianceAlert, ComplianceEntityStatus, ComplianceSeverity, ExportReadinessStatus, FarmProfile, InventoryItem, TestStatus } from '../types'
+import { hasValue, hasFarmLicence, hasGacpOrGap, hasCoa, farmForItem } from './complianceEvidence'
 
 export interface ExportReadinessChecklistItem {
   key: string
@@ -13,31 +14,6 @@ export interface ExportReadinessRecord {
   item: InventoryItem
   checklist: ExportReadinessChecklistItem[]
   entityStatus: ComplianceEntityStatus
-}
-
-function hasValue(value: unknown): boolean {
-  return typeof value === 'string' ? value.trim().length > 0 : Boolean(value)
-}
-
-function hasFarmLicence(farm?: FarmProfile | null): boolean {
-  if (!farm) return false
-  return [
-    farm.cultivationLicence,
-    farm.processingLicence,
-    farm.manufacturingLicence,
-    farm.medicalCannabisLicence,
-    farm.exportLicence,
-    farm.importLicence,
-  ].some(hasValue)
-}
-
-function hasGacpOrGap(farm?: FarmProfile | null): boolean {
-  if (!farm) return false
-  return [farm.gacpCert, farm.gapCert].some(hasValue)
-}
-
-function hasCoa(item: InventoryItem): boolean {
-  return hasValue(item.coaStoragePath) || hasValue(item.certFileName) || item.coaAvailable === true
 }
 
 function expiryValid(item: InventoryItem): boolean {
@@ -55,10 +31,6 @@ function riskFromStatus(status: ExportReadinessStatus, blockingAlertCount: numbe
   if (status === 'not_ready' || status === 'missing_documents') return 'high'
   if (status === 'needs_compliance_review' || status === 'export_readiness_incomplete') return 'medium'
   return 'low'
-}
-
-function farmForItem(item: InventoryItem, farms: FarmProfile[]): FarmProfile | null {
-  return farms.find(farm => farm.id === item.farmId || farm.tradingName === item.farmName || farm.legalBusinessName === item.farmName) ?? null
 }
 
 export function deriveExportReadiness(

@@ -20,6 +20,20 @@ export interface ComplianceRuleImpact {
 
 const UNRESOLVED_ALERT_STATUSES: ComplianceAlert['status'][] = ['open', 'in_review', 'blocked']
 
+// Callers invoke getComplianceRuleImpact once per row in a table (Master
+// Inventory, Missing Documents, Risk Register), all sharing the same `rules`
+// array reference within a render. Cache the derived enforced-rule map per
+// array reference so it's built once per render instead of once per row.
+const enforcedRuleMapCache = new WeakMap<ComplianceRule[], Map<string, ComplianceRule>>()
+
+function getEnforcedRuleMap(rules: ComplianceRule[]): Map<string, ComplianceRule> {
+  const cached = enforcedRuleMapCache.get(rules)
+  if (cached) return cached
+  const map = new Map(rules.filter(isRuleEnforced).map(rule => [rule.id, rule]))
+  enforcedRuleMapCache.set(rules, map)
+  return map
+}
+
 /**
  * Returns the compliance-rule impact for one entity, or null if no
  * approved/active rule has an unresolved alert against it. Draft, suggested,
@@ -35,7 +49,7 @@ export function getComplianceRuleImpact(
 ): ComplianceRuleImpact | null {
   if (!entityId) return null
 
-  const enforcedRuleById = new Map(rules.filter(isRuleEnforced).map(rule => [rule.id, rule]))
+  const enforcedRuleById = getEnforcedRuleMap(rules)
   if (enforcedRuleById.size === 0) return null
 
   const relevantAlert = alerts.find(alert =>

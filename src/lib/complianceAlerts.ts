@@ -1,9 +1,6 @@
 import type { ComplianceAlert, ComplianceRule, ComplianceRuleEntityType, ComplianceSeverity, FarmProfile, InventoryItem, TestStatus } from '../types'
 import { isRuleEnforced } from './complianceRules'
-
-function hasValue(value: unknown): boolean {
-  return typeof value === 'string' ? value.trim().length > 0 : Boolean(value)
-}
+import { hasValue, hasFarmLicence, hasGacpOrGap, hasCoa, farmForItem } from './complianceEvidence'
 
 function isPastDate(value?: string): boolean {
   if (!value) return false
@@ -13,29 +10,6 @@ function isPastDate(value?: string): boolean {
 
 function isMissingTest(status?: TestStatus): boolean {
   return !status || status === 'not_tested'
-}
-
-function hasCoa(item: InventoryItem): boolean {
-  return hasValue(item.coaStoragePath) || hasValue(item.certFileName) || item.coaAvailable === true
-}
-
-function hasFarmLicence(farm: FarmProfile): boolean {
-  return [
-    farm.cultivationLicence,
-    farm.processingLicence,
-    farm.manufacturingLicence,
-    farm.medicalCannabisLicence,
-    farm.exportLicence,
-    farm.importLicence,
-  ].some(hasValue)
-}
-
-function hasGacpOrGap(farm: FarmProfile): boolean {
-  return [farm.gacpCert, farm.gapCert].some(hasValue)
-}
-
-function farmForItem(item: InventoryItem, farms: FarmProfile[]): FarmProfile | undefined {
-  return farms.find(farm => farm.id === item.farmId || farm.tradingName === item.farmName || farm.legalBusinessName === item.farmName)
 }
 
 function enforcedRuleMap(rules: ComplianceRule[]): Map<string, ComplianceRule> {
