@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import type { ComplianceAlert, ComplianceRule, DocumentRequirementType, EvidenceStatus, FarmProfile, InventoryItem } from '../../types'
 import {
   DOCUMENT_REQUIREMENT_TYPES,
@@ -54,15 +54,22 @@ const OVERRIDE_LABEL: Record<EvidenceStatus, string> = {
 
 export default function DDPMissingDocuments({ farms, inventory, complianceRules = [], complianceAlerts = [] }: Props) {
   const [openFarmId, setOpenFarmId] = useState<string | null>(null)
-  const [, forceRerender] = useState(0)
+  const [renderTick, forceRerender] = useState(0)
 
-  const rows = farms.map(farm => {
-    const requirements = applyRequirementOverrides(deriveFarmDocumentRequirements(farm, inventory))
-    const blockerCount = requirements.filter(r => MATRIX_LABEL[r.status] === 'Blocker').length
-    const missingCount = requirements.filter(r => r.status === 'missing').length
-    const receivedCount = requirements.filter(r => r.status === 'documented' || r.status === 'reviewed' || r.status === 'verified').length
-    return { farm, requirements, blockerCount, missingCount, receivedCount }
-  })
+  // renderTick is a dependency (not just farms/inventory) because saved
+  // requirement overrides live in localStorage, not in these props — bumping
+  // the tick after a save is what makes applyRequirementOverrides pick up the
+  // fresh value.
+  const rows = useMemo(() => {
+    void renderTick // deliberate recompute trigger — overrides live in localStorage, not in props
+    return farms.map(farm => {
+      const requirements = applyRequirementOverrides(deriveFarmDocumentRequirements(farm, inventory))
+      const blockerCount = requirements.filter(r => MATRIX_LABEL[r.status] === 'Blocker').length
+      const missingCount = requirements.filter(r => r.status === 'missing').length
+      const receivedCount = requirements.filter(r => r.status === 'documented' || r.status === 'reviewed' || r.status === 'verified').length
+      return { farm, requirements, blockerCount, missingCount, receivedCount }
+    })
+  }, [farms, inventory, renderTick])
 
   function handleOverride(farmId: string, type: DocumentRequirementType, status: EvidenceStatus) {
     saveRequirementOverride(farmId, type, status)

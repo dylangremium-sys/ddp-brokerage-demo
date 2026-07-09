@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ComplianceAlert, ComplianceRule, FarmProfile, InventoryItem, RiskSeverity, RiskStatus } from '../../types'
 import { deriveAutoRisks, applyRiskOverrides, saveRiskOverride } from '../../lib/procurementControl'
 import { getComplianceRuleImpact } from '../../lib/complianceRuleImpact'
@@ -30,10 +30,16 @@ const STATUS_LABEL: Record<RiskStatus, string> = {
 }
 
 export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onReviewItem, complianceRules = [], complianceAlerts = [] }: Props) {
-  const [, forceRerender] = useState(0)
+  const [renderTick, forceRerender] = useState(0)
   const [severityFilter, setSeverityFilter] = useState<RiskSeverity | 'all'>('all')
 
-  const risks = applyRiskOverrides(deriveAutoRisks(farms, inventory))
+  // renderTick is a dependency (not just farms/inventory) because saved risk
+  // overrides live in localStorage, not in these props — bumping the tick
+  // after a save is what makes applyRiskOverrides pick up the fresh value.
+  const risks = useMemo(() => {
+    void renderTick // deliberate recompute trigger — overrides live in localStorage, not in props
+    return applyRiskOverrides(deriveAutoRisks(farms, inventory))
+  }, [farms, inventory, renderTick])
   const visible = severityFilter === 'all' ? risks : risks.filter(r => r.severity === severityFilter)
   const openCount = risks.filter(r => r.status === 'open').length
   const blockerCount = risks.filter(r => r.severity === 'blocker' && r.status !== 'resolved' && r.status !== 'accepted').length
