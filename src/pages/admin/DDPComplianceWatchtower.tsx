@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ComplianceAlert,
   ComplianceAuditLog,
@@ -45,6 +45,23 @@ import {
   nextBaselineVersion,
   type MonitoringBaseline,
 } from '../../lib/complianceMonitoringSnapshot'
+import type { AiDraftSummary } from '../../lib/complianceAiSummarisation'
+import type { ComplianceAiSummaryProvider } from '../../lib/aiComplianceProvider'
+import {
+  evaluateAiSummaryEligibility,
+  runAiDraftSummary,
+} from '../../lib/watchtowerAiSummary'
+
+// Phase 2H — manual AI draft-summary integration. No AI provider is configured
+// in this repository (no production or demo provider exists), so the Watchtower
+// injects `null`: the "Generate AI Draft Summary" action stays safely disabled
+// with a "No AI provider is configured" reason. Wiring a real provider is a
+// future, out-of-scope step — it must implement the existing
+// ComplianceAiSummaryProvider contract, and this component must not call a
+// vendor SDK, fetch, or hold credentials. A draft is always transient and
+// always requires human legal review; the AI can never approve, certify, create
+// a rule, or enforce anything.
+const AI_SUMMARY_PROVIDER: ComplianceAiSummaryProvider | null = null
 
 interface Props {
   farms: FarmProfile[]
@@ -255,6 +272,18 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const [rssDraftBusy, setRssDraftBusy] = useState(false)
   const [rssDraftedItemIds, setRssDraftedItemIds] = useState<Set<string>>(() => new Set())
 
+  // Phase 2H manual AI draft summary: transient state only. `aiDraft` is never
+  // persisted and never written back onto legalUpdate.summary — it is cleared on
+  // discard, on a fresh generation, and whenever its update is no longer a 'new'
+  // draft. `aiRequestUpdateIdRef` records the update id the in-flight request was
+  // started for, so a late provider result for a since-changed selection is
+  // discarded (stale_selection) rather than shown against the wrong update.
+  const [aiDraft, setAiDraft] = useState<AiDraftSummary | null>(null)
+  const [aiDraftBusy, setAiDraftBusy] = useState(false)
+  const [aiGeneratingUpdateId, setAiGeneratingUpdateId] = useState<string | null>(null)
+  const [aiDraftMessage, setAiDraftMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const aiRequestUpdateIdRef = useRef<string | null>(null)
+
   const actorName = currentUser?.displayName || currentUser?.email || 'DDP Admin'
   const actorId = currentUser?.id ?? 'local-admin'
   const isSupabaseAdmin = repo.isSupabaseConfigured && !!currentUser && currentUser.role === 'ddp_admin'
@@ -361,6 +390,58 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   function persistSourcesLocal(next: RegulatorySource[]): void {
     setSources(next)
     saveStored(STORAGE.sources, next)
+  }
+
+  // ─── Phase 2H — manual AI draft summary (transient, human-review only) ──────
+  //
+  // Runs ONLY from an explicit "Generate AI Draft Summary" click — never on
+  // mount, in an effect, on selection, after a feed check, or on any timer. The
+  // guard + orchestration live in complianceAiSummarisation.ts / watchtowerAiSummary.ts
+  // and are reused here (no guard logic is duplicated in this component). No
+  // vendor SDK, fetch, or credential is used; the provider is injected and is
+  // null in this build. The result is a transient draft — it is never written to
+  // legalUpdate.summary, never persisted, and never approves/certifies/creates a
+  // rule/enforces anything. A separate "Use as Draft Summary" persistence action
+  // is intentionally NOT implemented: no safe repository summary-writer exists
+  // (only updateLegalUpdateStatus), so acceptance would require a new persistence
+  // path, which is out of Phase 2H scope.
+  async function handleGenerateAiDraftSummary(update: LegalUpdate): Promise<void> {
+    if (aiDraftBusy) return // duplicate-click / concurrency guard
+    const eligibility = evaluateAiSummaryEligibility(update, {
+      provider: AI_SUMMARY_PROVIDER,
+      requestInProgress: aiDraftBusy,
+    })
+    if (!eligibility.canGenerate) {
+      setAiDraftMessage({ type: 'error', text: eligibility.reason })
+      return
+    }
+    setAiDraftBusy(true)
+    setAiGeneratingUpdateId(update.id)
+    setAiDraftMessage(null)
+    setAiDraft(null) // clear any prior draft while a new one is generated
+    aiRequestUpdateIdRef.current = update.id
+    try {
+      const outcome = await runAiDraftSummary(update, AI_SUMMARY_PROVIDER, {
+        requestInProgress: false,
+        isStillSelected: (id) => aiRequestUpdateIdRef.current === id,
+      })
+      if (outcome.ok) {
+        setAiDraft(outcome.draft)
+        setAiDraftMessage(null)
+      } else {
+        setAiDraft(null)
+        setAiDraftMessage({ type: 'error', text: outcome.message })
+      }
+    } finally {
+      setAiDraftBusy(false)
+      setAiGeneratingUpdateId(null)
+    }
+  }
+
+  function handleDiscardAiDraft(): void {
+    aiRequestUpdateIdRef.current = null
+    setAiDraft(null)
+    setAiDraftMessage(null)
   }
 
   function resetSourceForm(): void {
@@ -1381,7 +1462,14 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
         </div>
       )}
 
-      {tab === 'queue' && (
+      {tab === 'queue' && (() => {
+        // Transient AI draft is shown only while its update is still a 'new'
+        // draft; if the update changed status or was removed, the stale draft is
+        // not rendered (render-time invalidation, complementing the controller's
+        // stale_selection check).
+        const aiDraftUpdate = aiDraft ? legalUpdates.find(item => item.id === aiDraft.legalUpdateId && item.status === 'new') : undefined
+        return (
+        <>
         <div className="card table-card" style={{ marginTop: 16 }}>
           <div className="table-scroll">
             <table className="inv-table inv-table--cards">
@@ -1389,6 +1477,9 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
               <tbody>
                 {reviews.map(review => {
                   const update = review.legalUpdateId ? legalUpdates.find(item => item.id === review.legalUpdateId) : undefined
+                  const aiEligibility = update && update.status === 'new'
+                    ? evaluateAiSummaryEligibility(update, { provider: AI_SUMMARY_PROVIDER, requestInProgress: aiDraftBusy })
+                    : null
                   return (
                     <tr key={review.id}>
                       <td><span className={`badge ${SEVERITY_CLASS[review.riskLevel]}`}>{review.riskLevel.toUpperCase()}</span></td>
@@ -1405,6 +1496,18 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'send_to_legal') }}>Send to legal</button>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'reject') }}>Reject</button>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'archive') }}>Archive</button>
+                          {update && aiEligibility && (
+                            <button
+                              className="btn btn-review"
+                              disabled={busy || aiDraftBusy || !aiEligibility.canGenerate}
+                              title={aiEligibility.canGenerate ? 'Draft only — requires human legal review' : aiEligibility.reason}
+                              // aiRequestUpdateIdRef is an async stale-guard token, read only inside the
+                              // event-handler-initiated async callback (never during render), so the
+                              // late result of a discarded/superseded run is dropped, not shown.
+                              // eslint-disable-next-line react-hooks/refs
+                              onClick={() => { void handleGenerateAiDraftSummary(update) }}
+                            >{aiGeneratingUpdateId === update.id ? 'Generating…' : 'Generate AI Draft Summary'}</button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1415,7 +1518,46 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
             </table>
           </div>
         </div>
-      )}
+
+        {aiDraftMessage && (
+          <div className={`card`} style={{ marginTop: 12, borderLeft: aiDraftMessage.type === 'error' ? '4px solid #c0392b' : '4px solid #2d7' }}>
+            <p style={{ margin: 8 }}>{aiDraftMessage.text}</p>
+          </div>
+        )}
+
+        {aiDraft && aiDraftUpdate && (
+          <div className="card" style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <div>
+                <span className="badge" style={{ background: '#7a5', color: '#fff' }}>Draft only</span>{' '}
+                <strong>AI-generated draft — requires human legal review</strong>
+              </div>
+              <button className="btn btn-review" disabled={aiDraftBusy} onClick={() => { handleDiscardAiDraft() }}>Discard draft</button>
+            </div>
+            <p className="td-muted" style={{ marginTop: 4 }}>
+              For: <strong>{aiDraftUpdate.title}</strong>. This draft is transient — it is not saved, does not
+              change this legal update, and is not a record of legal review, approval, or compliance status.
+            </p>
+            <div style={{ marginTop: 8 }}>
+              <h4 style={{ margin: '8px 0 2px' }}>Draft factual summary</h4>
+              <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{aiDraft.draftSummary}</p>
+              <h4 style={{ margin: '8px 0 2px' }}>Possible significance</h4>
+              <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{aiDraft.possibleSignificance}</p>
+              <h4 style={{ margin: '8px 0 2px' }}>Uncertainties</h4>
+              <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{aiDraft.uncertainties}</p>
+              <h4 style={{ margin: '8px 0 2px' }}>Questions for human legal review</h4>
+              <ul style={{ margin: 0 }}>{aiDraft.reviewQuestions.map((q, i) => <li key={i}>{q}</li>)}</ul>
+              <h4 style={{ margin: '8px 0 2px' }}>Source references</h4>
+              <ul style={{ margin: 0 }}>{aiDraft.sourceReferences.map((r, i) => <li key={i}>{r}</li>)}</ul>
+            </div>
+            <p className="td-muted" style={{ marginTop: 8, fontSize: 12 }}>
+              Provider: {aiDraft.providerId} · Model: {aiDraft.modelId} · Generated: {aiDraft.generatedAt}
+            </p>
+          </div>
+        )}
+        </>
+        )
+      })()}
 
       {tab === 'rules' && (
         <div className="card table-card" style={{ marginTop: 16 }}>
