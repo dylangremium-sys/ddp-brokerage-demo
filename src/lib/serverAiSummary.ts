@@ -1,11 +1,11 @@
-import type { LegalUpdate, LegalUpdateStatus } from '../types'
-import type { ComplianceAiSummaryProvider } from './aiComplianceProvider'
+import type { LegalUpdate, LegalUpdateStatus } from '../types.js'
+import type { ComplianceAiSummaryProvider } from './aiComplianceProvider.js'
 import {
   DEFAULT_MAX_EVIDENCE_CHARS,
   generateAiDraftSummary,
   AI_DRAFT_LABEL,
-} from './complianceAiSummarisation'
-import type { AiSummaryResultCode } from './complianceAiSummarisation'
+} from './complianceAiSummarisation.js'
+import type { AiSummaryResultCode } from './complianceAiSummarisation.js'
 
 // ─── Secure server-side AI draft-summary boundary — core (Phase 2I) ─────────
 //

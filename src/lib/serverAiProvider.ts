@@ -2,8 +2,8 @@ import type {
   AiDraftSummarySections,
   AiSummaryProviderInput,
   ComplianceAiSummaryProvider,
-} from './aiComplianceProvider'
-import type { AIComplianceOutput } from './aiComplianceTypes'
+} from './aiComplianceProvider.js'
+import type { AIComplianceOutput } from './aiComplianceTypes.js'
 
 // ─── Server-side AI provider adapter (Phase 2I) ─────────────────────────────
 //

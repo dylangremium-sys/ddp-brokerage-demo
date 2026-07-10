@@ -1,8 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { handleAiSummaryRequest } from '../../src/lib/serverAiSummary'
-import type { NormalizedRequest, ServerAiSummaryDeps } from '../../src/lib/serverAiSummary'
-import { createServerAiSummaryProvider } from '../../src/lib/serverAiProvider'
-import type { ComplianceAiSummaryProvider } from '../../src/lib/aiComplianceProvider'
+import { handleAiSummaryRequest } from '../../src/lib/serverAiSummary.js'
+import type { NormalizedRequest, ServerAiSummaryDeps } from '../../src/lib/serverAiSummary.js'
+import { createServerAiSummaryProvider } from '../../src/lib/serverAiProvider.js'
+import type { ComplianceAiSummaryProvider } from '../../src/lib/aiComplianceProvider.js'
 
 // ─── Secure server-side AI draft-summary Vercel Function (Phase 2I) ─────────
 //
