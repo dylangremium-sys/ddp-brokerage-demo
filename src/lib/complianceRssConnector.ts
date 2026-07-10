@@ -133,6 +133,10 @@ export interface RssConnectorResult {
   feedKind?: 'rss' | 'atom'
   itemCount: number
   decisions: MonitoringDecision[]
+  /** The parsed feed on success (items align 1:1 with `decisions`). Present so
+   *  callers can surface per-item evidence (title/link/date) alongside each
+   *  decision without re-parsing. Additive only — carries no capability. */
+  feed?: ParsedFeed
   errorCode?: RssConnectorErrorCode
   reason: string
   // Capability guarantees (literal false), mirroring the other connector layers.
@@ -467,6 +471,7 @@ export async function executeRssConnector(
     feedKind: feed.kind,
     itemCount: feed.items.length,
     decisions,
+    feed,
     reason: `parsed ${feed.kind} feed with ${feed.items.length} item(s)`,
     performsPersistence: false,
     canCreateLegalUpdate: false,

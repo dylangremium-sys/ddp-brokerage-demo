@@ -30,6 +30,13 @@ import * as repo from '../../lib/complianceRepository'
 import * as sourceRegistry from '../../lib/complianceSourceRegistry'
 import { SUPPORTED_SOURCE_TYPES, deriveRegulatorySourceStatus, type RegulatorySourceStatus } from '../../lib/complianceSourceRegistry'
 import { buildMonitoringDecision, prepareMonitoringLegalUpdateIntake, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
+import {
+  runManualRssMonitoring,
+  evaluateManualMonitoringEligibility,
+  canStartManualRun,
+  type ManualMonitoringRunResult,
+} from '../../lib/complianceManualMonitoring'
+import { createBrowserRssFetch } from '../../lib/browserRssFetch'
 
 interface Props {
   farms: FarmProfile[]
@@ -124,6 +131,42 @@ function statusText(value: string): string {
   return formatComplianceLabel(value)
 }
 
+// Safe, non-overstating labels for a manual feed-check decision. The
+// changed/first-seen case is explicitly framed as pending human review — it
+// never asserts a legal change is confirmed, compliant, approved, or enforced.
+function manualDecisionLabel(kind: MonitoringDecision['kind']): string {
+  switch (kind) {
+    case 'unchanged': return 'No change since last check'
+    case 'duplicate': return 'Duplicate item (already seen this check)'
+    case 'invalid_source': return 'Invalid or empty item — skipped'
+    case 'changed_pending_review': return 'Change detected — pending human review'
+    case 'error': return 'Error processing item'
+    default: return String(kind)
+  }
+}
+
+// Administrative, plain-language message for a manual run error/ineligibility.
+// Never displays a stack trace; the machine-readable code is preserved
+// separately for developer inspection.
+function manualRunErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case 'not_https': return 'Source URL is not HTTPS — the check was not performed.'
+    case 'off_allowlist': return 'Source host is not on the connector allowlist — the check was not performed.'
+    case 'url_unsafe': return 'Source URL is unsafe (private/loopback/metadata address or disallowed port).'
+    case 'unsupported_connector': return 'This source is not an RSS/Atom feed.'
+    case 'inactive_source': return 'This source is inactive.'
+    case 'invalid_url': return 'Source URL is missing or not a valid http(s) URL.'
+    case 'timeout': return 'The feed request timed out.'
+    case 'oversized_response': return 'The feed response exceeded the maximum allowed size.'
+    case 'invalid_content_type': return 'The response was not an RSS/Atom feed (unexpected content type).'
+    case 'redirect_blocked': return 'The request was redirected; redirects are not followed for safety.'
+    case 'fetch_failed': return 'Could not retrieve the feed (network or CORS error).'
+    case 'malformed_feed': return 'The feed XML was malformed.'
+    case 'not_a_feed': return 'The response was not an RSS or Atom feed.'
+    default: return 'The feed check could not be completed.'
+  }
+}
+
 export default function DDPComplianceWatchtower({ farms, inventory, currentUser }: Props) {
   const [tab, setTab] = useState<WatchtowerTab>('monitor')
   const [legalUpdates, setLegalUpdates] = useState<LegalUpdate[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.legalUpdates, [])))
@@ -179,6 +222,16 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const [monitoringDecision, setMonitoringDecision] = useState<MonitoringDecision | null>(null)
   const [monitoringSnapshots, setMonitoringSnapshots] = useState<Record<string, SourceContentSnapshot>>(() => loadStored(STORAGE.monitoringSnapshots, {}))
   const [monitoringBusy, setMonitoringBusy] = useState(false)
+
+  // Manual RSS/Atom feed check (Phase 2D). All transient, in-memory only:
+  // rssFeedSnapshots is NOT persisted to localStorage or Supabase — repeat
+  // checks within this session can detect unchanged/changed, and it resets on
+  // reload. A run happens ONLY from the "Check feed" button handler below;
+  // nothing here runs on mount, on a timer, or on a schedule.
+  const [rssCheckSourceId, setRssCheckSourceId] = useState<string | null>(null)
+  const [rssCheckBusy, setRssCheckBusy] = useState(false)
+  const [rssCheckResult, setRssCheckResult] = useState<ManualMonitoringRunResult | null>(null)
+  const [rssFeedSnapshots, setRssFeedSnapshots] = useState<Map<string, SourceContentSnapshot>>(() => new Map())
 
   const actorName = currentUser?.displayName || currentUser?.email || 'DDP Admin'
   const actorId = currentUser?.id ?? 'local-admin'
@@ -556,6 +609,29 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       const nextSnapshots = { ...monitoringSnapshots, [sourceKey]: decision.snapshot }
       setMonitoringSnapshots(nextSnapshots)
       saveStored(STORAGE.monitoringSnapshots, nextSnapshots)
+    }
+  }
+
+  // Manual RSS/Atom feed check (Phase 2D). Runs ONLY when an operator clicks
+  // "Check feed" for a specific source. It performs a read-only HTTPS GET
+  // through the connector's injected fetch, displays the resulting monitoring
+  // decisions for human review, and creates/approves/enforces nothing. The
+  // canStartManualRun guard blocks concurrent runs from repeated clicks.
+  async function handleCheckSourceFeed(source: RegulatorySource): Promise<void> {
+    if (!canStartManualRun(rssCheckBusy)) return
+    setActionMessage(null)
+    setRssCheckSourceId(source.id)
+    setRssCheckResult(null)
+    setRssCheckBusy(true)
+    try {
+      const result = await runManualRssMonitoring(source, createBrowserRssFetch(), {
+        previousSnapshots: rssFeedSnapshots,
+      })
+      setRssCheckResult(result)
+      // Transient in-memory only — never persisted.
+      if (result.ok) setRssFeedSnapshots(result.updatedSnapshots)
+    } finally {
+      setRssCheckBusy(false)
     }
   }
 
@@ -1492,6 +1568,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                 <tbody>
                   {sources.map(source => {
                     const status = deriveRegulatorySourceStatus(source)
+                    const feedEligibility = evaluateManualMonitoringEligibility(source)
                     return (
                       <tr key={source.id}>
                         <td>
@@ -1508,6 +1585,14 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                             {source.isActive && (
                               <button className="btn btn-review" disabled={busy} onClick={() => { void deactivateSource(source) }}>Deactivate</button>
                             )}
+                            <button
+                              className="btn btn-primary"
+                              disabled={rssCheckBusy || !feedEligibility.eligible}
+                              title={feedEligibility.eligible ? 'Manually check this public RSS/Atom feed (read-only)' : feedEligibility.reason}
+                              onClick={() => { void handleCheckSourceFeed(source) }}
+                            >
+                              {rssCheckBusy && rssCheckSourceId === source.id ? 'Checking…' : 'Check feed'}
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1518,6 +1603,66 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
               </table>
             </div>
           </div>
+
+          {rssCheckResult && (
+            <div className="card" style={{ padding: 20, marginTop: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <h2 style={{ marginTop: 0 }}>
+                  Manual Feed Check — {sources.find(s => s.id === rssCheckResult.sourceId)?.name ?? rssCheckResult.sourceId}
+                </h2>
+                <button className="btn btn-review" onClick={() => { setRssCheckResult(null); setRssCheckSourceId(null) }}>Dismiss</button>
+              </div>
+              <p className="td-muted">
+                This checks a public regulatory feed with a read-only HTTPS request. It does not approve, certify,
+                or enforce anything, and it creates no legal update and no compliance rule. Any detected change is
+                flagged for human review only.
+              </p>
+
+              {!rssCheckResult.ok ? (
+                <div className="disclaimer-box" style={{ marginTop: 6 }}>
+                  <span className="disclaimer-icon" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '1px', color: 'var(--warning)' }}>
+                    CHECK NOT COMPLETED
+                  </span>
+                  <div>{manualRunErrorMessage(rssCheckResult.errorCode)}</div>
+                  {rssCheckResult.errorCode && <div className="td-muted" style={{ marginTop: 6, fontSize: 12 }}>Diagnostic code: {rssCheckResult.errorCode}</div>}
+                </div>
+              ) : (
+                <>
+                  <div className="detail-rows" style={{ marginTop: 6 }}>
+                    <div className="detail-row"><span className="dl">Feed</span><span className="dv">{rssCheckResult.feedTitle || '—'} ({rssCheckResult.feedKind})</span></div>
+                    <div className="detail-row"><span className="dl">Items</span><span className="dv">{rssCheckResult.itemCount}</span></div>
+                  </div>
+                  {rssCheckResult.itemCount === 0 ? (
+                    <p className="td-muted" style={{ marginTop: 12 }}>The feed was retrieved and parsed, but contains no items.</p>
+                  ) : (
+                    <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {rssCheckResult.items.map((item, i) => {
+                        const pillClass = item.decisionKind === 'unchanged' ? 'status-verified'
+                          : item.decisionKind === 'changed_pending_review' ? 'status-hold'
+                          : item.decisionKind === 'duplicate' ? 'status-claimed' : 'status-missing'
+                        const safeHref = item.itemUrl && /^https?:\/\//i.test(item.itemUrl) ? item.itemUrl : undefined
+                        return (
+                          <div key={i} className="disclaimer-box" style={{ marginTop: 0 }}>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span className={`status-pill ${pillClass}`}>{manualDecisionLabel(item.decisionKind)}</span>
+                              <span className="td-bold">{item.itemTitle || '(untitled item)'}</span>
+                            </div>
+                            <div className="detail-rows" style={{ marginTop: 8 }}>
+                              {safeHref
+                                ? <div className="detail-row"><span className="dl">URL</span><span className="dv"><a href={safeHref} target="_blank" rel="noreferrer">{item.itemUrl}</a></span></div>
+                                : item.itemUrl && <div className="detail-row"><span className="dl">URL</span><span className="dv">{item.itemUrl}</span></div>}
+                              {item.publishedAt && <div className="detail-row"><span className="dl">Published/updated</span><span className="dv">{item.publishedAt}</span></div>}
+                              {item.checksum && <div className="detail-row"><span className="dl">Checksum</span><span className="dv" style={{ wordBreak: 'break-all' }}>{item.checksum}</span></div>}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
