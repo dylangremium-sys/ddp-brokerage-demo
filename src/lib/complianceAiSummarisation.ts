@@ -1,5 +1,5 @@
 import type { LegalUpdate } from '../types'
-import { guardAiDraftedFields } from './aiComplianceGuard'
+import { guardAiDraftedFields } from './aiComplianceGuard.js'
 import type {
   AiDraftSummarySections,
   AiSummaryProviderInput,
