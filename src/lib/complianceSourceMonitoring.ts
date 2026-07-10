@@ -289,3 +289,36 @@ export function prepareMonitoringLegalUpdateIntake(
     },
   }
 }
+
+// ─── Manual draft-creation gate (pure, Phase 2F) ────────────────────────────
+//
+// Decides whether a human may create a DRAFT legal update from a monitoring
+// decision. Only `changed_pending_review` (with a proposed draft) qualifies —
+// unchanged / duplicate / invalid_source / error never do. It also blocks a
+// concurrent creation and a repeat creation for an already-drafted item. Pure:
+// it decides only; the caller performs the actual (explicit, human-initiated)
+// creation on `create`. This does not summarise, analyse, approve, or enforce.
+
+export type DraftCreationDecision =
+  | { action: 'create' }
+  | { action: 'reject'; reason: string }
+
+export function decideDraftCreation(
+  decision: MonitoringDecision | null,
+  creationInProgress: boolean,
+  alreadyDrafted: boolean,
+): DraftCreationDecision {
+  if (creationInProgress) {
+    return { action: 'reject', reason: 'A draft is already being created.' }
+  }
+  if (alreadyDrafted) {
+    return { action: 'reject', reason: 'A draft legal update has already been created for this item.' }
+  }
+  if (!decision) {
+    return { action: 'reject', reason: 'No monitoring decision is selected.' }
+  }
+  if (decision.kind !== 'changed_pending_review' || !decision.proposedLegalUpdate) {
+    return { action: 'reject', reason: 'Only a detected change pending human review can become a draft legal update.' }
+  }
+  return { action: 'create' }
+}

@@ -84,7 +84,33 @@ describe('DDPComplianceWatchtower — manual RSS integration (static)', () => {
   it('states the read-only, non-enforcing nature and the human-review boundary', () => {
     expect(SRC).toMatch(/Change detected — pending human review/)
     expect(SRC).toMatch(/read-only/i)
-    expect(SRC).toMatch(/does not approve, certify,\s*\n?\s*or enforce/i)
+    expect(SRC).toMatch(/does not analyse, summarise,\s+approve, certify, or enforce/i)
+    expect(SRC).toMatch(/draft\s+legal update \(status: new\)/i)
+  })
+
+  it('creates a draft legal update only from an explicit click, never on mount/effect', () => {
+    expect(SRC).toMatch(/handleCreateDraftFromRssItem/)
+    expect(SRC).toMatch(/Create Draft Legal Update/)
+    // Gated by the pure decideDraftCreation gate (changed_pending_review only).
+    expect(SRC).toMatch(/decideDraftCreation\(decision/)
+    // The draft button is bound to onClick.
+    expect(SRC).toMatch(/onClick=\{\(\)\s*=>\s*\{\s*void handleCreateDraftFromRssItem\(decision\)/)
+    // Neither the handler nor the shared creation core runs inside any useEffect.
+    for (const body of useEffectBodies(SRC)) {
+      expect(body).not.toMatch(/handleCreateDraftFromRssItem|createDraftLegalUpdateFromDecision|createLegalUpdateFromMonitoringDecision/)
+    }
+  })
+
+  it('the draft creation never creates or approves a rule or enforces', () => {
+    // The RSS draft handler + shared core only insert a legal_update + pending
+    // review; they must not touch rule creation/approval/enforcement.
+    const coreStart = SRC.indexOf('async function createDraftLegalUpdateFromDecision')
+    const coreEnd = SRC.indexOf('async function createLegalUpdateFromMonitoringDecision')
+    const core = SRC.slice(coreStart, coreEnd)
+    expect(core.length).toBeGreaterThan(200)
+    expect(core).not.toMatch(/insertRule|updateRuleStatus|createRule|approveRule|enforceRule/)
+    expect(core).not.toMatch(/aiCompliance|anthropic|openai/i)
+    expect(core).toMatch(/status: 'new'/) // only ever a draft
   })
 
   it('does not use prohibited overstating wording for detected changes', () => {

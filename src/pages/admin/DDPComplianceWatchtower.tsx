@@ -29,7 +29,7 @@ import { guardAiDraftedFields } from '../../lib/aiComplianceGuard'
 import * as repo from '../../lib/complianceRepository'
 import * as sourceRegistry from '../../lib/complianceSourceRegistry'
 import { SUPPORTED_SOURCE_TYPES, deriveRegulatorySourceStatus, type RegulatorySourceStatus } from '../../lib/complianceSourceRegistry'
-import { buildMonitoringDecision, prepareMonitoringLegalUpdateIntake, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
+import { buildMonitoringDecision, prepareMonitoringLegalUpdateIntake, decideDraftCreation, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
 import {
   runManualRssMonitoring,
   evaluateManualMonitoringEligibility,
@@ -250,6 +250,10 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const [rssSaveBusy, setRssSaveBusy] = useState(false)
   const [rssComparedBaseline, setRssComparedBaseline] = useState<MonitoringBaseline | null>(null)
   const [rssBaselineHistory, setRssBaselineHistory] = useState<MonitoringBaseline[]>([])
+  // Phase 2F draft creation: in-progress guard + the set of feed-item stable ids
+  // a draft has already been created for this session (prevents duplicates).
+  const [rssDraftBusy, setRssDraftBusy] = useState(false)
+  const [rssDraftedItemIds, setRssDraftedItemIds] = useState<Set<string>>(() => new Set())
 
   const actorName = currentUser?.displayName || currentUser?.email || 'DDP Admin'
   const actorId = currentUser?.id ?? 'local-admin'
@@ -709,20 +713,23 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   // legal_update always has status 'new' and a pending review item; nothing
   // here ever touches compliance_rules or compliance_alerts, and nothing
   // here approves or activates anything.
-  async function createLegalUpdateFromMonitoringDecision(): Promise<void> {
-    if (!monitoringDecision) return
-    setActionMessage(null)
-
-    const source = monitoringDecision.proposedLegalUpdate
-      ? sources.find(s => s.id === monitoringDecision.proposedLegalUpdate!.sourceId)
-      : undefined
-
-    // Pure decision/branch logic (title/source derivation + the intake-safety
-    // gate) is extracted to prepareMonitoringLegalUpdateIntake for unit testing.
-    // A 'skip' means the decision was not changed_pending_review; a 'blocked'
-    // means the wording guard rejected it — in either case no legal_update,
-    // review, rule, alert, or audit_log entry is created.
-    const prep = prepareMonitoringLegalUpdateIntake(monitoringDecision, source, guardAiDraftedFields)
+  // Shared creation core (Phase 2F): turns ONE monitoring decision into a DRAFT
+  // legal_update (status 'new') plus a pending review, through the existing
+  // repository + audit path — no duplicated repository/audit logic. `source` is
+  // the REGISTERED regulatory source the draft should reference, passed
+  // explicitly (an RSS decision keys on a per-item id, not a source id). It
+  // never summarises, analyses, calls AI, creates/approves a rule, or enforces —
+  // summary stays empty and the only status ever written is 'new'.
+  async function createDraftLegalUpdateFromDecision(
+    decision: MonitoringDecision,
+    source: RegulatorySource | undefined,
+    setBusy: (busy: boolean) => void,
+    onCreated: () => void,
+  ): Promise<void> {
+    // Pure branch logic (title/source derivation + the wording-safety gate) is
+    // prepareMonitoringLegalUpdateIntake. 'skip' = not changed_pending_review;
+    // 'blocked' = wording guard tripped — either way nothing is created.
+    const prep = prepareMonitoringLegalUpdateIntake(decision, source, guardAiDraftedFields)
     if (prep.outcome === 'skip') return
     if (prep.outcome === 'blocked') {
       setActionMessage({ type: 'error', text: prep.reason })
@@ -732,7 +739,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     const { title, sourceId: preparedSourceId, sourceName, sourceUrl, jurisdiction, rawText, reviewerNotes } = prep.intake
     const now = new Date().toISOString()
 
-    setMonitoringBusy(true)
+    setBusy(true)
     try {
       if (repo.isSupabaseConfigured) {
         if (!isSupabaseAdmin || !currentUser) {
@@ -740,104 +747,88 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
           return
         }
         const update = await repo.insertLegalUpdate({
-          sourceId: preparedSourceId,
-          title,
-          jurisdiction,
-          sourceName,
-          sourceUrl,
-          publishedAt: null,
-          rawText,
-          summary: '',
-          affectedAreas: [],
-          aiRiskLevel: 'info',
-          status: 'new',
-          reviewerNotes,
+          sourceId: preparedSourceId, title, jurisdiction, sourceName, sourceUrl,
+          publishedAt: null, rawText, summary: '', affectedAreas: [], aiRiskLevel: 'info',
+          status: 'new', reviewerNotes,
         })
         const review = await repo.insertReview({
-          legalUpdateId: update.id,
-          title: update.title,
-          reviewType: 'legal_update',
-          status: 'pending',
-          reviewerNotes: '',
+          legalUpdateId: update.id, title: update.title, reviewType: 'legal_update',
+          status: 'pending', reviewerNotes: '',
         })
         const nextLegalUpdates = [update, ...legalUpdates]
         setLegalUpdates(nextLegalUpdates)
         setReviews([repo.enrichReview(review, nextLegalUpdates), ...reviews])
-        // actorType 'system' — this entry represents a monitoring-decision
-        // intake, not a human-typed one, and the existing actor_type CHECK
-        // constraint and ComplianceAuditLog['action'] union already support
-        // 'system' + 'legal_update_created' without any migration.
+        // actorType 'system' — a monitoring-decision intake, not a human-typed
+        // one; the existing actor_type CHECK + action union already support this
+        // without any migration.
         await logAudit({
-          action: 'legal_update_created',
-          entityType: 'legal_update',
-          entityId: update.id,
-          beforeState: null,
-          afterState: update,
-          reason: 'Legal update created from Monitoring Queue decision (changed_pending_review). Pending human review.',
+          action: 'legal_update_created', entityType: 'legal_update', entityId: update.id,
+          beforeState: null, afterState: update,
+          reason: 'Draft legal update created from a monitoring decision (changed_pending_review). Pending human review.',
         }, 'system')
-        setActionMessage({ type: 'success', text: 'Legal update created from monitoring decision and saved to Supabase. Pending human review.' })
-        setMonitoringDecision(null)
-        setMonitoringContent('')
-        setTab('queue')
+        setActionMessage({ type: 'success', text: 'Draft legal update created and saved to Supabase. Pending human review.' })
+        onCreated()
         return
       }
 
       const update: LegalUpdate = {
-        id: makeId('legal'),
-        sourceId: preparedSourceId,
-        title,
-        jurisdiction,
-        sourceName,
-        sourceUrl,
-        publishedAt: null,
-        detectedAt: now,
-        rawText,
-        summary: '',
-        affectedAreas: [],
-        aiRiskLevel: 'info',
-        status: 'new',
-        reviewerNotes,
-        createdAt: now,
-        updatedAt: now,
+        id: makeId('legal'), sourceId: preparedSourceId, title, jurisdiction, sourceName, sourceUrl,
+        publishedAt: null, detectedAt: now, rawText, summary: '', affectedAreas: [], aiRiskLevel: 'info',
+        status: 'new', reviewerNotes, createdAt: now, updatedAt: now,
       }
       const review: ComplianceReview = {
-        id: makeId('review'),
-        legalUpdateId: update.id,
-        alertId: null,
-        ruleId: null,
-        title: update.title,
-        reviewType: 'legal_update',
-        status: 'pending',
-        riskLevel: 'info',
-        affectedEntities: [],
-        summary: update.rawText.slice(0, 280),
-        recommendedAction: 'Classify and monitor.',
-        reviewerNotes: update.reviewerNotes,
-        decision: null,
-        reviewedBy: null,
-        reviewedAt: null,
-        createdAt: now,
-        updatedAt: now,
+        id: makeId('review'), legalUpdateId: update.id, alertId: null, ruleId: null,
+        title: update.title, reviewType: 'legal_update', status: 'pending', riskLevel: 'info',
+        affectedEntities: [], summary: update.rawText.slice(0, 280), recommendedAction: 'Classify and monitor.',
+        reviewerNotes: update.reviewerNotes, decision: null, reviewedBy: null, reviewedAt: null,
+        createdAt: now, updatedAt: now,
       }
       persistLegalUpdatesLocal([update, ...legalUpdates])
       persistReviewsLocal([review, ...reviews])
       await logAudit({
-        action: 'legal_update_created',
-        entityType: 'legal_update',
-        entityId: update.id,
-        beforeState: null,
-        afterState: update,
-        reason: 'Legal update created from Monitoring Queue decision (changed_pending_review). Pending human review.',
+        action: 'legal_update_created', entityType: 'legal_update', entityId: update.id,
+        beforeState: null, afterState: update,
+        reason: 'Draft legal update created from a monitoring decision (changed_pending_review). Pending human review.',
       }, 'system')
-      setActionMessage({ type: 'success', text: 'Legal update created from monitoring decision (local/demo mode). Pending human review.' })
+      setActionMessage({ type: 'success', text: 'Draft legal update created (local/demo mode). Pending human review.' })
+      onCreated()
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to create the draft legal update.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Paste-flow handler: reuses the shared core (behaviour preserved).
+  async function createLegalUpdateFromMonitoringDecision(): Promise<void> {
+    if (!monitoringDecision) return
+    setActionMessage(null)
+    const source = monitoringDecision.proposedLegalUpdate
+      ? sources.find(s => s.id === monitoringDecision.proposedLegalUpdate!.sourceId)
+      : undefined
+    await createDraftLegalUpdateFromDecision(monitoringDecision, source, setMonitoringBusy, () => {
       setMonitoringDecision(null)
       setMonitoringContent('')
       setTab('queue')
-    } catch (err) {
-      setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to create legal update from monitoring decision.' })
-    } finally {
-      setMonitoringBusy(false)
+    })
+  }
+
+  // Manual RSS-item handler (Phase 2F): creates a draft legal update from ONE
+  // feed item's monitoring decision, ONLY on an explicit click. The
+  // decideDraftCreation gate allows only changed_pending_review, blocks a
+  // concurrent creation, and blocks a repeat for an already-drafted item. The
+  // registered source is passed explicitly.
+  async function handleCreateDraftFromRssItem(decision: MonitoringDecision): Promise<void> {
+    const gate = decideDraftCreation(decision, rssDraftBusy, rssDraftedItemIds.has(decision.sourceId))
+    if (gate.action === 'reject') {
+      setActionMessage({ type: 'error', text: gate.reason })
+      return
     }
+    setActionMessage(null)
+    const source = sources.find(s => s.id === rssCheckSourceId)
+    await createDraftLegalUpdateFromDecision(decision, source, setRssDraftBusy, () => {
+      setRssDraftedItemIds(prev => { const next = new Set(prev); next.add(decision.sourceId); return next })
+    })
   }
 
   async function updateReviewDecision(review: ComplianceReview, decision: string): Promise<void> {
@@ -1677,9 +1668,9 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                 <button className="btn btn-review" onClick={() => { setRssCheckResult(null); setRssCheckSourceId(null) }}>Dismiss</button>
               </div>
               <p className="td-muted">
-                This checks a public regulatory feed with a read-only HTTPS request. It does not approve, certify,
-                or enforce anything, and it creates no legal update and no compliance rule. Any detected change is
-                flagged for human review only.
+                This checks a public regulatory feed with a read-only HTTPS request. It does not analyse, summarise,
+                approve, certify, or enforce anything. From a detected change a human may explicitly create a draft
+                legal update (status: new) for later human review — nothing is approved or turned into a compliance rule.
               </p>
 
               {!rssCheckResult.ok ? (
@@ -1722,6 +1713,22 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                               {item.publishedAt && <div className="detail-row"><span className="dl">Published/updated</span><span className="dv">{item.publishedAt}</span></div>}
                               {item.checksum && <div className="detail-row"><span className="dl">Checksum</span><span className="dv" style={{ wordBreak: 'break-all' }}>{item.checksum}</span></div>}
                             </div>
+                            {item.decisionKind === 'changed_pending_review' && rssCheckResult.sourceId === rssCheckSourceId && (() => {
+                              const decision = rssCheckResult.decisions[i]
+                              const drafted = rssDraftedItemIds.has(item.stableId)
+                              const gate = decideDraftCreation(decision, rssDraftBusy, drafted)
+                              return (
+                                <button
+                                  className="btn btn-primary"
+                                  style={{ marginTop: 10 }}
+                                  disabled={rssDraftBusy || gate.action !== 'create'}
+                                  title={gate.action === 'create' ? 'Create a draft legal update (status: new) for human editing in the Review Queue' : gate.reason}
+                                  onClick={() => { void handleCreateDraftFromRssItem(decision) }}
+                                >
+                                  {drafted ? 'Draft created' : rssDraftBusy ? 'Creating…' : 'Create Draft Legal Update'}
+                                </button>
+                              )
+                            })()}
                           </div>
                         )
                       })}
