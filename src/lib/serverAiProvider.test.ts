@@ -36,6 +36,23 @@ function anthropicOk(sections: unknown = MODEL_SECTIONS): Response {
   return jsonResponse({ content: [{ type: 'text', text: JSON.stringify(sections) }] })
 }
 
+/** Wraps arbitrary model text as an Anthropic 200 reply for parser tests. */
+function anthropicRaw(text: string): Response {
+  return jsonResponse({ content: [{ type: 'text', text }] })
+}
+
+/** Drives the provider once with the given raw model text and returns value. */
+async function valueFor(text: string): Promise<unknown> {
+  const provider = createServerAiSummaryProvider({
+    apiKey: 'sk-x',
+    model: 'claude-test',
+    fetchImpl: async () => anthropicRaw(text),
+  })
+  return (await provider.draftSummary(INPUT)).value
+}
+
+const JSON_TEXT = JSON.stringify(MODEL_SECTIONS)
+
 describe('createServerAiSummaryProvider — transport', () => {
   it('POSTs to the messages endpoint with the key in a header, not the body', async () => {
     let capturedUrl = ''
@@ -120,5 +137,73 @@ describe('createServerAiSummaryProvider — transport', () => {
     })
     const out = await provider.draftSummary(INPUT)
     expect(out.value).toBeNull()
+  })
+})
+
+describe('createServerAiSummaryProvider — response parsing', () => {
+  it('accepts plain valid JSON', async () => {
+    expect(await valueFor(JSON_TEXT)).toEqual(MODEL_SECTIONS)
+  })
+
+  it('accepts a valid ```json fenced block', async () => {
+    expect(await valueFor('```json\n' + JSON.stringify(MODEL_SECTIONS, null, 2) + '\n```')).toEqual(MODEL_SECTIONS)
+  })
+
+  it('accepts a valid ```JSON fenced block (case-insensitive label)', async () => {
+    expect(await valueFor('```JSON\n' + JSON_TEXT + '\n```')).toEqual(MODEL_SECTIONS)
+  })
+
+  it('accepts whitespace around a single fenced block', async () => {
+    expect(await valueFor('\n\n   ```json\n' + JSON_TEXT + '\n```   \n\n')).toEqual(MODEL_SECTIONS)
+  })
+
+  it('preserves provenance on a fenced success (anthropic / model / requiresHumanReview)', async () => {
+    const provider = createServerAiSummaryProvider({
+      apiKey: 'sk-x',
+      model: 'claude-test',
+      fetchImpl: async () => anthropicRaw('```json\n' + JSON_TEXT + '\n```'),
+    })
+    const out = await provider.draftSummary(INPUT)
+    expect(out.value).toEqual(MODEL_SECTIONS)
+    expect(out.provenance.modelInfo.provider).toBe('anthropic')
+    expect(out.provenance.modelInfo.model).toBe('claude-test')
+    expect(out.provenance.requiresHumanReview).toBe(true)
+  })
+
+  it('rejects prose before a fenced block', async () => {
+    expect(await valueFor('Here you go:\n```json\n' + JSON_TEXT + '\n```')).toBeNull()
+  })
+
+  it('rejects prose after a fenced block', async () => {
+    expect(await valueFor('```json\n' + JSON_TEXT + '\n```\nHope this helps!')).toBeNull()
+  })
+
+  it('rejects multiple fenced blocks', async () => {
+    expect(await valueFor('```json\n' + JSON_TEXT + '\n```\n```json\n' + JSON_TEXT + '\n```')).toBeNull()
+  })
+
+  it('rejects malformed JSON inside a fenced block', async () => {
+    expect(await valueFor('```json\n{ "draftSummary": }\n```')).toBeNull()
+  })
+
+  it('rejects an unclosed fence', async () => {
+    expect(await valueFor('```json\n' + JSON_TEXT)).toBeNull()
+  })
+
+  it('rejects arbitrary prose that contains a JSON object', async () => {
+    expect(await valueFor('The summary is {"draftSummary":"x"} and more text.')).toBeNull()
+  })
+
+  it('rejects a JSON array (non-object)', async () => {
+    expect(await valueFor(JSON.stringify([MODEL_SECTIONS]))).toBeNull()
+  })
+
+  it('rejects a non-object JSON scalar', async () => {
+    expect(await valueFor('"just a string"')).toBeNull()
+  })
+
+  it('rejects an empty response', async () => {
+    expect(await valueFor('')).toBeNull()
+    expect(await valueFor('   \n  ')).toBeNull()
   })
 })

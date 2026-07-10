@@ -82,6 +82,44 @@ function extractText(json: unknown): string {
     .join('')
 }
 
+/** Parses a JSON string and returns it ONLY if it is a plain, non-null,
+ *  non-array object. Arrays, strings, numbers, booleans, null, and malformed
+ *  JSON all yield null. Never throws. */
+function tryParseObject(candidate: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(candidate)
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      return value as Record<string, unknown>
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+// A single complete Markdown code fence that spans the ENTIRE trimmed message:
+// optional info string (empty or a case-insensitive "json" label), then the
+// body, then the closing fence at end-of-string. Anchoring to ^…$ is what makes
+// prose-before, prose-after, and trailing/leading content fail — there is no
+// brace-scanning and no search for a {…} substring inside arbitrary prose.
+const SINGLE_JSON_FENCE_RE = /^```[ \t]*(?:[Jj][Ss][Oo][Nn])?[ \t]*\r?\n([\s\S]*?)\r?\n```$/
+
+/** Narrow parser for the extracted Anthropic text. Accepts either the whole
+ *  trimmed reply as a JSON object, or exactly one complete fenced JSON block
+ *  that is the entire message. Returns null on any failure so the orchestration
+ *  maps it to malformed_output. Never accepts arbitrary prose. */
+function parseModelJson(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim()
+  if (trimmed.length === 0) return null
+
+  const direct = tryParseObject(trimmed)
+  if (direct) return direct
+
+  const fence = SINGLE_JSON_FENCE_RE.exec(trimmed)
+  if (!fence) return null
+  return tryParseObject(fence[1].trim())
+}
+
 export function createServerAiSummaryProvider(config: ServerAiProviderConfig): ComplianceAiSummaryProvider {
   const fetchImpl = config.fetchImpl ?? fetch
   const baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
@@ -124,9 +162,9 @@ export function createServerAiSummaryProvider(config: ServerAiProviderConfig): C
       let parsed: unknown
       try {
         const json = await response.json()
-        parsed = JSON.parse(extractText(json))
+        parsed = parseModelJson(extractText(json))
       } catch {
-        parsed = null // orchestration's shape check → malformed_output
+        parsed = null // response.json() threw → orchestration's shape check → malformed_output
       }
 
       return {
