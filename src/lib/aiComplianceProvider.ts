@@ -52,3 +52,44 @@ export async function runComplianceAnalysis(
   ])
   return { summary, riskLevel, affectedAreas, jurisdictions }
 }
+
+// ─── Structured draft-summary provider (Phase 2G) ───────────────────────────
+//
+// A narrow, complementary provider interface for producing a STRUCTURED draft
+// summary of a single legal update's source evidence, for human legal review.
+// It reuses AIComplianceOutput (value + confidence + provenance, with
+// requiresHumanReview: true) rather than duplicating that contract. Like the
+// rest of this file it declares only a contract — no implementation here calls
+// a real AI service, opens a socket, or imports a vendor SDK. A caller injects
+// a provider; there is no production provider configured in this repository.
+//
+// The five sections mirror the review-oriented output model: the AI drafts
+// facts and questions, never a legal conclusion, certification, approval, rule,
+// or enforcement — the guarded orchestration (complianceAiSummarisation.ts)
+// and the wording guard (aiComplianceGuard.ts) enforce that.
+
+export interface AiDraftSummarySections {
+  draftSummary: string
+  possibleSignificance: string
+  uncertainties: string
+  reviewQuestions: string[]
+  sourceReferences: string[]
+}
+
+/** Minimal evidence a summary provider is given. Contains no secrets, tokens,
+ *  cookies, or buyer/farmer/personal data — only what the guard permits. */
+export interface AiSummaryProviderInput {
+  legalUpdateId: string
+  sourceName: string
+  sourceUrl: string
+  jurisdiction: string
+  itemTitle: string
+  publishedAt: string | null
+  rawEvidence: string
+  provenanceChecksum: string | null
+}
+
+export interface ComplianceAiSummaryProvider {
+  /** Draft a structured, human-review-oriented summary. Returns a draft only. */
+  draftSummary(input: AiSummaryProviderInput): Promise<AIComplianceOutput<AiDraftSummarySections>>
+}

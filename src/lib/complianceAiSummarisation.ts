@@ -1,0 +1,245 @@
+import type { LegalUpdate } from '../types'
+import { guardAiDraftedFields } from './aiComplianceGuard'
+import type {
+  AiDraftSummarySections,
+  AiSummaryProviderInput,
+  ComplianceAiSummaryProvider,
+} from './aiComplianceProvider'
+
+// ─── Guarded AI draft summarisation — orchestration (Phase 2G) ──────────────
+//
+// Lets a human request a DRAFT AI summary of an existing legal update's source
+// evidence. Everything here is pure or depends only on an injected provider —
+// this module never imports a vendor SDK, never opens a socket, never persists,
+// never writes to Supabase, never creates/approves a rule, and never approves,
+// certifies, enforces, or overwrites anything. Its output is a clearly-labelled
+// draft that always requires human legal review.
+//
+// Two guards apply, both reused/complementary — neither is bypassed or
+// re-implemented in the UI:
+//   1. guardAiSummarisationRequest (here): a REQUEST/eligibility gate — draft
+//      only, no approval/rule/enforce capability, evidence present, eligible
+//      status, provider configured, not already running, size-bounded.
+//   2. guardAiDraftedFields (aiComplianceGuard.ts): the existing WORDING guard,
+//      run over the AI OUTPUT prose so an unqualified compliance/approval claim
+//      is blocked before a human ever sees it.
+
+export const DEFAULT_MAX_EVIDENCE_CHARS = 20000
+
+// ─── Request (minimal evidence + capability guarantees) ──────────────────────
+
+export interface AiSummaryRequest extends AiSummaryProviderInput {
+  // Capability guarantees (literal), asserted by the guard: this request can
+  // only ever ask for a draft, and can never ask to approve/rule/enforce or
+  // make a buyer-facing decision.
+  isDraftOnly: true
+  requiresHumanReview: true
+  canApprove: false
+  canCreateRule: false
+  canEnforce: false
+  makesBuyerFacingDecision: false
+}
+
+/** Extracts ONLY the permitted evidence fields from a legal update. Carries no
+ *  secrets/tokens/cookies/buyer/farmer/personal data (the model holds none). */
+export function buildAiSummaryRequest(update: LegalUpdate): AiSummaryRequest {
+  const checksumMatch = /Checksum:\s*([0-9a-f]{64})/i.exec(update.reviewerNotes ?? '')
+  return {
+    legalUpdateId: update.id,
+    sourceName: update.sourceName,
+    sourceUrl: update.sourceUrl,
+    jurisdiction: update.jurisdiction,
+    itemTitle: update.title,
+    publishedAt: update.publishedAt ?? null,
+    rawEvidence: update.rawText,
+    provenanceChecksum: checksumMatch ? checksumMatch[1] : null,
+    isDraftOnly: true,
+    requiresHumanReview: true,
+    canApprove: false,
+    canCreateRule: false,
+    canEnforce: false,
+    makesBuyerFacingDecision: false,
+  }
+}
+
+// ─── Request guard ───────────────────────────────────────────────────────────
+
+export type AiSummaryGuardCode =
+  | 'request_in_progress'
+  | 'missing_update'
+  | 'provider_unconfigured'
+  | 'unsupported_status'
+  | 'missing_evidence'
+  | 'oversized_evidence'
+
+export type AiSummaryGuardDecision =
+  | { action: 'allow'; request: AiSummaryRequest }
+  | { action: 'reject'; code: AiSummaryGuardCode; reason: string }
+
+export interface AiSummaryGuardOptions {
+  providerAvailable: boolean
+  requestInProgress: boolean
+  maxEvidenceChars?: number
+}
+
+/**
+ * Pure eligibility gate. Only a draft legal update (status 'new') with present,
+ * size-bounded source evidence, a configured provider, and no in-flight request
+ * may be summarised. A reviewed / rule-suggested / sent-to-legal / archived /
+ * rejected update is treated as locked (unsupported_status) — the AI never runs
+ * against an already-actioned update.
+ */
+export function guardAiSummarisationRequest(
+  update: LegalUpdate | null,
+  opts: AiSummaryGuardOptions,
+): AiSummaryGuardDecision {
+  if (opts.requestInProgress) {
+    return { action: 'reject', code: 'request_in_progress', reason: 'An AI draft summary is already being generated.' }
+  }
+  if (!update) {
+    return { action: 'reject', code: 'missing_update', reason: 'No legal update is selected.' }
+  }
+  if (!opts.providerAvailable) {
+    return { action: 'reject', code: 'provider_unconfigured', reason: 'No AI provider is configured for this build.' }
+  }
+  if (update.status !== 'new') {
+    return { action: 'reject', code: 'unsupported_status', reason: `This legal update is "${update.status}", not an editable draft — AI summarisation is only available for new drafts.` }
+  }
+  const evidence = (update.rawText ?? '').trim()
+  if (evidence.length === 0) {
+    return { action: 'reject', code: 'missing_evidence', reason: 'This legal update has no source evidence to summarise.' }
+  }
+  const max = opts.maxEvidenceChars ?? DEFAULT_MAX_EVIDENCE_CHARS
+  if (evidence.length > max) {
+    return { action: 'reject', code: 'oversized_evidence', reason: `Source evidence exceeds the ${max}-character limit for AI summarisation.` }
+  }
+  return { action: 'allow', request: buildAiSummaryRequest(update) }
+}
+
+// ─── Draft output model ──────────────────────────────────────────────────────
+
+export const AI_DRAFT_LABEL = 'AI-generated draft — requires human legal review'
+
+export interface AiDraftSummary {
+  legalUpdateId: string
+  providerId: string
+  modelId: string
+  generatedAt: string
+  draftSummary: string
+  possibleSignificance: string
+  uncertainties: string
+  reviewQuestions: string[]
+  sourceReferences: string[]
+  guardDecision: 'allowed'
+  status: 'draft_generated'
+  requiresHumanReview: true
+  label: string
+  // Capability guarantees (literal false): a draft, nothing more.
+  approvesUpdate: false
+  createsRule: false
+  enforces: false
+  certifiesCompliance: false
+}
+
+export type AiSummaryResultCode =
+  | AiSummaryGuardCode
+  | 'provider_error'
+  | 'provider_timeout'
+  | 'malformed_output'
+  | 'empty_output'
+  | 'unsafe_output'
+
+export type AiSummaryResult =
+  | { ok: true; draft: AiDraftSummary }
+  | { ok: false; code: AiSummaryResultCode; reason: string }
+
+function isSectionsShape(v: unknown): v is AiDraftSummarySections {
+  if (typeof v !== 'object' || v === null) return false
+  const o = v as Record<string, unknown>
+  return (
+    typeof o.draftSummary === 'string' &&
+    typeof o.possibleSignificance === 'string' &&
+    typeof o.uncertainties === 'string' &&
+    Array.isArray(o.reviewQuestions) && o.reviewQuestions.every(q => typeof q === 'string') &&
+    Array.isArray(o.sourceReferences) && o.sourceReferences.every(r => typeof r === 'string')
+  )
+}
+
+/**
+ * The single orchestration entry point. Guards the request, calls the injected
+ * provider, validates the shape, runs the wording guard over the AI-authored
+ * prose (not the echoed source references), and returns a labelled draft. It
+ * performs no persistence and never overwrites the legal update's summary.
+ */
+export async function generateAiDraftSummary(
+  update: LegalUpdate | null,
+  provider: ComplianceAiSummaryProvider | null,
+  opts: { requestInProgress: boolean; maxEvidenceChars?: number },
+): Promise<AiSummaryResult> {
+  const guard = guardAiSummarisationRequest(update, {
+    providerAvailable: !!provider,
+    requestInProgress: opts.requestInProgress,
+    maxEvidenceChars: opts.maxEvidenceChars,
+  })
+  if (guard.action === 'reject') {
+    return { ok: false, code: guard.code, reason: guard.reason }
+  }
+
+  // update + provider are non-null here (guard enforced both).
+  const request = guard.request
+  const activeUpdate = update as LegalUpdate
+  const activeProvider = provider as ComplianceAiSummaryProvider
+
+  let output
+  try {
+    output = await activeProvider.draftSummary(request)
+  } catch (err) {
+    const aborted = err instanceof Error && err.name === 'AbortError'
+    return {
+      ok: false,
+      code: aborted ? 'provider_timeout' : 'provider_error',
+      reason: aborted ? 'The AI provider timed out.' : 'The AI provider could not complete the request.',
+    }
+  }
+
+  const sections = output?.value
+  if (!isSectionsShape(sections)) {
+    return { ok: false, code: 'malformed_output', reason: 'The AI provider returned a malformed draft summary.' }
+  }
+  if (sections.draftSummary.trim().length === 0) {
+    return { ok: false, code: 'empty_output', reason: 'The AI provider returned an empty draft summary.' }
+  }
+
+  // Wording guard over AI-AUTHORED prose only (source references echo the
+  // source name/URL and must not be treated as AI claims).
+  const wording = guardAiDraftedFields({
+    draftSummary: sections.draftSummary,
+    possibleSignificance: sections.possibleSignificance,
+    uncertainties: sections.uncertainties,
+    reviewQuestions: sections.reviewQuestions.join('\n'),
+  })
+  if (!wording.isSafe) {
+    return { ok: false, code: 'unsafe_output', reason: 'The AI draft made an unqualified compliance/approval claim and was blocked before display.' }
+  }
+
+  const draft: AiDraftSummary = {
+    legalUpdateId: activeUpdate.id,
+    providerId: output.provenance.modelInfo.provider,
+    modelId: output.provenance.modelInfo.model,
+    generatedAt: output.provenance.generatedAt,
+    draftSummary: sections.draftSummary,
+    possibleSignificance: sections.possibleSignificance,
+    uncertainties: sections.uncertainties,
+    reviewQuestions: sections.reviewQuestions,
+    sourceReferences: sections.sourceReferences,
+    guardDecision: 'allowed',
+    status: 'draft_generated',
+    requiresHumanReview: true,
+    label: AI_DRAFT_LABEL,
+    approvesUpdate: false,
+    createsRule: false,
+    enforces: false,
+    certifiesCompliance: false,
+  }
+  return { ok: true, draft }
+}
