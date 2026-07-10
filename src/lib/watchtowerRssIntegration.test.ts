@@ -54,6 +54,23 @@ describe('DDPComplianceWatchtower — manual RSS integration (static)', () => {
     }
   })
 
+  it('saves a technical baseline only from an explicit click handler, never on mount/effect', () => {
+    expect(SRC).toMatch(/handleSaveBaseline/)
+    expect(SRC).toMatch(/monitoringSnapshotRepo\.saveBaseline/)
+    // The save button is bound to onClick.
+    expect(SRC).toMatch(/onClick=\{\(\)\s*=>\s*\{\s*void handleSaveBaseline\(\)/)
+    // Neither the save nor the repository write happens inside any useEffect.
+    for (const body of useEffectBodies(SRC)) {
+      expect(body).not.toMatch(/handleSaveBaseline|saveBaseline|buildBaselineCandidate/)
+    }
+  })
+
+  it('states the technical baseline does not imply legal approval', () => {
+    expect(SRC).toMatch(/stores technical feed checksums for future comparison/i)
+    expect(SRC).toMatch(/does not approve a legal update,\s*\n?\s*regulation, compliance status, or rule/i)
+    expect(SRC).toMatch(/not a record of legal review, approval, or compliance status/i)
+  })
+
   it('guards against concurrent runs from repeated clicks', () => {
     expect(SRC).toMatch(/canStartManualRun\(rssCheckBusy\)/)
     expect(SRC).toMatch(/disabled=\{rssCheckBusy/)

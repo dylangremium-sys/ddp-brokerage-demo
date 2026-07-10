@@ -78,6 +78,9 @@ export function canStartManualRun(isRunning: boolean): boolean {
 }
 
 export interface ManualMonitoringItemView {
+  /** Stable per-item identifier (guid/atom-id/link-derived) — the key a
+   *  technical baseline snapshot is stored and compared under. */
+  stableId: string
   decisionKind: MonitoringDecision['kind']
   reason: string
   itemTitle: string | null
@@ -150,6 +153,7 @@ function ineligibleResult(source: RegulatorySource, eligibility: ManualMonitorin
 
 function toItemView(decision: MonitoringDecision, item: ParsedFeedItem | undefined): ManualMonitoringItemView {
   return {
+    stableId: decision.sourceId,
     decisionKind: decision.kind,
     reason: decision.reason,
     itemTitle: item?.title ?? null,

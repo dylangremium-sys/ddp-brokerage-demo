@@ -37,6 +37,14 @@ import {
   type ManualMonitoringRunResult,
 } from '../../lib/complianceManualMonitoring'
 import { createBrowserRssFetch } from '../../lib/browserRssFetch'
+import { createLocalStorageMonitoringSnapshotRepository } from '../../lib/complianceMonitoringSnapshotStore'
+import {
+  baselineToPreviousSnapshots,
+  buildBaselineCandidate,
+  decideBaselineSave,
+  nextBaselineVersion,
+  type MonitoringBaseline,
+} from '../../lib/complianceMonitoringSnapshot'
 
 interface Props {
   farms: FarmProfile[]
@@ -167,6 +175,12 @@ function manualRunErrorMessage(code: string | undefined): string {
   }
 }
 
+// Single localStorage-backed technical-baseline repository for the admin
+// session. Phase 2E persists monitoring baselines in the browser only — they
+// are technical feed-checksum evidence, never legal/compliance state, and this
+// is not a Supabase table. Nothing here touches the compliance database.
+const monitoringSnapshotRepo = createLocalStorageMonitoringSnapshotRepository()
+
 export default function DDPComplianceWatchtower({ farms, inventory, currentUser }: Props) {
   const [tab, setTab] = useState<WatchtowerTab>('monitor')
   const [legalUpdates, setLegalUpdates] = useState<LegalUpdate[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.legalUpdates, [])))
@@ -231,7 +245,11 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const [rssCheckSourceId, setRssCheckSourceId] = useState<string | null>(null)
   const [rssCheckBusy, setRssCheckBusy] = useState(false)
   const [rssCheckResult, setRssCheckResult] = useState<ManualMonitoringRunResult | null>(null)
-  const [rssFeedSnapshots, setRssFeedSnapshots] = useState<Map<string, SourceContentSnapshot>>(() => new Map())
+  // Phase 2E technical baselines: the current baseline a check compared against,
+  // the source's baseline history, and whether the check used a saved baseline.
+  const [rssSaveBusy, setRssSaveBusy] = useState(false)
+  const [rssComparedBaseline, setRssComparedBaseline] = useState<MonitoringBaseline | null>(null)
+  const [rssBaselineHistory, setRssBaselineHistory] = useState<MonitoringBaseline[]>([])
 
   const actorName = currentUser?.displayName || currentUser?.email || 'DDP Admin'
   const actorId = currentUser?.id ?? 'local-admin'
@@ -623,15 +641,61 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     setRssCheckSourceId(source.id)
     setRssCheckResult(null)
     setRssCheckBusy(true)
+
+    // Compare against the source's SAVED technical baseline (if any). Reading a
+    // corrupt store never throws to the user — it degrades to "no baseline"
+    // (first-seen) with a note. This read does not modify or save anything.
+    let baseline: MonitoringBaseline | null = null
+    try {
+      baseline = monitoringSnapshotRepo.getCurrentBaseline(source.id)
+      setRssBaselineHistory(monitoringSnapshotRepo.listBaselineHistory(source.id))
+    } catch {
+      setRssBaselineHistory([])
+      setActionMessage({ type: 'error', text: 'A saved baseline could not be read; comparing all items as first-seen.' })
+    }
+    setRssComparedBaseline(baseline)
+
     try {
       const result = await runManualRssMonitoring(source, createBrowserRssFetch(), {
-        previousSnapshots: rssFeedSnapshots,
+        previousSnapshots: baselineToPreviousSnapshots(baseline),
       })
       setRssCheckResult(result)
-      // Transient in-memory only — never persisted.
-      if (result.ok) setRssFeedSnapshots(result.updatedSnapshots)
     } finally {
       setRssCheckBusy(false)
+    }
+  }
+
+  // Explicit, human-initiated save of the current feed check as a technical
+  // baseline. A feed check NEVER saves automatically — only this handler writes,
+  // and only via the narrow snapshot repository. It creates no legal update, no
+  // rule, and marks nothing reviewed/approved. The decideBaselineSave gate
+  // rejects stale/mismatched/unsuccessful/empty results and concurrent saves.
+  async function handleSaveBaseline(): Promise<void> {
+    const source = sources.find(s => s.id === rssCheckSourceId)
+    const decision = decideBaselineSave(rssCheckResult, source?.id ?? null, rssSaveBusy)
+    if (decision.action === 'reject') {
+      setActionMessage({ type: 'error', text: decision.reason })
+      return
+    }
+    setActionMessage(null)
+    setRssSaveBusy(true)
+    try {
+      const history = monitoringSnapshotRepo.listBaselineHistory(source!.id)
+      const candidate = buildBaselineCandidate(
+        source!,
+        rssCheckResult!,
+        crypto.randomUUID(),
+        new Date().toISOString(),
+        nextBaselineVersion(history),
+      )
+      monitoringSnapshotRepo.saveBaseline(candidate)
+      setRssComparedBaseline(candidate)
+      setRssBaselineHistory(monitoringSnapshotRepo.listBaselineHistory(source!.id))
+      setActionMessage({ type: 'success', text: `Technical baseline v${candidate.baselineVersion} saved for this source (checksums only).` })
+    } catch {
+      setActionMessage({ type: 'error', text: 'Could not save the technical baseline (local storage error). Nothing was changed.' })
+    } finally {
+      setRssSaveBusy(false)
     }
   }
 
@@ -1631,6 +1695,10 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                   <div className="detail-rows" style={{ marginTop: 6 }}>
                     <div className="detail-row"><span className="dl">Feed</span><span className="dv">{rssCheckResult.feedTitle || '—'} ({rssCheckResult.feedKind})</span></div>
                     <div className="detail-row"><span className="dl">Items</span><span className="dv">{rssCheckResult.itemCount}</span></div>
+                    <div className="detail-row">
+                      <span className="dl">Compared against</span>
+                      <span className="dv">{rssComparedBaseline ? `Technical baseline v${rssComparedBaseline.baselineVersion} (${rssComparedBaseline.capturedAt})` : 'No saved baseline — all items first-seen'}</span>
+                    </div>
                   </div>
                   {rssCheckResult.itemCount === 0 ? (
                     <p className="td-muted" style={{ marginTop: 12 }}>The feed was retrieved and parsed, but contains no items.</p>
@@ -1659,8 +1727,59 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                       })}
                     </div>
                   )}
+
+                  <div className="disclaimer-box" style={{ marginTop: 16 }}>
+                    <p className="td-muted" style={{ fontSize: 12, margin: 0 }}>
+                      This stores technical feed checksums for future comparison. It does not approve a legal update,
+                      regulation, compliance status, or rule, and it marks nothing reviewed or approved.
+                    </p>
+                    {(() => {
+                      const selectedSourceId = sources.find(s => s.id === rssCheckSourceId)?.id ?? null
+                      const saveDecision = decideBaselineSave(rssCheckResult, selectedSourceId, rssSaveBusy)
+                      return (
+                        <button
+                          className="btn btn-primary"
+                          style={{ marginTop: 10 }}
+                          disabled={rssSaveBusy || saveDecision.action !== 'save'}
+                          title={saveDecision.action === 'save' ? 'Save current feed checksums as the technical baseline' : saveDecision.reason}
+                          onClick={() => { void handleSaveBaseline() }}
+                        >
+                          {rssSaveBusy ? 'Saving…' : 'Save current feed as technical baseline'}
+                        </button>
+                      )
+                    })()}
+                  </div>
                 </>
               )}
+            </div>
+          )}
+
+          {rssCheckSourceId && rssBaselineHistory.length > 0 && (
+            <div className="card table-card" style={{ marginTop: 16 }}>
+              <div style={{ padding: '16px 16px 0' }}>
+                <h2 style={{ margin: 0 }}>Technical Baseline History</h2>
+                <p className="td-muted" style={{ fontSize: 12 }}>
+                  Technical feed-checksum snapshots only — not a record of legal review, approval, or compliance status.
+                </p>
+              </div>
+              <div className="table-scroll">
+                <table className="inv-table inv-table--cards">
+                  <thead><tr><th>Baseline</th><th>Captured</th><th>Feed title</th><th>Items</th><th>Marker</th></tr></thead>
+                  <tbody>
+                    {rssBaselineHistory.map(b => (
+                      <tr key={b.id}>
+                        <td>v{b.baselineVersion}</td>
+                        <td>{b.capturedAt}</td>
+                        <td>{b.feedTitle || '—'}</td>
+                        <td>{b.itemCount}</td>
+                        <td>{rssBaselineHistory[0]?.id === b.id
+                          ? <span className="status-pill status-verified">Current</span>
+                          : <span className="td-muted">Historical</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </>
