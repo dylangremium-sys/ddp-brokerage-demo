@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { FarmProfile, InventoryItem, ProcurementDecision } from '../../types'
 import { DDPVerifiedSupplySeal } from '../../components/logos'
 import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass, testStatusClass, testStatusLabel } from '../../data'
@@ -18,6 +18,7 @@ import {
   generateNextBuyerPackSnapshot,
   deriveSnapshotStatus,
   type BuyerPackSnapshot,
+  type BuyerPackSnapshotStatus,
 } from '../../lib/buyerPackSnapshot'
 import { createLocalStorageBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotStore'
 import { appendBuyerPackAuditEvent, getBuyerPackAuditTrail } from '../../lib/buyerPackAudit'
@@ -105,13 +106,35 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   const [decision, setDecision] = useState<ProcurementDecision | ''>(storedDecision?.decision ?? '')
   const [decisionSaved, setDecisionSaved] = useState(false)
 
-  // Latest immutable snapshot for this batch (null until one is issued).
-  const [latestSnapshot, setLatestSnapshot] = useState<BuyerPackSnapshot | null>(() => snapshotRepo.getLatest(item.id))
+  // Latest immutable snapshot for this batch (null until one is loaded/issued).
+  const [latestSnapshot, setLatestSnapshot] = useState<BuyerPackSnapshot | null>(null)
+  const [snapshotStatus, setSnapshotStatus] = useState<BuyerPackSnapshotStatus | null>(null)
   const [issuing, setIssuing] = useState(false)
   const [issueError, setIssueError] = useState<string | null>(null)
   const [issueNotice, setIssueNotice] = useState<string | null>(null)
 
   const approver = (approverName && approverName.trim()) || 'DDP Admin'
+
+  // Load the latest persisted snapshot for this batch on mount / batch change.
+  // Async because the repository contract is now Promise-based (Phase B step 1).
+  useEffect(() => {
+    let cancelled = false
+    void snapshotRepo.getLatest(item.id).then(s => { if (!cancelled) setLatestSnapshot(s) })
+    return () => { cancelled = true }
+  }, [item.id])
+
+  // Recompute the derived status whenever the latest snapshot changes (async
+  // because deriveSnapshotStatus reads the repository). State is only ever set
+  // inside the async callback, never synchronously in the effect body.
+  useEffect(() => {
+    let cancelled = false
+    const load = async (): Promise<BuyerPackSnapshotStatus | null> => {
+      if (!latestSnapshot) return null
+      return deriveSnapshotStatus(snapshotRepo, getBuyerPackAuditTrail(item.id), item.id, latestSnapshot.manifest.version)
+    }
+    void load().then(s => { if (!cancelled) setSnapshotStatus(s) })
+    return () => { cancelled = true }
+  }, [item.id, latestSnapshot])
 
   function handleSaveDecision() {
     if (!decision) return
@@ -167,10 +190,6 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
     if (!latestSnapshot) return
     appendBuyerPackDownload({ packId: item.id, snapshotVersion: latestSnapshot.manifest.version, user: approver, format })
   }
-
-  const snapshotStatus = latestSnapshot
-    ? deriveSnapshotStatus(snapshotRepo, getBuyerPackAuditTrail(item.id), item.id, latestSnapshot.manifest.version)
-    : null
 
   const location = farm?.province
     ? `${farm.province}, Thailand`

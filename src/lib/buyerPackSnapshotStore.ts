@@ -25,8 +25,11 @@ function writeAll(all: SnapshotsByPackId): void {
 }
 
 export function createLocalStorageBuyerPackSnapshotRepository(): BuyerPackSnapshotRepository {
+  // localStorage is synchronous; these methods are async only to satisfy the
+  // Promise-returning repository contract. The append-only guard, version
+  // lookups, and latest-selection logic are identical to Phase A.
   return {
-    save(snapshot: BuyerPackSnapshot): void {
+    async save(snapshot: BuyerPackSnapshot): Promise<void> {
       const all = readAll()
       const existing = all[snapshot.manifest.packId] ?? []
       if (existing.some(s => s.manifest.version === snapshot.manifest.version)) {
@@ -38,16 +41,16 @@ export function createLocalStorageBuyerPackSnapshotRepository(): BuyerPackSnapsh
       writeAll(all)
     },
 
-    getAll(packId: string): BuyerPackSnapshot[] {
+    async getAll(packId: string): Promise<BuyerPackSnapshot[]> {
       return readAll()[packId] ?? []
     },
 
-    getVersion(packId: string, version: number): BuyerPackSnapshot | null {
+    async getVersion(packId: string, version: number): Promise<BuyerPackSnapshot | null> {
       const existing = readAll()[packId] ?? []
       return existing.find(s => s.manifest.version === version) ?? null
     },
 
-    getLatest(packId: string): BuyerPackSnapshot | null {
+    async getLatest(packId: string): Promise<BuyerPackSnapshot | null> {
       const existing = readAll()[packId] ?? []
       if (existing.length === 0) return null
       return existing.reduce((latest, s) => (s.manifest.version > latest.manifest.version ? s : latest))

@@ -215,10 +215,10 @@ describe('generateNextBuyerPackSnapshot — versioning', () => {
     expect(third.snapshot.manifest.version).toBe(3)
     expect(third.previousVersion).toBe(2)
 
-    expect(repository.getVersion('pack-1', 1)?.frozenEvidence.procurementNotes).toBe('Looks good.')
-    expect(repository.getVersion('pack-1', 2)?.frozenEvidence.procurementNotes).toBe('v2 notes')
-    expect(repository.getVersion('pack-1', 3)?.frozenEvidence.procurementNotes).toBe('v3 notes')
-    expect(repository.getAll('pack-1')).toHaveLength(3)
+    expect((await repository.getVersion('pack-1', 1))?.frozenEvidence.procurementNotes).toBe('Looks good.')
+    expect((await repository.getVersion('pack-1', 2))?.frozenEvidence.procurementNotes).toBe('v2 notes')
+    expect((await repository.getVersion('pack-1', 3))?.frozenEvidence.procurementNotes).toBe('v3 notes')
+    expect(await repository.getAll('pack-1')).toHaveLength(3)
   })
 
   it('tracks independent version sequences per packId', async () => {
@@ -233,20 +233,35 @@ describe('repository append-only behaviour', () => {
   it('rejects saving a snapshot whose (packId, version) already exists', async () => {
     const repository = createLocalStorageBuyerPackSnapshotRepository()
     const snapshot = await createBuyerPackSnapshot(makeInput({ packId: 'pack-1', version: 1 }))
-    repository.save(snapshot)
+    await repository.save(snapshot)
 
     const duplicate = await createBuyerPackSnapshot(makeInput({ packId: 'pack-1', version: 1, procurementNotes: 'different' }))
-    expect(() => repository.save(duplicate)).toThrow(/already exists/i)
+    await expect(repository.save(duplicate)).rejects.toThrow(/already exists/i)
 
-    expect(repository.getAll('pack-1')).toHaveLength(1)
-    expect(repository.getVersion('pack-1', 1)?.frozenEvidence.procurementNotes).toBe('Looks good.')
+    expect(await repository.getAll('pack-1')).toHaveLength(1)
+    expect((await repository.getVersion('pack-1', 1))?.frozenEvidence.procurementNotes).toBe('Looks good.')
   })
 
-  it('returns null for a pack or version that has never been saved', () => {
+  it('returns null for a pack or version that has never been saved', async () => {
     const repository = createLocalStorageBuyerPackSnapshotRepository()
-    expect(repository.getLatest('unknown-pack')).toBeNull()
-    expect(repository.getVersion('unknown-pack', 1)).toBeNull()
-    expect(repository.getAll('unknown-pack')).toEqual([])
+    expect(await repository.getLatest('unknown-pack')).toBeNull()
+    expect(await repository.getVersion('unknown-pack', 1)).toBeNull()
+    expect(await repository.getAll('unknown-pack')).toEqual([])
+  })
+
+  it('exposes a Promise-based contract (Phase B step 1) that resolves to saved data', async () => {
+    const repository = createLocalStorageBuyerPackSnapshotRepository()
+    const snapshot = await createBuyerPackSnapshot(makeInput({ packId: 'pack-async', version: 1 }))
+
+    // Every method returns a thenable; awaiting resolves to the same values the
+    // synchronous Phase A contract returned.
+    const saveResult = repository.save(snapshot)
+    expect(typeof (saveResult as Promise<void>).then).toBe('function')
+    await saveResult
+
+    expect(await repository.getLatest('pack-async')).toEqual(snapshot)
+    expect(await repository.getVersion('pack-async', 1)).toEqual(snapshot)
+    expect(await repository.getAll('pack-async')).toEqual([snapshot])
   })
 })
 
@@ -254,7 +269,7 @@ describe('deriveSnapshotStatus — computed, never stored', () => {
   it('is "generated" for the latest version with no audit events', async () => {
     const repository = createLocalStorageBuyerPackSnapshotRepository()
     await generateNextBuyerPackSnapshot(repository, makeInput())
-    const status = deriveSnapshotStatus(repository, [], 'pack-1', 1)
+    const status = await deriveSnapshotStatus(repository, [], 'pack-1', 1)
     expect(status).toBe('generated')
   })
 
@@ -264,15 +279,15 @@ describe('deriveSnapshotStatus — computed, never stored', () => {
     const events: BuyerPackAuditEvent[] = [
       { eventId: 'e1', packId: 'pack-1', snapshotVersion: 1, action: 'pack_viewed', timestamp: '2026-01-02T00:00:00.000Z', user: 'buyer-1' },
     ]
-    expect(deriveSnapshotStatus(repository, events, 'pack-1', 1)).toBe('issued')
+    expect(await deriveSnapshotStatus(repository, events, 'pack-1', 1)).toBe('issued')
   })
 
   it('is "superseded" once a later version has been generated, even without any audit events', async () => {
     const repository = createLocalStorageBuyerPackSnapshotRepository()
     await generateNextBuyerPackSnapshot(repository, makeInput())
     await generateNextBuyerPackSnapshot(repository, makeInput({ procurementNotes: 'v2' }))
-    expect(deriveSnapshotStatus(repository, [], 'pack-1', 1)).toBe('superseded')
-    expect(deriveSnapshotStatus(repository, [], 'pack-1', 2)).toBe('generated')
+    expect(await deriveSnapshotStatus(repository, [], 'pack-1', 1)).toBe('superseded')
+    expect(await deriveSnapshotStatus(repository, [], 'pack-1', 2)).toBe('generated')
   })
 
   it('is "archived" once a pack_archived audit event exists for that version, taking priority over other signals', async () => {
@@ -282,14 +297,14 @@ describe('deriveSnapshotStatus — computed, never stored', () => {
       { eventId: 'e1', packId: 'pack-1', snapshotVersion: 1, action: 'pack_viewed', timestamp: '2026-01-02T00:00:00.000Z', user: 'buyer-1' },
       { eventId: 'e2', packId: 'pack-1', snapshotVersion: 1, action: 'pack_archived', timestamp: '2026-01-03T00:00:00.000Z', user: 'admin-1' },
     ]
-    expect(deriveSnapshotStatus(repository, events, 'pack-1', 1)).toBe('archived')
+    expect(await deriveSnapshotStatus(repository, events, 'pack-1', 1)).toBe('archived')
   })
 
   it('never mutates the underlying snapshot while deriving status', async () => {
     const repository = createLocalStorageBuyerPackSnapshotRepository()
     const { snapshot } = await generateNextBuyerPackSnapshot(repository, makeInput())
-    deriveSnapshotStatus(repository, [], 'pack-1', 1)
+    await deriveSnapshotStatus(repository, [], 'pack-1', 1)
     expect(Object.isFrozen(snapshot)).toBe(true)
-    expect(repository.getVersion('pack-1', 1)).not.toBeNull()
+    expect(await repository.getVersion('pack-1', 1)).not.toBeNull()
   })
 })

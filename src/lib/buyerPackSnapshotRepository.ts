@@ -8,9 +8,14 @@ import type { BuyerPackSnapshot } from './buyerPackSnapshot'
 //
 // Implementations must enforce append-only behaviour: save() must reject a
 // (packId, version) pair that already exists rather than overwrite it.
+//
+// Methods are async (Promise-returning) so a Supabase-backed implementation can
+// satisfy this same contract later without a second interface. The current
+// localStorage implementation is synchronous internally and simply resolves
+// immediately — Phase A behaviour is unchanged.
 export interface BuyerPackSnapshotRepository {
-  save(snapshot: BuyerPackSnapshot): void
-  getAll(packId: string): BuyerPackSnapshot[]
-  getVersion(packId: string, version: number): BuyerPackSnapshot | null
-  getLatest(packId: string): BuyerPackSnapshot | null
+  save(snapshot: BuyerPackSnapshot): Promise<void>
+  getAll(packId: string): Promise<BuyerPackSnapshot[]>
+  getVersion(packId: string, version: number): Promise<BuyerPackSnapshot | null>
+  getLatest(packId: string): Promise<BuyerPackSnapshot | null>
 }

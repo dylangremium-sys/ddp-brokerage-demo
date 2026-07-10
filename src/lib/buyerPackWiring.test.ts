@@ -136,8 +136,8 @@ describe('Issue Buyer Pack — snapshot generation after approval', () => {
     expect(second.snapshot.manifest.version).toBe(2)
     expect(second.previousVersion).toBe(1)
     // Previous snapshot still retrievable, unchanged.
-    expect(repo.getVersion('batch-1', 1)).not.toBeNull()
-    expect(repo.getAll('batch-1')).toHaveLength(2)
+    expect(await repo.getVersion('batch-1', 1)).not.toBeNull()
+    expect(await repo.getAll('batch-1')).toHaveLength(2)
   })
 
   it('produces a deterministic content hash for identical evidence (independent of version)', async () => {
@@ -190,11 +190,11 @@ describe('Issue Buyer Pack — audit and download events', () => {
   it('reports snapshot status as generated for the latest, superseded once a newer version exists', async () => {
     const repo = createLocalStorageBuyerPackSnapshotRepository()
     await generateNextBuyerPackSnapshot(repo, prepOrThrow(makeEvidence()))
-    expect(deriveSnapshotStatus(repo, getBuyerPackAuditTrail('batch-1'), 'batch-1', 1)).toBe('generated')
+    expect(await deriveSnapshotStatus(repo, getBuyerPackAuditTrail('batch-1'), 'batch-1', 1)).toBe('generated')
 
     await generateNextBuyerPackSnapshot(repo, prepOrThrow(makeEvidence()))
-    expect(deriveSnapshotStatus(repo, getBuyerPackAuditTrail('batch-1'), 'batch-1', 1)).toBe('superseded')
-    expect(deriveSnapshotStatus(repo, getBuyerPackAuditTrail('batch-1'), 'batch-1', 2)).toBe('generated')
+    expect(await deriveSnapshotStatus(repo, getBuyerPackAuditTrail('batch-1'), 'batch-1', 1)).toBe('superseded')
+    expect(await deriveSnapshotStatus(repo, getBuyerPackAuditTrail('batch-1'), 'batch-1', 2)).toBe('generated')
   })
 })
 

@@ -204,10 +204,10 @@ export async function generateNextBuyerPackSnapshot(
   repository: BuyerPackSnapshotRepository,
   input: Omit<CreateBuyerPackSnapshotInput, 'version'>,
 ): Promise<GenerateNextBuyerPackSnapshotResult> {
-  const latest = repository.getLatest(input.packId)
+  const latest = await repository.getLatest(input.packId)
   const nextVersion = latest ? latest.manifest.version + 1 : 1
   const snapshot = await createBuyerPackSnapshot({ ...input, version: nextVersion })
-  repository.save(snapshot)
+  await repository.save(snapshot)
   return { snapshot, previousVersion: latest ? latest.manifest.version : null }
 }
 
@@ -295,19 +295,19 @@ export type BuyerPackSnapshotStatus = 'generated' | 'issued' | 'superseded' | 'a
  * repository (is a later version present?) and the audit trail (has this
  * version been viewed, or archived?).
  */
-export function deriveSnapshotStatus(
+export async function deriveSnapshotStatus(
   repository: BuyerPackSnapshotRepository,
   auditEvents: BuyerPackAuditEvent[],
   packId: string,
   version: number,
-): BuyerPackSnapshotStatus {
+): Promise<BuyerPackSnapshotStatus> {
   const eventsForVersion = auditEvents.filter(e => e.packId === packId && e.snapshotVersion === version)
 
   if (eventsForVersion.some(e => e.action === 'pack_archived')) {
     return 'archived'
   }
 
-  const latest = repository.getLatest(packId)
+  const latest = await repository.getLatest(packId)
   if (latest && latest.manifest.version > version) {
     return 'superseded'
   }
