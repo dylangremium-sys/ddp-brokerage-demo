@@ -19,4 +19,15 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // Server-side Vercel Function: runs on Node, not in the browser, and is not
+    // a React fast-refresh module. It reads server-only env via process.env.
+    files: ['api/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: globals.node,
+    },
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

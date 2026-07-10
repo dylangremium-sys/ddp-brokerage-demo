@@ -1,4 +1,4 @@
-import type { ComplianceSeverity, LegalUpdateAffectedArea } from '../types'
+import type { ComplianceSeverity, LegalUpdateAffectedArea, LegalUpdateStatus } from '../types'
 import type {
   AICompliancePromptVersion,
   AIComplianceModelInfo,
@@ -87,6 +87,13 @@ export interface AiSummaryProviderInput {
   publishedAt: string | null
   rawEvidence: string
   provenanceChecksum: string | null
+  /**
+   * The current legal-update status. Carried so a server-side boundary can
+   * independently re-verify eligibility (only a 'new' draft may be
+   * summarised) rather than trusting a client-side check — it is evidence
+   * about the update, never an instruction or a capability grant.
+   */
+  status: LegalUpdateStatus
 }
 
 export interface ComplianceAiSummaryProvider {

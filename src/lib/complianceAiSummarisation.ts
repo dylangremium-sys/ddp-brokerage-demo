@@ -53,6 +53,7 @@ export function buildAiSummaryRequest(update: LegalUpdate): AiSummaryRequest {
     publishedAt: update.publishedAt ?? null,
     rawEvidence: update.rawText,
     provenanceChecksum: checksumMatch ? checksumMatch[1] : null,
+    status: update.status,
     isDraftOnly: true,
     requiresHumanReview: true,
     canApprove: false,

@@ -46,8 +46,19 @@ describe('DDPComplianceWatchtower — manual AI draft-summary integration (stati
     expect(SRC).toMatch(/handleGenerateAiDraftSummary/)
     expect(SRC).toMatch(/runAiDraftSummary/)
     expect(SRC).toMatch(/evaluateAiSummaryEligibility/)
-    // The provider is injected and null in this build (no vendor SDK in React).
-    expect(SRC).toMatch(/AI_SUMMARY_PROVIDER: ComplianceAiSummaryProvider \| null = null/)
+    // Phase 2I: the provider is the secure HTTP client adapter, gated on a
+    // configured Supabase (else null → the action stays disabled).
+    expect(SRC).toMatch(/createComplianceAiSummaryHttpClient/)
+    expect(SRC).toMatch(/isSupabaseConfigured/)
+    expect(SRC).toMatch(/AI_SUMMARY_PROVIDER: ComplianceAiSummaryProvider \| null = isSupabaseConfigured/)
+  })
+
+  it('holds no vendor endpoint, provider secret, or provider auth header in React', () => {
+    // The component only knows our own authenticated endpoint (via the adapter);
+    // no vendor host, key, or provider-auth header ever appears in the .tsx.
+    expect(SRC).not.toMatch(/api\.anthropic\.com|api\.openai\.com|generativelanguage/i)
+    expect(SRC).not.toMatch(/x-api-key|anthropic-version|ANTHROPIC_API_KEY|OPENAI_API_KEY/i)
+    expect(SRC).not.toMatch(/VITE_[A-Z_]*(OPENAI|ANTHROPIC|AI_KEY)/i)
   })
 
   it('invokes the AI summary ONLY from a click handler, never on mount/effect/selection', () => {

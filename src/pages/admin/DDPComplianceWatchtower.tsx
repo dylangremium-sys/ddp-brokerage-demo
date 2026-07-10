@@ -51,17 +51,24 @@ import {
   evaluateAiSummaryEligibility,
   runAiDraftSummary,
 } from '../../lib/watchtowerAiSummary'
+import { createComplianceAiSummaryHttpClient } from '../../lib/complianceAiSummaryClient'
+import { isSupabaseConfigured } from '../../lib/supabase'
+import { getSession } from '../../services/auth'
 
-// Phase 2H — manual AI draft-summary integration. No AI provider is configured
-// in this repository (no production or demo provider exists), so the Watchtower
-// injects `null`: the "Generate AI Draft Summary" action stays safely disabled
-// with a "No AI provider is configured" reason. Wiring a real provider is a
-// future, out-of-scope step — it must implement the existing
-// ComplianceAiSummaryProvider contract, and this component must not call a
-// vendor SDK, fetch, or hold credentials. A draft is always transient and
-// always requires human legal review; the AI can never approve, certify, create
-// a rule, or enforce anything.
-const AI_SUMMARY_PROVIDER: ComplianceAiSummaryProvider | null = null
+// Phase 2I — manual AI draft-summary integration, wired to the secure HTTP
+// client adapter. This component holds NO vendor SDK, endpoint, or credential:
+// the adapter speaks only to our own authenticated Vercel Function
+// (/api/compliance/ai-summary), attaching the caller's Supabase session token;
+// the server verifies the token, requires a ddp_admin profile, and runs the
+// existing guarded summarisation flow. When Supabase is not configured the
+// provider is `null`, so the action stays safely disabled. A draft is always
+// transient and always requires human legal review; the AI can never approve,
+// certify, create a rule, or enforce anything.
+const AI_SUMMARY_PROVIDER: ComplianceAiSummaryProvider | null = isSupabaseConfigured
+  ? createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => (await getSession())?.access_token ?? null,
+    })
+  : null
 
 interface Props {
   farms: FarmProfile[]
