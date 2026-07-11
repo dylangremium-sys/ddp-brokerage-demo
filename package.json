@@ -9,7 +9,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "security:sql": "node scripts/check-security-migrations.mjs",
+    "ci:verify": "npm run security:sql && npm test && tsc -b && npm run lint && npm run build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

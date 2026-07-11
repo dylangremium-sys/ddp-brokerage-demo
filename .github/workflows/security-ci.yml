@@ -1,0 +1,52 @@
+name: Security CI
+
+# Static verification gate for the DDP security migrations and the app build.
+# It NEVER connects to a database, uses no secrets, and deploys nothing.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege: read-only, no write/deploy scopes.
+permissions:
+  contents: read
+
+# One run per ref; newer pushes cancel superseded runs.
+concurrency:
+  group: security-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Static security & build checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies (deterministic)
+        run: npm ci
+
+      - name: Security migration static checks
+        run: npm run security:sql
+
+      - name: Unit tests (Vitest)
+        run: npm test
+
+      - name: TypeScript compilation
+        run: npx tsc -b
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Production build (no secrets required)
+        run: npm run build

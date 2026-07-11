@@ -1058,3 +1058,34 @@ Repository-only assurance fix. No database, staging, or production change.
 
 The existing ACL requirements (`REVOKE PUBLIC`, `REVOKE anon`, `GRANT`-or-
 `acl-no-grant`) are unchanged and were not weakened.
+
+## 15. CI security gate (2026-07-11)
+
+Repository-only CI addition. No database, staging, or production access.
+
+`.github/workflows/security-ci.yml` runs on pull requests to `main`, pushes to
+`main`, and manual dispatch. It is read-only (`permissions: contents: read`),
+uses only `actions/checkout` and `actions/setup-node` (Node 24, npm cache),
+references no secrets, connects to no database, and deploys nothing. Steps:
+`npm ci` → `npm run security:sql` → `npm test` → `npx tsc -b` → `npm run lint`
+→ `npm run build` (the build needs no runtime secrets — `VITE_*` values are
+optional and resolve to `undefined` at build time).
+
+`scripts/check-security-migrations.mjs` (dependency-free, invoked via
+`npm run security:sql`) statically asserts, from repository SQL only:
+- the exemption token `ACL-TEST-EXEMPT: INTENTIONAL-DRAFT` appears in exactly the
+  three genuine-draft files and in no active migration (11/12/14/15);
+- active migration headers carry no stale `NOT COMMITTED` / `NOT PUSHED` /
+  `NOT APPLIED TO PRODUCTION` / `staging-tested only` claims;
+- each of Migrations 11/12/14/15 has HARDENING + VERIFY + ROLLBACK companions;
+- every VERIFY file is SELECT-only (no top-level mutating statement);
+- Migration 11 is scoped to the audit-log TRUNCATE trigger + function EXECUTE
+  revoke; Migration 12 changes only function EXECUTE ACLs; Migration 14 changes
+  only future default privileges and revokes no CRUD; Migration 15 revokes no
+  SELECT/INSERT, revokes UPDATE/DELETE only on `compliance_audit_log`, never
+  touches `service_role`, targets exactly the 20 listed tables, and only sets the
+  two audit-log guard triggers to `ENABLE ALWAYS`.
+
+The script is a narrow, explicit, comment-stripped checker — not a full SQL
+parser. It writes no files and exits non-zero on any failure. Local convenience:
+`npm run ci:verify` runs the same sequence.
