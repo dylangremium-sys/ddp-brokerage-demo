@@ -953,3 +953,42 @@ consistent with this log's existing style:
   explicit owner authorization before execution.
 - Any use of the Supabase service-role key requires separate, explicit owner approval
   and is not covered by anything in this log.
+
+## 12. Production Validation — Migration 11 (Compliance Audit Log TRUNCATE Protection)
+
+- **Date:** 2026-07-11
+- **Commit:** 9b7b475 (`Harden compliance audit log against truncate`)
+- **Repository:** `main` · clean working tree · `HEAD == origin/main == 9b7b475`
+
+### Production validation
+
+- Migration applied successfully in a single transaction.
+- Verification script passed.
+- `BEFORE TRUNCATE` statement-level trigger present:
+  `compliance_audit_log_no_truncate`.
+- Existing `UPDATE`/`DELETE` append-only trigger preserved:
+  `compliance_audit_log_no_update_delete`.
+- Guard function remains `SECURITY DEFINER`.
+- Function `search_path` remains fixed to `public`.
+- `EXECUTE` revoked from `anon` and `authenticated`.
+- `service_role` retains `EXECUTE`.
+- No `FORCE RLS` changes.
+- No policy changes.
+- No Buyer Pack objects introduced.
+- No `FARM_RESAVE` objects introduced.
+
+### Regression checks
+
+- Public tables unchanged: 20.
+- Public policies unchanged: 43.
+- Storage policies unchanged: 3 `farmer-documents` policies.
+- Application functions unchanged: 6.
+- Only additional database object:
+  `compliance_audit_log_no_truncate`.
+
+### Notes
+
+- Production was verified using catalog inspection only.
+- No live `TRUNCATE`, `UPDATE`, or `DELETE` was executed against production data.
+- Behavioral `TRUNCATE`, `UPDATE`, and `DELETE` blocking was proven in staging using the identical trigger/function pair.
+- `11_COMPLIANCE_AUDIT_LOG_TRUNCATE_ROLLBACK.sql` was staging-tested and remains available; rollback was not required in production.
