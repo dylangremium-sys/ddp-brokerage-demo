@@ -992,3 +992,28 @@ consistent with this log's existing style:
 - No live `TRUNCATE`, `UPDATE`, or `DELETE` was executed against production data.
 - Behavioral `TRUNCATE`, `UPDATE`, and `DELETE` blocking was proven in staging using the identical trigger/function pair.
 - `11_COMPLIANCE_AUDIT_LOG_TRUNCATE_ROLLBACK.sql` was staging-tested and remains available; rollback was not required in production.
+
+## 13. Migration authoring checklist — public function EXECUTE ACLs
+
+PostgreSQL grants `EXECUTE` to `PUBLIC` on every newly created function, and
+`ALTER DEFAULT PRIVILEGES ... REVOKE ... FROM PUBLIC` does **not** suppress it.
+Therefore EXECUTE hardening must be **explicit per function**. When any migration
+adds or replaces a function in schema `public`:
+
+- [ ] Every new `public` function must explicitly `REVOKE EXECUTE ... FROM PUBLIC`.
+- [ ] Every new `public` function must explicitly `REVOKE EXECUTE ... FROM anon`.
+- [ ] `GRANT EXECUTE` only to the roles that require direct invocation.
+- [ ] Use exact schema-qualified signatures (e.g. `public.fn(uuid)`).
+- [ ] Trigger-only functions should normally deny direct `authenticated` execution
+      (they run as the definer via their trigger); grant `service_role` only where
+      required. If a function is intentionally granted to no client role, add an
+      `acl-no-grant: <function_name>` comment so the enforcement test recognises it.
+- [ ] RLS helper functions used by `authenticated` policies must explicitly
+      `GRANT EXECUTE ... TO authenticated`.
+- [ ] Run `13_PUBLIC_FUNCTION_EXECUTE_DRIFT_CHECK.sql` (SELECT-only) in staging —
+      and read-only in production — expecting a count of `0`, before sign-off.
+
+Automated enforcement: `src/lib/publicFunctionExecuteAcl.test.ts` (Vitest, part of
+`npm test`) fails the build if a committed migration defines a `public` function
+without the `REVOKE PUBLIC` / `REVOKE anon` / `GRANT`-or-`acl-no-grant` decision.
+Files explicitly marked `NOT APPLIED` / `DRAFT — FOR REVIEW ONLY` are exempt.
