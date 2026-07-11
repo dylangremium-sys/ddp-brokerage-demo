@@ -3,8 +3,10 @@
 -- in schema `public`: client roles never need TRUNCATE / TRIGGER / REFERENCES /
 -- MAINTAIN.
 --
--- STATUS: PREPARED — NOT COMMITTED. NOT PUSHED. NOT APPLIED TO PRODUCTION.
---         Staging-tested only.
+-- STATUS: Committed and pushed. Applied to staging and production.
+--         Production verification completed: 2026-07-11.
+--         Repository commit: d6aee658c236e588027b880e34ad47c9277262c4.
+--         Rollback file available and staging-tested; not required in production.
 --
 -- SCOPE (deliberately narrow):
 --   * FUTURE OBJECTS ONLY — affects tables created AFTER this runs; the ACLs of

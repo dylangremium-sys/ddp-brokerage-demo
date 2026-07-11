@@ -1,7 +1,10 @@
 -- 15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql
 -- Defense-in-depth on EXISTING public tables + the compliance audit log.
 --
--- STATUS: PREPARED — staging-tested only. Apply by hand, staging first, after review.
+-- STATUS: Committed and pushed. Applied to staging and production.
+--         Production verification completed: 2026-07-11.
+--         Repository commit: 496fe043174177173b0db78a33c5a5823c71954f.
+--         Rollback file available and staging-tested; not required in production.
 --
 -- WHAT THIS DOES (narrow, least-privilege):
 --   1. Removes the four privileges no client role needs — TRUNCATE, TRIGGER,

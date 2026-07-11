@@ -1,8 +1,11 @@
 -- 14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_VERIFY.sql
 -- Read-only verification for 14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_HARDENING.sql.
 --
--- STATUS: PREPARED — SELECT-ONLY. Contains no CREATE/ALTER/DROP/GRANT/REVOKE/
---         INSERT/UPDATE/DELETE/TRUNCATE. It changes nothing. Catalog queries only.
+-- STATUS: SELECT-ONLY verification. Committed and pushed. Migration applied to
+--         staging and production; production verification completed 2026-07-11.
+--         Repository commit: d6aee658c236e588027b880e34ad47c9277262c4. Contains no
+--         CREATE/ALTER/DROP/GRANT/REVOKE/INSERT/UPDATE/DELETE/TRUNCATE. It
+--         changes nothing. Catalog queries only.
 --
 -- Expected: every row's result column reads PASS.
 

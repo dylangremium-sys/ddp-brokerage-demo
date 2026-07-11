@@ -2,6 +2,9 @@
 -- Buyer Pack Phase B, Step 2 — durable, append-only Buyer Pack evidence schema.
 --
 -- STATUS: DRAFT — FOR REVIEW ONLY. NOT APPLIED. NOT RUN. NOT DEPLOYED.
+-- ACL-TEST-EXEMPT: INTENTIONAL-DRAFT  (Buyer Pack is intentionally unapplied and
+--   absent from production; its functions are not part of the applied corpus, so
+--   the public-function EXECUTE ACL static test deliberately skips this file.)
 -- Apply order: after AUTH_RLS_SCHEMA.sql (needs public.is_ddp_admin()) and after
 -- the tables it references (public.profiles, public.inventory_batches) exist.
 --

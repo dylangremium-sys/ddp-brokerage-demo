@@ -2,9 +2,11 @@
 -- Harden public.compliance_audit_log against TRUNCATE, and remove the
 -- unnecessary direct EXECUTE on its trigger-only guard function.
 --
--- STATUS: PREPARED — NOT APPLIED. NOT RUN. NOT COMMITTED. NOT DEPLOYED.
---         Apply by hand in the Supabase SQL editor, staging first, only after
---         review. Companion files:
+-- STATUS: Committed and pushed. Applied to staging and production.
+--         Production verification completed: 2026-07-11.
+--         Repository commit: 9b7b4756af3ffef43bba8b2ed4b82b8f124ae043.
+--         Rollback file available and staging-tested; not required in production.
+--         Companion files:
 --           11_COMPLIANCE_AUDIT_LOG_TRUNCATE_VERIFY.sql   (SELECT-only checks)
 --           11_COMPLIANCE_AUDIT_LOG_TRUNCATE_ROLLBACK.sql (undo this file only)
 --

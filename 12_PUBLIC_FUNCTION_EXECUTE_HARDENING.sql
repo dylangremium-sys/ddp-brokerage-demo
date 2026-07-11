@@ -2,8 +2,10 @@
 -- Normalize EXECUTE privileges on the six existing DDP public functions to an
 -- explicit, auditable per-function standard.
 --
--- STATUS: PREPARED — NOT COMMITTED. NOT PUSHED. NOT APPLIED TO PRODUCTION.
---         Staging-tested only.
+-- STATUS: Committed and pushed. Applied to staging and production.
+--         Production verification completed: 2026-07-11.
+--         Repository commit: e4a952c614c9eba99828773d9f9b0c10f485d643.
+--         Rollback file available and staging-tested; not required in production.
 --
 -- WHY: The future-object default-privilege approach cannot suppress PostgreSQL's
 --      built-in PUBLIC EXECUTE on new functions, so EXECUTE hardening must be

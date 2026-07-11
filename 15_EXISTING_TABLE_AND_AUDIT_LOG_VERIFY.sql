@@ -1,8 +1,11 @@
 -- 15_EXISTING_TABLE_AND_AUDIT_LOG_VERIFY.sql
 -- Read-only verification for 15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql.
 --
--- STATUS: PREPARED — SELECT-ONLY. No CREATE/ALTER/DROP/GRANT/REVOKE/INSERT/
---         UPDATE/DELETE/TRUNCATE. Catalog queries only; it changes nothing.
+-- STATUS: SELECT-ONLY verification. Committed and pushed. Migration applied to
+--         staging and production; production verification completed 2026-07-11.
+--         Repository commit: 496fe043174177173b0db78a33c5a5823c71954f. No
+--         CREATE/ALTER/DROP/GRANT/REVOKE/INSERT/UPDATE/DELETE/TRUNCATE.
+--         Catalog queries only; it changes nothing.
 -- Expected: every result column reads PASS.
 
 -- V1. All 20 public tables: anon AND authenticated LACK

@@ -1,7 +1,9 @@
 -- 12_PUBLIC_FUNCTION_EXECUTE_ROLLBACK.sql
 -- Rollback for 12_PUBLIC_FUNCTION_EXECUTE_HARDENING.sql.
 --
--- STATUS: PREPARED — NOT COMMITTED. NOT PUSHED. Staging only.
+-- STATUS: Committed and pushed. Rollback for an applied migration; staging-tested
+--         and NOT run in production. Repository commit:
+--         e4a952c614c9eba99828773d9f9b0c10f485d643.
 --
 -- The verified pre-change baseline already equals the hardened target ACLs, so
 -- this rollback RESTORES that exact captured baseline — it is a reassertion of

@@ -1,8 +1,11 @@
 -- 12_PUBLIC_FUNCTION_EXECUTE_VERIFY.sql
 -- Read-only verification for 12_PUBLIC_FUNCTION_EXECUTE_HARDENING.sql.
 --
--- STATUS: PREPARED — SELECT-ONLY. Contains no CREATE/ALTER/DROP/GRANT/REVOKE/
---         INSERT/UPDATE/DELETE/TRUNCATE. It changes nothing. Catalog queries only.
+-- STATUS: SELECT-ONLY verification. Committed and pushed. Migration applied to
+--         staging and production; production verification completed 2026-07-11.
+--         Repository commit: e4a952c614c9eba99828773d9f9b0c10f485d643. Contains no
+--         CREATE/ALTER/DROP/GRANT/REVOKE/INSERT/UPDATE/DELETE/TRUNCATE. It
+--         changes nothing. Catalog queries only.
 --
 -- Expected: every row's result column reads PASS.
 

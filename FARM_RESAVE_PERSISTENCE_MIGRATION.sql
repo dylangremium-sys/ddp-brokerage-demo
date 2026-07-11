@@ -14,6 +14,9 @@
 -- SAFETY RULE
 -- Do not run this file automatically.
 -- Review first, then apply manually in Supabase SQL Editor only after approval.
+-- ACL-TEST-EXEMPT: INTENTIONAL-DRAFT  (fn_protect_farm_admin_fields is absent from
+--   production and this file is intentionally unapplied; the public-function
+--   EXECUTE ACL static test deliberately skips it.)
 --
 -- HIGH-LEVEL CHANGES
 -- 1. Protect admin-owned farm fields from farmer updates.

@@ -3,6 +3,9 @@
 -- =============================================================================
 --
 -- STATUS: DRAFT — FOR REVIEW ONLY. NOT APPLIED. NOT RUN. NOT DEPLOYED.
+-- ACL-TEST-EXEMPT: INTENTIONAL-DRAFT  (fn_protect_farm_admin_fields is absent from
+--   production and this file is intentionally unapplied; the public-function
+--   EXECUTE ACL static test deliberately skips it.)
 --
 -- Live verification result (read-only inspection, no data modified)
 -- -------------------------------------------------------------------

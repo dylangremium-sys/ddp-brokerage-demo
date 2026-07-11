@@ -1016,4 +1016,45 @@ adds or replaces a function in schema `public`:
 Automated enforcement: `src/lib/publicFunctionExecuteAcl.test.ts` (Vitest, part of
 `npm test`) fails the build if a committed migration defines a `public` function
 without the `REVOKE PUBLIC` / `REVOKE anon` / `GRANT`-or-`acl-no-grant` decision.
-Files explicitly marked `NOT APPLIED` / `DRAFT — FOR REVIEW ONLY` are exempt.
+A SQL file is exempt from this check ONLY when it carries the exact token
+`ACL-TEST-EXEMPT: INTENTIONAL-DRAFT` (see §14). Ordinary status prose such as
+`NOT APPLIED` or `DRAFT — FOR REVIEW ONLY` does NOT exempt a file.
+
+## 14. Assurance fix — migration status drift and ACL-test false negative (2026-07-11)
+
+Repository-only assurance fix. No database, staging, or production change.
+
+### Problem
+
+1. Several applied-and-pushed migrations (11, 12/B2, 14/A, 15) still carried stale
+   status headers such as `NOT APPLIED`, `NOT COMMITTED`, `NOT PUSHED`.
+2. `src/lib/publicFunctionExecuteAcl.test.ts` excluded any SQL file whose text
+   matched a broad phrase regex (`NOT APPLIED | DRAFT — FOR REVIEW ONLY | do not
+   run … automatically`). Because the active migrations' stale headers contained
+   that prose, those active files were silently dropped from the validated corpus
+   — a false negative that could hide a real missing-ACL gap.
+
+### Fix
+
+- **Exact-token exemption.** A file is now excluded only if it contains the exact,
+  case-sensitive token `ACL-TEST-EXEMPT: INTENTIONAL-DRAFT`. No general-English
+  phrase can exempt a file. Exempt files are listed in the test output even when
+  the suite passes, and an assertion guarantees no active production migration
+  (11/12/14/15 hardening/verify/rollback) carries the token.
+- **Genuine drafts** that define un-normalized `public` functions and are
+  intentionally unapplied carry the token: `10_BUYER_PACK_SNAPSHOTS_MVP.sql`
+  (Buyer Pack — absent from production), `FARM_ADMIN_ROLE_CHECK_FIX.sql` and
+  `FARM_RESAVE_PERSISTENCE_MIGRATION.sql` (`fn_protect_farm_admin_fields` — absent
+  from production).
+- **Factual status headers** applied to the active migrations (comment-only; no
+  executable SQL changed), recording commit SHA and the 2026-07-11 production
+  verification. Rollback files are described as staging-tested and NOT run in
+  production. No claim of cryptographic immutability, WORM compliance, or complete
+  production readiness is made.
+- **Regression tests** (in-memory fixtures, no files written): active-status prose
+  does not exempt; the exact token does exempt and is reported; case/format
+  near-miss tokens do not exempt; a normal violation reports file, line, function,
+  and missing controls; a fully normalized function passes.
+
+The existing ACL requirements (`REVOKE PUBLIC`, `REVOKE anon`, `GRANT`-or-
+`acl-no-grant`) are unchanged and were not weakened.

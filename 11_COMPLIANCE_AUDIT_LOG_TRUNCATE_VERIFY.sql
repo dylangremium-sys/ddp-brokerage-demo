@@ -1,10 +1,12 @@
 -- 11_COMPLIANCE_AUDIT_LOG_TRUNCATE_VERIFY.sql
 -- Read-only verification for 11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql.
 --
--- STATUS: PREPARED — SELECT-ONLY. Safe to run by hand in the Supabase SQL
---         editor. Contains NO CREATE/ALTER/DROP/GRANT/REVOKE/INSERT/UPDATE/
---         DELETE/TRUNCATE. It changes nothing. Expected results are inline;
---         if any check disagrees, do not assume the migration succeeded.
+-- STATUS: SELECT-ONLY verification. Committed and pushed. Migration applied to
+--         staging and production; production verification completed 2026-07-11.
+--         Repository commit: 9b7b4756af3ffef43bba8b2ed4b82b8f124ae043.
+--         Contains NO CREATE/ALTER/DROP/GRANT/REVOKE/INSERT/UPDATE/DELETE/
+--         TRUNCATE. It changes nothing. Expected results are inline; if any
+--         check disagrees, do not assume the migration succeeded.
 --
 -- Run each block individually. All blocks target only public.compliance_audit_log
 -- and its guard function.

@@ -1,7 +1,10 @@
 -- 15_EXISTING_TABLE_AND_AUDIT_LOG_ROLLBACK.sql
 -- Rollback for 15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql.
 --
--- STATUS: PREPARED — staging only. Restores the exact captured pre-change baseline:
+-- STATUS: Committed and pushed. Rollback for an applied migration; staging-tested
+--         and NOT run in production. Repository commit:
+--         496fe043174177173b0db78a33c5a5823c71954f.
+--         Restores the exact captured pre-change baseline:
 --   * re-grants TRUNCATE/TRIGGER/REFERENCES/MAINTAIN to anon+authenticated on the
 --     same 20 tables;
 --   * re-grants UPDATE/DELETE to anon+authenticated on public.compliance_audit_log;

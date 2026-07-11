@@ -1,7 +1,9 @@
 -- 14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_ROLLBACK.sql
 -- Rollback for 14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_HARDENING.sql.
 --
--- STATUS: PREPARED — NOT COMMITTED. NOT PUSHED. Staging only.
+-- STATUS: Committed and pushed. Rollback for an applied migration; staging-tested
+--         and NOT run in production. Repository commit:
+--         d6aee658c236e588027b880e34ad47c9277262c4.
 --
 -- Restores the prior broad DEFAULT privileges for FUTURE tables created by role
 -- `postgres` in schema `public`, re-granting TRUNCATE / TRIGGER / REFERENCES /

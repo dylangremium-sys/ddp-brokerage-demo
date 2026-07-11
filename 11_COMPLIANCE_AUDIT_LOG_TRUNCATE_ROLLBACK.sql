@@ -1,7 +1,9 @@
 -- 11_COMPLIANCE_AUDIT_LOG_TRUNCATE_ROLLBACK.sql
 -- Rollback for 11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql.
 --
--- STATUS: PREPARED — NOT APPLIED. NOT RUN. NOT COMMITTED. NOT DEPLOYED.
+-- STATUS: Committed and pushed. Rollback for an applied migration; staging-tested
+--         and NOT run in production. Repository commit:
+--         9b7b4756af3ffef43bba8b2ed4b82b8f124ae043.
 --         Run by hand only as a deliberate, approved undo of migration #11.
 --
 -- This rollback reverses EXACTLY and ONLY what migration #11 changed:
