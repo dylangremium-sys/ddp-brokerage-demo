@@ -1089,3 +1089,55 @@ optional and resolve to `undefined` at build time).
 The script is a narrow, explicit, comment-stripped checker — not a full SQL
 parser. It writes no files and exits non-zero on any failure. Local convenience:
 `npm run ci:verify` runs the same sequence.
+
+## 16. Live staging security regression suite (2026-07-11)
+
+### Purpose
+
+`scripts/run-staging-security-tests.mjs` (run via `npm run security:staging`)
+exercises the **deployed staging** Supabase project with real `anon` /
+`authenticated` / admin roles and real Supabase behaviour, to catch regressions
+in the security model that static/catalog checks cannot: RLS row isolation,
+function EXECUTE ACLs, audit-log append-only enforcement, storage-prefix
+isolation, and (optionally) catalog drift. It complements — does not replace —
+the static gate (§13/§15).
+
+### Staging-only guardrails (fail-closed)
+
+- Runs ONLY against the staging project ref `szqocdabwkjrggrddocx`.
+- **Refuses** (before any network call) if the URL points at the production ref
+  `iihxjrfxmycjafbtjvvq`, at any unknown ref, or if required env vars are absent.
+- Applies no migrations and issues no DDL (no `TRUNCATE`/`DROP`/`ALTER`/`GRANT`/
+  `REVOKE`). **Production is explicitly blocked.**
+
+### Required environment variables (names only — never commit values)
+
+`STAGING_SUPABASE_URL`, `STAGING_SUPABASE_ANON_KEY`, `STAGING_ADMIN_EMAIL`,
+`STAGING_ADMIN_PASSWORD`, `STAGING_FARMER_A_EMAIL`, `STAGING_FARMER_A_PASSWORD`,
+`STAGING_FARMER_B_EMAIL`, `STAGING_FARMER_B_PASSWORD`.
+
+Optional: `STAGING_DATABASE_URL` (staging Postgres connection string) enables the
+read-only catalog checks in group F, which run the committed `*_VERIFY.sql`
+files via `psql` and fail on any `FAIL` row. `STAGING_ALLOW_AUDIT_INSERT=true`
+opts into the audit-insert probe (see cleanup note). Values may be supplied via
+the shell or a gitignored `.env.staging.local` file; no credential is stored in
+the repository.
+
+### Test-data & cleanup behaviour
+
+Uses **pre-created** staging test users (admin + farmer A + farmer B); it does
+not create or delete `auth.users`. All application records are tagged
+`security-test-<runId>` and removed in a `finally` block, in reverse dependency
+order, scoped to the run id, with a zero-residue assertion for every deletable
+table. **Exception:** `compliance_audit_log` is append-only — its immutability is
+the property under test — so the opt-in audit row (only when
+`STAGING_ALLOW_AUDIT_INSERT=true`) is retained by design and clearly tagged; it
+cannot and must not be deleted.
+
+### Running / CI status
+
+Run locally: `npm run security:staging`. It prints a concise PASS/FAIL/SKIP
+matrix, never logs secrets (keys, passwords, tokens, or full URLs), and exits
+non-zero on any failed assertion. **It is intentionally NOT wired into the CI
+workflow yet**, because GitHub Actions secrets for staging are not configured; it
+is a local/manual gate for now.
