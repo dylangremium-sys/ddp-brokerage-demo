@@ -174,7 +174,7 @@ async function main() {
     // ── B. Farmer A isolation ────────────────────────────────────────────────
     group('B. farmer A isolation')
     // Farmer A creates own synthetic farm (RLS-permitted for owner).
-    const farmIns = await a.client.from('farms').insert({ name: `${TAG}-A` }).select('id')
+    const farmIns = await a.client.from('farms').insert({ farm_name: `${TAG}-A`, created_by: a.userId }).select('id')
     const farmA = farmIns?.data?.[0]?.id
     if (farmA) created.farms.push(farmA)
     record('farmer A can create own farm', !!farmA, farmA ? '' : (farmIns?.error?.code || 'no id returned'))
@@ -183,9 +183,9 @@ async function main() {
       isAllowed(await a.client.from('farms').select('id').eq('id', farmA ?? '00000000-0000-0000-0000-000000000000')))
     // Cross-tenant: A must not update/delete B-owned rows (0 rows / denied).
     record('farmer A cannot update farmer B farms',
-      isDenied(await a.client.from('farms').update({ name: `${TAG}-hijack` }).eq('name', `${TAG}-B`)))
+      isDenied(await a.client.from('farms').update({ farm_name: `${TAG}-hijack` }).eq('farm_name', `${TAG}-B`).select('id')))
     record('farmer A cannot delete farmer B farms',
-      isDenied(await a.client.from('farms').delete().eq('name', `${TAG}-B`)))
+      isDenied(await a.client.from('farms').delete().eq('farm_name', `${TAG}-B`).select('id')))
     record('farmer A cannot write compliance_rules',
       isDenied(await a.client.from('compliance_rules').insert({ title: TAG })))
     record('farmer A cannot self-elevate role in profiles',
@@ -201,14 +201,14 @@ async function main() {
 
     // ── C. Farmer B mirror (opposite direction) ──────────────────────────────
     group('C. farmer B mirror isolation')
-    const farmBIns = await b.client.from('farms').insert({ name: `${TAG}-B` }).select('id')
+    const farmBIns = await b.client.from('farms').insert({ farm_name: `${TAG}-B`, created_by: b.userId }).select('id')
     const farmB = farmBIns?.data?.[0]?.id
     if (farmB) created.farms.push(farmB)
     record('farmer B can create own farm', !!farmB, farmB ? '' : (farmBIns?.error?.code || 'no id'))
     record('farmer B cannot update farmer A farms',
-      isDenied(await b.client.from('farms').update({ name: `${TAG}-hijack2` }).eq('id', farmA ?? '0')))
+      isDenied(await b.client.from('farms').update({ farm_name: `${TAG}-hijack2` }).eq('id', farmA ?? '0').select('id')))
     record('farmer B cannot delete farmer A farms',
-      isDenied(await b.client.from('farms').delete().eq('id', farmA ?? '0')))
+      isDenied(await b.client.from('farms').delete().eq('id', farmA ?? '0').select('id')))
     record('farmer B cannot self-elevate role',
       isDenied(await b.client.from('profiles').update({ role: 'admin' }).eq('id', b.userId)))
 
