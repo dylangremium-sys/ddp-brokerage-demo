@@ -225,13 +225,23 @@ async function main() {
     // row of THIS run and prove even its author (admin) cannot change or remove
     // it (ENABLE ALWAYS trigger). The row is append-only and retained by design.
     if (cfg.allowAuditInsert) {
-      const ins = await admin.client.from('compliance_audit_log').insert({ action: `${TAG}-audit` }).select('id')
+      const auditPayload = {
+        actor_type: 'admin',
+        actor_id: admin.userId,
+        action: 'legal_update_created',
+        entity_type: 'legal_update',
+        entity_id: `${TAG}-audit`,
+        before_state: null,
+        after_state: { security_test_run: runId },
+        reason: `Live staging audit immutability probe ${TAG}`,
+      }
+      const ins = await admin.client.from('compliance_audit_log').insert(auditPayload).select('id')
       const auditId = ins?.data?.[0]?.id
       record('admin can INSERT compliance_audit_log (append-only, retained by design)', !!auditId,
-        auditId ? `retained row action=${TAG}-audit` : (ins?.error?.code || 'insert denied'))
+        auditId ? `retained row entity_id=${TAG}-audit` : (ins?.error?.code || 'insert denied'))
       if (auditId) {
         record('admin UPDATE of the just-inserted audit row is blocked',
-          !!(await admin.client.from('compliance_audit_log').update({ action: `${TAG}-mut` }).eq('id', auditId)).error)
+          !!(await admin.client.from('compliance_audit_log').update({ reason: `Mutation attempt ${TAG}` }).eq('id', auditId)).error)
         record('admin DELETE of the just-inserted audit row is blocked',
           !!(await admin.client.from('compliance_audit_log').delete().eq('id', auditId)).error)
       }
