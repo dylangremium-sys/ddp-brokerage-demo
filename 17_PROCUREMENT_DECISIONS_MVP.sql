@@ -129,6 +129,14 @@ ORDER BY batch_id, decided_at DESC;
 -- ---------------------------------------------------------------------------
 REVOKE ALL ON public.procurement_decisions FROM PUBLIC, anon;
 GRANT SELECT, INSERT ON public.procurement_decisions TO authenticated;
+-- Supabase GRANTs CRUD on new public tables to `authenticated` by default, so the
+-- GRANT above does not narrow anything: table-level UPDATE and DELETE survive it.
+-- RLS (no UPDATE/DELETE policy) and prevent_procurement_decision_mutation() both
+-- still deny the write, but leaving the privilege in place contradicts this
+-- migration's own append-only claim and fails V6 of 17_..._VERIFY.sql. Revoked
+-- explicitly, exactly as 15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql:60 does for
+-- the other append-only table (compliance_audit_log).
+REVOKE UPDATE, DELETE ON public.procurement_decisions FROM authenticated;
 REVOKE ALL ON public.procurement_decisions_current FROM PUBLIC, anon;
 GRANT SELECT ON public.procurement_decisions_current TO authenticated;
 
