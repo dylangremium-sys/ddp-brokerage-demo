@@ -339,7 +339,7 @@ export function applyRiskOverrides(base: RiskRegisterEntry[]): RiskRegisterEntry
 
 export const DECISION_KEY = 'ddp_procurement_decisions'
 
-interface StoredDecision {
+export interface StoredDecision {
   decision: ProcurementDecision
   notes?: string
   decidedAt: string
