@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    // src tests are TypeScript; the staging security *script* is ESM JS, so its
+    // colocated regression test is .mjs and lives beside it.
+    include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'],
   },
 })
