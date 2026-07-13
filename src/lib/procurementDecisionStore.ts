@@ -27,6 +27,7 @@ import { supabase as defaultClient } from './supabase'
 import {
   loadProcurementDecisions,
   saveProcurementDecision,
+  PROCUREMENT_DECISION_LABELS,
   type StoredDecision,
 } from './procurementControl'
 import type { ProcurementDecision } from '../types'
@@ -87,8 +88,14 @@ function asString(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null
 }
 
+// Every decision the UI can offer must be persistable. The label map is the one
+// place the decision set is enumerated at runtime (its keys are exactly the
+// ProcurementDecision union, enforced by its Record<ProcurementDecision, string>
+// type), and it is what DDPBuyerPreview renders the dropdown from — so deriving
+// the validator from it makes a UI option that the server rejects impossible.
+// The DB CHECK in 17_PROCUREMENT_DECISIONS_MVP.sql:48 lists the same set.
 function isProcurementDecision(v: unknown): v is ProcurementDecision {
-  return v === 'progress' || v === 'hold' || v === 'reject'
+  return typeof v === 'string' && Object.hasOwn(PROCUREMENT_DECISION_LABELS, v)
 }
 
 /**

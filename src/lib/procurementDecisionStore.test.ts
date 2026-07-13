@@ -6,7 +6,13 @@ import {
   listLocalOnlyDecisions,
   migrateLocalDecision,
 } from './procurementDecisionStore'
-import { DECISION_KEY, saveProcurementDecision, loadProcurementDecisions } from './procurementControl'
+import {
+  DECISION_KEY,
+  saveProcurementDecision,
+  loadProcurementDecisions,
+  PROCUREMENT_DECISION_LABELS,
+} from './procurementControl'
+import type { ProcurementDecision } from '../types'
 
 // ─── In-memory localStorage (the cache layer) ──────────────────────────────
 beforeEach(() => {
@@ -213,3 +219,78 @@ describe('listLocalOnlyDecisions / migrateLocalDecision', () => {
     expect(localStorage.getItem(DECISION_KEY)).toContain('batch-x')
   })
 })
+
+// ─── Regression: every decision the UI offers must persist ──────────────────
+//
+// The store previously accepted only progress|hold|reject, while the dropdown
+// (DDPBuyerPreview.tsx:573, rendered from PROCUREMENT_DECISION_LABELS) offers
+// all seven values in the ProcurementDecision union. The other four were written
+// to the local cache, rejected by the database CHECK, and then dropped on read —
+// invisible to resolveDecision AND to listLocalOnlyDecisions. These tests fail if
+// the UI set and the persisted set ever diverge again.
+const ALL_DECISIONS = Object.keys(PROCUREMENT_DECISION_LABELS) as ProcurementDecision[]
+
+describe('every decision the UI offers round-trips through the server store', () => {
+  it('offers exactly the seven values in the ProcurementDecision union', () => {
+    expect(ALL_DECISIONS).toEqual([
+      'progress', 'hold', 'reject',
+      'request_documents', 'request_fresh_coa', 'request_inventory_proof', 'escalate_review',
+    ])
+  })
+
+  it.each(ALL_DECISIONS)('recordDecision("%s") sends it to the server', async decision => {
+    const { client, inserted } = makeClient({})
+
+    const result = await recordDecision(
+      { batchId: `batch-${decision}`, decision, reason: `reason for ${decision}` },
+      client,
+    )
+
+    expect(result).toMatchObject({ ok: true, persistedTo: 'server' })
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({ batch_id: `batch-${decision}`, decision })
+  })
+
+  it.each(ALL_DECISIONS)('fetchServerDecision reads "%s" back rather than discarding it', async decision => {
+    const { client } = makeClient({
+      serverRow: { decision, reason: 'r', decided_at: 'ts', decided_by: 'u' },
+    })
+
+    const result = await fetchServerDecision(`batch-${decision}`, client)
+
+    expect(result).not.toBeNull()
+    expect(result?.decision).toBe(decision)
+    expect(result?.source).toBe('server')
+  })
+
+  it.each(ALL_DECISIONS)('resolveDecision surfaces a cached "%s" instead of reporting none', async decision => {
+    saveProcurementDecision('batch-legacy', decision, 'decided before migration 17')
+    const { client } = makeClient({ serverRow: null })
+
+    const result = await resolveDecision('batch-legacy', client)
+
+    expect(result.decision).toBe(decision)
+    expect(result.source).toBe('local-cache')
+  })
+
+  it.each(ALL_DECISIONS)('listLocalOnlyDecisions reports an unsynced "%s"', async decision => {
+    saveProcurementDecision('batch-unsynced', decision, 'never reached the server')
+    const { client } = makeClient({ serverRow: null })
+
+    const localOnly = await listLocalOnlyDecisions(client)
+
+    expect(localOnly.map(d => d.batchId)).toContain('batch-unsynced')
+    expect(localOnly.find(d => d.batchId === 'batch-unsynced')?.decision).toBe(decision)
+  })
+
+  it('still rejects a value that is not a decision at all', async () => {
+    const { client } = makeClient({ serverRow: { decision: 'totally-approved', reason: 'x' } })
+    expect(await fetchServerDecision('batch-1', client)).toBeNull()
+  })
+})
+
+// The database is the other half of this contract: a value the UI offers but the
+// CHECK constraint omits is rejected at INSERT with SQLSTATE 23514. That half is
+// asserted in scripts/migration-17-decision-set.test.mjs, which compares the SQL
+// CHECK against the TypeScript union directly (this file cannot read from disk —
+// the app tsconfig does not expose node types to src).

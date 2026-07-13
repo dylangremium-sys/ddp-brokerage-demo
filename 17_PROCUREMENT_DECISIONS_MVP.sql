@@ -21,7 +21,9 @@
 --   • public.procurement_decisions — append-only, one row per decision event.
 --   • Mandatory actor (decided_by, server-captured from auth.uid()).
 --   • Mandatory reason. A decision without a reason is not an audit record.
---   • decision ∈ ('progress','hold','reject') — a NO can finally be recorded.
+--   • decision ∈ the seven values the operator UI offers (src/types.ts:38-45) —
+--     a NO ('reject'/'hold') can finally be recorded, and the four evidence-
+--     request decisions the UI has always offered remain persistable.
 --   • History is preserved: re-deciding appends a new row. The current decision
 --     is the newest row per batch (view: procurement_decisions_current).
 --
@@ -45,7 +47,14 @@ CREATE TABLE IF NOT EXISTS public.procurement_decisions (
   -- batch id. TEXT (not UUID FK) so a decision can be recorded for a batch that
   -- exists only client-side in demo mode, exactly as the localStorage store does.
   batch_id      TEXT NOT NULL,
-  decision      TEXT NOT NULL CHECK (decision IN ('progress', 'hold', 'reject')),
+  -- The full decision set the operator UI offers (src/types.ts:38-45, rendered
+  -- from PROCUREMENT_DECISION_LABELS at DDPBuyerPreview.tsx:573). Every option a
+  -- user can select must be persistable; a narrower CHECK here would reject four
+  -- of them at the database and lose the decision.
+  decision      TEXT NOT NULL CHECK (decision IN (
+                  'progress', 'hold', 'reject',
+                  'request_documents', 'request_fresh_coa',
+                  'request_inventory_proof', 'escalate_review')),
   -- A decision with no stated reason is not an audit record. Enforced, not hoped for.
   reason        TEXT NOT NULL CHECK (length(btrim(reason)) > 0),
   -- AUTHORITATIVE actor identity, captured server-side. Never client-supplied.
