@@ -12,6 +12,7 @@
     "test": "vitest run",
     "security:sql": "node scripts/check-security-migrations.mjs",
     "security:staging": "node scripts/run-staging-security-tests.mjs",
+    "staging:smoke": "node scripts/staging-smoke-test.mjs",
     "ci:verify": "npm run security:sql && npm test && tsc -b && npm run lint && npm run build"
   },
   "dependencies": {
