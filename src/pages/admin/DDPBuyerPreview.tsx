@@ -9,7 +9,6 @@ import {
   deriveAutoRisks,
   applyRiskOverrides,
   loadProcurementDecisions,
-  saveProcurementDecision,
   PROCUREMENT_DECISION_LABELS,
 } from '../../lib/procurementControl'
 import { deriveBuyerApprovalGate } from '../../lib/buyerApprovalGate'
@@ -21,14 +20,16 @@ import {
   type BuyerPackSnapshotStatus,
 } from '../../lib/buyerPackSnapshot'
 import { createLocalStorageBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotStore'
+import { selectBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotSupabaseStore'
+import { resolveDecision, recordDecision, type DecisionSource } from '../../lib/procurementDecisionStore'
 import { appendBuyerPackAuditEvent, getBuyerPackAuditTrail } from '../../lib/buyerPackAudit'
 import { appendBuyerPackDownload } from '../../lib/buyerPackDownloads'
 
-// Single localStorage-backed repository instance for the admin session. Phase A
-// persists snapshots/audit/downloads in the browser only — tamper-evident via
-// content hashing, not durably tamper-proof; a Supabase-backed repository is a
-// separate, later phase.
-const snapshotRepo = createLocalStorageBuyerPackSnapshotRepository()
+// Server-backed when Supabase is configured (issues snapshots through the
+// append-only issue_buyer_pack_snapshot RPC); the existing localStorage
+// repository remains the demo-mode fallback. Same BuyerPackSnapshotRepository
+// contract either way, so no call site below changes.
+const snapshotRepo = selectBuyerPackSnapshotRepository(createLocalStorageBuyerPackSnapshotRepository())
 
 interface Props {
   inventory: InventoryItem[]
@@ -105,6 +106,27 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   } = computeBuyerDisclosureStatus(item, farms)
   const [decision, setDecision] = useState<ProcurementDecision | ''>(storedDecision?.decision ?? '')
   const [decisionSaved, setDecisionSaved] = useState(false)
+  const [decisionReason, setDecisionReason] = useState('')
+  const [decisionError, setDecisionError] = useState<string | null>(null)
+  const [savingDecision, setSavingDecision] = useState(false)
+  const [decisionSource, setDecisionSource] = useState<DecisionSource>('none')
+
+  // SERVER WINS. On mount, reconcile against the authoritative server record.
+  // resolveDecision() refreshes the localStorage cache when a server row exists,
+  // and falls back to the cache (with source='local-cache') for decisions taken
+  // before migration 17 — so nothing recorded previously is lost or hidden.
+  useEffect(() => {
+    let cancelled = false
+    void resolveDecision(item.id).then(resolved => {
+      if (cancelled) return
+      setDecisionSource(resolved.source)
+      if (resolved.decision) {
+        setDecision(resolved.decision)
+        setDecisionReason(resolved.reason ?? '')
+      }
+    })
+    return () => { cancelled = true }
+  }, [item.id])
 
   // Latest immutable snapshot for this batch (null until one is loaded/issued).
   const [latestSnapshot, setLatestSnapshot] = useState<BuyerPackSnapshot | null>(null)
@@ -136,9 +158,26 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
     return () => { cancelled = true }
   }, [item.id, latestSnapshot])
 
-  function handleSaveDecision() {
-    if (!decision) return
-    saveProcurementDecision(item.id, decision)
+  // The decision is now recorded SERVER-SIDE (public.procurement_decisions,
+  // append-only, actor captured from auth.uid()). localStorage is only a cache
+  // so the synchronous render path stays consistent. A reason is mandatory —
+  // a decision without one is not an audit record.
+  async function handleSaveDecision() {
+    if (!decision || savingDecision) return
+    setDecisionError(null)
+
+    const result = await recordDecision({
+      batchId: item.id,
+      decision,
+      reason: decisionReason,
+    })
+
+    if (!result.ok) {
+      setDecisionError(result.error ?? 'The decision could not be recorded.')
+      return
+    }
+
+    setDecisionSource(result.persistedTo === 'server' ? 'server' : 'local-cache')
     setDecisionSaved(true)
     setTimeout(() => setDecisionSaved(false), 2000)
   }
@@ -535,8 +574,13 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
                 <option key={key} value={key}>{label}</option>
               ))}
             </select>
-            <button type="button" className="btn btn-ghost" onClick={handleSaveDecision} disabled={!decision}>
-              {decisionSaved ? '✓ Saved' : 'Record Decision'}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => { setSavingDecision(true); void handleSaveDecision().finally(() => setSavingDecision(false)) }}
+              disabled={!decision || !decisionReason.trim() || savingDecision}
+            >
+              {savingDecision ? 'Recording…' : decisionSaved ? '✓ Recorded' : 'Record Decision'}
             </button>
             {storedDecision && !decisionSaved && (
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -544,6 +588,37 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
               </span>
             )}
           </div>
+
+          {/* A decision without a stated reason is not an audit record. The
+              server CHECK enforces this too; the button is disabled until it is
+              supplied so the operator is never surprised by a rejection. */}
+          <textarea
+            value={decisionReason}
+            onChange={e => setDecisionReason(e.target.value)}
+            placeholder="Reason for this decision (required — recorded in the audit trail)"
+            rows={2}
+            style={{ width: '100%', marginTop: 10, fontSize: 13 }}
+          />
+
+          {decisionError && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger, #b00020)' }}>
+              {decisionError}
+            </div>
+          )}
+
+          {/* Provenance. An operator authorising a controlled-substance release
+              is entitled to know whether that record actually reached the server. */}
+          {decisionSource === 'local-cache' && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              ⚠ This decision exists only in this browser. It has no server-side audit record
+              and no recorded approver. Re-record it to store it durably.
+            </div>
+          )}
+          {decisionSource === 'server' && !decisionError && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              ✓ Recorded server-side (append-only, attributed to the signed-in admin).
+            </div>
+          )}
         </div>
 
         {/* Issue immutable buyer pack snapshot */}
