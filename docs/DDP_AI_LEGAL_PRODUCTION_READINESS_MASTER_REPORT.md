@@ -6,12 +6,17 @@
 
 ## Ground truth captured for this phase (verified now)
 
-- **[VERIFIED] The commit gate is green.** `npm run ci:verify` → **exit 0** (security:sql + 464 tests + `tsc -b` + eslint + production build all pass) on the current working tree.
-- **[VERIFIED] Branch = `chore/staging-smoke-test`**, HEAD `f5c8cbb`. `main` is separate; per `README.md:105` a push to `main` auto-deploys to production.
-- **[VERIFIED] Working tree contents:**
-  - *Remediation (this initiative):* `src/lib/aiComplianceGuard.ts` + test, `src/lib/procurementControl.ts`, `src/pages/admin/DDPBuyerPreview.tsx`, `src/lib/procurementDecisionStore.ts` + test, `src/lib/buyerPackSnapshotSupabaseStore.ts` + test, `scripts/run-staging-security-tests.mjs` + test, `16_PRODUCTION_SAFETY_VERIFY.sql`, `17_PROCUREMENT_DECISIONS_{MVP,VERIFY,ROLLBACK}.sql`, `docs/*`.
-  - *Pre-existing, NOT part of this initiative:* `vite.config.ts` (vendor-chunking), `scripts/staging-smoke-test.mjs`.
-- **[VERIFIED] Migration 10 is already committed** (tracked; `10_BUYER_PACK_SNAPSHOTS_*.sql` in history). **Migration 17 is new/untracked.** Neither is applied to any database.
+- **[VERIFIED] The commit gate is green.** `npm run ci:verify` → **exit 0** (security:sql + `tsc -b` + eslint + production build all pass).
+  - **[CORRECTED]** The test count read **464** when this report was written. It is now **497** (`npm run ci:verify`, 35 files) after the defect-1 regression tests were added in `febe95a`.
+- **[VERIFIED] Branch = `chore/staging-smoke-test`**. `main` is separate; per `README.md:105` a push to `main` auto-deploys to production.
+  - **[CORRECTED]** This report originally recorded HEAD as `f5c8cbb`. That was the HEAD *before* this initiative was committed. The Phase-D work is now committed: `94c5c42` (implementation) and `9ccffab` (these reports), plus the post-audit defect fixes.
+- **[CORRECTED] Working tree contents → now committed.** This section originally described an uncommitted working tree. `git status` is clean; every file listed below is tracked in `94c5c42` / `9ccffab`.
+  - *Remediation (this initiative):* `src/lib/aiComplianceGuard.ts` + test, `src/lib/procurementControl.ts`, `src/pages/admin/DDPBuyerPreview.tsx`, `src/lib/procurementDecisionStore.ts` + test, `src/lib/buyerPackSnapshotSupabaseStore.ts` + test, `scripts/run-staging-security-tests.mjs` + test, `16_PRODUCTION_SAFETY_VERIFY.sql`, `17_PROCUREMENT_DECISIONS_{MVP,VERIFY,ROLLBACK}.sql`, `docs/*`, **and `vite.config.ts`** — see the correction below.
+  - **[CORRECTED]** This report originally listed *"Pre-existing, NOT part of this initiative: `vite.config.ts` (vendor-chunking), `scripts/staging-smoke-test.mjs`"*. Both halves are wrong:
+    - `vite.config.ts` **is** part of this initiative. The change on this branch is `include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs']` — the test glob that makes this initiative's own `scripts/run-staging-security-tests.test.mjs` run. It is **not** vendor chunking. (Vendor chunking is a separate change, committed on branch `chore/vite-vendor-chunking` at `6464ed8`, which this branch does not contain.)
+    - `scripts/staging-smoke-test.mjs` **is not in this worktree**. It was committed to branch `chore/staging-smoke-automation` (`4d9f1ac`), with its npm script in `64a1e9b`.
+- **[VERIFIED] Migration 10 is already committed** (tracked; `10_BUYER_PACK_SNAPSHOTS_*.sql` in history). Neither 10 nor 17 is applied to any database.
+  - **[CORRECTED]** Migration 17 was described as *"new/untracked"*. `17_PROCUREMENT_DECISIONS_{MVP,VERIFY,ROLLBACK}.sql` are tracked, committed in `94c5c42`.
 - **[VERIFIED] Migration order is fixed: 10 → 17** (`17_..._MVP.sql:56` FK → `buyer_pack_snapshots`).
 
 ---
@@ -38,10 +43,9 @@
 - **Severity:** MEDIUM. **Business impact:** the compliance decision (incl. rejections) stays browser-local and unattributed. **Technical impact:** consumer degrades gracefully (`procurementDecisionStore.ts:99-101`, `42P01` → local-cache), so no runtime break. **Risk if ignored:** no server-side audit trail of who approved a pack.
 - **Required action:** apply after 10; run `17_..._VERIFY.sql`. **Effort:** ~30 min. **Dependencies:** **migration 10 (FK).** **Rollback:** `17_..._ROLLBACK.sql` — **destructive** (drops the trail; export first); prefer rolling back the app deploy.
 
-### B5 — Implementation exists only in the working tree
-- **Verified:** [VERIFIED] HEAD `f5c8cbb`; all Phase-D work uncommitted.
-- **Severity:** MEDIUM. **Business/technical impact:** reviewed, gate-passing code is not reproducible or deployable and is one `git checkout` from loss. **Risk if ignored:** loss of verified work.
-- **Required action:** commit to the feature branch (see WP7), open a PR. **Effort:** ~30 min. **Dependencies:** none (`ci:verify` already green). **Rollback:** git revert.
+### B5 — Implementation exists only in the working tree — **[CLOSED]**
+- **[CORRECTED] This blocker is closed.** It stated *"HEAD `f5c8cbb`; all Phase-D work uncommitted"*. The work is committed: `94c5c42` (implementation) and `9ccffab` (reports); `git status` is clean. The stated risk — *"one `git checkout` from loss"* — no longer exists.
+- *Original entry, retained for the record:* Severity MEDIUM; reviewed, gate-passing code not reproducible or deployable. **Required action:** commit to the feature branch, open a PR. **Rollback:** git revert.
 
 ---
 
@@ -145,15 +149,17 @@ Run entirely read-only against prod. Tooling already exists: `16_PRODUCTION_SAFE
 ## WORK PACKAGE 7 — Master roadmap (every task appears once)
 
 **COMPLETE (verified done)**
-- Security remediation: guard negation-scope fix; escalation-test correction; localStorage-write guardrails; staging suite hardened + regression-tested.
+- Security remediation: guard negation-scope fix (`aiComplianceGuard.ts:99`); escalation-test correction (`run-staging-security-tests.mjs:337,366` — now probes `ddp_admin`); staging suite hardened + regression-tested.
+- **[CORRECTED] "localStorage-write guardrails" was listed here as complete. It is not implemented.** No such guardrail exists on this branch: `src/data.ts` is not modified at all (`saveInventory` at `:631-633` and `saveFarms` at `:644-646` are still unguarded `localStorage.setItem`), and `src/services/auth.ts:80` `signOut()` still does not clear. The only change to `procurementControl.ts` in this branch is adding the `export` keyword to `interface StoredDecision`. This item remains **OPEN** — it is audit finding C-4, which the audit in this same commit rates as inexcusable and ~1 hour of work.
 - Staging security verification (RLS, ACLs, audit immutability, escalation, self-cert, Group F).
 - Migration artifacts authored + paired (10 already committed; 16, 17 authored).
 
 **NO CHANGE REQUIRED**
 - RLS implementation · function EXECUTE permissions · audit-log immutability · role-escalation protection · absence of a farmer UPDATE policy · AI draft-only human gate.
 
-**READY FOR COMMIT** (gate green now)
-- Commit the remediation set to `chore/staging-smoke-test` (split the pre-existing `vite.config.ts`/`staging-smoke-test.mjs` into their own commit). Open PR.
+**READY FOR COMMIT** (gate green now) — **[DONE / CORRECTED]**
+- The remediation set is committed to `chore/staging-smoke-test` (`94c5c42`, `9ccffab`). A PR is still to be opened.
+- **[CORRECTED]** The original condition — *"split the pre-existing `vite.config.ts`/`staging-smoke-test.mjs` into their own commit"* — was incorrect and must not be followed. `vite.config.ts` on this branch is this initiative's own test-glob change and must **not** be split out; `scripts/staging-smoke-test.mjs` is not in this worktree (it is on `chore/staging-smoke-automation`, `4d9f1ac`). Vendor chunking, the change that bullet meant, is on `chore/vite-vendor-chunking` (`6464ed8`).
 
 **READY FOR STAGING**
 - Apply migration 10 → VERIFY. Apply migration 17 → VERIFY. Re-run staging security suite.
@@ -178,7 +184,7 @@ Run entirely read-only against prod. Tooling already exists: `16_PRODUCTION_SAFE
 
 | # | Question | Decision | Evidence |
 |---|---|---|---|
-| 1 | Commit current work? | **YES WITH CONDITIONS** | [VERIFIED] `ci:verify` exit 0. Condition: split the pre-existing `vite.config.ts`/`staging-smoke-test.mjs` from the remediation commit for a clean history. |
+| 1 | Commit current work? | **DONE** | [VERIFIED] `ci:verify` exit 0; committed as `94c5c42` + `9ccffab`. **[CORRECTED]** The original condition ("split the pre-existing `vite.config.ts`/`staging-smoke-test.mjs` from the remediation commit") was wrong and was not followed: `vite.config.ts` is this initiative's own test-glob change, and `staging-smoke-test.mjs` is not in this worktree (it is on `chore/staging-smoke-automation`, `4d9f1ac`). |
 | 2 | Merge to main? | **YES WITH CONDITIONS** | `main` auto-deploys to prod (`README.md:105`). Condition: PR review + green branch, **and** either apply migration 10 to prod first or accept the buyer-pack-issue feature errors gracefully until it is. |
 | 3 | Apply migrations 10 & 17? | **YES WITH CONDITIONS** | [VERIFIED] additive, reversible, VERIFY-paired. Condition: **staging immediately (order 10→17)**; prod only with a pre-application backup during a controlled cutover. |
 | 4 | Verify production? | **YES** | [VERIFIED] read-only, zero risk; `16_`/Group-F tooling ready. Do this next. |

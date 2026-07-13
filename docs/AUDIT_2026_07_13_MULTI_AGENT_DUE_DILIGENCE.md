@@ -6,13 +6,24 @@
 
 > **Confidential.** Contains unpatched security findings. Do not circulate outside the company.
 
+> ### ⚠ SUPERSEDED IN PART — read before quoting this document
+>
+> This is a **point-in-time audit of `f5c8cbb`**. It was committed (`9ccffab`) alongside the remediation (`94c5c42`) that falsifies several of its headline claims. The findings below are **not** corrected in place — the audit is left as written, as the historical record. The following statements are **false against the current tree** and must not be quoted as current:
+>
+> 1. **"`grep -rn '\.rpc(' src/` returns zero — `issue_buyer_pack_snapshot()` has never been called"** (Exec Summary; C-3 at `:77`). **NOW FALSE.** `src/lib/buyerPackSnapshotSupabaseStore.ts:41` defines `const RPC = 'issue_buyer_pack_snapshot'` and `:114` calls `client.rpc(RPC, …)`, wired into the UI at `DDPBuyerPreview.tsx:23`. The RPC is called.
+> 2. **"The privilege-escalation test is vacuous and always passes"** (C-2). **NOW FIXED.** `scripts/run-staging-security-tests.mjs:337,366` probe `role: 'ddp_admin'` (the value the CHECK permits), with a read-back assertion, and `PRE_RLS_SQLSTATES` now rejects any pre-RLS rejection as evidence of a policy denial.
+> 3. **"The safety guard failed 9 of 9 adversarial probes"** (`:41`, `:125`). **Retracted by the author** in `AUDIT_PHASE2_EVIDENCE_REVIEW.md:148` as unexecuted, and **now moot**: the negation-scope defect is fixed (`aiComplianceGuard.ts:99`), with the seven bypass strings pinned as regression tests.
+> 4. **"~30 unit tests"** (`:15`, `:42`, `:124`). **Wrong when written** — the suite held **464** tests at `f5c8cbb` (the readiness reports in this same commit say so). It is **497** today. The Testing score of 4/10 and the "zero evals" framing rest on a count that is wrong by more than an order of magnitude.
+>
+> **Still true and still open:** C-4 (unguarded localStorage writes — `src/data.ts:631-633`, `:644-646`; `auth.ts:80` `signOut()` does not clear), C-5 (compliance engine hardcodes `passed: false`), C-6 (heavy metals non-blocking), C-7 (no observability; push-to-`main` auto-deploys), C-8 (Watchtower CORS; guard run over input).
+
 ---
 
 ## Executive Summary
 
 **The engineering is far better than the product, and the product is far better than the business.**
 
-You have built a genuinely disciplined codebase — 3 runtime dependencies, no `service_role` key anywhere, a fail-closed AI adapter, pure-functional compliance core, ~30 unit tests, paired VERIFY/ROLLBACK migrations. That discipline is real and rare, and several agents said so unprompted.
+You have built a genuinely disciplined codebase — 3 runtime dependencies, no `service_role` key anywhere, a fail-closed AI adapter, pure-functional compliance core, ~30 unit tests **[CORRECTED: 464 tests at `f5c8cbb`; 497 today — this count was wrong when written]**, paired VERIFY/ROLLBACK migrations. That discipline is real and rare, and several agents said so unprompted.
 
 But it is discipline applied to the wrong surface. **The system of record for every commercial and compliance decision DDP makes is browser localStorage.** The immutable Postgres tables built to hold that evidence are dead code: `grep -rn '\.rpc(' src/` returns **zero** — `issue_buyer_pack_snapshot()` has never been called. Migrations 11 and 15 harden `compliance_audit_log` against TRUNCATE while the batch-approval decision they exist to protect sits in a browser cache, editable from devtools by the very operator it is meant to hold accountable.
 
@@ -39,7 +50,7 @@ But it is discipline applied to the wrong surface. **The system of record for ev
 | **Code Quality** | **5** | Excellent pure core; a 1,945-line god component and an 830-line hand-rolled router. |
 | **Security** | **6** | Strong primitives (no service_role, RLS-scoped, fails closed) — undermined by a **vacuous** escalation test. |
 | **AI Safety** | **6** | Draft-only boundary is real and held. Its enforcing guard failed **9 of 9** adversarial probes. |
-| **Testing** | **4** | ~30 tests, all pure-logic with mocked providers. Zero component, zero E2E, zero evals. |
+| **Testing** | **4** | ~30 tests **[CORRECTED: 464 at `f5c8cbb`, 497 today — the count is wrong; the score rests on it]**, all pure-logic with mocked providers. Zero component, zero E2E, zero evals. |
 | **Documentation** | **6** | Voluminous and unusually honest — but ~30 PHASE_*_VALIDATION docs contradict live production. |
 | **Enterprise Readiness** | **2** | Bus factor 1. No tenancy model, no SSO, no audit export, no SLA, no DR. |
 | **Maintainability** | **5** | The pure core is a pleasure. The god component and localStorage coupling are the tax. |
@@ -121,7 +132,7 @@ Intellectual honesty cuts both ways. Four Red Team claims are **false**:
 - **The AI never sees the law.** `complianceRssConnector.ts:213` — the LLM's entire evidence is the RSS **teaser blurb**, never the linked instrument.
 - **"Legal change detection" is a SHA-256 of an RSS string** (`complianceSourceMonitoring.ts:62-78`). It cannot distinguish a typo fix from a new delegated act.
 - **Citations are unvalidated free text the model invents** — `sourceReferences` is a bare `string[]` (`complianceAiSummarisation.ts:164-166`), explicitly **exempted from the safety guard**, never checked against source. **No conclusion can be traced to a legislative clause, so the output is unusable as compliance evidence.**
-- **Zero evaluation.** All ~30 tests inject a fake provider. `EVIDENCE_INTELLIGENCE_TEST_MATRIX.md:123-127` says so plainly.
+- **Zero evaluation.** All ~30 tests **[CORRECTED: 464 at `f5c8cbb`; 497 today]** inject a fake provider. `EVIDENCE_INTELLIGENCE_TEST_MATRIX.md:123-127` says so plainly.
 - **The safety guard failed 9 of 9 adversarial probes** (verified by execution, not inspection). `aiComplianceGuard.ts:34-98` `isNegatedContext()` returns true if *any* negation marker appears within 40 preceding characters — so *"There is **no** doubt this batch is compliant"* passes as **SAFE**. The inversion fix is **1 hour**.
 - **No AI draft is ever persisted.** If a reviewer is misled, there is no trace it happened.
 

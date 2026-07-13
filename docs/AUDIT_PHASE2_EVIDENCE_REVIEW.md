@@ -5,6 +5,14 @@
 
 **Result: 2 of my previous claims were overstated and are corrected below. The rest hold.**
 
+> ### ⚠ SUPERSEDED IN PART — read before quoting this document
+>
+> This falsification pass describes **`f5c8cbb`**. It was committed (`9ccffab`) alongside the remediation (`94c5c42`) that falsifies its Finding 2. Left as written, as the historical record. Against the current tree:
+>
+> - **Finding 2 — "The immutable snapshot RPC has never been called … Zero invocations. No wrapper, no indirect call, no server-side use, no client-side use. VERIFIED FACT."** (`:60`, `:78`, `:112`). **NOW FALSE.** `src/lib/buyerPackSnapshotSupabaseStore.ts:41,114` calls `issue_buyer_pack_snapshot` via `client.rpc()`, wired at `DDPBuyerPreview.tsx:23`. The "Built ✅ / Connected ❌" row is now Built ✅ / Connected ✅.
+> - **The guard's negation-window defect** described at `:148` is **fixed** (`aiComplianceGuard.ts:99`, clause-bounded token scope; seven bypass strings pinned as tests).
+> - **Finding 1** (localStorage as the release-layer system of record) is **partly addressed**: a server-authoritative, append-only path now exists (`procurementDecisionStore.ts`, migration 17). It is **not** yet effective at runtime — migration 17 is still unapplied — so the *runtime* claim stands while the *code-level* claim does not.
+
 ---
 
 ## Finding 1 — "The system of record for EVERY compliance and commercial decision is browser localStorage"
