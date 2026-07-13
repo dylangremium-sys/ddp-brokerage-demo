@@ -42,28 +42,96 @@ const UNSAFE_TERMS = [
   'approved',
 ]
 
-const NEGATION_MARKERS = [
-  'not', 'no', 'non', 'never', 'without', 'cannot', "can't", 'can not',
-  "isn't", 'is not', "aren't", 'are not', "doesn't", 'does not',
-  "don't", 'do not', "wasn't", 'was not', "weren't", 'were not',
-  'lack of', 'lacks', 'pending',
+// Negation is evaluated per-TOKEN against the words immediately preceding the
+// unsafe term, not by scanning a character window. Multi-word markers such as
+// "is not" / "does not" / "lack of" are covered by their negating token ("not",
+// "lack"); the auxiliary half is a scope filler below.
+const NEGATION_TOKENS = [
+  'not', 'no', 'non', 'never', 'without', 'cannot', "can't",
+  "isn't", "aren't", "doesn't", "don't", "wasn't", "weren't",
+  'lack', 'lacks', 'pending',
 ]
 
-const NEGATION_WINDOW_CHARS = 40
+// Words that may sit between a negation/non-assertive marker and the unsafe
+// term without breaking the marker's scope (auxiliaries, hedges, determiners).
+// Any word NOT in this list terminates the scope — that is what stops "no" in
+// "there is no doubt this batch is compliant" from reaching "compliant".
+const SCOPE_FILLERS = [
+  'of', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'has', 'have', 'had', 'it', 'this', 'that', 'to', 'yet', 'still',
+  'fully', 'currently', 'actually', 'considered', 'deemed',
+  'necessarily', 'entirely', 'therefore',
+]
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
+// Subordinators/modals that make the clause conditional or prospective rather
+// than an assertion of present fact. "…until it is legally compliant" states a
+// condition, not a claim, and must pass.
+const NON_ASSERTIVE_TOKENS = [
+  'until', 'unless', 'if', 'when', 'whether', 'once', 'before',
+  'requires', 'require', 'required', 'must', 'should', 'shall', 'would',
+]
 
+// How many preceding tokens the marker scope may span before we give up and
+// treat the term as asserted. Generous enough for "has not yet been", short
+// enough that a marker in a previous clause cannot reach the term.
+const MAX_SCOPE_TOKENS = 8
+
+// Display only: how much text preceding a finding is echoed back in
+// AIComplianceGuardFinding.context. Unchanged from the previous
+// implementation, so finding.context output is identical.
+const CONTEXT_WINDOW_CHARS = 40
+
+/**
+ * Decides whether the unsafe term at the end of `precedingText` is inside the
+ * scope of a negation or a non-assertive (conditional) marker.
+ *
+ * Walks backwards token-by-token from the term:
+ *   • scope fillers are skipped,
+ *   • a non-assertive marker ⇒ not an assertion ⇒ safe,
+ *   • negation markers are counted (so a double negative, "not non-compliant",
+ *     reads as an affirmative claim and is correctly flagged),
+ *   • any other word terminates the scope ⇒ the term is asserted ⇒ unsafe.
+ *
+ * This replaces an earlier character-window check that treated a negation
+ * ANYWHERE in the preceding 40 characters as negating the term, which let
+ * "There is no doubt this batch is compliant" pass as safe.
+ */
 function isNegatedContext(precedingText: string): boolean {
-  return NEGATION_MARKERS.some(marker => new RegExp(`\\b${escapeRegExp(marker)}\\b`, 'i').test(precedingText))
+  // Scope never crosses a clause boundary: a negation in a previous clause
+  // ("The farm is not certified, but the batch is compliant") must not reach
+  // the term in this one.
+  const clause = precedingText.toLowerCase().split(/[.;:,!?—–]/).pop() ?? ''
+  const tokens = clause.match(/[a-z']+/g) ?? []
+
+  // A subordinator/modal governs its ENTIRE clause, not just the words next to
+  // the term ("…unless the farm is certified" — 'farm' sits between the marker
+  // and the term). So it is matched clause-wide, unlike negation below.
+  if (tokens.some(t => NON_ASSERTIVE_TOKENS.includes(t))) return true
+
+  // Negation, by contrast, binds tightly: walk backwards from the term, skipping
+  // only auxiliaries/hedges. Any content word ends the negation's scope.
+  let negations = 0
+  for (let i = tokens.length - 1, seen = 0; i >= 0 && seen < MAX_SCOPE_TOKENS; i--, seen++) {
+    const token = tokens[i]
+    if (SCOPE_FILLERS.includes(token)) continue
+    if (NEGATION_TOKENS.includes(token)) {
+      negations++
+      continue
+    }
+    break // a content word ends the negation's scope
+  }
+
+  // Odd number of negations ⇒ negated. Zero or an even number ("not
+  // non-compliant") ⇒ the term is asserted.
+  return negations % 2 === 1
 }
 
 /**
  * Scans AI-drafted text for unqualified compliance/certification/approval
  * claims. Returns every unsafe match found (empty array = safe). A match is
- * excluded when a negation marker appears within a short preceding window,
- * so "not compliant" / "pending review" style phrasing passes.
+ * excluded when the term falls inside the scope of a negation or a
+ * non-assertive marker (see isNegatedContext), so "not compliant" and
+ * "…until it is legally compliant" style phrasing passes.
  */
 export function guardAiDraftedText(text: string): AIComplianceGuardResult {
   const lower = text.toLowerCase()
@@ -81,10 +149,12 @@ export function guardAiDraftedText(text: string): AIComplianceGuardResult {
       if (positions.some(pos => consumed.has(pos))) continue
       positions.forEach(pos => consumed.add(pos))
 
-      const windowStart = Math.max(0, idx - NEGATION_WINDOW_CHARS)
-      const precedingWindow = lower.slice(windowStart, idx)
+      // Scope analysis reads the FULL preceding text (a fixed character window
+      // could truncate a word mid-token and fabricate a marker); the character
+      // window below is only ever used to build the human-readable context.
+      const windowStart = Math.max(0, idx - CONTEXT_WINDOW_CHARS)
 
-      if (!isNegatedContext(precedingWindow)) {
+      if (!isNegatedContext(lower.slice(0, idx))) {
         findings.push({
           term,
           index: idx,

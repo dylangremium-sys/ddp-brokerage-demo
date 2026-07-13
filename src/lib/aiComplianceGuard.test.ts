@@ -56,6 +56,65 @@ describe('guardAiDraftedText — unqualified overclaims fail', () => {
   })
 })
 
+// ─── Regression: negation-scope bypass ─────────────────────────────────────
+//
+// The previous implementation treated a negation marker appearing ANYWHERE in
+// the 40 characters preceding an unsafe term as negating that term. Any
+// affirmative sentence that happened to contain "no"/"not" nearby therefore
+// passed as safe — the strongest possible overclaims among them. Negation is
+// now bound to the term's grammatical scope.
+describe('guardAiDraftedText — negation-scope bypass (regression)', () => {
+  const bypassAttempts: Array<[string, string]> = [
+    ['There is no doubt this batch is compliant.', 'compliant'],
+    ['There is no question this batch is compliant.', 'compliant'],
+    ['There is no question the farm is approved.', 'approved'],
+    ['No issues were raised, and the laboratory is certified.', 'certified'],
+    ['Nothing here is non-compliant; the lab is certified.', 'certified'],
+    ['We have no hesitation: the shipment is export-ready.', 'export-ready'],
+    ['There is not the slightest doubt the supplier is legally compliant.', 'legally compliant'],
+  ]
+
+  it.each(bypassAttempts)('flags "%s" as unsafe (%s)', (text, expectedTerm) => {
+    const result = guardAiDraftedText(text)
+    expect(result.isSafe).toBe(false)
+    expect(result.findings.some(f => f.term === expectedTerm)).toBe(true)
+  })
+
+  it('treats a double negative as an affirmative claim, not a negation', () => {
+    // "not non-compliant" asserts compliance and must NOT pass as a negation.
+    expect(guardAiDraftedText('This batch is not non-compliant.').isSafe).toBe(false)
+  })
+
+  it('still passes a single negation (odd negation count)', () => {
+    expect(guardAiDraftedText('This batch is non-compliant.').isSafe).toBe(true)
+    expect(guardAiDraftedText('This batch is not compliant.').isSafe).toBe(true)
+  })
+
+  it('does not let a negation in a previous clause reach the next clause', () => {
+    // "not certified" is safely negated; "compliant" in the following clause is
+    // an unqualified assertion and must still be flagged.
+    const result = guardAiDraftedText('The farm is not certified, but the batch is compliant.')
+    expect(result.isSafe).toBe(false)
+    expect(result.findings.map(f => f.term)).toContain('compliant')
+    expect(result.findings.map(f => f.term)).not.toContain('certified')
+  })
+
+  it('keeps conditional / non-assertive phrasing safe', () => {
+    // A condition is not a claim of present fact.
+    expect(guardAiDraftedText('The rule does not apply until it is legally compliant.').isSafe).toBe(true)
+    expect(guardAiDraftedText('The batch must be compliant before shipment.').isSafe).toBe(true)
+    expect(guardAiDraftedText('This is blocked unless the farm is certified.').isSafe).toBe(true)
+  })
+
+  it('flags an unqualified claim inside quoted text (quoting does not launder a claim)', () => {
+    expect(guardAiDraftedText('The producer stated: "This batch is compliant."').isSafe).toBe(false)
+  })
+
+  it('flags a claim at the very start of the text (empty preceding context)', () => {
+    expect(guardAiDraftedText('Compliant and export-ready.').isSafe).toBe(false)
+  })
+})
+
 // ─── Watchtower intake wiring (Phase 0B) ────────────────────────────────────
 // guardAiDraftedFields is the exact function DDPComplianceWatchtower.tsx's
 // submitLegalUpdate() calls on title/source/rawText/summary before any

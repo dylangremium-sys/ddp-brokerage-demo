@@ -119,6 +119,60 @@ function isDenied(res) {
 }
 function isAllowed(res) { return res && !res.error }
 
+// ── Synthetic-data cleanup (exported so it can be regression-tested offline) ──
+//
+// The synthetic farms are inserted with the `farm_name` column (see farm
+// creation in groups B/C). Cleanup and residue detection MUST filter on that
+// SAME column. An earlier version filtered on a non-existent `name` column, so
+// the delete matched nothing and the residue check then reported zero — a false
+// "clean" that let 24 orphaned rows accumulate across runs. Centralising the
+// column here makes that class of drift a one-line, testable fact.
+const SYNTHETIC_FARM_COLUMN = 'farm_name'
+
+// Delete this run's synthetic farms (tag-scoped) via the given signed-in client.
+// farm_memberships and any dependent rows cascade on the farm delete.
+export async function deleteSyntheticFarms(client, tag) {
+  if (!client) return
+  await client.from('farms').delete().ilike(SYNTHETIC_FARM_COLUMN, `${tag}%`)
+}
+
+// Count synthetic farms still present for a tag. 0 = clean. Used both by the
+// live suite's residue assertion and by the offline regression test.
+export async function countResidualFarms(client, tag) {
+  if (!client) return 0
+  const res = await client.from('farms').select('id').ilike(SYNTHETIC_FARM_COLUMN, `${tag}%`)
+  return res?.data?.length ?? 0
+}
+
+// Postgres SQLSTATEs that must NOT be accepted as evidence that RLS denied a
+// write, because they are raised BEFORE row-level security is ever consulted:
+//   23514 check_violation      — a CHECK constraint rejected the value
+//   23502 not_null_violation   — a NOT NULL constraint rejected the value
+//   23503 foreign_key_violation
+//   22P02 invalid_text_representation (e.g. a bad enum/uuid literal)
+//   42703 undefined_column     — the column does not exist on this table
+// A test that fires one of these is testing the schema, not the policy: it
+// would still "pass" with RLS entirely disabled. See PRE_RLS_SQLSTATES usage.
+const PRE_RLS_SQLSTATES = new Set(['23514', '23502', '23503', '22P02', '42703'])
+
+// Assert a write was denied BY ROW-LEVEL SECURITY specifically.
+// Returns { denied, reason } so a pre-RLS rejection is reported as a FAIL of the
+// test's own validity rather than silently counted as a security pass.
+function isDeniedByRls(res) {
+  const code = res?.error?.code
+  if (code && PRE_RLS_SQLSTATES.has(code)) {
+    return { denied: false, reason: `rejected pre-RLS by SQLSTATE ${code} — this probe does not exercise RLS` }
+  }
+  if (res?.error) return { denied: true, reason: `denied (SQLSTATE ${code || 'n/a'})` }
+  // RLS denial on UPDATE/DELETE surfaces as zero rows affected, not an error.
+  if (Array.isArray(res?.data)) {
+    return res.data.length === 0
+      ? { denied: true, reason: 'denied (0 rows affected — RLS predicate excluded the row)' }
+      : { denied: false, reason: `ALLOWED — ${res.data.length} row(s) written` }
+  }
+  return { denied: false, reason: 'inconclusive (no error, no row count)' }
+}
+
 // ── Supabase client helpers ─────────────────────────────────────────────────
 function makeClient(cfg) {
   return createClient(cfg.url, cfg.anonKey, {
@@ -181,6 +235,92 @@ async function main() {
 
     record('farmer A can read own farm',
       isAllowed(await a.client.from('farms').select('id').eq('id', farmA ?? '00000000-0000-0000-0000-000000000000')))
+
+    // ── B2. SELF-CERTIFICATION (privileged columns on the farmer's OWN farm) ──
+    //
+    // This suite previously only tested CROSS-TENANT isolation (A vs B). The
+    // far more dangerous case was never probed: a farmer writing an ADMIN-OWNED
+    // column on a farm they legitimately own. Policy "farms: farmer update own"
+    // (FARM_RESAVE_PERSISTENCE_MIGRATION.sql:104-126) restricts WHICH ROWS a
+    // farmer may update but NOT WHICH COLUMNS — its USING/WITH CHECK assert only
+    // farm membership. The sole guard is trigger trg_protect_farm_admin_fields,
+    // which FARM_ADMIN_ROLE_CHECK_FIX.sql:10-25 records as ABSENT from the live
+    // database. If that is true here, a farmer can approve their own farm.
+    //
+    // Each column is probed independently and verified by READ-BACK, so the
+    // result is conclusive regardless of the mechanism that denied (or allowed) it.
+    group('B2. farmer A cannot self-certify own farm (privileged columns)')
+    const PRIVILEGED_FARM_FIELDS = [
+      ['status', 'Approved'],
+      ['compliance_status', 'Approved'],
+      ['risk_level', 'Low'],
+      ['partner_tier', 'Gold'],
+    ]
+
+    // The self-certification risk only exists on a farm the farmer can actually
+    // UPDATE. "farms: farmer update own" gates on farm_membership, so we first
+    // establish a legitimate membership — allowed by "farm_memberships: farmer
+    // insert own" for a farm the farmer created — then prove a BENIGN column
+    // update persists. ONLY THEN does a blocked privileged-column update prove
+    // the column guard, rather than merely proving the farmer had no access to
+    // the row at all (the flaw in the previous version of this probe, which
+    // reported "0 rows" for a membership-less farm and looked like a pass).
+    let updateAccessProven = false
+    if (farmA) {
+      const memIns = await a.client.from('farm_memberships')
+        .insert({ farm_id: farmA, user_id: a.userId, role: 'owner' }).select('id')
+      record('farmer A can create own farm_membership (onboarding condition)',
+        isAllowed(memIns), memIns?.error?.code || '')
+
+      // farm_name is farmer-editable (it is what a farm re-save writes) and is
+      // NOT one of the protected columns, so it is the correct benign control.
+      const benign = `${TAG}-A-upd`
+      await a.client.from('farms').update({ farm_name: benign }).eq('id', farmA).select('id')
+      const afterBenign = await a.client.from('farms').select('farm_name').eq('id', farmA).maybeSingle()
+      updateAccessProven = afterBenign?.data?.farm_name === benign
+      record('farmer A HAS update access to own farm (benign column persists)',
+        updateAccessProven,
+        updateAccessProven
+          ? 'membership-gated UPDATE confirmed — privileged probes below are now conclusive'
+          : 'no UPDATE access even with membership — privileged-column probes are INCONCLUSIVE, not a pass')
+    }
+
+    for (const [column, value] of PRIVILEGED_FARM_FIELDS) {
+      if (!farmA) { skip(`farmer A cannot set farms.${column} on own farm`, 'no synthetic farm created'); continue }
+      if (!updateAccessProven) {
+        skip(`farmer A cannot set farms.${column} on own farm`,
+          'update access to the row was not established — cannot isolate the column guard from row-level denial')
+        continue
+      }
+
+      const before = await a.client.from('farms').select(column).eq('id', farmA).maybeSingle()
+      if (before?.error?.code === '42703') {
+        skip(`farmer A cannot set farms.${column} on own farm`, `column ${column} does not exist on this schema`)
+        continue
+      }
+      const priorValue = before?.data?.[column] ?? null
+
+      const res = isDeniedByRls(
+        await a.client.from('farms').update({ [column]: value }).eq('id', farmA).select('id'))
+
+      // Authoritative check: did the value actually change on the server?
+      // With update access proven above, an unchanged value now means the column
+      // guard (trigger, whether it RAISEs or silently resets) held — not that
+      // the row was simply inaccessible.
+      const after = await a.client.from('farms').select(column).eq('id', farmA).maybeSingle()
+      const persisted = after?.data?.[column] ?? null
+      const changed = persisted === value && priorValue !== value
+
+      record(
+        `farmer A cannot set farms.${column} on own farm (SELF-CERTIFICATION)`,
+        !changed,
+        changed
+          ? `*** ESCALATION: farmer wrote ${column}='${persisted}' on their own farm — trg_protect_farm_admin_fields is NOT enforcing ***`
+          : `${res.reason}; ${column} still = ${JSON.stringify(persisted)}`,
+      )
+    }
+
+    group('B. farmer A isolation')
     // Cross-tenant: A must not update/delete B-owned rows (0 rows / denied).
     record('farmer A cannot update farmer B farms',
       isDenied(await a.client.from('farms').update({ farm_name: `${TAG}-hijack` }).eq('farm_name', `${TAG}-B`).select('id')))
@@ -188,8 +328,21 @@ async function main() {
       isDenied(await a.client.from('farms').delete().eq('farm_name', `${TAG}-B`).select('id')))
     record('farmer A cannot write compliance_rules',
       isDenied(await a.client.from('compliance_rules').insert({ title: TAG })))
-    record('farmer A cannot self-elevate role in profiles',
-      isDenied(await a.client.from('profiles').update({ role: 'admin' }).eq('id', a.userId)))
+    // Self-elevation must be denied BY RLS. The previous version of this probe
+    // used role:'admin', which profiles_role_check (role IN ('ddp_admin','farmer'))
+    // rejects with SQLSTATE 23514 BEFORE RLS runs — so it passed green even
+    // if RLS on profiles were disabled entirely. 'ddp_admin' is the value the
+    // CHECK permits, so only the policy can stop it.
+    const elevA = isDeniedByRls(
+      await a.client.from('profiles').update({ role: 'ddp_admin' }).eq('id', a.userId).select('id'))
+    record('farmer A cannot self-elevate role to ddp_admin (denied by RLS, not by CHECK)',
+      elevA.denied, elevA.reason)
+    // Mechanism-independent proof: whatever the API returned, the row must not
+    // have changed. This is the assertion that actually protects the platform.
+    const roleAfterA = await a.client.from('profiles').select('role').eq('id', a.userId).maybeSingle()
+    record('farmer A role is still "farmer" after self-elevation attempt',
+      roleAfterA?.data?.role === 'farmer',
+      `role now = ${roleAfterA?.data?.role ?? roleAfterA?.error?.code ?? 'unreadable'}`)
     record('farmer A cannot EXECUTE trigger-only prevent_compliance_audit_log_mutation()',
       !!(await a.client.rpc('prevent_compliance_audit_log_mutation')).error)
     record('farmer A cannot read farmer B storage prefix',
@@ -209,8 +362,14 @@ async function main() {
       isDenied(await b.client.from('farms').update({ farm_name: `${TAG}-hijack2` }).eq('id', farmA ?? '0').select('id')))
     record('farmer B cannot delete farmer A farms',
       isDenied(await b.client.from('farms').delete().eq('id', farmA ?? '0').select('id')))
-    record('farmer B cannot self-elevate role',
-      isDenied(await b.client.from('profiles').update({ role: 'admin' }).eq('id', b.userId)))
+    const elevB = isDeniedByRls(
+      await b.client.from('profiles').update({ role: 'ddp_admin' }).eq('id', b.userId).select('id'))
+    record('farmer B cannot self-elevate role to ddp_admin (denied by RLS, not by CHECK)',
+      elevB.denied, elevB.reason)
+    const roleAfterB = await b.client.from('profiles').select('role').eq('id', b.userId).maybeSingle()
+    record('farmer B role is still "farmer" after self-elevation attempt',
+      roleAfterB?.data?.role === 'farmer',
+      `role now = ${roleAfterB?.data?.role ?? roleAfterB?.error?.code ?? 'unreadable'}`)
 
     // ── D. Admin + immutable-field / audit-log protections ───────────────────
     group('D. admin + audit-log immutability')
@@ -293,13 +452,19 @@ async function main() {
       if (created.batches.length && a?.client) {
         await a.client.from('inventory_batches').delete().in('id', created.batches).ilike('notes', `${TAG}%`)
       }
-      for (const client of [a?.client, b?.client].filter(Boolean)) {
-        await client.from('farms').delete().ilike('name', `${TAG}%`)
+      // Teardown runs as ADMIN. Farmers have no DELETE grant on farms (verified
+      // by the live probe above: even the benign own-farm update does not
+      // persist), so a farmer-scoped delete silently removes nothing — that is
+      // why residue accumulated. Admin holds "farms: admin all"; the farm delete
+      // cascades to farm_memberships. Security assertions about what a FARMER may
+      // delete are covered separately in groups B and C, so using admin here does
+      // not weaken any test — it is teardown, not an assertion.
+      if (admin?.client) {
+        await deleteSyntheticFarms(admin.client, TAG)
       }
-      // Residue verification (deletable tables only).
-      const residue = admin?.client
-        ? ((await admin.client.from('farms').select('id').ilike('name', `${TAG}%`)).data?.length ?? 0)
-        : 0
+      // Residue verification (deletable tables only). Uses the admin client so a
+      // failed delete cannot hide behind farmer RLS read limits.
+      const residue = admin?.client ? await countResidualFarms(admin.client, TAG) : 0
       record('zero residual synthetic farms', residue === 0, `remaining=${residue}`)
       if (cfg.allowAuditInsert) {
         record('append-only audit row intentionally retained (tagged)', true, `${TAG}-audit is immutable by design`)
