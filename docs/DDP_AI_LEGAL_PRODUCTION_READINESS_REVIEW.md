@@ -113,7 +113,7 @@ Scored for *production readiness of the current scope*, not aspirational scope. 
 | **AI** | **48** | [VERIFIED] Safe *for draft-only scope* (human gate real, guard fixed). Not ready to expand: no retrieval/citations/evals. |
 | **Operational readiness** | **35** | [VERIFIED] No monitoring, no runbook, no on-call, single maintainer. |
 | **Developer workflow** | **58** | [VERIFIED] Strong static CI (**434** tests on `main` today after PR #3 (`4a77828`); 464 when written; **497** measured on PR #4 (`9da1ec6`, open, not merged) — plus tsc, lint, build) + live staging security suite. Weak: no CD, migrations by hand. **[CORRECTED]** "reviewed work uncommitted" no longer applies — see the PR split above. |
-| **Testing** | **56** | [VERIFIED] 464 unit tests (pure logic) + live staging security suite. Zero component/E2E tests; zero AI evals. |
+| **Testing** | **56** | [VERIFIED] **434** unit tests (pure logic) on `main` today after PR #3 (`4a77828`); 464 when written; **497** measured on PR #4 (`9da1ec6`, open, not merged) — plus live staging security suite. Zero component/E2E tests; zero AI evals. |
 | **Deployment** | **44** | [VERIFIED] Auto-deploy works but ungated; no rollback drill; migrations manual with a hard ordering dependency. |
 | **Documentation** | **76** | [VERIFIED] Extensive, unusually honest: VERIFY/ROLLBACK pairs, audit reports, this review. |
 | **Monitoring** | **15** | [VERIFIED] None. `api/.../ai-summary.ts:97` swallows exceptions. |
