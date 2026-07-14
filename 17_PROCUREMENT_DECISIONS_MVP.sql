@@ -3,6 +3,24 @@
 -- ---------------------------------------------------------------------------
 -- Gives the batch release decision a server-side, append-only home.
 --
+-- STATUS — BY ENVIRONMENT (never state "applied" without naming the environment):
+--   • Repository : committed and reviewed.
+--   • STAGING    : APPLIED and VERIFIED (2026-07-14). 17_..._VERIFY.sql returned
+--                  verdict = 'ok' for all eight checks, including V6 (authenticated
+--                  holds neither UPDATE nor DELETE). Behavioural checks, run inside
+--                  a ROLLED-BACK transaction, confirmed append-only enforcement,
+--                  the seven-value CHECK, the mandatory reason, and NOT NULL actor
+--                  attribution. Residue after rollback: zero rows.
+--   • PRODUCTION : NOT applied. NOT run. NOT deployed. Production SQL verification
+--                  has NOT been performed. The cutover is UNAPPROVED.
+--
+-- DEPENDENCY (open production-planning concern, NOT resolved):
+--   This migration holds a hard FK to public.buyer_pack_snapshots(snapshot_id),
+--   created by 10_BUYER_PACK_SNAPSHOTS_MVP.sql. Migration 10 MUST be applied first
+--   — applying 17 against a database without 10 fails outright. The coupling to
+--   migration 10 remains an OPEN review item for the production cutover and is
+--   deliberately not treated as settled here.
+--
 -- WHY
 -- The procurement decision — the human judgement that authorises a buyer pack
 -- for a controlled-substance batch — is currently stored ONLY in the operator's
