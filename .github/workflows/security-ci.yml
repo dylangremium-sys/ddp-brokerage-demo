@@ -1,7 +1,11 @@
 name: Security CI
 
-# Static verification gate for the DDP security migrations and the app build.
-# It NEVER connects to a database, uses no secrets, and deploys nothing.
+# Static verification gate for the DDP security migrations and the app build,
+# plus the CI-controlled route to Production.
+#
+# The `verify` job NEVER connects to a database and uses no secrets.
+# The `deploy-production` job is the ONLY authorised automated path to
+# Production. It cannot start unless `verify` succeeded.
 
 on:
   pull_request:
@@ -10,14 +14,22 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Least privilege: read-only, no write/deploy scopes.
+# Least privilege: read-only. The deployment is performed by the Vercel CLI with a
+# project-scoped token, not by the GitHub token, so no write scope is needed here.
 permissions:
   contents: read
 
-# One run per ref; newer pushes cancel superseded runs.
+# Superseded PULL REQUEST runs are cancelled — the original intent, and it only
+# ever throws away wasted CI time.
+#
+# A push to `main` must NOT be cancellable: that run may be part-way through
+# promoting a Production deployment, and killing it mid-promotion could leave the
+# alias pointing at a half-finished release. Cancellation is therefore scoped to
+# pull requests; a second merge queues behind the first (see the deploy job's own
+# concurrency group) instead of racing it.
 concurrency:
   group: security-ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -50,3 +62,86 @@ jobs:
 
       - name: Production build (no secrets required)
         run: npm run build
+
+  deploy-production:
+    name: Deploy to Production
+    # The point of the whole workstream: a deployment cannot begin until
+    # verification has SUCCEEDED. `needs` is the mechanical enforcement — if
+    # `verify` fails or is cancelled, this job never runs.
+    needs: verify
+    # Never on a pull request. Only a real push (i.e. a merge) to main.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    # Production credentials live ONLY in this environment, which is restricted to
+    # protected branches. A run from any other ref cannot read them.
+    environment: Production
+
+    # Two merges must not deploy at once. cancel-in-progress is FALSE deliberately:
+    # a deployment already promoting must be allowed to finish rather than be killed
+    # half-way, so a second merge waits and then deploys on top of it.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - name: Checkout the exact merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies (deterministic)
+        run: npm ci
+
+      - name: Install Vercel CLI (pinned)
+        run: npm install --global vercel@55.0.0
+
+      - name: Pull Production configuration
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build with Production configuration
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy prebuilt artifact to Production
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          url="$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $url"
+
+      # The deployment is not trusted until the live site proves it.
+      #
+      # public/version.json is regenerated on every build from `git rev-parse HEAD`
+      # (scripts/generate-version.js), so if the commit it reports equals GITHUB_SHA,
+      # then the artifact built from THIS commit is the one actually serving the
+      # production alias. Anything else — a stale alias, a failed promotion, a race
+      # with another deployment — fails the job rather than passing silently.
+      - name: Verify the live site serves this exact commit
+        run: |
+          for attempt in $(seq 1 30); do
+            served="$(curl -fsS https://www.ddpbrokerage.com/version.json | jq -r '.commitSha')" || served=""
+            if [ "$served" = "$GITHUB_SHA" ]; then
+              echo "Production serves $GITHUB_SHA (attempt $attempt)"
+              exit 0
+            fi
+            echo "attempt $attempt: production serves '${served:-<unreachable>}', waiting for $GITHUB_SHA"
+            sleep 10
+          done
+          echo "::error::Production did not serve $GITHUB_SHA within the timeout. The deployment did not take effect."
+          exit 1
