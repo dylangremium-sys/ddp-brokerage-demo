@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase'
+import { shouldPersistToBrowser } from './browserPersistence'
 import {
   loadInventory as lsLoadInventory,
   saveInventory as lsSaveInventory,
@@ -78,9 +79,12 @@ export function getFarmProfiles(): FarmProfile[] {
 }
 
 export async function createFarmProfile(farm: FarmProfile, userId?: string): Promise<void> {
-  // localStorage is always written first (sync, never fails)
-  const existing = lsLoadFarms()
-  lsSaveFarms([farm, ...existing.filter(f => f.id !== farm.id)])
+  // DEMO MODE ONLY. In Supabase mode the database is the system of record and the
+  // browser must not hold a copy of a real farm profile — see browserPersistence.ts.
+  if (shouldPersistToBrowser()) {
+    const existing = lsLoadFarms()
+    lsSaveFarms([farm, ...existing.filter(f => f.id !== farm.id)])
+  }
 
   if (!supabase) return
 
@@ -313,9 +317,12 @@ export function getInventoryBatches(): InventoryItem[] {
 }
 
 export async function createInventoryBatch(item: InventoryItem, userId?: string): Promise<void> {
-  // localStorage is always written first
-  const existing = lsLoadInventory()
-  lsSaveInventory([item, ...existing.filter(i => i.id !== item.id)])
+  // DEMO MODE ONLY — as above. A real inventory batch must not be mirrored into
+  // the operator's browser when Supabase is the system of record.
+  if (shouldPersistToBrowser()) {
+    const existing = lsLoadInventory()
+    lsSaveInventory([item, ...existing.filter(i => i.id !== item.id)])
+  }
 
   if (!supabase) return
 
@@ -958,14 +965,26 @@ export async function getFarmerScope(userId: string): Promise<FarmerScope> {
 }
 
 // ---------------------------------------------------------------------------
-// Persist helpers — write-through to localStorage on every React state change.
+// Persist helpers — write-through to browser storage on every React state change
+// (App.tsx:117-118), but ONLY IN DEMO MODE.
+//
+// These were previously unconditional. In Supabase mode `inventory` and `farms`
+// hold data fetched from the production database, so every state change mirrored
+// the ENTIRE production dataset into localStorage — unencrypted, on the operator's
+// machine, and (before this change) still there after sign-out. The matching read
+// path was already guarded (data.ts:624, :637 return [] when Supabase is
+// configured), so nothing reads these copies in Supabase mode; they were pure leak.
+//
+// Demo mode is unchanged: localStorage is the store, and it still persists.
 // ---------------------------------------------------------------------------
 
 export function persistInventory(items: InventoryItem[]): void {
+  if (!shouldPersistToBrowser()) return
   lsSaveInventory(items)
 }
 
 export function persistFarms(farms: FarmProfile[]): void {
+  if (!shouldPersistToBrowser()) return
   lsSaveFarms(farms)
 }
 

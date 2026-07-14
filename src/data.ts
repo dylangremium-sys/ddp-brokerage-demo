@@ -1,5 +1,6 @@
 import type { InventoryItem, FarmProfile, ReviewRequest, MarketBenchmark, ComplianceVerificationTier, TestStatus } from './types'
 import { REQUIREMENT_OVERRIDE_KEY, RISK_OVERRIDE_KEY, DECISION_KEY, getFarmInventory } from './lib/procurementControl'
+import { safeSetItem, shouldPersistToBrowser } from './lib/browserPersistence'
 
 export function testStatusLabel(s?: TestStatus): string {
   if (s === 'pass') return 'PASS'
@@ -628,8 +629,12 @@ export function loadInventory(): InventoryItem[] {
   return SEED_INVENTORY
 }
 
-export function saveInventory(items: InventoryItem[]) {
-  localStorage.setItem(INV_KEY, JSON.stringify(items))
+// Never throws. These run inside React effects (App.tsx:117-118) and there is no
+// error boundary in the app, so a QuotaExceededError escaping here would blank the
+// UI. Returns whether the write actually succeeded — it never reports a success it
+// did not achieve.
+export function saveInventory(items: InventoryItem[]): boolean {
+  return safeSetItem(INV_KEY, JSON.stringify(items))
 }
 
 export function loadFarms(): FarmProfile[] {
@@ -641,13 +646,20 @@ export function loadFarms(): FarmProfile[] {
   return SEED_FARMS
 }
 
-export function saveFarms(farms: FarmProfile[]) {
-  localStorage.setItem(FARM_KEY, JSON.stringify(farms))
+// Never throws — see saveInventory.
+export function saveFarms(farms: FarmProfile[]): boolean {
+  return safeSetItem(FARM_KEY, JSON.stringify(farms))
 }
 
 export function resetDemo() {
-  localStorage.setItem(INV_KEY, JSON.stringify(SEED_INVENTORY))
-  localStorage.setItem(FARM_KEY, JSON.stringify(SEED_FARMS))
+  // The removals below are always safe — deleting a browser copy never leaks.
+  // The SEED WRITES are demo-only: reachable in Supabase mode via App.tsx:477 ->
+  // db.ts resetDemoData(), they would recreate ddp_inventory / ddp_farms in the
+  // browser immediately after the guards above stopped them being written.
+  if (shouldPersistToBrowser()) {
+    safeSetItem(INV_KEY, JSON.stringify(SEED_INVENTORY))
+    safeSetItem(FARM_KEY, JSON.stringify(SEED_FARMS))
+  }
   localStorage.removeItem(FARM_DRAFT_KEY)
   localStorage.removeItem(REQUIREMENT_OVERRIDE_KEY)
   localStorage.removeItem(RISK_OVERRIDE_KEY)
@@ -679,8 +691,13 @@ export function loadReviewRequests(): ReviewRequest[] {
   }
 }
 
-export function saveReviewRequests(requests: ReviewRequest[]): void {
-  localStorage.setItem(REVIEW_REQUESTS_KEY, JSON.stringify(requests))
+// DEMO MODE ONLY. App.tsx:119 persists review requests on every state change, and
+// in Supabase mode they are fetched from farmer_review_requests (App.tsx:161) — so
+// this wrote production data into the operator's browser, exactly as the inventory
+// and farm effects did. Never throws (see saveInventory).
+export function saveReviewRequests(requests: ReviewRequest[]): boolean {
+  if (!shouldPersistToBrowser()) return false
+  return safeSetItem(REVIEW_REQUESTS_KEY, JSON.stringify(requests))
 }
 
 // ── Market Benchmarks (owner-controlled, farmer-visible) ─────────────────────
