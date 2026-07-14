@@ -9,8 +9,8 @@ import {
   deriveAutoRisks,
   applyRiskOverrides,
   loadProcurementDecisions,
-  saveProcurementDecision,
   PROCUREMENT_DECISION_LABELS,
+  type StoredDecision,
 } from '../../lib/procurementControl'
 import { deriveBuyerApprovalGate } from '../../lib/buyerApprovalGate'
 import {
@@ -21,14 +21,16 @@ import {
   type BuyerPackSnapshotStatus,
 } from '../../lib/buyerPackSnapshot'
 import { createLocalStorageBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotStore'
+import { selectBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotSupabaseStore'
+import { resolveDecision, recordDecision, type DecisionSource, type ResolvedDecision } from '../../lib/procurementDecisionStore'
 import { appendBuyerPackAuditEvent, getBuyerPackAuditTrail } from '../../lib/buyerPackAudit'
 import { appendBuyerPackDownload } from '../../lib/buyerPackDownloads'
 
-// Single localStorage-backed repository instance for the admin session. Phase A
-// persists snapshots/audit/downloads in the browser only — tamper-evident via
-// content hashing, not durably tamper-proof; a Supabase-backed repository is a
-// separate, later phase.
-const snapshotRepo = createLocalStorageBuyerPackSnapshotRepository()
+// Server-backed when Supabase is configured (issues snapshots through the
+// append-only issue_buyer_pack_snapshot RPC); the existing localStorage
+// repository remains the demo-mode fallback. Same BuyerPackSnapshotRepository
+// contract either way, so no call site below changes.
+const snapshotRepo = selectBuyerPackSnapshotRepository(createLocalStorageBuyerPackSnapshotRepository())
 
 interface Props {
   inventory: InventoryItem[]
@@ -64,7 +66,11 @@ function na(val: string | number | undefined | null, suffix = ''): string {
 // buyer" — used by both the single-batch pack and the aggregate inventory
 // list, so the two views can never apply different evidentiary standards to
 // the same word ("Approved") again.
-function computeBuyerDisclosureStatus(item: InventoryItem, farms: FarmProfile[] | undefined) {
+function computeBuyerDisclosureStatus(
+  item: InventoryItem,
+  farms: FarmProfile[] | undefined,
+  authoritative?: StoredDecision | null,
+) {
   const farm = farms?.find(f =>
     (item.farmId && f.id === item.farmId) ||
     f.tradingName === item.farmName ||
@@ -79,7 +85,14 @@ function computeBuyerDisclosureStatus(item: InventoryItem, farms: FarmProfile[] 
     .filter(r => r.batchId === item.id || (!!farm && r.farmId === farm.id))
   const unresolvedRisks = risks.filter(r => r.status !== 'resolved' && r.status !== 'accepted')
   const hasBlockingIssues = blockerRequirements.length > 0 || unresolvedRisks.some(r => r.severity === 'blocker')
-  const storedDecision = loadProcurementDecisions()[item.id]
+  // AUTHORITATIVE DECISION, when the caller has resolved one. The issue gate must
+  // never be driven by the raw localStorage cache: a decision the server refused,
+  // or one whose server state could not be read, must not authorise a release.
+  // `authoritative` is undefined only for the read-only summary list below, which
+  // displays cached state and issues nothing.
+  const storedDecision = authoritative !== undefined
+    ? authoritative
+    : loadProcurementDecisions()[item.id]
   const { isHumanApproved, packStatusLabel } = deriveBuyerApprovalGate(hasBlockingIssues, storedDecision?.decision === 'progress')
 
   return {
@@ -99,12 +112,50 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
 }) {
   const [coaLoading, setCoaLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  // The authoritative decision, resolved asynchronously (server wins). Until it
+  // resolves it is null, so the gate is CLOSED by default — the pack cannot be
+  // issued on the strength of unverified browser state.
+  const [resolved, setResolved] = useState<ResolvedDecision | null>(null)
+
+  // Only a decision that the server accepted (or one from a genuinely
+  // un-provisioned database) may reach the issue gate. 'unavailable' — the
+  // authoritative read failed — yields null, so issuance is blocked.
+  const authoritativeDecision: StoredDecision | null =
+    resolved && resolved.decision && resolved.source !== 'unavailable' && resolved.decidedAt
+      ? { decision: resolved.decision, notes: resolved.reason ?? undefined, decidedAt: resolved.decidedAt }
+      : null
+
   const {
     farm, requirements, missingRequirements, blockerRequirements, receivedCount, unresolvedRisks,
     storedDecision, isHumanApproved, packStatusLabel,
-  } = computeBuyerDisclosureStatus(item, farms)
-  const [decision, setDecision] = useState<ProcurementDecision | ''>(storedDecision?.decision ?? '')
+  } = computeBuyerDisclosureStatus(item, farms, authoritativeDecision)
+  const [decision, setDecision] = useState<ProcurementDecision | ''>('')
   const [decisionSaved, setDecisionSaved] = useState(false)
+  const [decisionReason, setDecisionReason] = useState('')
+  const [decisionError, setDecisionError] = useState<string | null>(null)
+  const [savingDecision, setSavingDecision] = useState(false)
+  const [decisionSource, setDecisionSource] = useState<DecisionSource>('none')
+
+  // SERVER WINS. On mount, reconcile against the authoritative server record.
+  // resolveDecision() refreshes the localStorage cache when a server row exists,
+  // and falls back to the cache (source='local-cache') only when the table is
+  // genuinely not deployed. If the authoritative read FAILS (permission, RLS,
+  // auth, transient), it returns source='unavailable' — the gate then stays shut
+  // rather than trusting stale browser state.
+  useEffect(() => {
+    let cancelled = false
+    void resolveDecision(item.id).then(resolved => {
+      if (cancelled) return
+      setResolved(resolved)
+      setDecisionSource(resolved.source)
+      if (resolved.decision) {
+        setDecision(resolved.decision)
+        setDecisionReason(resolved.reason ?? '')
+      }
+    })
+    return () => { cancelled = true }
+  }, [item.id])
 
   // Latest immutable snapshot for this batch (null until one is loaded/issued).
   const [latestSnapshot, setLatestSnapshot] = useState<BuyerPackSnapshot | null>(null)
@@ -112,14 +163,34 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   const [issuing, setIssuing] = useState(false)
   const [issueError, setIssueError] = useState<string | null>(null)
   const [issueNotice, setIssueNotice] = useState<string | null>(null)
+  // A snapshot READ that failed. Distinct from latestSnapshot === null, which
+  // means "no snapshot exists". A failed read knows nothing about existence, so
+  // the UI must not present it as an absence.
+  const [snapshotLoadError, setSnapshotLoadError] = useState<string | null>(null)
 
   const approver = (approverName && approverName.trim()) || 'DDP Admin'
 
   // Load the latest persisted snapshot for this batch on mount / batch change.
   // Async because the repository contract is now Promise-based (Phase B step 1).
+  //
+  // The repository rejects on a genuine read failure (permission, network). It no
+  // longer rejects merely because migration 10 is absent — that degrades to the
+  // local repository inside the store. Either way this must not produce an
+  // unhandled rejection, and a failed read must not be rendered as "no snapshot".
   useEffect(() => {
     let cancelled = false
-    void snapshotRepo.getLatest(item.id).then(s => { if (!cancelled) setLatestSnapshot(s) })
+    snapshotRepo.getLatest(item.id).then(
+      s => {
+        if (cancelled) return
+        setLatestSnapshot(s)
+        setSnapshotLoadError(null)  // a later batch loading cleanly clears an earlier failure
+      },
+      (err: unknown) => {
+        if (cancelled) return
+        setLatestSnapshot(null)
+        setSnapshotLoadError(err instanceof Error ? err.message : 'Could not load the snapshot history.')
+      },
+    )
     return () => { cancelled = true }
   }, [item.id])
 
@@ -132,13 +203,48 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
       if (!latestSnapshot) return null
       return deriveSnapshotStatus(snapshotRepo, getBuyerPackAuditTrail(item.id), item.id, latestSnapshot.manifest.version)
     }
-    void load().then(s => { if (!cancelled) setSnapshotStatus(s) })
+    load().then(
+      s => { if (!cancelled) setSnapshotStatus(s) },
+      (err: unknown) => {
+        if (cancelled) return
+        setSnapshotStatus(null)
+        setSnapshotLoadError(err instanceof Error ? err.message : 'Could not derive the snapshot status.')
+      },
+    )
     return () => { cancelled = true }
   }, [item.id, latestSnapshot])
 
-  function handleSaveDecision() {
-    if (!decision) return
-    saveProcurementDecision(item.id, decision)
+  // The decision is now recorded SERVER-SIDE (public.procurement_decisions,
+  // append-only, actor captured from auth.uid()). localStorage is only a cache
+  // so the synchronous render path stays consistent. A reason is mandatory —
+  // a decision without one is not an audit record.
+  async function handleSaveDecision() {
+    if (!decision || savingDecision) return
+    setDecisionError(null)
+
+    const result = await recordDecision({
+      batchId: item.id,
+      decision,
+      reason: decisionReason,
+    })
+
+    if (!result.ok) {
+      // The server REFUSED the write. Nothing was cached, so the gate must not
+      // move: re-resolve from the authoritative source rather than assuming the
+      // attempted decision took effect.
+      setDecisionError(result.error ?? 'The decision could not be recorded.')
+      const reResolved = await resolveDecision(item.id)
+      setResolved(reResolved)
+      setDecisionSource(reResolved.source)
+      return
+    }
+
+    // Accepted (server) or deliberately local (table absent). Re-resolve so the
+    // gate and the snapshot approval timestamp come from the authoritative state,
+    // never from a value this function assumed.
+    const reResolved = await resolveDecision(item.id)
+    setResolved(reResolved)
+    setDecisionSource(reResolved.source)
     setDecisionSaved(true)
     setTimeout(() => setDecisionSaved(false), 2000)
   }
@@ -535,8 +641,13 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
                 <option key={key} value={key}>{label}</option>
               ))}
             </select>
-            <button type="button" className="btn btn-ghost" onClick={handleSaveDecision} disabled={!decision}>
-              {decisionSaved ? '✓ Saved' : 'Record Decision'}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => { setSavingDecision(true); void handleSaveDecision().finally(() => setSavingDecision(false)) }}
+              disabled={!decision || !decisionReason.trim() || savingDecision}
+            >
+              {savingDecision ? 'Recording…' : decisionSaved ? '✓ Recorded' : 'Record Decision'}
             </button>
             {storedDecision && !decisionSaved && (
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -544,6 +655,50 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
               </span>
             )}
           </div>
+
+          {/* A decision without a stated reason is not an audit record. The
+              server CHECK enforces this too; the button is disabled until it is
+              supplied so the operator is never surprised by a rejection. */}
+          <textarea
+            value={decisionReason}
+            onChange={e => setDecisionReason(e.target.value)}
+            placeholder="Reason for this decision (required — recorded in the audit trail)"
+            rows={2}
+            style={{ width: '100%', marginTop: 10, fontSize: 13 }}
+          />
+
+          {decisionError && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger, #b00020)' }}>
+              {decisionError}
+            </div>
+          )}
+
+          {/* Provenance. An operator authorising a controlled-substance release
+              is entitled to know whether that record actually reached the server. */}
+          {decisionSource === 'local-cache' && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              ⚠ This decision exists only in this browser. It has no server-side audit record
+              and no recorded approver. Re-record it to store it durably.
+            </div>
+          )}
+          {decisionSource === 'server' && !decisionError && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              ✓ Recorded server-side (append-only, attributed to the signed-in admin).
+            </div>
+          )}
+
+          {/* The authoritative decision could not be READ. This is not "no decision
+              exists" — it is unknown. Issuance is blocked (isHumanApproved is false,
+              because the gate refuses to run on unverified browser state). */}
+          {decisionSource === 'unavailable' && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--warning)' }}>
+              ⚠ The procurement decision could not be verified against the server, so the
+              authoritative decision for this batch is <strong>unknown</strong>. This is
+              <strong> not</strong> a statement that no decision exists. Issuing a buyer pack is
+              blocked until the decision can be read.
+              {resolved?.error ? ` (${resolved.error})` : ''}
+            </div>
+          )}
         </div>
 
         {/* Issue immutable buyer pack snapshot */}
@@ -557,7 +712,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
               disabled={!isHumanApproved || issuing}
               title={isHumanApproved ? undefined : 'Requires no blocking issues and a recorded "Progress" decision'}
             >
-              {issuing ? 'Issuing…' : latestSnapshot ? 'Re-Issue Buyer Pack (new version)' : 'Issue Buyer Pack'}
+              {issuing ? 'Issuing…' : latestSnapshot ? 'Re-Issue Buyer Pack (new version)' : snapshotLoadError ? 'Issue Buyer Pack (history unavailable)' : 'Issue Buyer Pack'}
             </button>
             {!isHumanApproved && (
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -567,6 +722,18 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
             {issueNotice && <span style={{ fontSize: 12, color: 'var(--success, #2e7d32)' }}>{issueNotice}</span>}
             {issueError && <span style={{ fontSize: 12, color: 'var(--warning)' }}>{issueError}</span>}
           </div>
+
+          {/* A failed read is NOT evidence that no snapshot exists. Say so
+              explicitly, so an operator never reads a blank panel as "this pack
+              has never been issued" and re-issues over an existing record. */}
+          {snapshotLoadError && !latestSnapshot && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--warning)' }}>
+              ⚠ The snapshot history could not be read, so it is unknown whether this pack has
+              already been issued. This is <strong>not</strong> a confirmation that none exists.
+              ({snapshotLoadError})
+            </div>
+          )}
+
           {latestSnapshot && (
             <div className="detail-rows" style={{ marginTop: 12 }}>
               <div className="detail-row"><span className="dl">Snapshot Version</span><span className="dv">v{latestSnapshot.manifest.version}</span></div>
