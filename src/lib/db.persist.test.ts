@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { InventoryItem, FarmProfile } from '../types'
+import type { InventoryItem, FarmProfile, ReviewRequest } from '../types'
 
 // ─── The actual defect, tested through the real db.ts call path ─────────────
 //
@@ -26,6 +26,24 @@ beforeEach(() => {
 
 const ITEMS = [{ id: 'batch-1', farmId: 'farm-1' }] as unknown as InventoryItem[]
 const FARMS = [{ id: 'farm-1', farmName: 'Real Farm Co' }] as unknown as FarmProfile[]
+const REQUESTS = [{ id: 'req-1', farmId: 'farm-1' }] as unknown as ReviewRequest[]
+
+/**
+ * EVERY write path that App.tsx can drive. The first version of this suite only
+ * exercised persistInventory/persistFarms and asserted "no ddp_* key is created" —
+ * which passed VACUOUSLY, because it never called the third persist effect
+ * (App.tsx:119, saveReviewRequests) or the demo-reset path (App.tsx:477). Both were
+ * still writing production data to the browser. Driving all of them here is what
+ * makes the "no ddp_* key" assertion mean anything.
+ */
+async function driveAllPersistPaths() {
+  const db = await import('./db')
+  const data = await import('../data')
+  db.persistInventory(ITEMS)          // App.tsx:117
+  db.persistFarms(FARMS)              // App.tsx:118
+  data.saveReviewRequests(REQUESTS)   // App.tsx:119
+  await db.resetDemoData()            // App.tsx:477
+}
 
 describe('SUPABASE mode — production data must NOT reach browser storage', () => {
   beforeEach(() => {
@@ -44,10 +62,22 @@ describe('SUPABASE mode — production data must NOT reach browser storage', () 
     expect(store['ddp_farms']).toBeUndefined()
   })
 
-  it('no ddp_* key is created at all by the persist effects', async () => {
-    const { persistInventory, persistFarms } = await import('./db')
-    persistInventory(ITEMS)
-    persistFarms(FARMS)
+  it('saveReviewRequests writes NOTHING (App.tsx:119; requests come from the DB at :161)', async () => {
+    const { saveReviewRequests } = await import('../data')
+    expect(saveReviewRequests(REQUESTS)).toBe(false)   // reports no persistence, truthfully
+    expect(store['ddp_review_requests']).toBeUndefined()
+  })
+
+  it('resetDemoData does NOT re-seed browser storage (App.tsx:477)', async () => {
+    const { resetDemoData } = await import('./db')
+    await resetDemoData()
+    expect(store['ddp_inventory']).toBeUndefined()
+    expect(store['ddp_farms']).toBeUndefined()
+  })
+
+  it('NO ddp_* key is created by ANY persist path — inventory, farms, requests, reset', async () => {
+    await driveAllPersistPaths()
+    // The assertion that the first version of this suite made vacuously.
     expect(Object.keys(store).filter(k => k.startsWith('ddp_'))).toEqual([])
   })
 
@@ -93,6 +123,28 @@ describe('DEMO mode — localStorage IS the store, behaviour must be unchanged',
     const { createInventoryBatch } = await import('./db')
     await createInventoryBatch(ITEMS[0])
     expect(JSON.parse(store['ddp_inventory'])[0].id).toBe('batch-1')
+  })
+
+  it('saveReviewRequests still persists', async () => {
+    const { saveReviewRequests } = await import('../data')
+    expect(saveReviewRequests(REQUESTS)).toBe(true)
+    expect(JSON.parse(store['ddp_review_requests'])[0].id).toBe('req-1')
+  })
+
+  it('resetDemoData still re-seeds the demo data', async () => {
+    const { resetDemoData } = await import('./db')
+    await resetDemoData()
+    expect(store['ddp_inventory']).toBeDefined()
+    expect(store['ddp_farms']).toBeDefined()
+    expect(JSON.parse(store['ddp_inventory']).length).toBeGreaterThan(0)
+  })
+
+  it('all four persist paths still write in demo mode', async () => {
+    await driveAllPersistPaths()
+    const keys = Object.keys(store).filter(k => k.startsWith('ddp_'))
+    expect(keys).toContain('ddp_inventory')
+    expect(keys).toContain('ddp_farms')
+    expect(keys).toContain('ddp_review_requests')
   })
 
   it('a storage quota failure does not throw out of the persist effect', async () => {

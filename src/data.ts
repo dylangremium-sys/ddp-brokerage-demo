@@ -1,6 +1,6 @@
 import type { InventoryItem, FarmProfile, ReviewRequest, MarketBenchmark, ComplianceVerificationTier, TestStatus } from './types'
 import { REQUIREMENT_OVERRIDE_KEY, RISK_OVERRIDE_KEY, DECISION_KEY, getFarmInventory } from './lib/procurementControl'
-import { safeSetItem } from './lib/browserPersistence'
+import { safeSetItem, shouldPersistToBrowser } from './lib/browserPersistence'
 
 export function testStatusLabel(s?: TestStatus): string {
   if (s === 'pass') return 'PASS'
@@ -652,8 +652,14 @@ export function saveFarms(farms: FarmProfile[]): boolean {
 }
 
 export function resetDemo() {
-  localStorage.setItem(INV_KEY, JSON.stringify(SEED_INVENTORY))
-  localStorage.setItem(FARM_KEY, JSON.stringify(SEED_FARMS))
+  // The removals below are always safe — deleting a browser copy never leaks.
+  // The SEED WRITES are demo-only: reachable in Supabase mode via App.tsx:477 ->
+  // db.ts resetDemoData(), they would recreate ddp_inventory / ddp_farms in the
+  // browser immediately after the guards above stopped them being written.
+  if (shouldPersistToBrowser()) {
+    safeSetItem(INV_KEY, JSON.stringify(SEED_INVENTORY))
+    safeSetItem(FARM_KEY, JSON.stringify(SEED_FARMS))
+  }
   localStorage.removeItem(FARM_DRAFT_KEY)
   localStorage.removeItem(REQUIREMENT_OVERRIDE_KEY)
   localStorage.removeItem(RISK_OVERRIDE_KEY)
@@ -685,8 +691,13 @@ export function loadReviewRequests(): ReviewRequest[] {
   }
 }
 
-export function saveReviewRequests(requests: ReviewRequest[]): void {
-  localStorage.setItem(REVIEW_REQUESTS_KEY, JSON.stringify(requests))
+// DEMO MODE ONLY. App.tsx:119 persists review requests on every state change, and
+// in Supabase mode they are fetched from farmer_review_requests (App.tsx:161) — so
+// this wrote production data into the operator's browser, exactly as the inventory
+// and farm effects did. Never throws (see saveInventory).
+export function saveReviewRequests(requests: ReviewRequest[]): boolean {
+  if (!shouldPersistToBrowser()) return false
+  return safeSetItem(REVIEW_REQUESTS_KEY, JSON.stringify(requests))
 }
 
 // ── Market Benchmarks (owner-controlled, farmer-visible) ─────────────────────
