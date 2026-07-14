@@ -1,10 +1,29 @@
 -- 10_BUYER_PACK_SNAPSHOTS_MVP.sql
 -- Buyer Pack Phase B, Step 2 — durable, append-only Buyer Pack evidence schema.
 --
--- STATUS: DRAFT — FOR REVIEW ONLY. NOT APPLIED. NOT RUN. NOT DEPLOYED.
--- ACL-TEST-EXEMPT: INTENTIONAL-DRAFT  (Buyer Pack is intentionally unapplied and
---   absent from production; its functions are not part of the applied corpus, so
---   the public-function EXECUTE ACL static test deliberately skips this file.)
+-- STATUS — BY ENVIRONMENT (never state "applied" without naming the environment):
+--   • Repository : committed and reviewed. Executable SQL below is unchanged since
+--                  it was applied to staging.
+--   • STAGING    : APPLIED and behaviourally VERIFIED (2026-07-14). Verified with
+--                  10_..._VERIFY.sql V1–V6 (read-only) plus a rolled-back
+--                  behavioural test: the RPC issues a snapshot, the server assigns
+--                  the version, re-issue appends a new version rather than
+--                  overwriting, the RPC refuses a non-'progress' decision and an
+--                  unnamed approver, and UPDATE/DELETE on a snapshot are rejected.
+--                  Nothing was left behind: the test transaction was ROLLED BACK.
+--   • PRODUCTION : NOT applied. NOT run. NOT deployed. The production cutover is
+--                  UNAPPROVED and requires a pre-application backup plus explicit
+--                  sign-off. Application to staging does NOT imply production
+--                  readiness and must not be read as approval.
+--
+-- ORDER: this migration MUST precede 17_PROCUREMENT_DECISIONS_MVP.sql, which holds
+--   a hard FK to public.buyer_pack_snapshots(snapshot_id). Applying 17 first fails.
+--
+-- ACL-TEST-EXEMPT: INTENTIONAL-DRAFT  (Retained deliberately. The public-function
+--   EXECUTE ACL static test covers the PRODUCTION corpus, and Buyer Pack is not
+--   applied to production, so this file is still outside that corpus and the test
+--   skips it. Revisit this exemption as part of the production cutover: once these
+--   functions exist in production they belong in the ACL test's scope.)
 -- Apply order: after AUTH_RLS_SCHEMA.sql (needs public.is_ddp_admin()) and after
 -- the tables it references (public.profiles, public.inventory_batches) exist.
 --
