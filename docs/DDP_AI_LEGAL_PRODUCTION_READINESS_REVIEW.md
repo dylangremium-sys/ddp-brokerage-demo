@@ -11,7 +11,7 @@
 1. **[VERIFIED] Migration 17 hard-depends on migration 10.** `17_PROCUREMENT_DECISIONS_MVP.sql:56` — `snapshot_id UUID REFERENCES public.buyer_pack_snapshots(snapshot_id)`. Applying 17 without 10 present fails (`relation does not exist`). **Order is fixed: 10 → 17.**
 2. **[VERIFIED] Asymmetric runtime fallback.** `procurementDecisionStore.ts:99-101` feature-detects `42P01` and degrades to local-cache if table 17 is absent. `buyerPackSnapshotSupabaseStore.ts:168` only falls back when Supabase is *unconfigured* — it does **not** detect a missing table/RPC. So in a Supabase-configured prod without migration 10, "Issue Buyer Pack" calls the absent RPC and errors.
 3. **[VERIFIED] The error is caught cleanly.** `DDPBuyerPreview.tsx:35-36` — the RPC failure surfaces as `setIssueError(message)`, not a crash. Severity of (2) is therefore "feature unavailable / clean error," not "outage."
-4. ~~**[VERIFIED] The remediation-sprint work is uncommitted.**~~ **[CORRECTED — no longer true.]** All Phase-D changes (guard fix, decision store, snapshot Supabase store, migrations 16/17, staging-suite fixes) are committed: `94c5c42` (implementation) and `9ccffab` (reports). `git status` is clean. Still not pushed and not deployed.
+4. ~~**[VERIFIED] The remediation-sprint work is uncommitted.**~~ **[CORRECTED — no longer true.]** All Phase-D changes are committed and pushed, then split: the **guard fix, staging-suite hardening and `16_..._VERIFY.sql` merged to `main`** via **PR #3** (`4a77828`, merge commit `677f31f`); the **decision store, snapshot store and migration 17** are in **PR #4** (`9da1ec6`), which is **open and NOT merged**; these reports are **PR #5**. `git status` is clean. Nothing from PR #4 is deployed, and no migration has been applied.
 
 ---
 
@@ -23,7 +23,7 @@
 | 2 | Migrations 10 & 17 not applied to staging | **MEDIUM PRIORITY** | [VERIFIED] The app runs without them (decision path degrades to local-cache). They gate the *durable, append-only decision/audit trail* — the compliance value, not app function. Becomes a **BLOCKER specifically for the compliance-audit claim**, not for the app booting. |
 | 3 | Farmer UPDATE policy intentionally absent | **NOT AN ISSUE** | [VERIFIED] Q1/Q2 staging: `farms` has only `admin all`, `farmer insert own`, `farmer select own`. Its absence is *why* self-certification is not reproducible. **NO CHANGE REQUIRED** — this is correct-by-absence. |
 | 4 | Future regression if farmer UPDATE is added without field protection | **HIGH PRIORITY (preventive)** | [VERIFIED contingency] `trg_protect_farm_admin_fields` is absent (Q1). If `FARM_RESAVE_PERSISTENCE` is ever applied, it introduces `farms: farmer update own` with no column guard → live self-certification. This is a latent trap, not a current defect. Must be fenced before that migration is ever applied anywhere. |
-| — | ~~Remediation code uncommitted~~ **[CORRECTED — CLOSED]** | **RESOLVED** | The code is committed (`94c5c42`, `9ccffab`); `git status` is clean. The stated risk ("one `git checkout` from loss") no longer exists. |
+| — | ~~Remediation code uncommitted~~ **[CORRECTED — CLOSED]** | **RESOLVED** | The code is committed and pushed: PR #3 (`4a77828`) merged to `main`; PR #4 (`9da1ec6`) open, not merged; PR #5 open. The stated risk ("one `git checkout` from loss") no longer exists. |
 
 ---
 
@@ -112,7 +112,7 @@ Scored for *production readiness of the current scope*, not aspirational scope. 
 | **Infrastructure** | **42** | [VERIFIED] Vercel auto-deploy from `main` with no CD gate; no observability; backups/PITR unverified; bus factor 1. |
 | **AI** | **48** | [VERIFIED] Safe *for draft-only scope* (human gate real, guard fixed). Not ready to expand: no retrieval/citations/evals. |
 | **Operational readiness** | **35** | [VERIFIED] No monitoring, no runbook, no on-call, single maintainer. |
-| **Developer workflow** | **58** | [VERIFIED] Strong static CI (**497** tests after `febe95a`; was 464 when written — tsc, lint, build) + live staging security suite. Weak: no CD, migrations by hand. **[CORRECTED]** "reviewed work uncommitted" no longer applies (committed in `94c5c42`/`9ccffab`). |
+| **Developer workflow** | **58** | [VERIFIED] Strong static CI (**434** tests on `main` today after PR #3 (`4a77828`); 464 when written; **497** measured on PR #4 (`9da1ec6`, open, not merged) — plus tsc, lint, build) + live staging security suite. Weak: no CD, migrations by hand. **[CORRECTED]** "reviewed work uncommitted" no longer applies — see the PR split above. |
 | **Testing** | **56** | [VERIFIED] 464 unit tests (pure logic) + live staging security suite. Zero component/E2E tests; zero AI evals. |
 | **Deployment** | **44** | [VERIFIED] Auto-deploy works but ungated; no rollback drill; migrations manual with a hard ordering dependency. |
 | **Documentation** | **76** | [VERIFIED] Extensive, unusually honest: VERIFY/ROLLBACK pairs, audit reports, this review. |
@@ -126,7 +126,7 @@ Scored for *production readiness of the current scope*, not aspirational scope. 
 ## TASK 7 — Final Engineering Roadmap (measurable value only)
 
 **Immediate (this week)**
-- ~~Commit the verified Phase-D working-tree changes to a branch~~ **[CORRECTED — DONE]** committed as `94c5c42`/`9ccffab`. Opening the PR remains outstanding. *Value: the reviewed code becomes reproducible/deployable.*
+- ~~Commit the verified Phase-D working-tree changes to a branch and open a PR~~ **[CORRECTED — DONE]** committed and split into three PRs: PR #3 (`4a77828`) **merged**, PR #4 (`9da1ec6`) **open**, PR #5 **open**. *Value: the reviewed code becomes reproducible/deployable.*
 - Run `16_PRODUCTION_SAFETY_VERIFY.sql` Q1/Q2/Q4/Q5 **read-only against production**. *Value: closes the single Critical UNKNOWN.*
 - Apply migrations **10 → 17 to staging**; run `10_/17_..._VERIFY.sql`. *Value: activates the durable decision/audit trail in staging.*
 
@@ -168,7 +168,7 @@ Scored for *production readiness of the current scope*, not aspirational scope. 
 
 ## Verified-fact / judgement / unknown ledger
 
-- **Verified:** staging security posture (RLS/ACLs/audit/escalation/self-cert), migration 17→10 FK, snapshot-store non-fallback, graceful error handling, no monitoring, CI-without-CD, tests/tsc/build green (464 when written; **497** after `febe95a`). **[CORRECTED]** "uncommitted work" removed — the work is committed (`94c5c42`, `9ccffab`).
+- **Verified:** staging security posture (RLS/ACLs/audit/escalation/self-cert), migration 17→10 FK, snapshot-store non-fallback, graceful error handling, no monitoring, CI-without-CD, tests/tsc/build green (464 when written; **434** on `main` today after PR #3 (`4a77828`); **497** on PR #4 (`9da1ec6`, open, not merged)). **[CORRECTED]** "uncommitted work" removed — the work is committed and split across PR #3 (merged), PR #4 (open) and PR #5.
 - **Judgement:** production probably mirrors staging; readiness scores; AI-expansion prerequisites.
 - **Unknown (must close before prod):** production `farms` policies/triggers; production backups/PITR; production Auth settings.
 

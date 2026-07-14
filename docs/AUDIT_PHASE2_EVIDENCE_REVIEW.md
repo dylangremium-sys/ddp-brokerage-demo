@@ -7,11 +7,11 @@
 
 > ### ⚠ SUPERSEDED IN PART — read before quoting this document
 >
-> This falsification pass describes **`f5c8cbb`**. It was committed (`9ccffab`) alongside the remediation (`94c5c42`) that falsifies its Finding 2. Left as written, as the historical record. Against the current tree:
+> This falsification pass describes **`f5c8cbb`**. It was committed (`9ccffab`) alongside the remediation (`94c5c42`), which was later **split**: **PR #3** (`4a77828`) is **merged to `main`** (`677f31f`); **PR #4** (`9da1ec6`) is **open and NOT merged**; **PR #5** is these documents. Left as written, as the historical record. Against the current tree:
 >
-> - **Finding 2 — "The immutable snapshot RPC has never been called … Zero invocations. No wrapper, no indirect call, no server-side use, no client-side use. VERIFIED FACT."** (`:60`, `:78`, `:112`). **NOW FALSE.** `src/lib/buyerPackSnapshotSupabaseStore.ts:41,114` calls `issue_buyer_pack_snapshot` via `client.rpc()`, wired at `DDPBuyerPreview.tsx:23`. The "Built ✅ / Connected ❌" row is now Built ✅ / Connected ✅.
-> - **The guard's negation-window defect** described at `:148` is **fixed** (`aiComplianceGuard.ts:99`, clause-bounded token scope; seven bypass strings pinned as tests).
-> - **Finding 1** (localStorage as the release-layer system of record) is **partly addressed**: a server-authoritative, append-only path now exists (`procurementDecisionStore.ts`, migration 17). It is **not** yet effective at runtime — migration 17 is still unapplied — so the *runtime* claim stands while the *code-level* claim does not.
+> - **Finding 2 — "The immutable snapshot RPC has never been called … Zero invocations. No wrapper, no indirect call, no server-side use, no client-side use. VERIFIED FACT."** (`:60`, `:78`, `:112`). **SUPERSEDED BY PR #4 — BUT STILL TRUE OF `main` TODAY.** The caller (`src/lib/buyerPackSnapshotSupabaseStore.ts:41,114`, wired at `DDPBuyerPreview.tsx:23`) exists **only in PR #4** (`9da1ec6`), which is **open and not merged**; `main` (`677f31f`) does not contain it. The "Built ✅ / Connected ❌" row becomes Built ✅ / Connected ✅ **only when PR #4 merges**.
+> - **The guard's negation-window defect** described at `:148` is **fixed and merged to `main`** via PR #3 (`4a77828`) (`aiComplianceGuard.ts:99`, clause-bounded token scope; seven bypass strings pinned as tests).
+> - **Finding 1** (localStorage as the release-layer system of record) is **partly addressed in code only**: a server-authoritative, append-only path exists (`procurementDecisionStore.ts`, migration 17) — but that code is in **PR #4** (`9da1ec6`, open, not merged), it is **not on `main`**, and **migration 17 has not been applied to any database**. The *runtime* claim therefore **stands in full**.
 
 ---
 
