@@ -10,6 +10,21 @@
 -- behaviour. Both are needed — a trigger can exist and still not fire.
 --
 -- ===========================================================================
+-- PRECONDITION — DO NOT RUN OTHERWISE
+-- ===========================================================================
+--   Migrations 10 AND 17 must ALREADY be APPLIED and VERIFIED in the target
+--   database before this script is run:
+--     • 10_BUYER_PACK_SNAPSHOTS_VERIFY.sql   — V1–V6 and V4b all passing
+--     • 17_PROCUREMENT_DECISIONS_VERIFY.sql  — V1–V8 all returning 'ok'
+--
+--   This script verifies BEHAVIOUR; those two verify STRUCTURE. Run them first.
+--
+--   If the migrations are absent, the first statement inside BEGIN fails with
+--   "relation ... does not exist", the transaction aborts, and ROLLBACK leaves
+--   nothing behind. That is harmless — but the script then proves nothing. Do
+--   not treat such a run as evidence. Apply and verify the migrations first.
+--
+-- ===========================================================================
 -- ⚠  READ THIS BEFORE RUNNING. THIS FILE WRITES.
 -- ===========================================================================
 --   • MANUAL USE ONLY. Never run this in an automated pipeline, CI job, cron,
