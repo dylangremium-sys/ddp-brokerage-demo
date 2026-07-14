@@ -14,9 +14,17 @@
 // The 200 response is passed through byte-for-byte: successful AI output, its
 // guardrails and its provenance are untouched.
 
-import { handleAiSummaryRequest } from './serverAiSummary'
-import type { NormalizedRequest, ServerAiSummaryDeps } from './serverAiSummary'
-import { logServerError, newRequestId } from './observability'
+// The .js extensions are REQUIRED, not stylistic. Vercel ships this function as
+// native Node ESM and does not bundle it, so an extensionless relative import
+// resolves to a file that does not exist on disk and the function dies at load
+// with ERR_MODULE_NOT_FOUND before any handler code runs. Vite, vitest and tsc
+// all resolve extensionless imports happily, so nothing in `npm run ci:verify`
+// catches this — only the deployed runtime does. Every other import in this
+// function's graph already uses .js for the same reason (serverAiSummary.ts:1-8,
+// api/compliance/ai-summary.ts).
+import { handleAiSummaryRequest } from './serverAiSummary.js'
+import type { NormalizedRequest, ServerAiSummaryDeps } from './serverAiSummary.js'
+import { logServerError, newRequestId } from './observability.js'
 
 export const AI_SUMMARY_ROUTE = 'api/compliance/ai-summary'
 

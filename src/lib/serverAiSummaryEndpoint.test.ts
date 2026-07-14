@@ -255,4 +255,23 @@ describe('endpoint source — on the AI boundary, so it inherits the boundary ru
     expect(SRC).not.toMatch(/localStorage|sessionStorage/)
     expect(SRC).not.toMatch(/import\.meta\.env|SERVICE_ROLE|service_role/)
   })
+
+  // ─── Regression guard: the deployed-runtime bug this file already caused ───
+  //
+  // Vercel ships this module as native Node ESM and does NOT bundle it, so an
+  // extensionless relative import resolves to nothing on disk and the whole
+  // function dies at load with ERR_MODULE_NOT_FOUND — before any handler code
+  // runs, so not even the observability logging survives it. This shipped to
+  // production once. Vite, vitest and tsc all resolve extensionless imports, so
+  // `npm run ci:verify` is structurally blind to it: this assertion is the only
+  // thing standing between a missing '.js' and a dead endpoint.
+  it('every relative import carries an explicit .js extension (Node ESM, unbundled)', () => {
+    const relativeImports = [...SRC.matchAll(/from\s+'(\.[^']*)'/g)].map((m) => m[1])
+
+    expect(relativeImports.length).toBeGreaterThan(0)
+    for (const specifier of relativeImports) {
+      expect(specifier, `relative import must end in .js or the deployed function cannot load it: ${specifier}`)
+        .toMatch(/\.js$/)
+    }
+  })
 })
