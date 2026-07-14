@@ -353,9 +353,22 @@ export function loadProcurementDecisions(): Record<string, StoredDecision> {
   }
 }
 
-export function saveProcurementDecision(batchId: string, decision: ProcurementDecision, notes?: string): void {
+/**
+ * `decidedAt` may be supplied to preserve an AUTHORITATIVE timestamp — the
+ * server's decided_at, when caching a decision read back from the server. It is
+ * generated locally only for a genuinely local decision. This matters because
+ * prepareBuyerPackSnapshotInput freezes decidedAt into an immutable buyer-pack
+ * snapshot as the approval timestamp: re-stamping it on every cache refresh would
+ * let merely opening a page rewrite when the decision was made.
+ */
+export function saveProcurementDecision(
+  batchId: string,
+  decision: ProcurementDecision,
+  notes?: string,
+  decidedAt?: string,
+): void {
   const all = loadProcurementDecisions()
-  all[batchId] = { decision, notes, decidedAt: new Date().toISOString() }
+  all[batchId] = { decision, notes, decidedAt: decidedAt ?? new Date().toISOString() }
   localStorage.setItem(DECISION_KEY, JSON.stringify(all))
 }
 

@@ -5,6 +5,7 @@ import {
   recordDecision,
   listLocalOnlyDecisions,
   migrateLocalDecision,
+  DecisionReadUnavailableError,
 } from './procurementDecisionStore'
 import {
   DECISION_KEY,
@@ -170,10 +171,20 @@ describe('recordDecision', () => {
     expect(result.error).toMatch(/row-level security/i)
   })
 
-  it('never loses the decision: a failed server write still leaves it in the cache', async () => {
+  // CORRECTED (Codex P1). This test previously asserted the opposite — that a
+  // server-REFUSED write "still leaves it in the cache" — which encoded the
+  // vulnerability as intended behaviour: the buyer-pack issue gate reads that
+  // cache, so a decision the server rejected could authorise a release. Nothing
+  // is lost by not caching it: the failure is returned to the caller, which
+  // surfaces it and leaves the operator to retry against the server.
+  it('a server-REFUSED write is not cached, and the failure is surfaced to the caller', async () => {
     const { client } = makeClient({ insertError: { code: '42501', message: 'denied' } })
-    await recordDecision({ batchId: 'b', decision: 'reject', reason: 'r' }, client)
-    expect(loadProcurementDecisions()['b'].decision).toBe('reject')
+    const result = await recordDecision({ batchId: 'b', decision: 'reject', reason: 'r' }, client)
+
+    expect(result.ok).toBe(false)
+    expect(result.persistedTo).toBe('none')
+    expect(result.error).toMatch(/denied/i)
+    expect(loadProcurementDecisions()['b']).toBeUndefined()
   })
 })
 
@@ -294,3 +305,192 @@ describe('every decision the UI offers round-trips through the server store', ()
 // asserted in scripts/migration-17-decision-set.test.mjs, which compares the SQL
 // CHECK against the TypeScript union directly (this file cannot read from disk —
 // the app tsconfig does not expose node types to src).
+
+// ═══ Authorization hardening (Codex P1/P1/P2) ══════════════════════════════
+//
+// The buyer-pack issue gate reads the procurement decision. Migration 10's RPC
+// trusts the CLIENT-SUPPLIED p_procurement_decision (10_..._MVP.sql:262) and does
+// not verify a row in procurement_decisions — so the decision the client believes
+// in IS the authorization. Three ways that belief could be wrong:
+//
+//   1. a server-REFUSED write was cached anyway and read back as an approval;
+//   2. a server read that FAILED (RLS/permission/transient) silently degraded to
+//      a stale cached 'progress';
+//   3. the cached decidedAt was re-stamped with browser time, rewriting the
+//      approval timestamp frozen into an immutable snapshot.
+//
+// These tests assert observable outcomes — what is in the cache, what resolves,
+// and what a subsequent read reports — not which functions were called.
+
+const PERMISSION_DENIED = { code: '42501', message: 'new row violates row-level security policy' }
+const AUTH_FAILURE = { code: 'PGRST301', message: 'JWT expired' }
+const TRANSIENT = { message: 'Failed to fetch' }
+const TABLE_ABSENT = { code: '42P01', message: 'relation "procurement_decisions" does not exist' }
+
+describe('write path — a server-refused decision must never authorize issuance', () => {
+  it('1. a successful server insert updates the local cache', async () => {
+    const { client, inserted } = makeClient({})
+    const result = await recordDecision({ batchId: 'b1', decision: 'progress', reason: 'COA reviewed' }, client)
+
+    expect(result).toMatchObject({ ok: true, persistedTo: 'server' })
+    expect(inserted).toHaveLength(1)
+    expect(loadProcurementDecisions()['b1'].decision).toBe('progress')
+  })
+
+  it('2. a missing-table insert falls back to the local cache', async () => {
+    const { client } = makeClient({ insertError: TABLE_ABSENT })
+    const result = await recordDecision({ batchId: 'b2', decision: 'progress', reason: 'r' }, client)
+
+    expect(result).toMatchObject({ ok: true, persistedTo: 'local-cache' })
+    expect(loadProcurementDecisions()['b2'].decision).toBe('progress')
+  })
+
+  it.each([
+    ['RLS/permission denied', PERMISSION_DENIED],
+    ['authentication failure', AUTH_FAILURE],
+    ['transient/network failure', TRANSIENT],
+  ])('3+4. a %s insert fails AND caches nothing', async (_label, insertError) => {
+    const { client } = makeClient({ insertError })
+
+    const result = await recordDecision({ batchId: 'b3', decision: 'progress', reason: 'r' }, client)
+
+    expect(result.ok).toBe(false)
+    expect(result.persistedTo).toBe('none')
+    // THE ASSERTION THAT MATTERS: no approval was created.
+    expect(loadProcurementDecisions()['b3']).toBeUndefined()
+  })
+
+  it('5. a failed insert does not overwrite an existing legitimate cached decision', async () => {
+    saveProcurementDecision('b4', 'hold', 'previously held', '2026-07-01T00:00:00Z')
+    const { client } = makeClient({ insertError: PERMISSION_DENIED })
+
+    const result = await recordDecision({ batchId: 'b4', decision: 'progress', reason: 'trying to progress' }, client)
+
+    expect(result.ok).toBe(false)
+    const cached = loadProcurementDecisions()['b4']
+    expect(cached.decision).toBe('hold')                 // prior record survives
+    expect(cached.decidedAt).toBe('2026-07-01T00:00:00Z')
+    expect(cached.notes).toBe('previously held')
+  })
+
+  it('6. a failed progress insert cannot later resolve as an approved decision', async () => {
+    const { client: writeClient } = makeClient({ insertError: PERMISSION_DENIED })
+    await recordDecision({ batchId: 'b5', decision: 'progress', reason: 'r' }, writeClient)
+
+    // Now read it back: the server has no row, and the cache must not have one.
+    const { client: readClient } = makeClient({ serverRow: null })
+    const resolved = await resolveDecision('b5', readClient)
+
+    expect(resolved.decision).toBeNull()      // NOT 'progress' — the gate stays shut
+    expect(resolved.source).toBe('none')
+  })
+})
+
+describe('read path — only a genuinely absent table may fall back to cache', () => {
+  it('7. a missing decision table falls back to the cache', async () => {
+    saveProcurementDecision('r1', 'progress', 'pre-migration decision')
+    const { client } = makeClient({ readError: TABLE_ABSENT })
+
+    const resolved = await resolveDecision('r1', client)
+
+    expect(resolved.decision).toBe('progress')
+    expect(resolved.source).toBe('local-cache')
+  })
+
+  it.each([
+    ['8. permission denial', PERMISSION_DENIED],
+    ['9. authentication failure', AUTH_FAILURE],
+    ['10. transient/server failure', TRANSIENT],
+    ['schema drift (undefined_column) is NOT a missing table', { code: '42703', message: 'column "reason" does not exist' }],
+  ])('%s does not fall back to the cache', async (_label, readError) => {
+    // A stale 'progress' sits in the cache — precisely the dangerous case.
+    saveProcurementDecision('r2', 'progress', 'stale local approval')
+    const { client } = makeClient({ readError })
+
+    const resolved = await resolveDecision('r2', client)
+
+    // 11. the stale cached 'progress' is NOT returned
+    expect(resolved.decision).toBeNull()
+    expect(resolved.source).toBe('unavailable')
+    expect(resolved.error).toBeTruthy()
+    // and the cache itself is left intact for later reconciliation
+    expect(loadProcurementDecisions()['r2'].decision).toBe('progress')
+  })
+
+  it('11b. fetchServerDecision throws a typed error rather than reporting "no decision"', async () => {
+    const { client } = makeClient({ readError: PERMISSION_DENIED })
+    await expect(fetchServerDecision('r3', client)).rejects.toBeInstanceOf(DecisionReadUnavailableError)
+  })
+
+  it('12. a successful server read overrides stale local state', async () => {
+    saveProcurementDecision('r4', 'progress', 'stale local approval')
+    const { client } = makeClient({
+      serverRow: { decision: 'reject', reason: 'server says reject', decided_at: '2026-07-02T09:00:00Z', decided_by: 'u1' },
+    })
+
+    const resolved = await resolveDecision('r4', client)
+
+    expect(resolved.decision).toBe('reject')
+    expect(resolved.source).toBe('server')
+    expect(loadProcurementDecisions()['r4'].decision).toBe('reject')  // cache corrected
+  })
+})
+
+describe('timestamp integrity — the approval time is the server’s, not the browser’s', () => {
+  const SERVER_TS = '2026-07-02T09:00:00Z'
+
+  it('13. a server decision retains its original decided_at', async () => {
+    const { client } = makeClient({
+      serverRow: { decision: 'progress', reason: 'ok', decided_at: SERVER_TS, decided_by: 'u1' },
+    })
+
+    const resolved = await resolveDecision('t1', client)
+
+    expect(resolved.decidedAt).toBe(SERVER_TS)
+    expect(loadProcurementDecisions()['t1'].decidedAt).toBe(SERVER_TS)  // not browser time
+  })
+
+  it('14. refreshing the same server decision does not change the cached timestamp', async () => {
+    const { client } = makeClient({
+      serverRow: { decision: 'progress', reason: 'ok', decided_at: SERVER_TS, decided_by: 'u1' },
+    })
+
+    await resolveDecision('t2', client)
+    const first = loadProcurementDecisions()['t2'].decidedAt
+    await resolveDecision('t2', client)   // simulate re-opening the page
+    const second = loadProcurementDecisions()['t2'].decidedAt
+
+    expect(first).toBe(SERVER_TS)
+    expect(second).toBe(SERVER_TS)        // opening the pack does not rewrite the approval time
+  })
+
+  it('15. a genuinely local-only decision still receives a local timestamp', async () => {
+    const before = Date.now()
+    const { client } = makeClient({ insertError: TABLE_ABSENT })
+
+    await recordDecision({ batchId: 't3', decision: 'progress', reason: 'r' }, client)
+
+    const cached = loadProcurementDecisions()['t3']
+    expect(cached.decidedAt).toBeTruthy()
+    expect(new Date(cached.decidedAt).getTime()).toBeGreaterThanOrEqual(before)
+  })
+
+  it('16. the snapshot approval timestamp is the authoritative server timestamp', async () => {
+    // prepareBuyerPackSnapshotInput consumes { decision, notes, decidedAt } and
+    // freezes decidedAt as the snapshot approval timestamp. Feed it exactly what
+    // resolveDecision now yields for a server row.
+    const { client } = makeClient({
+      serverRow: { decision: 'progress', reason: 'ok', decided_at: SERVER_TS, decided_by: 'u1' },
+    })
+
+    const resolved = await resolveDecision('t4', client)
+    const snapshotInputDecision = {
+      decision: resolved.decision,
+      notes: resolved.reason ?? undefined,
+      decidedAt: resolved.decidedAt,
+    }
+
+    expect(snapshotInputDecision.decidedAt).toBe(SERVER_TS)
+    expect(snapshotInputDecision.decidedAt).not.toBe(new Date().toISOString())
+  })
+})
