@@ -104,7 +104,7 @@ jobs:
         run: npm ci
 
       - name: Install Vercel CLI (pinned)
-        run: npm install --global vercel@55.0.0
+        run: npm install --global vercel@56.2.0
 
       - name: Pull Production configuration
         env:
