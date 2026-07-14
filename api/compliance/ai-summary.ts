@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { handleAiSummaryRequest } from '../../src/lib/serverAiSummary.js'
 import type { NormalizedRequest, ServerAiSummaryDeps } from '../../src/lib/serverAiSummary.js'
+import { AI_SUMMARY_ROUTE, runAiSummaryEndpoint } from '../../src/lib/serverAiSummaryEndpoint.js'
+import { logServerError, newRequestId } from '../../src/lib/observability.js'
 import { createServerAiSummaryProvider } from '../../src/lib/serverAiProvider.js'
 import type { ComplianceAiSummaryProvider } from '../../src/lib/aiComplianceProvider.js'
 
@@ -78,24 +79,36 @@ function buildDeps(): ServerAiSummaryDeps | null {
 }
 
 export default async function handler(req: VercelRequestLike, res: VercelResponseLike): Promise<void> {
-  try {
-    const deps = buildDeps()
-    if (!deps) {
-      res.status(503).json({ ok: false, error: 'server_misconfigured', message: 'The service is not configured.' })
-      return
-    }
+  // One correlation ID per request, generated before anything can fail, so that
+  // even a fault inside buildDeps() is reportable. It is echoed to the caller in
+  // every failure response and appears in the matching log line — that pairing is
+  // the whole point: a user can quote the ID and we can find the event.
+  const requestId = newRequestId()
 
+  const method = req.method ?? 'GET'
+
+  try {
     const normalized: NormalizedRequest = {
-      method: req.method ?? 'GET',
+      method,
       contentType: headerValue(req.headers['content-type']),
       authorization: headerValue(req.headers['authorization']),
       body: req.body,
     }
 
-    const result = await handleAiSummaryRequest(normalized, deps)
+    const result = await runAiSummaryEndpoint(normalized, buildDeps(), requestId)
     res.status(result.status).json(result.body)
   } catch {
-    // Never surface a stack trace, vendor text, token, or secret.
-    res.status(500).json({ ok: false, error: 'internal_error', message: 'An unexpected error occurred.' })
+    // Backstop: reached only if buildDeps() or the response write itself throws.
+    // The exception is never logged, inspected or surfaced — it is the object most
+    // likely to carry a token, a prompt or vendor text. Only safe codes escape.
+    logServerError({
+      event: 'api_error',
+      requestId,
+      category: 'internal_error',
+      status: 500,
+      method,
+      route: AI_SUMMARY_ROUTE,
+    })
+    res.status(500).json({ ok: false, error: 'internal_error', message: 'An unexpected error occurred.', requestId })
   }
 }
