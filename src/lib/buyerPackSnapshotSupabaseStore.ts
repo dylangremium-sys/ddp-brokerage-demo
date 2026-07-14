@@ -40,6 +40,39 @@ export interface SnapshotClientLike {
 const TABLE = 'buyer_pack_snapshots'
 const RPC = 'issue_buyer_pack_snapshot'
 
+// ─── Missing-schema detection (migration 10 not applied) ────────────────────
+//
+// Mirrors procurementDecisionStore.isTableMissing(): a database that simply does
+// not have the migration-10 objects yet is "server unavailable", never an
+// application error — the app must keep working against localStorage until
+// migration 10 is applied. EVERY OTHER ERROR still propagates: network, auth,
+// permission/RLS, validation, and the 23505 append-only guard must NOT be
+// swallowed, or a refused write would look like a successful one.
+//
+// The two call paths fail differently, so each is classified against only the
+// codes it can actually raise:
+//   readAll() → PostgREST table read: 42P01 undefined_table, PGRST205 table not
+//               found in the schema cache.
+//   save()    → PostgREST RPC: 42883 undefined_function, PGRST202 function not
+//               found in the schema cache.
+const MISSING_TABLE_CODES = new Set(['42P01', 'PGRST205'])
+const MISSING_FUNCTION_CODES = new Set(['42883', 'PGRST202'])
+
+/** Raised only when the migration-10 objects are absent. Callers fall back. */
+export class SnapshotSchemaMissingError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SnapshotSchemaMissingError'
+  }
+}
+
+function isMissingObject(error: RpcErrorLike, codes: Set<string>): boolean {
+  if (error.code && codes.has(error.code)) return true
+  // PostgREST does not always populate `code`; its schema-cache misses and
+  // Postgres's undefined_table/function both say so in the message.
+  return /does not exist|could not find the (table|function)|schema cache/i.test(error.message ?? '')
+}
+
 /** Row shape returned by the RPC and by a direct table read. */
 interface SnapshotRow {
   snapshot_id: string
@@ -97,7 +130,14 @@ export function createSupabaseBuyerPackSnapshotRepository(
       .eq('pack_id', packId)
       .order('version', { ascending: true })
 
-    if (error) throw new Error(error.message ?? 'Could not read buyer pack snapshots.')
+    if (error) {
+      // Migration 10 not applied ⇒ degrade (the caller falls back). Anything
+      // else — permission denied, network, malformed request — still throws.
+      if (isMissingObject(error, MISSING_TABLE_CODES)) {
+        throw new SnapshotSchemaMissingError(`${TABLE} is not deployed: ${error.message ?? error.code ?? 'unknown'}`)
+      }
+      throw new Error(error.message ?? 'Could not read buyer pack snapshots.')
+    }
     if (!Array.isArray(data)) return []
     return data.filter(isSnapshotRow).map(rowToSnapshot)
   }
@@ -125,11 +165,16 @@ export function createSupabaseBuyerPackSnapshotRepository(
       if (error) {
         // UNIQUE (pack_id, version) violation ⇒ the append-only guard did its
         // job. Surface it in the same shape the localStorage store throws, so
-        // call sites need no special-casing.
+        // call sites need no special-casing. Checked BEFORE the missing-object
+        // test: a refused write must never be mistaken for an absent schema.
         if (error.code === '23505') {
           throw new Error(
             `Buyer pack snapshot ${m.packId} version ${m.version} already exists and cannot be overwritten.`,
           )
+        }
+        // The RPC does not exist ⇒ migration 10 is not applied ⇒ degrade.
+        if (isMissingObject(error, MISSING_FUNCTION_CODES)) {
+          throw new SnapshotSchemaMissingError(`${RPC}() is not deployed: ${error.message ?? error.code ?? 'unknown'}`)
         }
         throw new Error(error.message ?? 'The buyer pack snapshot could not be issued.')
       }
@@ -153,9 +198,46 @@ export function createSupabaseBuyerPackSnapshotRepository(
 }
 
 /**
+ * Wraps the Supabase repository so that a database WITHOUT the migration-10
+ * objects degrades to `localFallback` instead of failing.
+ *
+ * Feature detection is per-operation, not per-process: the schema can appear
+ * (migration applied) between two calls, and the very next call then uses the
+ * server. This mirrors procurementDecisionStore, which already feature-detects
+ * 42P01 — the two stores now behave the same way, so applying migration 10 and
+ * deploying the app are independent, order-insensitive operations.
+ *
+ * ONLY SnapshotSchemaMissingError triggers the fallback. Permission/RLS denials,
+ * the 23505 append-only guard, validation, auth and network failures all
+ * propagate unchanged — degrading on those would turn a refused write into a
+ * silent local one, which is exactly the failure this store exists to prevent.
+ */
+function withLocalFallback(
+  server: BuyerPackSnapshotRepository,
+  localFallback: BuyerPackSnapshotRepository,
+): BuyerPackSnapshotRepository {
+  async function orFallback<T>(attempt: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
+    try {
+      return await attempt()
+    } catch (err) {
+      if (err instanceof SnapshotSchemaMissingError) return fallback()
+      throw err
+    }
+  }
+
+  return {
+    save: s => orFallback(() => server.save(s), () => localFallback.save(s)),
+    getAll: p => orFallback(() => server.getAll(p), () => localFallback.getAll(p)),
+    getLatest: p => orFallback(() => server.getLatest(p), () => localFallback.getLatest(p)),
+    getVersion: (p, v) => orFallback(() => server.getVersion(p, v), () => localFallback.getVersion(p, v)),
+  }
+}
+
+/**
  * Chooses the repository for the current environment.
  *
- * Supabase configured  ⇒ server-backed, immutable, RPC-gated (the real thing).
+ * Supabase configured  ⇒ server-backed, immutable, RPC-gated (the real thing),
+ *                        degrading to `localFallback` if migration 10 is absent.
  * Not configured (demo) ⇒ the existing localStorage repository, unchanged.
  *
  * This is what keeps the app working in demo mode and keeps the migration and
@@ -166,5 +248,5 @@ export function selectBuyerPackSnapshotRepository(
   client: SnapshotClientLike | null = defaultClient as SnapshotClientLike | null,
 ): BuyerPackSnapshotRepository {
   if (!client) return localFallback
-  return createSupabaseBuyerPackSnapshotRepository(client)
+  return withLocalFallback(createSupabaseBuyerPackSnapshotRepository(client), localFallback)
 }

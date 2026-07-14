@@ -134,14 +134,34 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   const [issuing, setIssuing] = useState(false)
   const [issueError, setIssueError] = useState<string | null>(null)
   const [issueNotice, setIssueNotice] = useState<string | null>(null)
+  // A snapshot READ that failed. Distinct from latestSnapshot === null, which
+  // means "no snapshot exists". A failed read knows nothing about existence, so
+  // the UI must not present it as an absence.
+  const [snapshotLoadError, setSnapshotLoadError] = useState<string | null>(null)
 
   const approver = (approverName && approverName.trim()) || 'DDP Admin'
 
   // Load the latest persisted snapshot for this batch on mount / batch change.
   // Async because the repository contract is now Promise-based (Phase B step 1).
+  //
+  // The repository rejects on a genuine read failure (permission, network). It no
+  // longer rejects merely because migration 10 is absent — that degrades to the
+  // local repository inside the store. Either way this must not produce an
+  // unhandled rejection, and a failed read must not be rendered as "no snapshot".
   useEffect(() => {
     let cancelled = false
-    void snapshotRepo.getLatest(item.id).then(s => { if (!cancelled) setLatestSnapshot(s) })
+    snapshotRepo.getLatest(item.id).then(
+      s => {
+        if (cancelled) return
+        setLatestSnapshot(s)
+        setSnapshotLoadError(null)  // a later batch loading cleanly clears an earlier failure
+      },
+      (err: unknown) => {
+        if (cancelled) return
+        setLatestSnapshot(null)
+        setSnapshotLoadError(err instanceof Error ? err.message : 'Could not load the snapshot history.')
+      },
+    )
     return () => { cancelled = true }
   }, [item.id])
 
@@ -154,7 +174,14 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
       if (!latestSnapshot) return null
       return deriveSnapshotStatus(snapshotRepo, getBuyerPackAuditTrail(item.id), item.id, latestSnapshot.manifest.version)
     }
-    void load().then(s => { if (!cancelled) setSnapshotStatus(s) })
+    load().then(
+      s => { if (!cancelled) setSnapshotStatus(s) },
+      (err: unknown) => {
+        if (cancelled) return
+        setSnapshotStatus(null)
+        setSnapshotLoadError(err instanceof Error ? err.message : 'Could not derive the snapshot status.')
+      },
+    )
     return () => { cancelled = true }
   }, [item.id, latestSnapshot])
 
@@ -632,7 +659,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
               disabled={!isHumanApproved || issuing}
               title={isHumanApproved ? undefined : 'Requires no blocking issues and a recorded "Progress" decision'}
             >
-              {issuing ? 'Issuing…' : latestSnapshot ? 'Re-Issue Buyer Pack (new version)' : 'Issue Buyer Pack'}
+              {issuing ? 'Issuing…' : latestSnapshot ? 'Re-Issue Buyer Pack (new version)' : snapshotLoadError ? 'Issue Buyer Pack (history unavailable)' : 'Issue Buyer Pack'}
             </button>
             {!isHumanApproved && (
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -642,6 +669,18 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
             {issueNotice && <span style={{ fontSize: 12, color: 'var(--success, #2e7d32)' }}>{issueNotice}</span>}
             {issueError && <span style={{ fontSize: 12, color: 'var(--warning)' }}>{issueError}</span>}
           </div>
+
+          {/* A failed read is NOT evidence that no snapshot exists. Say so
+              explicitly, so an operator never reads a blank panel as "this pack
+              has never been issued" and re-issues over an existing record. */}
+          {snapshotLoadError && !latestSnapshot && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--warning)' }}>
+              ⚠ The snapshot history could not be read, so it is unknown whether this pack has
+              already been issued. This is <strong>not</strong> a confirmation that none exists.
+              ({snapshotLoadError})
+            </div>
+          )}
+
           {latestSnapshot && (
             <div className="detail-rows" style={{ marginTop: 12 }}>
               <div className="detail-row"><span className="dl">Snapshot Version</span><span className="dv">v{latestSnapshot.manifest.version}</span></div>
