@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest'
 
 const ROOT = new URL('..', import.meta.url).pathname
 const WORKFLOW = readFileSync(join(ROOT, '.github/workflows/security-ci.yml'), 'utf8')
+const VERCEL_CONFIG = JSON.parse(readFileSync(join(ROOT, 'vercel.json'), 'utf8'))
 
 /** The `deploy-production:` job block, from its key to the next top-level job key. */
 function deployJob() {
@@ -119,5 +120,40 @@ describe('credentials', () => {
 
   it('never echoes a secret', () => {
     expect(WORKFLOW).not.toMatch(/echo\s+.*\$\{\{\s*secrets\./)
+  })
+})
+
+// ─── The cutover: Vercel must not deploy `main` behind CI's back ─────────────
+//
+// Vercel's Git integration deployed `main` the instant a merge landed — for the
+// PR #13 merge it fired at 21:09:25Z, a full minute before the verification job
+// finished at 21:10:21Z. That is the ungated path this config closes, leaving the
+// GitHub Actions job as the only routine automated route to Production.
+//
+// The danger in this file is over-reach, not under-reach: `deploymentEnabled: false`
+// (a bare boolean) would disable EVERY branch, killing the Preview deployments that
+// PR review depends on — and Preview is the only layer that caught the PR #9 outage.
+// These assertions pin the narrow form.
+describe('vercel.json disables Git production deploys for main — and nothing more', () => {
+  it('disables Git-triggered deployment for main', () => {
+    expect(VERCEL_CONFIG.git?.deploymentEnabled?.main).toBe(false)
+  })
+
+  it('does NOT disable deployments globally — Previews must keep working', () => {
+    // A bare `false` here (rather than a per-branch map) would switch off Preview
+    // deployments for every PR branch too.
+    expect(typeof VERCEL_CONFIG.git?.deploymentEnabled).toBe('object')
+    expect(VERCEL_CONFIG.git?.deploymentEnabled).not.toBe(false)
+  })
+
+  it('disables main and ONLY main', () => {
+    // Any other branch listed here would silently stop its Previews.
+    expect(Object.keys(VERCEL_CONFIG.git.deploymentEnabled)).toEqual(['main'])
+  })
+
+  it('adds no unrelated Vercel configuration', () => {
+    // Scope guard: this file exists to close one bypass path. Rewrites, headers,
+    // build overrides and crons are separate decisions and must not ride along.
+    expect(Object.keys(VERCEL_CONFIG)).toEqual(['git'])
   })
 })
