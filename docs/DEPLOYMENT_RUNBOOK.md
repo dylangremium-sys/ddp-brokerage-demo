@@ -51,13 +51,28 @@ PR 2 must not be opened until a CI-controlled Production deployment has succeede
 | | |
 |---|---|
 | **Name** | `github-actions-ddp-brokerage-prod` |
-| **Type** | Vercel access token, **scoped to the `ddp-brokerage-demo` project only** |
-| **Why project-scoped** | The Vercel team contains 7 projects. A team-scoped token would grant deploy rights to 6 unrelated ones. |
 | **Stored** | GitHub Actions **environment secret** `VERCEL_TOKEN`, on the `Production` environment only |
 | **Owner** | `dylangremium-sys` |
 | **Expiry** | None. Rotation is therefore procedural, not automatic. |
-| **Rotate** | Create a replacement token in the Vercel dashboard (scoped to this project), update the `VERCEL_TOKEN` environment secret, then revoke the old token. |
 | **Revoke** | Vercel dashboard → Account Settings → Tokens → revoke; or `vercel tokens rm "github-actions-ddp-brokerage-prod"`. Revocation is independent of every other credential. |
+
+**Token scope:** Team-scoped Vercel access token covering all seven projects in the Vercel team.
+
+**Current blast radius:** The workflow targets only `ddp-brokerage-demo` through `VERCEL_PROJECT_ID`, but the token itself is not restricted to that project and can authenticate deployment actions against the other six team projects.
+
+**Preferred future state:** Replace the current token with a project-scoped token created through:
+
+`vercel tokens add --project prj_i61VbKejp67md9rK8sueVqp1gIJx`
+
+This requires a Vercel session authorised to mint tokens. The existing GitHub OAuth-backed CLI session returned:
+
+`403 Cannot create tokens for this app`
+
+After creating the narrower token:
+
+1. replace the GitHub `Production` environment secret `VERCEL_TOKEN`;
+2. verify the CI-controlled deployment path;
+3. revoke the old team-scoped token.
 
 The token value must **never** be committed, echoed, printed, placed in a Vercel environment variable, or exposed as a `VITE_*` variable (`VITE_*` values are inlined into the browser bundle).
 
@@ -123,6 +138,6 @@ Point 3 is not a formality. A green `ci:verify` once shipped a serverless functi
 | GitHub Actions `deploy-production` | Merge to `main` after `verify` passes | ✅ Yes — the authorised path |
 | Vercel account **owner** | `vercel deploy --prod`, `promote`, dashboard redeploy, API | ❌ **No — documented emergency override** |
 | Deploy Hooks | — | ✅ None exist |
-| Automation deploy tokens | — | ✅ None exist beyond the project-scoped CI token |
+| Automation deploy tokens | — | ⚠️ One exists: the team-scoped CI token (`VERCEL_TOKEN`). It reaches all seven team projects, not only this one — see §3. |
 
 The single remaining ungated principal is the Vercel account owner. Closing that would require Vercel Enterprise RBAC, which is a separate commercial decision.
