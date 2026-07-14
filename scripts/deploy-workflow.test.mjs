@@ -123,6 +123,37 @@ describe('credentials', () => {
   })
 })
 
+// ─── The deployment tool itself must be reproducible ────────────────────────
+//
+// The Vercel CLI is what actually puts bytes on the production domain, so an
+// unpinned install makes the deployment non-reproducible: two runs of the SAME
+// commit could deploy through two different tools, and a bad upstream release
+// would reach production with no code change and no review. `vercel@latest`, a
+// caret range, or a canary tag all reintroduce that.
+//
+// This asserts the SHAPE of the pin rather than a specific number, so it keeps
+// working across upgrades instead of going stale the moment the version is bumped.
+describe('the Vercel CLI is pinned to an exact stable version', () => {
+  const install = WORKFLOW.match(/npm install --global vercel@(\S+)/)
+
+  it('the CLI is installed with an explicit version', () => {
+    expect(install, 'the deploy job must install a pinned vercel CLI').not.toBeNull()
+  })
+
+  it('is an exact numeric version — not latest, not a range', () => {
+    const version = install[1]
+    expect(version, `"${version}" must be exact semver like 56.2.0`).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(version).not.toBe('latest')
+    // ^, ~, *, x and comparison operators all let the resolved version drift.
+    expect(version).not.toMatch(/[\^~*x><= |]/)
+  })
+
+  it('is not a prerelease', () => {
+    // canary/beta/rc builds must never be the thing that deploys production.
+    expect(install[1]).not.toMatch(/alpha|beta|canary|rc|next|-/i)
+  })
+})
+
 // ─── The cutover: Vercel must not deploy `main` behind CI's back ─────────────
 //
 // Vercel's Git integration deployed `main` the instant a merge landed — for the
