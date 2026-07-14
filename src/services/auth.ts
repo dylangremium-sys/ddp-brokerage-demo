@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { clearSensitiveDdpStorage } from '../lib/browserPersistence'
 
 export type UserRole = 'ddp_admin' | 'farmer'
 
@@ -77,9 +78,25 @@ export async function signUpFarmer(
   return data
 }
 
+/**
+ * Signs the user out AND clears the DDP data left in this browser.
+ *
+ * Sign-out previously ended the Supabase session and nothing else, so a signed-out
+ * browser still held the previous operator's inventory, farm profiles, buyer-pack
+ * snapshots and procurement decisions — readable from devtools by whoever used the
+ * machine next. The keys are cleared from an explicit allowlist
+ * (SENSITIVE_DDP_KEYS), never via localStorage.clear(), so unrelated preferences
+ * and other apps on the same origin are untouched.
+ *
+ * Storage is cleared even if the Supabase sign-out call fails or Supabase is not
+ * configured: leaving the data behind is the worse failure.
+ */
 export async function signOut(): Promise<void> {
-  if (!supabase) return
-  await supabase.auth.signOut()
+  try {
+    if (supabase) await supabase.auth.signOut()
+  } finally {
+    clearSensitiveDdpStorage()
+  }
 }
 
 export async function getCurrentProfile(): Promise<UserProfile | null> {

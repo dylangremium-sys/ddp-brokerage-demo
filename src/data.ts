@@ -1,5 +1,6 @@
 import type { InventoryItem, FarmProfile, ReviewRequest, MarketBenchmark, ComplianceVerificationTier, TestStatus } from './types'
 import { REQUIREMENT_OVERRIDE_KEY, RISK_OVERRIDE_KEY, DECISION_KEY, getFarmInventory } from './lib/procurementControl'
+import { safeSetItem } from './lib/browserPersistence'
 
 export function testStatusLabel(s?: TestStatus): string {
   if (s === 'pass') return 'PASS'
@@ -628,8 +629,12 @@ export function loadInventory(): InventoryItem[] {
   return SEED_INVENTORY
 }
 
-export function saveInventory(items: InventoryItem[]) {
-  localStorage.setItem(INV_KEY, JSON.stringify(items))
+// Never throws. These run inside React effects (App.tsx:117-118) and there is no
+// error boundary in the app, so a QuotaExceededError escaping here would blank the
+// UI. Returns whether the write actually succeeded — it never reports a success it
+// did not achieve.
+export function saveInventory(items: InventoryItem[]): boolean {
+  return safeSetItem(INV_KEY, JSON.stringify(items))
 }
 
 export function loadFarms(): FarmProfile[] {
@@ -641,8 +646,9 @@ export function loadFarms(): FarmProfile[] {
   return SEED_FARMS
 }
 
-export function saveFarms(farms: FarmProfile[]) {
-  localStorage.setItem(FARM_KEY, JSON.stringify(farms))
+// Never throws — see saveInventory.
+export function saveFarms(farms: FarmProfile[]): boolean {
+  return safeSetItem(FARM_KEY, JSON.stringify(farms))
 }
 
 export function resetDemo() {
