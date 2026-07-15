@@ -428,26 +428,6 @@ export default function LandingPage({ lang, setLang, onSecureLogin }: Props) {
             </div>
 
             <div className="ln-channel">
-              <span className="ln-channel-ico ln-channel-line" aria-hidden="true">LINE</span>
-              <div className="ln-channel-body">
-                <div className="ln-channel-label">{t.homeFooterLineLabel}</div>
-                <span className="ln-channel-value">{t.homeFooterLineValue}</span>
-              </div>
-            </div>
-
-            <div className="ln-channel">
-              <span className="ln-channel-ico ln-channel-wa" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
-                  <path d="M12 2a10 10 0 00-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1012 2zm0 2a8 8 0 016.6 12.5l-.3.5.7 2.5-2.6-.7-.5.3A8 8 0 1112 4zm-3 4.2c-.2 0-.5 0-.7.4-.2.4-.9 1-.9 2.3s1 2.7 1.1 2.9c.2.2 1.9 3 4.7 4 .7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2 0-.1-.2-.2-.5-.3l-1.7-.8c-.2-.1-.4-.1-.6.1l-.7.9c-.1.2-.3.2-.5.1-.6-.2-1.4-.5-2.2-1.3-.6-.6-1-1.3-1.2-1.5-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.8-1.9c-.2-.5-.4-.4-.6-.4z" />
-                </svg>
-              </span>
-              <div className="ln-channel-body">
-                <div className="ln-channel-label">{t.homeFooterWhatsappLabel}</div>
-                <span className="ln-channel-value">{t.homeFooterWhatsappValue}</span>
-              </div>
-            </div>
-
-            <div className="ln-channel">
               <span className="ln-channel-ico ln-channel-pin" aria-hidden="true"><PinGlyph /></span>
               <div className="ln-channel-body">
                 <div className="ln-channel-label">{t.homeFooterOfficeLabel}</div>
