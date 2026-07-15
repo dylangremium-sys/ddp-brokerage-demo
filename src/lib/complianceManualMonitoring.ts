@@ -9,7 +9,11 @@ import {
   type RssFetchImpl,
 } from './complianceRssConnector'
 import { buildMonitoringDecision, type MonitoringDecision, type SourceContentSnapshot } from './complianceSourceMonitoring'
-import { evaluateCannamonitorPolicy } from './complianceCannamonitorPolicy'
+import {
+  evaluateCannamonitorPolicy,
+  CANNAMONITOR_PERMISSION_STATUS,
+  type CannamonitorPermissionStatus,
+} from './complianceCannamonitorPolicy'
 
 // ─── Manual Watchtower RSS monitoring — orchestration (Phase 2D) ────────────
 //
@@ -263,23 +267,31 @@ export type PastedMonitoringGateDecision =
   | { action: 'deny'; code: PastedMonitoringDenialCode; reason: string }
 
 /**
- * Pure source-policy gate for the pasted Monitoring Queue path. Denies a
- * matched Cannamonitor source whose monitoring is not permitted (permission
- * unverified) BEFORE any decision/checksum work. Reuses the single existing
- * policy (evaluateCannamonitorPolicy) — no second matcher, no host logic here.
- * Non-Cannamonitor sources, and a (hypothetical) permitted Cannamonitor source,
- * proceed unchanged.
+ * Pure source-policy gate for the pasted Monitoring Queue path. Denies ANY
+ * matched Cannamonitor source — not merely when monitoring is currently
+ * disallowed. Pasted content is arbitrary body text with NO metadata-only
+ * projection (unlike the RSS path), so it must never be accepted for a
+ * Cannamonitor source even under a (hypothetical) verified permission with an
+ * active registry source. Reuses the single existing policy
+ * (evaluateCannamonitorPolicy) — no second matcher, no host logic here.
+ * Non-Cannamonitor sources proceed unchanged. Attribution is by the selected
+ * source URL only (no content-sniffing).
+ *
+ * `permission` defaults to the module constant, so every production caller is
+ * fail-closed; the parameter exists ONLY so tests can prove that a hypothetical
+ * verified permission with an active source is STILL denied here.
  */
 export function evaluatePastedMonitoringGate(
-  source: Pick<RegulatorySource, 'url'> | null | undefined,
+  source: (Pick<RegulatorySource, 'url'> & Partial<Pick<RegulatorySource, 'isActive'>>) | null | undefined,
+  permission: CannamonitorPermissionStatus = CANNAMONITOR_PERMISSION_STATUS,
 ): PastedMonitoringGateDecision {
-  const policy = evaluateCannamonitorPolicy({ url: source?.url ?? '' })
-  if (policy.matched && !policy.monitoringAllowed) {
+  const policy = evaluateCannamonitorPolicy({ url: source?.url ?? '', isActive: source?.isActive }, permission)
+  if (policy.matched) {
     return {
       action: 'deny',
       code: 'cannamonitor_permission_unverified',
       reason:
-        'Cannamonitor monitoring is disabled while commercial-processing permission remains unverified. Pasted content is not accepted for this source.',
+        'Cannamonitor pasted content is not accepted: arbitrary pasted article text is not metadata-only, so it may not be ingested for a Cannamonitor source.',
     }
   }
   return { action: 'proceed' }

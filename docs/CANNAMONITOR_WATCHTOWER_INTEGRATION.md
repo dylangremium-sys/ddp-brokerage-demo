@@ -124,9 +124,13 @@ gated for a correctly-attributed Cannamonitor source:
   `evaluatePastedMonitoringGate` in `complianceManualMonitoring.ts`. A selected
   Cannamonitor source is **denied before `buildMonitoringDecision` runs** — i.e.
   before normalization, checksum construction, `rawText`, the monitoring
-  decision, draft intake, or any persistence. `DDPComplianceWatchtower.tsx`
-  routes the pasted-monitoring action through this shared gate rather than
-  calling `buildMonitoringDecision` directly.
+  decision, draft intake, or any persistence. Because pasted content is arbitrary
+  body text with **no metadata-only projection**, this gate denies **any** matched
+  Cannamonitor source **regardless of permission** — even a hypothetical verified
+  permission with an active source is still denied here (mirroring the manual
+  Legal Update intake gate). `DDPComplianceWatchtower.tsx` routes the
+  pasted-monitoring action through this shared gate rather than calling
+  `buildMonitoringDecision` directly.
 - **Manual Legal Update form** — an admin can type a source URL plus arbitrary
   raw body text that would be written straight to a `legal_update` (+ review +
   audit log). This raw text is **not** metadata-only and cannot be projected, so
@@ -161,6 +165,13 @@ source — returns both `monitoringAllowed: false` **and** `aiAllowed: false`, s
 source) is ever AI-eligible. A Cannamonitor URL refused for any transport, host,
 credential, port, permission, or activity reason can therefore never send its
 evidence to the AI provider, even under a hypothetical verified permission.
+
+The active-source check **fails closed**: the success branch requires
+`isActive === true`, so a **missing / undefined** `isActive` is treated as
+inactive. URL-only evaluations (`evaluateCannamonitorAiGate`,
+`evaluatePastedMonitoringGate`, `evaluateCannamonitorManualIntakeGate`) carry no
+`isActive`, so — even under a hypothetical verified permission — they can never
+reach the success branch without a proven active registry source.
 
 ---
 

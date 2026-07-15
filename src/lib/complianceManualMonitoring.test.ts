@@ -289,3 +289,41 @@ describe('Pasted Monitoring Queue — Cannamonitor gate', () => {
     expect(spy).not.toHaveBeenCalled()
   })
 })
+
+// ─── Codex P2 (RM1gQ): pasted gate denies regardless of permission ──────────
+//
+// Pasted content has no metadata-only projection, so a Cannamonitor source must
+// be denied even under a hypothetical verified permission with an active source
+// (where the underlying policy would otherwise permit monitoring).
+describe('evaluatePastedMonitoringGate — denies regardless of permission', () => {
+  it('denies a Cannamonitor source under UNVERIFIED permission (default)', () => {
+    expect(evaluatePastedMonitoringGate({ url: 'https://cannamonitor.com/feed/' }).action).toBe('deny')
+  })
+
+  it('STILL denies under hypothetical VERIFIED permission + active source (the fix)', () => {
+    // Under the old `matched && !monitoringAllowed` condition this would proceed,
+    // because verified + active makes monitoringAllowed true. The fix denies on
+    // `matched` alone.
+    const g = evaluatePastedMonitoringGate({ url: 'https://cannamonitor.com/feed/', isActive: true }, 'verified')
+    expect(g.action).toBe('deny')
+    if (g.action === 'deny') expect(g.code).toBe('cannamonitor_permission_unverified')
+  })
+
+  it('denies every matched Cannamonitor form under verified (subdomain, http, creds, port, malformed)', () => {
+    for (const url of [
+      'https://www.cannamonitor.com/x',
+      'https://staging.cannamonitor.com/x',
+      'http://cannamonitor.com/x',
+      'https://user:pass@cannamonitor.com/x',
+      'https://cannamonitor.com:8443/x',
+      'ht!tp://cannamonitor.com bad',
+    ]) {
+      expect(evaluatePastedMonitoringGate({ url, isActive: true }, 'verified').action).toBe('deny')
+    }
+  })
+
+  it('unrelated sources still proceed under verified permission', () => {
+    expect(evaluatePastedMonitoringGate({ url: 'https://regulator.example.gov/rss', isActive: true }, 'verified').action).toBe('proceed')
+    expect(evaluatePastedMonitoringGate({ url: '' }, 'verified').action).toBe('proceed')
+  })
+})

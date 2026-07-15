@@ -602,3 +602,39 @@ describe('Cannamonitor manual Legal Update intake gate', () => {
     expect(evaluateCannamonitorManualIntakeGate('https://cannamonitor.com.evil.example/x').action).toBe('proceed')
   })
 })
+
+// ─── Codex P2 (RM1gI): require EXPLICIT active state ────────────────────────
+//
+// A missing / undefined isActive must be treated as inactive. URL-only callers
+// (evaluateCannamonitorAiGate, evaluatePastedMonitoringGate,
+// evaluateCannamonitorManualIntakeGate) carry no isActive, so even under a
+// hypothetical verified permission they must never reach the success branch
+// without a proven active registry source.
+describe('Cannamonitor policy — requires explicit active state', () => {
+  it('verified permission + MISSING isActive → denied (source_inactive), not AI-eligible', () => {
+    const d = evaluateCannamonitorPolicy({ url: 'https://cannamonitor.com/feed/' }, 'verified') // no isActive
+    expect(d.matched).toBe(true)
+    expect(d.monitoringAllowed).toBe(false)
+    expect(d.aiAllowed).toBe(false)
+    expect(d.denialCode).toBe('source_inactive')
+  })
+
+  it('verified permission + isActive:false → denied', () => {
+    const d = evaluateCannamonitorPolicy({ url: 'https://cannamonitor.com/feed/', isActive: false }, 'verified')
+    expect(d.monitoringAllowed).toBe(false)
+    expect(d.aiAllowed).toBe(false)
+    expect(d.denialCode).toBe('source_inactive')
+  })
+
+  it('verified permission + explicit isActive:true → the only success', () => {
+    const d = evaluateCannamonitorPolicy({ url: 'https://cannamonitor.com/feed/', isActive: true }, 'verified')
+    expect(d.monitoringAllowed).toBe(true)
+    expect(d.aiAllowed).toBe(true)
+    expect(d.denialCode).toBeUndefined()
+  })
+
+  it('URL-only AI gate stays blocked even under verified (no active source proven)', () => {
+    // evaluateCannamonitorAiGate passes url only → isActive undefined → denied.
+    expect(evaluateCannamonitorAiGate('https://cannamonitor.com/brief/x').blocked).toBe(true)
+  })
+})

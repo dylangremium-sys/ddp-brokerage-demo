@@ -320,8 +320,13 @@ export function evaluateCannamonitorPolicy(
   }
 
   // Permission is verified — the registry's own active control still governs.
-  if (source.isActive === false) {
-    return deny('source_inactive', 'Cannamonitor source is inactive in the registry. Monitoring denied.')
+  // Fail closed: only an EXPLICITLY active source (isActive === true) may pass.
+  // A missing / undefined isActive is treated as inactive, so a URL-only
+  // evaluation (which carries no isActive — e.g. evaluateCannamonitorAiGate,
+  // evaluatePastedMonitoringGate, evaluateCannamonitorManualIntakeGate) can
+  // never reach the success branch without a proven active registry source.
+  if (source.isActive !== true) {
+    return deny('source_inactive', 'Cannamonitor source is not explicitly active in the registry. Monitoring denied.')
   }
 
   return decision({
