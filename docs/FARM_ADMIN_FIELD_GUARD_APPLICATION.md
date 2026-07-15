@@ -26,6 +26,18 @@ against any database by this change. An operator applies them manually.**
 | `19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql` | Forward migration (idempotent): guard function + `BEFORE UPDATE` trigger |
 | `19_FARM_ADMIN_FIELD_GUARD_VERIFY.sql` | Section A = read-only object-state proof (safe on prod); Section B = behavioural proof (non-prod only) |
 | `19_FARM_ADMIN_FIELD_GUARD_ROLLBACK.sql` | Reverses **only** this migration; keeps the farmer-update policy |
+| `20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql` | Corrective ACL migration — also revokes EXECUTE from `authenticated` (see below) |
+
+> **ACL correction (migration 20).** Supabase default-grants EXECUTE on new `public`
+> functions directly to `authenticated`, so migration 19's `revoke … from public, anon`
+> left `authenticated` with a direct EXECUTE grant on the trigger-only guard.
+> `19_…VERIFY.sql` Section A caught this on the **Production** apply, and a manual
+> `REVOKE EXECUTE … FROM authenticated` was applied to Production. **Production is
+> already corrected.** `20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql` makes the correction
+> durable so **fresh environments** reach the same least-privilege state without a
+> manual step; apply it immediately after migration 19. It changes only the EXECUTE
+> ACL — no trigger, column, RLS, or verification behaviour changes. (Production does
+> not need it re-run; it is for reproducibility of new environments.)
 
 ## Preconditions
 
@@ -46,6 +58,9 @@ and the `public.farms` table. No other migration is a prerequisite.
 1. Open the Supabase SQL Editor on the target project (postgres role).
 2. Paste and run the entire contents of `19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql`.
    It runs inside its own `begin … commit` and is idempotent (safe to re-run).
+3. **Fresh environments only:** paste and run the entire contents of
+   `20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql` (revokes EXECUTE from `authenticated`).
+   Production is already corrected manually and does not need this re-run.
 
 ## Verification
 
