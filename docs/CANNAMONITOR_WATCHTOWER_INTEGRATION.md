@@ -115,11 +115,24 @@ permitted metadata.
 ## 5. AI restrictions (defence in depth)
 
 A source-specific AI block refuses AI processing for correctly-attributed
-Cannamonitor updates. It blocks at **both**:
+Cannamonitor updates. It is enforced in layers:
 
-- AI eligibility evaluation (`evaluateAiSummaryEligibility`); and
-- AI execution (`runAiDraftSummary`) — a direct execution call cannot bypass the
-  eligibility check, and the provider is never called.
+- **Authoritative gate — shared execution layer.** `generateAiDraftSummary`
+  (`complianceAiSummarisation.ts`) checks `evaluateCannamonitorAiGate` **before**
+  request preparation, prompt construction, provider selection, or provider
+  invocation, and returns the stable code `cannamonitor_permission_unverified`.
+  This is the single function every caller funnels through, so it covers **both**
+  the client controller and the server endpoint — a direct call cannot bypass it,
+  and the provider is never reached.
+- **Client controller (defence-in-depth).** `evaluateAiSummaryEligibility` and
+  `runAiDraftSummary` (`watchtowerAiSummary.ts`) also block at the UI eligibility
+  and execution steps, so the action is disabled and never dispatched.
+- **Server endpoint.** `api/compliance/ai-summary.ts` →
+  `serverAiSummary.ts` (`handleAiSummaryRequest`) inherits the authoritative gate
+  automatically because it calls `generateAiDraftSummary`; the denial maps to a
+  deterministic `403` controlled response. An authenticated admin POSTing a
+  Cannamonitor `sourceUrl` directly to the API therefore still cannot reach the
+  provider.
 
 No AI provider configuration, model selection, prompt, or general AI behaviour
 for other sources is changed.

@@ -323,6 +323,10 @@ const RESULT_STATUS: Record<AiSummaryResultCode, number> = {
   malformed_output: 502,
   empty_output: 502,
   unsafe_output: 502,
+  // Source-policy denial from the shared execution gate (Cannamonitor). 403:
+  // the source is not permitted for AI processing while permission is
+  // unverified. The provider is never reached, and no draft is generated.
+  cannamonitor_permission_unverified: 403,
 }
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
