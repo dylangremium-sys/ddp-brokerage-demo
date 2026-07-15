@@ -34,7 +34,6 @@ import {
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
-import { T } from './translations'
 import LandingPage from './pages/public/LandingPage'
 import LoginPage from './pages/public/LoginPage'
 import SignupPage from './pages/public/SignupPage'
@@ -269,20 +268,6 @@ export default function App() {
     setCurrentProfile(null)
     setPage('landing')
     window.scrollTo(0, 0)
-  }
-
-  // ── Landing page entry points ─────────────────────────────────────────────
-  function handleEnterFarmer() {
-    if (isDemo) { goTo('farmer-register'); return }
-    if (!isSignedIn) { goTo('signup'); return }
-    goTo('farmer-dashboard')
-  }
-
-
-  function handleEnterDDP() {
-    if (!isDemo && !isSignedIn) { goTo('login'); return }
-    if (!isAdminRole) { setDbError('DDP Admin access is required to enter the operator portal.'); return }
-    goTo('ddp-overview')
   }
 
   // ── Data handlers ─────────────────────────────────────────────────────────
@@ -539,35 +524,13 @@ export default function App() {
         </nav>
       )}
 
-      {/* ── Landing page ── */}
+      {/* ── Landing page (approved LandPage.png redesign — owns its own nav) ── */}
       {page === 'landing' && (
-        <div>
-          <div className="landing-nav">
-            <div className="navbar-brand">
-              <DDPMonogramLogo height={38} />
-              <div className="landing-nav-brand-text">
-                <span className="brand-name">Brokerage</span>
-                <span className="landing-nav-descriptor">{T[lang].landingNavDescriptor}</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <LangToggle lang={lang} setLang={setLang} />
-              {!isDemo && isSignedIn && (
-                <UserBadge profile={currentProfile!} onSignOut={handleSignOut} />
-              )}
-              {!isDemo && !isSignedIn && (
-                <button className="btn btn-primary" style={{ fontSize: 13, padding: '6px 14px' }} onClick={() => goTo('login')}>
-                  Sign in
-                </button>
-              )}
-            </div>
-          </div>
-          <LandingPage
-            lang={lang}
-            onEnterFarmer={handleEnterFarmer}
-            onEnterDDP={handleEnterDDP}
-          />
-        </div>
+        <LandingPage
+          lang={lang}
+          setLang={setLang}
+          onSecureLogin={() => goTo('login')}
+        />
       )}
 
       {/* ── Error banner ── */}
@@ -814,7 +777,7 @@ export default function App() {
         </main>
       )}
 
-      {(isDemo || buildVersion) && (
+      {page !== 'landing' && (isDemo || buildVersion) && (
         <div className="demo-utility-strip">
           {isDemo && <span className="db-mode-badge">○ Demo mode: localStorage</span>}
           {buildVersion && <span className="build-id-badge">{buildVersion}</span>}
