@@ -38,7 +38,6 @@ import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlert
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
 import LoginPage from './pages/public/LoginPage'
-import SignupPage from './pages/public/SignupPage'
 import FarmerRegister from './pages/farmer/FarmerRegister'
 import FarmerDashboard from './pages/farmer/FarmerDashboard'
 import FarmerOnboarding from './pages/farmer/FarmerOnboarding'
@@ -66,13 +65,13 @@ import AdminNav from './components/admin/AdminNav'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 
 const FARMER_PAGES: Page[] = [
-  'landing', 'login', 'signup', 'farmer-register',
+  'landing', 'login', 'farmer-register',
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
-const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
+const PUBLIC_PAGES: Page[] = ['landing', 'login']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -515,7 +514,7 @@ export default function App() {
     <div className="app">
 
       {/* ── Navbar (all non-landing pages) ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
+      {page !== 'landing' && page !== 'login' && page !== 'farmer-register' && (
         <nav className="navbar">
           <div
             className="navbar-brand"
@@ -573,17 +572,6 @@ export default function App() {
           <LoginPage
             lang={lang}
             onSuccess={handleLoginSuccess}
-            onGoSignup={() => goTo('signup')}
-          />
-        </main>
-      )}
-
-      {page === 'signup' && (
-        <main className="main-content">
-          <SignupPage
-            lang={lang}
-            onSuccess={() => goTo('farmer-dashboard')}
-            onGoLogin={() => goTo('login')}
           />
         </main>
       )}
@@ -599,7 +587,7 @@ export default function App() {
       )}
 
       {/* ── App pages ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
+      {page !== 'landing' && page !== 'login' && page !== 'farmer-register' && (
         <main className="main-content">
 
           {page === 'farmer-dashboard' && (
