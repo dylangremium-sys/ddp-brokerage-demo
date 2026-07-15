@@ -223,7 +223,7 @@ export default function LandingPage({ lang, setLang, onSecureLogin }: Props) {
               onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               aria-label="DDP Brokerage — home"
             >
-              <span className="ln-brand-logo"><DDPMonogramLogo height={42} color="#C6A24C" /></span>
+              <span className="ln-brand-logo"><DDPMonogramLogo height={54} color="#C6A24C" /></span>
             </a>
             <span className="ln-brand-descriptor">{t.navBrandDescriptor}</span>
           </div>
@@ -323,6 +323,7 @@ export default function LandingPage({ lang, setLang, onSecureLogin }: Props) {
               <h2 className="ln-batch-title">{t.homeBatchTitle}</h2>
               <span className="ln-batch-badge">{t.homeBatchReviewBadge}</span>
             </div>
+            <p className="ln-batch-disclaimer">{t.homeBatchDisclaimer}</p>
 
             <div className="ln-batch-cols">
               <ul className="ln-check">
@@ -352,9 +353,6 @@ export default function LandingPage({ lang, setLang, onSecureLogin }: Props) {
                       <div><dt>{t.homeBatchIdLabel}</dt><dd>{t.homeBatchIdValue}</dd></div>
                       <div><dt>{t.homeBatchHarvestLabel}</dt><dd>{t.homeBatchHarvestValue}</dd></div>
                     </dl>
-                  </div>
-                  <div className="ln-summary-thumb" aria-hidden="true">
-                    <LeafGlyph />
                   </div>
                 </div>
 
