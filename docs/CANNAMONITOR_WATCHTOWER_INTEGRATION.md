@@ -110,10 +110,10 @@ This is an accepted, deliberate trade-off: detection of body-only edits is given
 up in exchange for not copying the body. Change detection compares only the
 permitted metadata.
 
-### Two ingestion paths — both gated
+### Three ingestion paths — all gated
 
-Content can enter monitoring by two routes, and **both** are gated for a
-correctly-attributed Cannamonitor source while permission is unverified:
+Content can enter monitoring/persistence by three routes, and **all three** are
+gated for a correctly-attributed Cannamonitor source:
 
 - **RSS retrieval** is metadata-only and separately gated: the connector denies a
   Cannamonitor source before any fetch, and the metadata-only projection above
@@ -127,14 +127,40 @@ correctly-attributed Cannamonitor source while permission is unverified:
   decision, draft intake, or any persistence. `DDPComplianceWatchtower.tsx`
   routes the pasted-monitoring action through this shared gate rather than
   calling `buildMonitoringDecision` directly.
+- **Manual Legal Update form** — an admin can type a source URL plus arbitrary
+  raw body text that would be written straight to a `legal_update` (+ review +
+  audit log). This raw text is **not** metadata-only and cannot be projected, so
+  a Cannamonitor-attributed submission is denied by
+  `evaluateCannamonitorManualIntakeGate` in `complianceCannamonitorPolicy.ts`,
+  which `submitLegalUpdate` consults **before any Supabase insert, local
+  persistence, review, audit log, or AI call**, and the form is not cleared as
+  though it saved. This gate fails closed regardless of permission: because the
+  design is metadata-only, even a hypothetical *verified* permission does not
+  make arbitrary manual body text persistable — no separately-reviewed
+  metadata-only manual-intake mechanism exists, and this task adds none.
 
-Attribution for the pasted path is by the **selected source's canonical URL
-only** — the pasted text is never inspected or classified (**no
-content-sniffing**). The documented limitation therefore still holds: Cannamonitor
-text pasted against a blank, false, or unrelated source cannot be identified;
-administrators must select and record the correct source. No source row and no
-activation mechanism exist, so in practice no Cannamonitor source can be selected
-today — this gate is a fail-closed guarantee for if one ever were.
+So **correctly-attributed Cannamonitor raw body text cannot be persisted through
+either manual path** (pasted monitoring or the Legal Update form).
+
+Attribution for the manual paths is by the **recorded/selected source URL
+only** — the text is never inspected or classified (**no content-sniffing**).
+The documented limitation therefore still holds: Cannamonitor text recorded
+against a blank, false, or unrelated source cannot be identified; administrators
+must record the correct source. No source row and no activation mechanism exist,
+so in practice no Cannamonitor source can be selected today — these gates are a
+fail-closed guarantee for if one ever were.
+
+### AI denial covers every matched policy denial
+
+`evaluateCannamonitorPolicy` never derives AI eligibility from permission alone.
+**Every matched Cannamonitor denial** — malformed URL, unapproved host/subdomain,
+HTTP, embedded credentials, unexpected port, unverified permission, or inactive
+source — returns both `monitoringAllowed: false` **and** `aiAllowed: false`, so
+`evaluateCannamonitorAiGate` blocks it. Only a **completely successful** decision
+(approved HTTPS host, no credentials, default port, verified permission, active
+source) is ever AI-eligible. A Cannamonitor URL refused for any transport, host,
+credential, port, permission, or activity reason can therefore never send its
+evidence to the AI provider, even under a hypothetical verified permission.
 
 ---
 

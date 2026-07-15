@@ -9,6 +9,7 @@ import {
   CANNAMONITOR_PERMISSION_STATUS,
   CANNAMONITOR_RETAINED_METADATA,
   evaluateCannamonitorAiGate,
+  evaluateCannamonitorManualIntakeGate,
   evaluateCannamonitorPolicy,
   isApprovedCannamonitorHost,
   isCannamonitorSourceUrl,
@@ -497,5 +498,107 @@ describe('Cannamonitor policy cannot escalate to any compliance consequence', ()
     const eligibility = evaluateManualMonitoringEligibility(cannamonitorSource())
     expect(eligibility.eligible).toBe(false)
     expect(eligibility.code).toBe('source_policy_denied')
+  })
+})
+
+// ─── P2-B: every matched policy denial also blocks AI ───────────────────────
+//
+// aiAllowed must NEVER be derived from permission alone: a Cannamonitor URL
+// refused for transport / host / credential / port / permission / activity
+// reasons must stay AI-denied even under a (hypothetical) verified permission.
+describe('Cannamonitor policy — every matched denial blocks AI', () => {
+  const DENIAL_CASES: Array<{ label: string; url: string; isActive?: boolean; code: string }> = [
+    { label: 'malformed URL', url: 'ht!tp://cannamonitor.com bad', code: 'malformed_url' },
+    { label: 'unapproved subdomain', url: 'https://staging.cannamonitor.com/feed', code: 'unapproved_host' },
+    { label: 'HTTP', url: 'http://cannamonitor.com/feed/', code: 'not_https' },
+    { label: 'embedded credentials', url: 'https://user:pass@cannamonitor.com/feed/', code: 'credentials_in_url' },
+    { label: 'unexpected port', url: 'https://cannamonitor.com:8443/feed/', code: 'unexpected_port' },
+    { label: 'inactive source', url: 'https://cannamonitor.com/feed/', isActive: false, code: 'source_inactive' },
+  ]
+
+  for (const c of DENIAL_CASES) {
+    it(`denies AI for a ${c.label} Cannamonitor source even under verified permission`, () => {
+      // Evaluate under hypothetical 'verified' — the worst case for this invariant.
+      const d = evaluateCannamonitorPolicy({ url: c.url, isActive: c.isActive ?? true }, 'verified')
+      expect(d.matched).toBe(true)
+      expect(d.monitoringAllowed).toBe(false)
+      expect(d.aiAllowed).toBe(false)
+      expect(d.denialCode).toBe(c.code)
+    })
+  }
+
+  it('the ONLY matched success (approved host, https, no creds, default port, verified, active) permits AI', () => {
+    const ok = evaluateCannamonitorPolicy({ url: 'https://cannamonitor.com/feed/', isActive: true }, 'verified')
+    expect(ok.matched).toBe(true)
+    expect(ok.monitoringAllowed).toBe(true)
+    expect(ok.aiAllowed).toBe(true)
+    expect(ok.denialCode).toBeUndefined()
+  })
+
+  it('current (unverified) permission still denies AI for an approved active source', () => {
+    const d = evaluateCannamonitorPolicy({ url: 'https://cannamonitor.com/feed/', isActive: true })
+    expect(d.matched).toBe(true)
+    expect(d.aiAllowed).toBe(false)
+    expect(d.denialCode).toBe('permission_unverified')
+  })
+
+  it('evaluateCannamonitorAiGate blocks a legal update attributed to a refused Cannamonitor URL', () => {
+    // Under production defaults these all resolve to aiAllowed=false → blocked.
+    for (const c of DENIAL_CASES) {
+      expect(evaluateCannamonitorAiGate(c.url).blocked).toBe(true)
+    }
+  })
+
+  it('unrelated sources preserve existing AI behaviour', () => {
+    expect(evaluateCannamonitorAiGate('https://regulator.example.gov/rss').blocked).toBe(false)
+    expect(evaluateCannamonitorPolicy({ url: 'https://regulator.example.gov/rss' }).aiAllowed).toBe(true)
+  })
+})
+
+// ─── P2-A: manual Legal Update intake gate ──────────────────────────────────
+//
+// The manual Legal Update form is a THIRD ingestion path. A Cannamonitor-
+// attributed manual submission must be denied outright — before payload,
+// persistence, audit, or AI — regardless of permission. `submitLegalUpdate`
+// early-returns on `deny`, so insertLegalUpdate / persistLegalUpdatesLocal /
+// insertReview / logAudit are unreachable and the form is not cleared. The gate
+// decides purely on the source URL and never receives raw body text, so pasted
+// evidence cannot leak through it.
+describe('Cannamonitor manual Legal Update intake gate', () => {
+  const RAW_MARKER = 'MANUAL_LEGAL_UPDATE_CANNAMONITOR_BODY_MARKER'
+
+  it('denies a Cannamonitor-attributed manual submission with a source-specific code', () => {
+    const g = evaluateCannamonitorManualIntakeGate('https://www.cannamonitor.com/brief/x')
+    expect(g.action).toBe('deny')
+    if (g.action === 'deny') {
+      expect(g.code).toBe('cannamonitor_manual_intake_denied')
+      // The gate never receives raw text, so no marker can appear in its result.
+      expect(JSON.stringify(g)).not.toContain(RAW_MARKER)
+    }
+  })
+
+  it('denies EVERY Cannamonitor form (approved, subdomain, http, creds, port, malformed) — fail closed', () => {
+    for (const url of [
+      'https://cannamonitor.com/x',
+      'https://www.cannamonitor.com/x',
+      'https://staging.cannamonitor.com/x',
+      'http://cannamonitor.com/x',
+      'https://user:pass@cannamonitor.com/x',
+      'https://cannamonitor.com:8443/x',
+      'ht!tp://cannamonitor.com bad',
+    ]) {
+      expect(evaluateCannamonitorManualIntakeGate(url).action).toBe('deny')
+    }
+  })
+
+  it('ordinary government and unrelated commercial sources still submit (proceed)', () => {
+    expect(evaluateCannamonitorManualIntakeGate('https://regulator.example.gov/notice').action).toBe('proceed')
+    expect(evaluateCannamonitorManualIntakeGate('https://unrelated.example.com/article').action).toBe('proceed')
+  })
+
+  it('blank / unrelated attribution is not falsely blocked (documented limitation)', () => {
+    expect(evaluateCannamonitorManualIntakeGate('').action).toBe('proceed')
+    expect(evaluateCannamonitorManualIntakeGate(null).action).toBe('proceed')
+    expect(evaluateCannamonitorManualIntakeGate('https://cannamonitor.com.evil.example/x').action).toBe('proceed')
   })
 })

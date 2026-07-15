@@ -32,6 +32,7 @@ import { SUPPORTED_SOURCE_TYPES, deriveRegulatorySourceStatus, type RegulatorySo
 import { prepareMonitoringLegalUpdateIntake, decideDraftCreation, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
 import {
   evaluateCannamonitorPolicy,
+  evaluateCannamonitorManualIntakeGate,
   CANNAMONITOR_REVIEW_HEADLINE,
   CANNAMONITOR_NON_AUTHORITATIVE_NOTICE,
   CANNAMONITOR_DETECTION_LIMITATION,
@@ -592,6 +593,17 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
         type: 'error',
         text: 'Draft wording may imply unreviewed certification or compliance. Reword before review intake.',
       })
+      return
+    }
+
+    // Manual Legal Update intake gate (Cannamonitor). A Cannamonitor-attributed
+    // source is denied BEFORE any write — Supabase insert, local persistence,
+    // review, or audit log — so arbitrary Cannamonitor raw evidence can never be
+    // persisted through this form, and the form is not cleared as if it saved.
+    // Unrelated sources are unaffected.
+    const intakeGate = evaluateCannamonitorManualIntakeGate(legalForm.sourceUrl)
+    if (intakeGate.action === 'deny') {
+      setActionMessage({ type: 'error', text: intakeGate.reason })
       return
     }
 

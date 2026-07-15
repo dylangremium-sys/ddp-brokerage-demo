@@ -268,14 +268,19 @@ export function evaluateCannamonitorPolicy(
   }
 
   // From here on the source IS Cannamonitor: the metadata-only projection always
-  // applies, and AI is permitted only when permission is verified.
-  const aiAllowed = permission === 'verified'
+  // applies. Every matched DENIAL blocks BOTH monitoring and AI — `aiAllowed` is
+  // never derived from permission alone. A Cannamonitor URL refused for
+  // transport / host / credential / port / permission / activity reasons must
+  // not become AI-eligible just because permission is (hypothetically) verified;
+  // otherwise a legal update attributed to a refused URL could still send its
+  // evidence to the provider. Only the final fully-successful branch below sets
+  // `aiAllowed: true`.
   const deny = (denialCode: CannamonitorDenialCode, reason: string): CannamonitorPolicyDecision =>
     decision({
       matched: true,
       permission,
       monitoringAllowed: false,
-      aiAllowed,
+      aiAllowed: false,
       denialCode,
       reason,
       fieldPolicy: CANNAMONITOR_METADATA_ONLY_PROJECTION,
@@ -361,6 +366,45 @@ export function evaluateCannamonitorAiGate(sourceUrl: string | null | undefined)
     }
   }
   return { blocked: false, reason: 'Source is not Cannamonitor-attributed, or AI is permitted for it.' }
+}
+
+// ─── Manual Legal Update intake gate (arbitrary manual-body ingestion) ──────
+
+export type CannamonitorManualIntakeDenialCode = 'cannamonitor_manual_intake_denied'
+
+export type CannamonitorManualIntakeGate =
+  | { action: 'proceed' }
+  | { action: 'deny'; code: CannamonitorManualIntakeDenialCode; reason: string }
+
+/**
+ * Gate for the manual Legal Update form — a THIRD ingestion path (beside RSS and
+ * the pasted Monitoring Queue) where an admin types a source URL plus arbitrary
+ * raw body text that would be written straight to a legal_update (+ review +
+ * audit log). That text is NOT metadata-only and cannot be projected, so a
+ * Cannamonitor-attributed manual submission is denied outright — before any
+ * payload, persistence, audit, or AI.
+ *
+ * Fail closed regardless of permission: this denies whenever the URL is a
+ * Cannamonitor source (`matched`), NOT merely when monitoring is currently
+ * disallowed. Even a hypothetical VERIFIED permission does not make arbitrary
+ * manual body text persistable — the metadata-only guarantee covers only the RSS
+ * projection path, and no separately-reviewed metadata-only manual-intake
+ * mechanism exists (this task adds none). Attribution is by the recorded source
+ * URL only (no content-sniffing); blank / false / unrelated attribution remains
+ * the documented limitation. Unrelated sources always proceed.
+ */
+export function evaluateCannamonitorManualIntakeGate(
+  sourceUrl: string | null | undefined,
+): CannamonitorManualIntakeGate {
+  const policy = evaluateCannamonitorPolicy({ url: sourceUrl ?? '' })
+  if (policy.matched) {
+    return {
+      action: 'deny',
+      code: 'cannamonitor_manual_intake_denied',
+      reason: 'Cannamonitor raw evidence cannot be recorded through the manual Legal Update form.',
+    }
+  }
+  return { action: 'proceed' }
 }
 
 // ─── Human-facing governance copy (single source of truth for UI + docs) ─────
