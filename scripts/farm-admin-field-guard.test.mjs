@@ -85,6 +85,36 @@ describe('migration 19 — forward migration (guard function + trigger)', () => 
   })
 })
 
+describe('farm guard EXECUTE ACL end state (migrations 19 + 20)', () => {
+  // Supabase default-grants EXECUTE on new public functions directly to
+  // `authenticated`, so a public+anon revoke alone leaves authenticated able to
+  // execute — the drift Production surfaced. The corrective migration 20 must
+  // revoke authenticated too; assert the combined end state.
+  const ACLFIX = '20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql'
+  const combined = stripComments(read(FORWARD)) + '\n' + stripComments(read(ACLFIX))
+  const revokedRoles = () => {
+    const s = new Set()
+    for (const m of combined.matchAll(/revoke\s+execute\s+on\s+function\s+public\.fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+);/gi))
+      m[1].split(',').forEach((r) => s.add(r.trim().toLowerCase()))
+    return s
+  }
+
+  it('revokes EXECUTE from public, anon, AND authenticated', () => {
+    const revoked = revokedRoles()
+    for (const role of ['public', 'anon', 'authenticated']) {
+      expect(revoked, `EXECUTE must be revoked from ${role}`).toContain(role)
+    }
+  })
+
+  it('never re-grants EXECUTE to a client role', () => {
+    for (const g of combined.matchAll(/grant\s+execute\s+on\s+function\s+public\.fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+);/gi)) {
+      for (const r of g[1].split(',').map((s) => s.trim().toLowerCase())) {
+        expect(['public', 'anon', 'authenticated'], `must not re-grant EXECUTE to ${r}`).not.toContain(r)
+      }
+    }
+  })
+})
+
 describe('migration 19 — verification script', () => {
   const raw = read(VERIFY)
   const code = stripComments(raw)

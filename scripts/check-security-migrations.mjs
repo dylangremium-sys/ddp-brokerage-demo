@@ -87,6 +87,12 @@ const FARM_GUARD_PROTECTED_COLUMNS = [
   'risk_level', 'partner_tier', 'reviewed_by', 'created_by',
 ].sort()
 
+// Corrective ACL migration (migration 20). Supabase default-grants EXECUTE on new
+// public functions directly to `authenticated`, so the trigger-only guard must be
+// revoked from public, anon, AND authenticated for the combined 19 + 20 end state.
+const FARM_GUARD_ACLFIX = '20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql'
+const FARM_GUARD_REVOKE_ROLES = ['public', 'anon', 'authenticated']
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 let failures = 0
 function pass(label) { console.log(`PASS  ${label}`) }
@@ -372,6 +378,41 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
     if (/drop\s+policy[^;]*farms: farmer (update|insert) own/i.test(rb)) rProblems.push('drops a "farms: farmer …" policy (overreach)')
     check(`${label}: ROLLBACK reverses only this migration (keeps both farmer policies)`,
       rProblems.length === 0, rProblems.join(' | '))
+  }
+}
+
+// Check 11 — farm guard EXECUTE ACL end state (migrations 19 + 20).
+// The trigger-only guard function must have EXECUTE revoked from public, anon, AND
+// authenticated across the farm-guard migrations, with no client re-grant. Fails
+// if: the corrective migration 20 is missing; any of the three roles is not
+// revoked; or EXECUTE is granted to any client role.
+{
+  const label = 'Farm guard EXECUTE ACL (19 + 20)'
+  if (!existsSync(join(ROOT, FARM_GUARD_ACLFIX))) {
+    fail(`${label}: corrective migration present`,
+      `missing ${FARM_GUARD_ACLFIX} — Supabase default-grants EXECUTE on new public functions to authenticated, so without it authenticated retains direct EXECUTE on the guard`)
+  } else if (!existsSync(join(ROOT, FARM_GUARD.forward))) {
+    fail(`${label}: forward migration present`, `missing ${FARM_GUARD.forward}`)
+  } else {
+    pass(`${label}: corrective migration ${FARM_GUARD_ACLFIX} present`)
+    const combined = stripComments(read(FARM_GUARD.forward)) + '\n' + stripComments(read(FARM_GUARD_ACLFIX))
+    const fn = /revoke\s+execute\s+on\s+function\s+public\.fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+);/gi
+    const revoked = new Set()
+    for (const m of combined.matchAll(fn)) {
+      for (const r of m[1].split(',')) revoked.add(r.trim().toLowerCase())
+    }
+    const problems = []
+    for (const role of FARM_GUARD_REVOKE_ROLES) {
+      if (!revoked.has(role)) problems.push(`EXECUTE not revoked from ${role}`)
+    }
+    const grantFn = /grant\s+execute\s+on\s+function\s+public\.fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+);/gi
+    for (const g of combined.matchAll(grantFn)) {
+      for (const r of g[1].split(',').map((s) => s.trim().toLowerCase())) {
+        if (FARM_GUARD_REVOKE_ROLES.includes(r)) problems.push(`re-grants EXECUTE to ${r} (re-opens direct execution)`)
+      }
+    }
+    check(`${label}: EXECUTE revoked from public + anon + authenticated, with no client re-grant`,
+      problems.length === 0, problems.join(' | '))
   }
 }
 
