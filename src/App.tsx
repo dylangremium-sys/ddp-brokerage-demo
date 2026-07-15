@@ -29,8 +29,10 @@ import { loadInventory, loadFarms, loadReviewRequests, saveReviewRequests, loadM
 import {
   signOut,
   subscribeToAuthChanges,
+  getCurrentProfile,
   type UserProfile,
 } from './services/auth'
+import { resolvePostLoginDecision } from './lib/postLoginRouting'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
@@ -267,6 +269,30 @@ export default function App() {
     await signOut()
     setCurrentProfile(null)
     setPage('landing')
+    window.scrollTo(0, 0)
+  }
+
+  // After a successful sign-in, route the user by their resolved role. The
+  // redesigned public homepage no longer exposes the farmer/admin entry buttons,
+  // so this is the only path into the operator portals — it must land signed-in
+  // users on their dashboard, and fail closed if the role cannot be resolved.
+  async function handleLoginSuccess() {
+    const profile = await getCurrentProfile()
+    const decision = resolvePostLoginDecision(profile)
+    if (decision.kind === 'route') {
+      // Set the profile before navigating so goTo's auth guards see a signed-in
+      // user (the async auth subscription may not have fired yet).
+      setCurrentProfile(profile)
+      setPage(decision.page)
+      window.scrollTo(0, 0)
+      return
+    }
+    // Fail closed: authenticated but no known operator role — revoke the session
+    // and send the user back to login with a clear message.
+    await signOut()
+    setCurrentProfile(null)
+    setDbError('Your account does not have an assigned DDP role. Please contact DDP support.')
+    setPage('login')
     window.scrollTo(0, 0)
   }
 
@@ -546,7 +572,7 @@ export default function App() {
         <main className="main-content">
           <LoginPage
             lang={lang}
-            onSuccess={() => goTo('landing')}
+            onSuccess={handleLoginSuccess}
             onGoSignup={() => goTo('signup')}
           />
         </main>

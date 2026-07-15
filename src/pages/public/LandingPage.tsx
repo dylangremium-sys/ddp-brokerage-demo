@@ -442,6 +442,11 @@ export default function LandingPage({ lang, setLang, onSecureLogin }: Props) {
           </div>
         </div>
 
+        <div className="ln-footer-legalnote">
+          <p className="ln-legalnote-line">{t.landingAuthorityNote}</p>
+          <p className="ln-legalnote-line">{t.landingDisclaimer}</p>
+        </div>
+
         <div className="ln-footer-bottom">
           <span className="ln-copyright">{t.homeFooterCopyright}</span>
           <span className="ln-footer-legal">

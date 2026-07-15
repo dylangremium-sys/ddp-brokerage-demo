@@ -1410,6 +1410,20 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 a.ln-channel-value:hover { color: #FFFFFF; }
 .ln-channel-address { line-height: 1.5; }
 .ln-channel-tel { display: block; margin-top: 4px; color: var(--lg-gold); font-size: 13.5px; }
+.ln-footer-legalnote {
+  max-width: 1260px;
+  margin: 0 auto;
+  padding: 22px 30px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ln-legalnote-line {
+  margin: 0 0 8px;
+  max-width: 960px;
+  color: #7C8D7F;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.ln-legalnote-line:last-child { margin-bottom: 0; }
 .ln-footer-bottom {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   max-width: 1260px;
