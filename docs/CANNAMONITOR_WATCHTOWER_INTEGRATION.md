@@ -217,24 +217,39 @@ with no configuration able to re-enable it.
 
 ---
 
-## 9. Files
+## 9. PR file boundary
 
-**Added**
+This PR changes twelve files:
 
-- `src/lib/complianceCannamonitorPolicy.ts` — the policy (permission state, host
-  classification, metadata-only projection, monitoring gate, AI gate,
-  governance copy).
-- `src/lib/complianceCannamonitorPolicy.test.ts` — the safety-boundary tests.
-- `docs/CANNAMONITOR_WATCHTOWER_INTEGRATION.md` — this document.
+- `docs/CANNAMONITOR_WATCHTOWER_INTEGRATION.md`
+- `src/lib/complianceCannamonitorPolicy.ts`
+- `src/lib/complianceCannamonitorPolicy.test.ts`
+- `src/lib/complianceRssConnector.ts`
+- `src/lib/complianceManualMonitoring.ts`
+- `src/lib/complianceManualMonitoring.test.ts`
+- `src/lib/watchtowerAiSummary.ts`
+- `src/lib/complianceAiSummarisation.ts`
+- `src/lib/complianceAiSummarisation.test.ts`
+- `src/lib/serverAiSummary.ts`
+- `src/lib/serverAiSummary.test.ts`
+- `src/pages/admin/DDPComplianceWatchtower.tsx`
 
-**Modified (narrowly)**
+Responsibilities:
 
-- `src/lib/complianceRssConnector.ts` — a `FeedItemFieldPolicy` seam (default
-  identity) + a pre-fetch policy gate; unrelated sources are unaffected.
-- `src/lib/complianceManualMonitoring.ts` — a Cannamonitor eligibility denial.
-- `src/lib/watchtowerAiSummary.ts` — the AI block at eligibility and execution.
-- `src/pages/admin/DDPComplianceWatchtower.tsx` — a **display-only** warning
-  banner (renders only if a matching source ever existed; none does).
+- `complianceCannamonitorPolicy.ts` owns permission state, exact-host
+  classification, metadata projection, and the source-specific gates.
+- `complianceRssConnector.ts` enforces pre-fetch denial and the metadata-only
+  RSS projection.
+- `complianceManualMonitoring.ts` enforces the pasted-monitoring denial before
+  normalization, checksum, `rawText`, or draft construction.
+- `watchtowerAiSummary.ts` retains the client-side AI gate as defence-in-depth.
+- `complianceAiSummarisation.ts` provides the authoritative shared AI execution
+  gate that every caller funnels through.
+- `serverAiSummary.ts` maps the source-policy denial to a controlled `403`.
+- `DDPComplianceWatchtower.tsx` routes pasted monitoring through the shared gate
+  and displays the policy state.
+- The test files prove the relevant denial, regression, and direct-bypass
+  behaviour.
 
 ---
 
