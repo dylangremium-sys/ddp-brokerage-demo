@@ -72,6 +72,21 @@ const EXPECTED_15_TABLES = [
   'status_history',
 ]
 
+// Migration 19 — farm admin-field self-approval guard (bespoke rules; NOT part of
+// the generic MIGRATIONS registry because its VERIFY is deliberately behavioural
+// — BEGIN/ROLLBACK with UPDATEs — rather than SELECT-only).
+const FARM_GUARD = {
+  forward: '19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql',
+  verify: '19_FARM_ADMIN_FIELD_GUARD_VERIFY.sql',
+  rollback: '19_FARM_ADMIN_FIELD_GUARD_ROLLBACK.sql',
+}
+// Admin-controlled columns, enumerated from schema (SUPABASE_SCHEMA.sql:20-25 +
+// AUTH_RLS_SCHEMA.sql:38-39). Drift from this set is a failure.
+const FARM_GUARD_PROTECTED_COLUMNS = [
+  'status', 'compliance_status', 'export_readiness',
+  'risk_level', 'partner_tier', 'reviewed_by', 'created_by',
+].sort()
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 let failures = 0
 function pass(label) { console.log(`PASS  ${label}`) }
@@ -274,6 +289,90 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
   check('Migration 15 narrow scope (no SELECT/INSERT revoke; UPDATE/DELETE only on audit log; no service_role; exact 20 tables; audit-log ENABLE ALWAYS only)',
     problems.length === 0,
     [...new Set(problems)].join(' | '))
+}
+
+// Check 10 — Migration 19 farm admin-field self-approval guard (UPDATE + INSERT).
+// Fails if: any companion file is missing; the forward migration uses the invalid
+// role = 'admin' literal or lacks the canonical is_ddp_admin() guard; the UPDATE
+// protected-column set drifts from schema; the trigger does not cover BOTH INSERT
+// and UPDATE; the farmer-INSERT branch does not force created_by = auth.uid(),
+// force status to its canonical entry value, or neutralise every other protected
+// field; the VERIFY script contains COMMIT, omits the farmer/admin INSERT tests, or
+// its transaction/residue checks are vacuous; or the ROLLBACK overreaches.
+{
+  const label = 'Migration 19 farm admin-field guard'
+  const missing = ['forward', 'verify', 'rollback'].filter((r) => !existsSync(join(ROOT, FARM_GUARD[r])))
+  if (missing.length) {
+    fail(`${label}: companion completeness`, `missing file(s): ${missing.map((r) => FARM_GUARD[r]).join(', ')}`)
+  } else {
+    pass(`${label}: companion completeness (HARDENING + VERIFY + ROLLBACK present)`)
+
+    // Forward migration — comment-stripped so keywords in the header prose (which
+    // literally discusses the role = 'admin' bug) are never read as code.
+    const fwd = stripComments(read(FARM_GUARD.forward))
+    const problems = []
+    if (!/is_ddp_admin\s*\(/i.test(fwd)) problems.push('missing canonical is_ddp_admin() guard')
+    if (/role\s*=\s*'admin'/i.test(fwd)) problems.push("uses invalid literal role = 'admin'")
+
+    // UPDATE branch: every protected column preserved (new.X := old.X).
+    const assigned = [...fwd.matchAll(/new\.([a-z_]+)\s*:=\s*old\./gi)].map((m) => m[1].toLowerCase())
+    const assignedSet = [...new Set(assigned)].sort()
+    if (JSON.stringify(assignedSet) !== JSON.stringify(FARM_GUARD_PROTECTED_COLUMNS)) {
+      problems.push(`UPDATE protected-column drift (got [${assignedSet.join(', ')}], expected [${FARM_GUARD_PROTECTED_COLUMNS.join(', ')}])`)
+    }
+
+    // Trigger must fire on BOTH INSERT and UPDATE.
+    if (!/create\s+trigger\s+trg_protect_farm_admin_fields\s+before\s+insert\s+or\s+update\s+on\s+public\.farms/is.test(fwd) ||
+        !/execute\s+function\s+public\.fn_protect_farm_admin_fields/is.test(fwd)) {
+      problems.push('trigger is not BEFORE INSERT OR UPDATE on public.farms')
+    }
+
+    // INSERT branch: force created_by to auth.uid(), force status to its canonical
+    // entry value, and neutralise every other protected field to NULL.
+    if (!/tg_op\s*=\s*'insert'/i.test(fwd)) problems.push('no INSERT branch (tg_op = \'INSERT\')')
+    if (!/new\.created_by\s*:=\s*auth\.uid\(\)/i.test(fwd)) problems.push('INSERT does not force created_by := auth.uid() (spoofable ownership)')
+    if (!/new\.status\s*:=\s*'submitted to ddp'/i.test(fwd)) problems.push("INSERT does not force status := 'Submitted to DDP'")
+    for (const col of FARM_GUARD_PROTECTED_COLUMNS) {
+      if (col === 'created_by' || col === 'status') continue
+      if (!new RegExp(`new\\.${col}\\s*:=\\s*null`, 'i').test(fwd)) {
+        problems.push(`INSERT does not neutralise ${col} (must set new.${col} := null)`)
+      }
+    }
+    check(`${label}: forward migration correctness (canonical guard, no 'admin' literal, INSERT+UPDATE trigger, UPDATE preserves + INSERT sanitises all 7 fields)`,
+      problems.length === 0, problems.join(' | '))
+
+    // VERIFY — behavioural, rollback-safe, non-vacuous, and covering INSERT.
+    const ver = stripComments(read(FARM_GUARD.verify))
+    const residueTail = ver.slice(ver.lastIndexOf('rollback;'))
+    const vProblems = []
+    if (/\bcommit\b/i.test(ver)) vProblems.push('VERIFY contains COMMIT (must use BEGIN/ROLLBACK only)')
+    if (!/\bbegin\b/i.test(ver) || !/\brollback\b/i.test(ver)) vProblems.push('VERIFY lacks BEGIN/ROLLBACK')
+    if (!/update\s+public\.farms\s+set/i.test(ver)) vProblems.push('VERIFY has no behavioural UPDATE on farms (vacuous)')
+    if (!/insert\s+into\s+public\.farms/i.test(ver)) vProblems.push('VERIFY has no behavioural INSERT on farms (INSERT vector untested)')
+    if (!/raise\s+exception/i.test(ver)) vProblems.push('VERIFY has no RAISE assertions (vacuous)')
+    if (!/leftover_/i.test(ver) || !/residue/i.test(ver)) vProblems.push('VERIFY has no post-rollback residue check (vacuous)')
+    // Farmer INSERT test (self-set fields neutralised, created_by forced) and admin INSERT test.
+    if (!/verify b5/i.test(ver) || !/created_by not forced/i.test(ver)) vProblems.push('VERIFY omits the farmer-INSERT test (created_by force / field sanitisation)')
+    if (!/verify b6/i.test(ver)) vProblems.push('VERIFY omits the admin-INSERT test')
+    for (const col of FARM_GUARD_PROTECTED_COLUMNS) {
+      if (!new RegExp(`\\b${col}\\b`, 'i').test(ver)) vProblems.push(`VERIFY does not exercise protected column ${col}`)
+    }
+    // Residue must cover the INSERT-test rows and the seeded auth.users rows.
+    if (!/leftover_auth_users/i.test(residueTail)) vProblems.push('residue check does not cover seeded auth.users rows')
+    if (!residueTail.includes('000fa000-0000-0000-0000-000000000003')) vProblems.push('residue check does not cover the farmer-INSERT row')
+    if (!residueTail.includes('000fa000-0000-0000-0000-000000000004')) vProblems.push('residue check does not cover the admin-INSERT row')
+    check(`${label}: VERIFY covers INSERT+UPDATE, is rollback-safe (no COMMIT), and non-vacuous (residue includes inserted rows)`,
+      vProblems.length === 0, vProblems.join(' | '))
+
+    // ROLLBACK — reverses only this migration; must not drop either farmer policy.
+    const rb = stripComments(read(FARM_GUARD.rollback))
+    const rProblems = []
+    if (!/drop\s+trigger\s+if\s+exists\s+trg_protect_farm_admin_fields\s+on\s+public\.farms/i.test(rb)) rProblems.push('does not drop the trigger')
+    if (!/drop\s+function\s+if\s+exists\s+public\.fn_protect_farm_admin_fields/i.test(rb)) rProblems.push('does not drop the function')
+    if (/drop\s+policy[^;]*farms: farmer (update|insert) own/i.test(rb)) rProblems.push('drops a "farms: farmer …" policy (overreach)')
+    check(`${label}: ROLLBACK reverses only this migration (keeps both farmer policies)`,
+      rProblems.length === 0, rProblems.join(' | '))
+  }
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────
