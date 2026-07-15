@@ -472,26 +472,17 @@ export const T = {
     // Nav — new
     navDashboard: 'My Dashboard',
 
-    // Signup — redesigned
-    joinNetwork: 'Join DDP Farmer Network',
-    signupTagline: 'Register in a few steps. You can add documents and details later.',
+    // Farmer profile field labels
     phoneLabel: 'Phone number',
     phonePlaceholder: 'e.g. 0812345678',
     lineIdLabel: 'LINE ID (optional)',
     lineIdPlaceholder: 'e.g. @farmname',
     provinceLabel: 'Province',
     provincePlaceholder: 'Select your province',
-    farmerSubRoleLabel: 'Your role',
     roleFarmer: 'Farmer',
     roleFarmManager: 'Farm Manager',
     roleBroker: 'Broker',
-    preferredLangLabel: 'Preferred language',
-    emailOptionalLabel: 'Email (optional — used for account login)',
-    emailOptionalPlaceholder: 'you@example.com',
     passwordLabel: 'Password',
-    signupBtn: 'Create Account',
-    signingUp: 'Creating account…',
-    signupSuccessEmail: 'Check your email for a confirmation link, then sign in.',
 
     // Dashboard
     dashboardTitle: 'My Farm',
@@ -568,8 +559,6 @@ export const T = {
     loginPasswordLabel: 'Password',
     loginBtn: 'Sign in',
     loginLoading: 'Signing in…',
-    loginSwitchPrompt: 'New farmer?',
-    loginSwitchLink: 'Create a farmer account',
     loginAdminNote: 'DDP Admin accounts are created by the DDP team — see README for setup instructions.',
   },
   th: {
@@ -1020,26 +1009,17 @@ export const T = {
     // Nav — new
     navDashboard: 'แดชบอร์ดของฉัน',
 
-    // Signup — redesigned
-    joinNetwork: 'เข้าร่วมเครือข่ายเกษตรกร DDP',
-    signupTagline: 'สมัครสมาชิกในไม่กี่ขั้นตอน เพิ่มเอกสารและรายละเอียดได้ทีหลัง',
+    // Farmer profile field labels
     phoneLabel: 'เบอร์โทรศัพท์',
     phonePlaceholder: 'เช่น 0812345678',
     lineIdLabel: 'LINE ID (ถ้ามี)',
     lineIdPlaceholder: 'เช่น @ชื่อฟาร์ม',
     provinceLabel: 'จังหวัด',
     provincePlaceholder: 'เลือกจังหวัดของคุณ',
-    farmerSubRoleLabel: 'บทบาทของคุณ',
     roleFarmer: 'เกษตรกร',
     roleFarmManager: 'ผู้จัดการฟาร์ม',
     roleBroker: 'โบรกเกอร์',
-    preferredLangLabel: 'ภาษาที่ต้องการ',
-    emailOptionalLabel: 'อีเมล (ไม่บังคับ — ใช้สำหรับเข้าสู่ระบบ)',
-    emailOptionalPlaceholder: 'you@example.com',
     passwordLabel: 'รหัสผ่าน',
-    signupBtn: 'สร้างบัญชี',
-    signingUp: 'กำลังสร้างบัญชี…',
-    signupSuccessEmail: 'ตรวจสอบอีเมลของคุณเพื่อยืนยันลิงก์ แล้วเข้าสู่ระบบ',
 
     // Dashboard
     dashboardTitle: 'ฟาร์มของฉัน',
@@ -1116,8 +1096,6 @@ export const T = {
     loginPasswordLabel: 'รหัสผ่าน',
     loginBtn: 'เข้าสู่ระบบ',
     loginLoading: 'กำลังเข้าสู่ระบบ…',
-    loginSwitchPrompt: 'เกษตรกรรายใหม่?',
-    loginSwitchLink: 'สร้างบัญชีเกษตรกร',
     loginAdminNote: 'บัญชี DDP Admin สร้างโดยทีม DDP — ดูรายละเอียดในเอกสาร README',
   },
 }
