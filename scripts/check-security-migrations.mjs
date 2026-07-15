@@ -393,10 +393,18 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
 {
   const label = 'Farm guard EXECUTE ACL (corpus-wide)'
   // Comment-stripped AND whitespace-normalised so a statement may span lines and
-  // the `public.` schema qualifier is optional.
+  // the `public.` schema qualifier is optional. The trailing `;` is optional too
+  // (a valid final statement may omit it) — the role list runs to `;` OR end.
   const norm = (file) => stripComments(read(file)).replace(/\s+/g, ' ')
-  const REVOKE_RE = /revoke\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+);/gi
-  const GRANT_RE = /grant\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+);/gi
+  const REVOKE_RE = /revoke\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+?)\s*(?:;|$)/gi
+  const GRANT_RE = /grant\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+?)\s*(?:;|$)/gi
+  // A role token may be double-quoted (PostgreSQL: "authenticated" == authenticated).
+  // Split on commas, trim, remove ONE surrounding pair of double quotes, lowercase.
+  const parseRoles = (list) => list.split(',').map((r) => {
+    const t = r.trim()
+    const unquoted = (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) ? t.slice(1, -1) : t
+    return unquoted.trim().toLowerCase()
+  })
 
   if (!existsSync(join(ROOT, FARM_GUARD_ACLFIX))) {
     fail(`${label}: corrective migration present`,
@@ -410,7 +418,7 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
     const combined = norm(FARM_GUARD.forward) + ' ' + norm(FARM_GUARD_ACLFIX)
     const revoked = new Set()
     for (const m of combined.matchAll(REVOKE_RE)) {
-      for (const r of m[1].split(',')) revoked.add(r.trim().toLowerCase())
+      for (const r of parseRoles(m[1])) revoked.add(r)
     }
     const revokeProblems = FARM_GUARD_REVOKE_ROLES
       .filter((role) => !revoked.has(role))
@@ -419,11 +427,12 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
       revokeProblems.length === 0, revokeProblems.join(' | '))
 
     // (b) No direct client-role re-grant in ANY root *.sql — catches a re-grant in
-    // a future migration (e.g. 21_…), regardless of `public.` qualifier or layout.
+    // a future migration (e.g. 21_…), regardless of `public.` qualifier, layout,
+    // quoted role names, or a missing trailing semicolon.
     const regrants = []
     for (const f of [...rootSql].sort()) {
       for (const g of norm(f).matchAll(GRANT_RE)) {
-        for (const r of g[1].split(',').map((s) => s.trim().toLowerCase())) {
+        for (const r of parseRoles(g[1])) {
           if (FARM_GUARD_REVOKE_ROLES.includes(r)) regrants.push(`${f}: GRANT EXECUTE … TO ${r} (re-opens direct execution)`)
         }
       }
