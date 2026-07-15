@@ -1,295 +1,461 @@
 import { T } from '../../translations'
 import type { Lang } from '../../types'
 import { DDPMonogramLogo } from '../../components/logos'
-import { StatusBadge } from '../../components/shared/StatusBadge'
 
-function FarmerPortalIcon() {
+/* ────────────────────────────────────────────────────────────────────────────
+   Homepage — implements the approved LandPage.png visual specification.
+   Palette: deep forest green nav/strip/footer, warm gold accent, cream hero.
+   All styles are scoped under `.landing-shell` in App.css so the page keeps its
+   own light theme while the rest of the app stays on the navy palette.
+──────────────────────────────────────────────────────────────────────────── */
+
+interface Props {
+  lang: Lang
+  setLang: (l: Lang) => void
+  /** Wired to the existing auth flow — goTo('login') in App.tsx. */
+  onSecureLogin: () => void
+}
+
+function scrollToId(id: string) {
+  const el = document.getElementById(id)
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+/* ── Icons (inline, no external assets) ─────────────────────────────────────── */
+function CaretIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 21v-9" />
-      <path d="M12 12C11 9.5 8.5 7.5 6 7C6 10 8 12.5 12 13" />
-      <path d="M12 12C13 9.5 15.5 7.5 18 7C18 10 16 12.5 12 13" />
+    <svg className="ln-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="6,9 12,15 18,9" />
     </svg>
   )
 }
 
-function OperationsDashboardIcon() {
+function LockIcon({ size = 15 }: { size?: number }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3L5 7v6C5 18 8.5 21 12 22C15.5 21 19 18 19 13V7Z" />
-      <polyline points="9,12.5 11,15 15,9.5" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 018 0v3" />
     </svg>
   )
 }
 
-function WhyIcon() {
+function ArrowIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9.5" />
-      <path d="M8 12.5l2.6 2.6L16.5 9" />
+    <svg className="ln-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="4" y1="12" x2="19" y2="12" />
+      <polyline points="13,6 19,12 13,18" />
     </svg>
   )
 }
 
-function DocumentIcon() {
+function ChevronRightIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 2.5h8l4 4v14a1 1 0 01-1 1H6a1 1 0 01-1-1v-17a1 1 0 011-1z" />
-      <path d="M14 2.5v4h4" />
-      <path d="M8 13h8M8 16.5h8M8 9.5h3" />
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="9,6 15,12 9,18" />
     </svg>
   )
 }
 
-function ShieldIcon() {
+function CheckCircleIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="ln-doc-check" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill="#3E8E5A" />
+      <path d="M7.5 12.4l3 3 6-6.4" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/* Small row icons for the sample-batch checklist */
+function DocGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 3.5h7l4 4V20a1 1 0 01-1 1H7a1 1 0 01-1-1V4.5a1 1 0 011-1z" />
+      <path d="M13.5 3.5v4.5H18" />
+    </svg>
+  )
+}
+function LabGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10 3.5v6L5.5 18a1.5 1.5 0 001.4 2.1h10.2A1.5 1.5 0 0018.5 18L14 9.5v-6" />
+      <path d="M8.5 3.5h7" />
+      <path d="M8 14h8" />
+    </svg>
+  )
+}
+function UserGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M5.5 20c0-3.4 2.9-5.6 6.5-5.6s6.5 2.2 6.5 5.6" />
+    </svg>
+  )
+}
+function DecisionGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8 12.3l2.6 2.6L16 9.4" />
+    </svg>
+  )
+}
+function ShieldGlyph({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 2.5l7.5 3v6c0 5-3.2 8.3-7.5 10-4.3-1.7-7.5-5-7.5-10v-6l7.5-3z" />
       <path d="M8.75 12.25l2.25 2.25 4.25-4.5" />
     </svg>
   )
 }
 
-function BriefcaseIcon() {
+/* Process-step icons */
+function LeafGlyph() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="7.5" width="18" height="12" rx="1.5" />
-      <path d="M8.5 7.5V5.5a1.5 1.5 0 011.5-1.5h4a1.5 1.5 0 011.5 1.5v2" />
-      <path d="M3 12.5h18" />
-      <path d="M10.5 12.5v2h3v-2" />
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 21v-8.5" />
+      <path d="M12 12.5C10.6 9.6 7.8 7.5 4.8 7c0 3.3 2.2 6.1 7.2 6.9" />
+      <path d="M12 12.5C13.4 9.6 16.2 7.5 19.2 7c0 3.3-2.2 6.1-7.2 6.9" />
+    </svg>
+  )
+}
+function UsersGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="9" cy="8.5" r="3" />
+      <path d="M3.5 19c0-3 2.5-4.8 5.5-4.8s5.5 1.8 5.5 4.8" />
+      <path d="M16 6.2a3 3 0 010 5.6" />
+      <path d="M17.5 14.5c2.4.5 4 2.2 4 4.5" />
     </svg>
   )
 }
 
-function BoxIcon() {
+/* Assurance-strip icons */
+function ClipboardGlyph() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
-      <path d="M4 7.5L12 12l8-4.5" />
-      <path d="M12 12v9" />
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="5" y="4.5" width="14" height="16" rx="2" />
+      <path d="M9 4.5a3 3 0 016 0" />
+      <path d="M8.5 12l2 2 4-4.2" />
+    </svg>
+  )
+}
+function BarChartGlyph() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="4" y1="20" x2="20" y2="20" />
+      <rect x="6" y="12" width="3" height="6" />
+      <rect x="11" y="8" width="3" height="10" />
+      <rect x="16" y="4.5" width="3" height="13.5" />
     </svg>
   )
 }
 
-function FlagIcon() {
+/* Footer channel icons */
+function MailGlyph() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 21V3.5" />
-      <path d="M5 4.5h13l-3 4.5 3 4.5H5" />
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5.5" width="18" height="13" rx="2" />
+      <path d="M4 7l8 5.5L20 7" />
+    </svg>
+  )
+}
+function PinGlyph() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 21c4-4.2 7-7.6 7-11a7 7 0 10-14 0c0 3.4 3 6.8 7 11z" />
+      <circle cx="12" cy="10" r="2.6" />
     </svg>
   )
 }
 
-interface Props {
-  lang: Lang
-  onEnterFarmer: () => void
-  onEnterDDP: () => void
-}
-
-export default function LandingPage({ lang, onEnterFarmer, onEnterDDP }: Props) {
+export default function LandingPage({ lang, setLang, onSecureLogin }: Props) {
   const t = T[lang]
 
-  const whyItems = [
-    { title: t.landingWhy1Title, desc: t.landingWhy1Desc },
-    { title: t.landingWhy2Title, desc: t.landingWhy2Desc },
-    { title: t.landingWhy3Title, desc: t.landingWhy3Desc },
-    { title: t.landingWhy4Title, desc: t.landingWhy4Desc },
+  const navItems: Array<{ key: string; label: string; target?: string; caret?: boolean }> = [
+    { key: 'cap', label: t.navCapabilities, caret: true },
+    { key: 'proc', label: t.navProcess, target: 'process' },
+    { key: 'evi', label: t.navEvidence, target: 'evidence' },
+    { key: 'gov', label: t.navGovernance, target: 'governance' },
+    { key: 'com', label: t.navCompany, target: 'contact' },
+    { key: 'res', label: t.navResources, caret: true },
   ]
 
-  const orgItems = [
-    { icon: <FarmerPortalIcon />, title: t.landingOrgItem1Title, desc: t.landingOrgItem1Desc },
-    { icon: <BoxIcon />, title: t.landingOrgItem2Title, desc: t.landingOrgItem2Desc },
-    { icon: <DocumentIcon />, title: t.landingOrgItem3Title, desc: t.landingOrgItem3Desc },
-    { icon: <BriefcaseIcon />, title: t.landingOrgItem4Title, desc: t.landingOrgItem4Desc },
-    { icon: <FlagIcon />, title: t.landingOrgItem5Title, desc: t.landingOrgItem5Desc },
+  const checklist = [
+    { icon: <UserGlyph />, label: t.homeBatchSupplierProfile, status: t.homeBatchStatusDocumented, tone: 'ok' },
+    { icon: <DocGlyph />, label: t.homeBatchBatchEvidence, status: t.homeBatchStatusUnderReview, tone: 'pending' },
+    { icon: <LabGlyph />, label: t.homeBatchLabReport, status: t.homeBatchStatusPresent, tone: 'ok' },
+    { icon: <DecisionGlyph />, label: t.homeBatchBuyerRequirements, status: t.homeBatchStatusMatched, tone: 'ok' },
+    { icon: <UserGlyph />, label: t.homeBatchHumanDecision, status: t.homeBatchStatusRequired, tone: 'pending' },
+  ]
+
+  const docStatus = [
+    t.homeDocAllPresent,
+    t.homeDocCoa,
+    t.homeDocPesticides,
+    t.homeDocHeavyMetals,
+    t.homeDocMicro,
+  ]
+
+  const steps = [
+    { icon: <LeafGlyph />, title: t.homeProcessStep1Title, desc: t.homeProcessStep1Desc },
+    { icon: <DocGlyph />, title: t.homeProcessStep2Title, desc: t.homeProcessStep2Desc },
+    { icon: <UsersGlyph />, title: t.homeProcessStep3Title, desc: t.homeProcessStep3Desc },
+    { icon: <ShieldGlyph size={24} />, title: t.homeProcessStep4Title, desc: t.homeProcessStep4Desc },
+  ]
+
+  const assurance = [
+    { icon: <ClipboardGlyph />, title: t.homeAssurance1Title, desc: t.homeAssurance1Desc },
+    { icon: <UserGlyph />, title: t.homeAssurance2Title, desc: t.homeAssurance2Desc },
+    { icon: <ShieldGlyph size={24} />, title: t.homeAssurance3Title, desc: t.homeAssurance3Desc },
+    { icon: <LockIcon size={24} />, title: t.homeAssurance4Title, desc: t.homeAssurance4Desc },
+    { icon: <BarChartGlyph />, title: t.homeAssurance5Title, desc: t.homeAssurance5Desc },
   ]
 
   return (
-    <div className="landing-page">
-      <div className="landing-hero">
-        <div className="landing-hero-inner">
-          <div className="landing-hero-content">
-            <div className="landing-hero-brand-row">
-              <DDPMonogramLogo height={40} />
-              <span className="landing-tagline">{t.landingTagline}</span>
-            </div>
-            <h1 className="landing-headline">{t.landingHeadline}</h1>
-            <p className="landing-hero-text">{t.landingHero1}</p>
-
-            <div className="landing-hero-ctas">
-              <button type="button" className="btn btn-primary btn-lg landing-hero-cta-primary" onClick={onEnterFarmer}>
-                <span aria-hidden="true"><FarmerPortalIcon /></span>
-                {t.landingAccessFarmerCta}
-                <span className="access-module-arrow">→</span>
-              </button>
-              <button type="button" className="landing-hero-cta-secondary" onClick={onEnterDDP}>
-                <span aria-hidden="true"><OperationsDashboardIcon /></span>
-                {t.landingAccessDDPCta}
-                <span className="access-module-arrow">→</span>
-              </button>
-            </div>
-            <p className="landing-hero-cta-caption">{t.landingAccessFarmerDesc}</p>
+    <div className="landing-shell">
+      {/* ── Top navigation ── */}
+      <header className="ln-nav">
+        <div className="ln-nav-inner">
+          <div className="ln-nav-left">
             <a
-              className="landing-hero-buyer-link"
-              href="https://line.me/R/ti/p/@ddpbrokerage"
-              target="_blank"
-              rel="noopener noreferrer"
+              className="ln-brand"
+              href="#top"
+              onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              aria-label="DDP Brokerage — home"
             >
-              {t.landingAccessBuyerCta} →
+              <span className="ln-brand-logo"><DDPMonogramLogo height={54} color="#C6A24C" /></span>
             </a>
+            <span className="ln-brand-descriptor">{t.navBrandDescriptor}</span>
           </div>
 
-          <div className="hero-visual">
-            <div className="hero-mock-card">
-              <div className="hero-mock-chrome">
-                <span className="hero-mock-chrome-dot" />
-                <span className="hero-mock-chrome-dot" />
-                <span className="hero-mock-chrome-dot" />
-                <span className="hero-mock-badge">{t.landingHeroMockEyebrow}</span>
+          <nav className="ln-nav-menu" aria-label="Primary">
+            {navItems.map((item) =>
+              item.target ? (
+                <a
+                  key={item.key}
+                  className="ln-nav-link"
+                  href={`#${item.target}`}
+                  onClick={(e) => { e.preventDefault(); scrollToId(item.target!) }}
+                >
+                  {item.label}
+                </a>
+              ) : (
+                // Visual-only dropdown labels (no target page yet) — decision: render as-is.
+                <span key={item.key} className="ln-nav-link ln-nav-link-static">
+                  {item.label}
+                  {item.caret && <CaretIcon />}
+                </span>
+              ),
+            )}
+          </nav>
+
+          <div className="ln-nav-right">
+            <div className="ln-lang" role="group" aria-label="Language">
+              <button
+                type="button"
+                className={`ln-lang-btn${lang === 'en' ? ' is-active' : ''}`}
+                aria-pressed={lang === 'en'}
+                onClick={() => setLang('en')}
+              >
+                EN
+              </button>
+              <span className="ln-lang-sep" aria-hidden="true">|</span>
+              <button
+                type="button"
+                className={`ln-lang-btn${lang === 'th' ? ' is-active' : ''}`}
+                aria-pressed={lang === 'th'}
+                onClick={() => setLang('th')}
+              >
+                ไทย
+              </button>
+            </div>
+            <button type="button" className="ln-secure-login" onClick={onSecureLogin}>
+              <LockIcon size={14} />
+              {t.navSecureLogin}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Hero ── */}
+      <section className="ln-hero" id="top">
+        {/* Decorative cannabis leaf bleeding from the left edge */}
+        <svg className="ln-hero-leaf" viewBox="0 0 200 260" fill="none" aria-hidden="true">
+          <g stroke="#2E5B3A" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="#2E5B3A" fillOpacity="0.14">
+            <path d="M100 250 L100 120" />
+            <path d="M100 120 C70 118 34 96 12 54 C58 44 92 70 100 120 Z" />
+            <path d="M100 120 C130 118 166 96 188 54 C142 44 108 70 100 120 Z" />
+            <path d="M100 132 C68 138 30 128 4 96 C46 78 86 92 100 132 Z" />
+            <path d="M100 132 C132 138 170 128 196 96 C154 78 114 92 100 132 Z" />
+            <path d="M100 150 C74 160 44 158 22 138 C58 120 90 128 100 150 Z" />
+            <path d="M100 150 C126 160 156 158 178 138 C142 120 110 128 100 150 Z" />
+            <path d="M100 96 C84 66 82 34 92 6 C112 30 112 66 100 96 Z" />
+            <path d="M100 96 C116 66 118 34 108 6 C88 30 88 66 100 96 Z" />
+          </g>
+        </svg>
+
+        <div className="ln-hero-inner">
+          <div className="ln-hero-copy">
+            <p className="ln-eyebrow">{t.homeHeroEyebrow}</p>
+            <h1 className="ln-headline">
+              <span className="ln-headline-line">{t.homeHeroHeadlineLine1}</span>
+              <span className="ln-headline-line">{t.homeHeroHeadlineLine2}</span>
+            </h1>
+            <p className="ln-hero-body">{t.homeHeroBody}</p>
+            <div className="ln-hero-ctas">
+              <button type="button" className="ln-btn ln-btn-primary" onClick={() => scrollToId('contact')}>
+                {t.homeHeroCtaPrimary}
+                <ArrowIcon />
+              </button>
+              <button type="button" className="ln-btn ln-btn-outline" onClick={() => scrollToId('process')}>
+                {t.homeHeroCtaSecondary}
+              </button>
+            </div>
+            <p className="ln-hero-secure">
+              <LockIcon size={15} />
+              {t.homeHeroSecureNote}
+            </p>
+          </div>
+
+          {/* ── Sample Batch Overview card ── */}
+          <div className="ln-batch" id="evidence">
+            <div className="ln-batch-head">
+              <h2 className="ln-batch-title">{t.homeBatchTitle}</h2>
+              <span className="ln-batch-badge">{t.homeBatchReviewBadge}</span>
+            </div>
+            <p className="ln-batch-disclaimer">{t.homeBatchDisclaimer}</p>
+
+            <div className="ln-batch-cols">
+              <ul className="ln-check">
+                {checklist.map((row, i) => (
+                  <li className="ln-check-row" key={i}>
+                    <span className="ln-check-ico" aria-hidden="true">{row.icon}</span>
+                    <span className="ln-check-label">{row.label}</span>
+                    <span className={`ln-check-status ln-status-${row.tone}`}>
+                      <span className="ln-status-dot" aria-hidden="true" />
+                      {row.status}
+                    </span>
+                  </li>
+                ))}
+                <li className="ln-check-note">
+                  <span className="ln-check-note-ico" aria-hidden="true"><ShieldGlyph size={20} /></span>
+                  <span>{t.homeBatchAuditNote}</span>
+                </li>
+              </ul>
+
+              <div className="ln-batch-right">
+                <div className="ln-summary">
+                  <div className="ln-summary-main">
+                    <div className="ln-summary-title">{t.homeBatchSummaryTitle}</div>
+                    <dl className="ln-summary-list">
+                      <div><dt>{t.homeBatchStrainLabel}</dt><dd>{t.homeBatchStrainValue}</dd></div>
+                      <div><dt>{t.homeBatchOriginLabel}</dt><dd>{t.homeBatchOriginValue}</dd></div>
+                      <div><dt>{t.homeBatchIdLabel}</dt><dd>{t.homeBatchIdValue}</dd></div>
+                      <div><dt>{t.homeBatchHarvestLabel}</dt><dd>{t.homeBatchHarvestValue}</dd></div>
+                    </dl>
+                  </div>
+                </div>
+
+                <div className="ln-docs">
+                  <div className="ln-docs-title">{t.homeDocStatusTitle}</div>
+                  <div className="ln-docs-bar" aria-hidden="true"><span /></div>
+                  <ul className="ln-docs-list">
+                    {docStatus.map((line, i) => (
+                      <li key={i}><CheckCircleIcon />{line}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-              <div className="hero-mock-grid">
-                <div className="hero-mock-field">
-                  <span className="hero-mock-label">{t.landingHeroMockFarmLabel}</span>
-                  <span className="hero-mock-value">{t.landingHeroMockFarmValue}</span>
-                </div>
-                <div className="hero-mock-field">
-                  <span className="hero-mock-label">{t.landingHeroMockBatchLabel}</span>
-                  <span className="hero-mock-value">{t.landingHeroMockBatchValue}</span>
-                </div>
-                <div className="hero-mock-field">
-                  <span className="hero-mock-label">{t.landingHeroMockThcLabel}</span>
-                  <span className="hero-mock-value">{t.landingHeroMockThcValue}</span>
-                </div>
-                <div className="hero-mock-field">
-                  <span className="hero-mock-label">{t.landingHeroMockCoaLabel}</span>
-                  <StatusBadge status="coa-received" lang={lang} />
-                </div>
-                <div className="hero-mock-field">
-                  <span className="hero-mock-label">{t.landingHeroMockStatusLabel}</span>
-                  <StatusBadge status="reviewed" lang={lang} />
-                </div>
-                <div className="hero-mock-field">
-                  <span className="hero-mock-label">{t.landingHeroMockActionLabel}</span>
-                  <StatusBadge status="progress" lang={lang} />
-                </div>
-              </div>
-              <p className="hero-mock-caption">{t.landingHeroMockCaption}</p>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* ── Verification framework strip ── */}
-      <div className="framework-strip">
-        <div className="framework-strip-inner">
-          <div className="framework-strip-title">{t.landingFrameworkTitle}</div>
-          <div className="framework-steps">
-            <div className="framework-step">
-              <span className="framework-step-icon" aria-hidden="true"><FarmerPortalIcon /></span>
-              <StatusBadge status="claimed" lang={lang} />
-              <p className="framework-step-desc">{t.landingFrameworkClaimedDesc}</p>
-            </div>
-            <div className="framework-connector" aria-hidden="true" />
-            <div className="framework-step">
-              <span className="framework-step-icon" aria-hidden="true"><DocumentIcon /></span>
-              <StatusBadge status="documented" lang={lang} />
-              <p className="framework-step-desc">{t.landingFrameworkDocumentedDesc}</p>
-            </div>
-            <div className="framework-connector" aria-hidden="true" />
-            <div className="framework-step">
-              <span className="framework-step-icon" aria-hidden="true"><ShieldIcon /></span>
-              <StatusBadge status="reviewed" lang={lang} />
-              <p className="framework-step-desc">{t.landingFrameworkVerifiedDesc}</p>
-            </div>
-            <div className="framework-connector" aria-hidden="true" />
-            <div className="framework-step">
-              <span className="framework-step-icon" aria-hidden="true"><BriefcaseIcon /></span>
-              <StatusBadge status="buyer-ready" lang={lang} />
-              <p className="framework-step-desc">{t.landingFrameworkBuyerReadyDesc}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="landing-body">
-        {/* ── Buyer pack preview ── */}
-        <div className="buyer-pack-preview">
-          <div className="buyer-pack-preview-eyebrow">{t.landingBuyerPackBadge}</div>
-          <div className="buyer-pack-preview-head">
-            <div>
-              <div className="buyer-pack-preview-title">{t.landingBuyerPackTitle}</div>
-              <p className="buyer-pack-preview-desc">{t.landingBuyerPackDesc}</p>
-            </div>
-          </div>
-          <div className="buyer-pack-preview-grid">
-            <div className="buyer-pack-preview-field">
-              <span className="buyer-pack-preview-label">{t.landingBuyerPackFarmLabel}</span>
-              <StatusBadge status="documented" lang={lang} />
-            </div>
-            <div className="buyer-pack-preview-field">
-              <span className="buyer-pack-preview-label">{t.landingBuyerPackBatchLabel}</span>
-              <StatusBadge status="reviewed" lang={lang} />
-            </div>
-            <div className="buyer-pack-preview-field">
-              <span className="buyer-pack-preview-label">{t.landingBuyerPackCoaLabel}</span>
-              <StatusBadge status="coa-received" lang={lang} />
-            </div>
-            <div className="buyer-pack-preview-field">
-              <span className="buyer-pack-preview-label">{t.landingBuyerPackMissingLabel}</span>
-              <span className="buyer-pack-preview-value">{t.landingBuyerPackMissingValue}</span>
-            </div>
-            <div className="buyer-pack-preview-field">
-              <span className="buyer-pack-preview-label">{t.landingBuyerPackRiskLabel}</span>
-              <span className="risk-chip risk-low">{t.landingBuyerPackRiskValue}</span>
-            </div>
-            <div className="buyer-pack-preview-field">
-              <span className="buyer-pack-preview-label">{t.landingBuyerPackActionLabel}</span>
-              <StatusBadge status="progress" lang={lang} />
-            </div>
-          </div>
-          <p className="buyer-pack-preview-note">{t.landingBuyerPackActionNote}</p>
-        </div>
-
-        {/* ── What DDP organizes (static — no live counts on the public page) ── */}
-        <div className="org-panel">
-          <div className="org-panel-head">
-            <div className="org-panel-title">{t.landingOrgTitle}</div>
-            <p className="org-panel-desc">{t.landingOrgDesc}</p>
-          </div>
-          <div className="org-grid">
-            {orgItems.map((item, i) => (
-              <div key={i} className="org-item">
-                <span className="org-item-icon" aria-hidden="true">{item.icon}</span>
-                <div className="org-item-title">{item.title}</div>
-                <div className="org-item-desc">{item.desc}</div>
-              </div>
+      {/* ── Our Procurement Process ── */}
+      <section className="ln-process" id="process">
+        <div className="ln-process-inner">
+          <h2 className="ln-section-title">{t.homeProcessTitle}</h2>
+          <ol className="ln-steps">
+            {steps.map((s, i) => (
+              <li className="ln-step" key={i}>
+                <div className="ln-step-head">
+                  <span className="ln-step-num">{i + 1}</span>
+                  <span className="ln-step-ico" aria-hidden="true">{s.icon}</span>
+                </div>
+                <div className="ln-step-title">{s.title}</div>
+                <p className="ln-step-desc">{s.desc}</p>
+                {i < steps.length - 1 && (
+                  <span className="ln-step-conn" aria-hidden="true">
+                    <ChevronRightIcon />
+                  </span>
+                )}
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
+      </section>
 
-        {/* ── Why DDP ── */}
-        <div className="why-ddp-section">
-          <div className="why-ddp-title">{t.landingWhyTitle}</div>
-          <div className="concept-cards">
-            {whyItems.map((item, i) => (
-              <div key={i} className="concept-card">
-                <span className="concept-icon-why" aria-hidden="true"><WhyIcon /></span>
-                <div className="concept-card-title">{item.title}</div>
-                <p className="concept-card-desc">{item.desc}</p>
+      {/* ── Assurance strip (dark) ── */}
+      <section className="ln-assurance" id="governance">
+        <div className="ln-assurance-inner">
+          {assurance.map((a, i) => (
+            <div className="ln-assurance-item" key={i}>
+              <span className="ln-assurance-ico" aria-hidden="true">{a.icon}</span>
+              <div className="ln-assurance-title">{a.title}</div>
+              <p className="ln-assurance-desc">{a.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Footer / contact ── */}
+      <footer className="ln-footer" id="contact">
+        <div className="ln-footer-inner">
+          <div className="ln-footer-lead">
+            <h2 className="ln-footer-heading">{t.homeFooterHeading}</h2>
+            <p className="ln-footer-sub">{t.homeFooterSub}</p>
+            <span className="ln-footer-rule" aria-hidden="true" />
+          </div>
+
+          <div className="ln-footer-channels">
+            <div className="ln-channel">
+              <span className="ln-channel-ico ln-channel-mail" aria-hidden="true"><MailGlyph /></span>
+              <div className="ln-channel-body">
+                <div className="ln-channel-label">{t.homeFooterEmailLabel}</div>
+                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail1}`}>{t.homeFooterEmail1}</a>
+                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail2}`}>{t.homeFooterEmail2}</a>
               </div>
-            ))}
+            </div>
+
+            <div className="ln-channel">
+              <span className="ln-channel-ico ln-channel-pin" aria-hidden="true"><PinGlyph /></span>
+              <div className="ln-channel-body">
+                <div className="ln-channel-label">{t.homeFooterOfficeLabel}</div>
+                <span className="ln-channel-value ln-channel-address">
+                  {t.homeFooterOfficeLine1}<br />
+                  {t.homeFooterOfficeLine2}<br />
+                  {t.homeFooterOfficeLine3}
+                </span>
+                <span className="ln-channel-tel">{t.homeFooterOfficeTel}</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ── About Us ── */}
-        <div className="about-section">
-          <div className="about-section-title">{t.landingAboutTitle}</div>
-          <p className="about-section-text">{t.landingAboutText1}</p>
+        <div className="ln-footer-legalnote">
+          <p className="ln-legalnote-line">{t.landingAuthorityNote}</p>
+          <p className="ln-legalnote-line">{t.landingDisclaimer}</p>
         </div>
 
-        <div className="authority-strip">{t.landingAuthorityNote}</div>
-        <div className="legal-strip">{t.landingDisclaimer}</div>
-      </div>
+        <div className="ln-footer-bottom">
+          <span className="ln-copyright">{t.homeFooterCopyright}</span>
+          <span className="ln-footer-legal">
+            <button type="button" className="ln-footer-legal-link">{t.homeFooterPrivacy}</button>
+            <span className="ln-footer-legal-sep" aria-hidden="true">|</span>
+            <button type="button" className="ln-footer-legal-link">{t.homeFooterTerms}</button>
+          </span>
+        </div>
+      </footer>
     </div>
   )
 }
