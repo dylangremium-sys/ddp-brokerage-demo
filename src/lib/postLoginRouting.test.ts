@@ -24,6 +24,13 @@ describe('resolvePostLoginDecision', () => {
     })
   })
 
+  it('denies a pending account (self-registered, not yet DDP-provisioned)', () => {
+    expect(resolvePostLoginDecision({ ...baseProfile, role: 'pending' })).toEqual({
+      kind: 'denied',
+      reason: 'pending-approval',
+    })
+  })
+
   it('fails closed when the profile could not be resolved (null)', () => {
     expect(resolvePostLoginDecision(null)).toEqual({
       kind: 'denied',
