@@ -8,7 +8,7 @@
 // node types the app tsconfig deliberately does not expose to src — matching
 // scripts/migration-17-decision-set.test.mjs.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 
 const root = new URL('..', import.meta.url)
@@ -85,33 +85,36 @@ describe('migration 19 — forward migration (guard function + trigger)', () => 
   })
 })
 
-describe('farm guard EXECUTE ACL end state (migrations 19 + 20)', () => {
+describe('farm guard EXECUTE ACL end state (migrations 19 + 20, corpus-wide re-grant scan)', () => {
   // Supabase default-grants EXECUTE on new public functions directly to
   // `authenticated`, so a public+anon revoke alone leaves authenticated able to
   // execute — the drift Production surfaced. The corrective migration 20 must
-  // revoke authenticated too; assert the combined end state.
-  const ACLFIX = '20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql'
-  const combined = stripComments(read(FORWARD)) + '\n' + stripComments(read(ACLFIX))
-  const revokedRoles = () => {
-    const s = new Set()
-    for (const m of combined.matchAll(/revoke\s+execute\s+on\s+function\s+public\.fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+);/gi))
-      m[1].split(',').forEach((r) => s.add(r.trim().toLowerCase()))
-    return s
-  }
+  // revoke authenticated too; and NO migration (including any added after 20) may
+  // re-grant direct EXECUTE to a client role.
+  const CLIENT_ROLES = ['public', 'anon', 'authenticated']
+  // Comment-stripped + whitespace-normalised: `public.` optional, multi-line ok.
+  const norm = (f) => stripComments(read(f)).replace(/\s+/g, ' ')
+  const REVOKE_RE = /revoke\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+);/gi
+  const GRANT_RE = /grant\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+);/gi
 
-  it('revokes EXECUTE from public, anon, AND authenticated', () => {
-    const revoked = revokedRoles()
-    for (const role of ['public', 'anon', 'authenticated']) {
-      expect(revoked, `EXECUTE must be revoked from ${role}`).toContain(role)
-    }
+  it('revokes EXECUTE from public, anon, AND authenticated (migrations 19 + 20)', () => {
+    const combined = norm(FORWARD) + ' ' + norm('20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql')
+    const revoked = new Set()
+    for (const m of combined.matchAll(REVOKE_RE)) m[1].split(',').forEach((r) => revoked.add(r.trim().toLowerCase()))
+    for (const role of CLIENT_ROLES) expect(revoked, `EXECUTE must be revoked from ${role}`).toContain(role)
   })
 
-  it('never re-grants EXECUTE to a client role', () => {
-    for (const g of combined.matchAll(/grant\s+execute\s+on\s+function\s+public\.fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+);/gi)) {
-      for (const r of g[1].split(',').map((s) => s.trim().toLowerCase())) {
-        expect(['public', 'anon', 'authenticated'], `must not re-grant EXECUTE to ${r}`).not.toContain(r)
+  it('no root *.sql grants direct EXECUTE to a client role (future-proof, any file/qualifier/layout)', () => {
+    const sqlFiles = readdirSync(root).filter((f) => f.endsWith('.sql')).sort()
+    const regrants = []
+    for (const f of sqlFiles) {
+      for (const g of norm(f).matchAll(GRANT_RE)) {
+        for (const r of g[1].split(',').map((s) => s.trim().toLowerCase())) {
+          if (CLIENT_ROLES.includes(r)) regrants.push(`${f}: TO ${r}`)
+        }
       }
     }
+    expect(regrants, `direct client-role re-grant(s) found: ${regrants.join(', ')}`).toEqual([])
   })
 })
 

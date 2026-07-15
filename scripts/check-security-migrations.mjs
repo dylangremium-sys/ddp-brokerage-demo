@@ -381,13 +381,23 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
   }
 }
 
-// Check 11 — farm guard EXECUTE ACL end state (migrations 19 + 20).
-// The trigger-only guard function must have EXECUTE revoked from public, anon, AND
-// authenticated across the farm-guard migrations, with no client re-grant. Fails
-// if: the corrective migration 20 is missing; any of the three roles is not
-// revoked; or EXECUTE is granted to any client role.
+// Check 11 — farm guard EXECUTE ACL: revoked from all client roles (19 + 20), and
+// NO direct client re-grant ANYWHERE in the SQL corpus (future-proof).
+// The trigger-only guard must have EXECUTE revoked from public, anon, AND
+// authenticated across the farm-guard migrations, and no migration — INCLUDING any
+// added after 20 — may re-grant direct EXECUTE to a client role. Fails if: the
+// corrective migration 20 is missing; any of the three roles is not revoked; or a
+// GRANT EXECUTE on fn_protect_farm_admin_fields() to public/anon/authenticated
+// appears in any root *.sql file (with or without the `public.` qualifier, and
+// even if the statement spans multiple lines).
 {
-  const label = 'Farm guard EXECUTE ACL (19 + 20)'
+  const label = 'Farm guard EXECUTE ACL (corpus-wide)'
+  // Comment-stripped AND whitespace-normalised so a statement may span lines and
+  // the `public.` schema qualifier is optional.
+  const norm = (file) => stripComments(read(file)).replace(/\s+/g, ' ')
+  const REVOKE_RE = /revoke\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+);/gi
+  const GRANT_RE = /grant\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+);/gi
+
   if (!existsSync(join(ROOT, FARM_GUARD_ACLFIX))) {
     fail(`${label}: corrective migration present`,
       `missing ${FARM_GUARD_ACLFIX} — Supabase default-grants EXECUTE on new public functions to authenticated, so without it authenticated retains direct EXECUTE on the guard`)
@@ -395,24 +405,31 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
     fail(`${label}: forward migration present`, `missing ${FARM_GUARD.forward}`)
   } else {
     pass(`${label}: corrective migration ${FARM_GUARD_ACLFIX} present`)
-    const combined = stripComments(read(FARM_GUARD.forward)) + '\n' + stripComments(read(FARM_GUARD_ACLFIX))
-    const fn = /revoke\s+execute\s+on\s+function\s+public\.fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+);/gi
+
+    // (a) Required revoke end-state across migrations 19 + 20.
+    const combined = norm(FARM_GUARD.forward) + ' ' + norm(FARM_GUARD_ACLFIX)
     const revoked = new Set()
-    for (const m of combined.matchAll(fn)) {
+    for (const m of combined.matchAll(REVOKE_RE)) {
       for (const r of m[1].split(',')) revoked.add(r.trim().toLowerCase())
     }
-    const problems = []
-    for (const role of FARM_GUARD_REVOKE_ROLES) {
-      if (!revoked.has(role)) problems.push(`EXECUTE not revoked from ${role}`)
-    }
-    const grantFn = /grant\s+execute\s+on\s+function\s+public\.fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+);/gi
-    for (const g of combined.matchAll(grantFn)) {
-      for (const r of g[1].split(',').map((s) => s.trim().toLowerCase())) {
-        if (FARM_GUARD_REVOKE_ROLES.includes(r)) problems.push(`re-grants EXECUTE to ${r} (re-opens direct execution)`)
+    const revokeProblems = FARM_GUARD_REVOKE_ROLES
+      .filter((role) => !revoked.has(role))
+      .map((role) => `EXECUTE not revoked from ${role}`)
+    check(`${label}: EXECUTE revoked from public + anon + authenticated (migrations 19 + 20)`,
+      revokeProblems.length === 0, revokeProblems.join(' | '))
+
+    // (b) No direct client-role re-grant in ANY root *.sql — catches a re-grant in
+    // a future migration (e.g. 21_…), regardless of `public.` qualifier or layout.
+    const regrants = []
+    for (const f of [...rootSql].sort()) {
+      for (const g of norm(f).matchAll(GRANT_RE)) {
+        for (const r of g[1].split(',').map((s) => s.trim().toLowerCase())) {
+          if (FARM_GUARD_REVOKE_ROLES.includes(r)) regrants.push(`${f}: GRANT EXECUTE … TO ${r} (re-opens direct execution)`)
+        }
       }
     }
-    check(`${label}: EXECUTE revoked from public + anon + authenticated, with no client re-grant`,
-      problems.length === 0, problems.join(' | '))
+    check(`${label}: no direct client-role EXECUTE re-grant in any root *.sql`,
+      regrants.length === 0, regrants.join(' | '))
   }
 }
 
