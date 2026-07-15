@@ -72,6 +72,21 @@ const EXPECTED_15_TABLES = [
   'status_history',
 ]
 
+// Migration 19 — farm admin-field self-approval guard (bespoke rules; NOT part of
+// the generic MIGRATIONS registry because its VERIFY is deliberately behavioural
+// — BEGIN/ROLLBACK with UPDATEs — rather than SELECT-only).
+const FARM_GUARD = {
+  forward: '19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql',
+  verify: '19_FARM_ADMIN_FIELD_GUARD_VERIFY.sql',
+  rollback: '19_FARM_ADMIN_FIELD_GUARD_ROLLBACK.sql',
+}
+// Admin-controlled columns, enumerated from schema (SUPABASE_SCHEMA.sql:20-25 +
+// AUTH_RLS_SCHEMA.sql:38-39). Drift from this set is a failure.
+const FARM_GUARD_PROTECTED_COLUMNS = [
+  'status', 'compliance_status', 'export_readiness',
+  'risk_level', 'partner_tier', 'reviewed_by', 'created_by',
+].sort()
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 let failures = 0
 function pass(label) { console.log(`PASS  ${label}`) }
@@ -274,6 +289,64 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
   check('Migration 15 narrow scope (no SELECT/INSERT revoke; UPDATE/DELETE only on audit log; no service_role; exact 20 tables; audit-log ENABLE ALWAYS only)',
     problems.length === 0,
     [...new Set(problems)].join(' | '))
+}
+
+// Check 10 — Migration 19 farm admin-field self-approval guard.
+// Fails if: any companion file is missing; the forward migration uses the invalid
+// role = 'admin' literal or lacks the canonical is_ddp_admin() guard; the
+// protected-column set drifts from schema; the BEFORE UPDATE trigger is not
+// installed; the VERIFY script contains COMMIT; or its transaction/residue checks
+// are vacuous.
+{
+  const label = 'Migration 19 farm admin-field guard'
+  const missing = ['forward', 'verify', 'rollback'].filter((r) => !existsSync(join(ROOT, FARM_GUARD[r])))
+  if (missing.length) {
+    fail(`${label}: companion completeness`, `missing file(s): ${missing.map((r) => FARM_GUARD[r]).join(', ')}`)
+  } else {
+    pass(`${label}: companion completeness (HARDENING + VERIFY + ROLLBACK present)`)
+
+    // Forward migration — comment-stripped so keywords in the header prose (which
+    // literally discusses the role = 'admin' bug) are never read as code.
+    const fwd = stripComments(read(FARM_GUARD.forward))
+    const problems = []
+    if (!/is_ddp_admin\s*\(/i.test(fwd)) problems.push('missing canonical is_ddp_admin() guard')
+    if (/role\s*=\s*'admin'/i.test(fwd)) problems.push("uses invalid literal role = 'admin'")
+
+    const assigned = [...fwd.matchAll(/new\.([a-z_]+)\s*:=\s*old\./gi)].map((m) => m[1].toLowerCase())
+    const assignedSet = [...new Set(assigned)].sort()
+    if (JSON.stringify(assignedSet) !== JSON.stringify(FARM_GUARD_PROTECTED_COLUMNS)) {
+      problems.push(`protected-column drift (got [${assignedSet.join(', ')}], expected [${FARM_GUARD_PROTECTED_COLUMNS.join(', ')}])`)
+    }
+    if (!/create\s+trigger\s+trg_protect_farm_admin_fields\s+before\s+update\s+on\s+public\.farms/is.test(fwd) ||
+        !/execute\s+function\s+public\.fn_protect_farm_admin_fields/is.test(fwd)) {
+      problems.push('BEFORE UPDATE trigger on public.farms is not installed')
+    }
+    check(`${label}: forward migration correctness (canonical guard, no 'admin' literal, exact column set, trigger installed)`,
+      problems.length === 0, problems.join(' | '))
+
+    // VERIFY — must be behavioural, rollback-safe, and non-vacuous.
+    const ver = stripComments(read(FARM_GUARD.verify))
+    const vProblems = []
+    if (/\bcommit\b/i.test(ver)) vProblems.push('VERIFY contains COMMIT (must use BEGIN/ROLLBACK only)')
+    if (!/\bbegin\b/i.test(ver) || !/\brollback\b/i.test(ver)) vProblems.push('VERIFY lacks BEGIN/ROLLBACK')
+    if (!/update\s+public\.farms\s+set/i.test(ver)) vProblems.push('VERIFY has no behavioural UPDATE on farms (vacuous)')
+    if (!/raise\s+exception/i.test(ver)) vProblems.push('VERIFY has no RAISE assertions (vacuous)')
+    if (!/leftover_/i.test(ver) || !/residue/i.test(ver)) vProblems.push('VERIFY has no post-rollback residue check (vacuous)')
+    for (const col of FARM_GUARD_PROTECTED_COLUMNS) {
+      if (!new RegExp(`\\b${col}\\b`, 'i').test(ver)) vProblems.push(`VERIFY does not exercise protected column ${col}`)
+    }
+    check(`${label}: VERIFY is behavioural, rollback-safe (no COMMIT), and non-vacuous`,
+      vProblems.length === 0, vProblems.join(' | '))
+
+    // ROLLBACK — reverses only this migration; must not drop the farmer policy.
+    const rb = stripComments(read(FARM_GUARD.rollback))
+    const rProblems = []
+    if (!/drop\s+trigger\s+if\s+exists\s+trg_protect_farm_admin_fields\s+on\s+public\.farms/i.test(rb)) rProblems.push('does not drop the trigger')
+    if (!/drop\s+function\s+if\s+exists\s+public\.fn_protect_farm_admin_fields/i.test(rb)) rProblems.push('does not drop the function')
+    if (/drop\s+policy[^;]*farms: farmer update own/i.test(rb)) rProblems.push('drops the "farms: farmer update own" policy (overreach)')
+    check(`${label}: ROLLBACK reverses only this migration (keeps farmer-update policy)`,
+      rProblems.length === 0, rProblems.join(' | '))
+  }
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────
