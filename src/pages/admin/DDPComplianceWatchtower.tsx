@@ -29,7 +29,7 @@ import { guardAiDraftedFields } from '../../lib/aiComplianceGuard'
 import * as repo from '../../lib/complianceRepository'
 import * as sourceRegistry from '../../lib/complianceSourceRegistry'
 import { SUPPORTED_SOURCE_TYPES, deriveRegulatorySourceStatus, type RegulatorySourceStatus } from '../../lib/complianceSourceRegistry'
-import { buildMonitoringDecision, prepareMonitoringLegalUpdateIntake, decideDraftCreation, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
+import { prepareMonitoringLegalUpdateIntake, decideDraftCreation, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
 import {
   evaluateCannamonitorPolicy,
   CANNAMONITOR_REVIEW_HEADLINE,
@@ -40,6 +40,7 @@ import {
   runManualRssMonitoring,
   evaluateManualMonitoringEligibility,
   canStartManualRun,
+  runPastedMonitoringDecision,
   type ManualMonitoringRunResult,
 } from '../../lib/complianceManualMonitoring'
 import { createBrowserRssFetch } from '../../lib/browserRssFetch'
@@ -718,7 +719,18 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       .filter(([id]) => id !== sourceKey)
       .map(([, snapshot]) => snapshot.checksum)
 
-    const decision = await buildMonitoringDecision(sourceKey, monitoringContent, previousSnapshot, knownChecksums)
+    // Authoritative pasted-monitoring source-policy gate. A selected Cannamonitor
+    // source is denied HERE — before any content is normalized, hashed, or turned
+    // into a monitoring decision — so pasted Cannamonitor body text cannot enter
+    // a checksum, `rawText`, a monitoring decision, a draft intake, or
+    // persistence. Non-Cannamonitor sources are unaffected (identical behaviour).
+    const result = await runPastedMonitoringDecision(source, sourceKey, monitoringContent, previousSnapshot, knownChecksums)
+    if (!result.ok) {
+      setMonitoringDecision(null)
+      setActionMessage({ type: 'error', text: result.reason })
+      return
+    }
+    const decision = result.decision
     setMonitoringDecision(decision)
 
     if (decision.snapshot) {

@@ -8,7 +8,7 @@ import {
   type RssConnectorResult,
   type RssFetchImpl,
 } from './complianceRssConnector'
-import type { MonitoringDecision, SourceContentSnapshot } from './complianceSourceMonitoring'
+import { buildMonitoringDecision, type MonitoringDecision, type SourceContentSnapshot } from './complianceSourceMonitoring'
 import { evaluateCannamonitorPolicy } from './complianceCannamonitorPolicy'
 
 // ─── Manual Watchtower RSS monitoring — orchestration (Phase 2D) ────────────
@@ -243,4 +243,85 @@ export async function runManualRssMonitoring(
   })
 
   return mapConnectorResult(source, eligibility.connectorKind, result, previousSnapshots)
+}
+
+// ─── Pasted Monitoring Queue gate (pasted-content ingestion path) ───────────
+//
+// A SECOND ingestion path exists beside the RSS connector: an admin can paste
+// arbitrary article text into the Monitoring Queue for a SELECTED registered
+// source. That path never goes through the RSS metadata projection, so a
+// Cannamonitor source must be denied HERE — before the pasted content is
+// normalized, hashed, or turned into a monitoring decision. Attribution is by
+// the SELECTED source's canonical URL only; the pasted text is never inspected
+// or classified (no content-sniffing). The documented limitation stands: text
+// pasted against a blank / false / unrelated source cannot be identified.
+
+export type PastedMonitoringDenialCode = 'cannamonitor_permission_unverified'
+
+export type PastedMonitoringGateDecision =
+  | { action: 'proceed' }
+  | { action: 'deny'; code: PastedMonitoringDenialCode; reason: string }
+
+/**
+ * Pure source-policy gate for the pasted Monitoring Queue path. Denies a
+ * matched Cannamonitor source whose monitoring is not permitted (permission
+ * unverified) BEFORE any decision/checksum work. Reuses the single existing
+ * policy (evaluateCannamonitorPolicy) — no second matcher, no host logic here.
+ * Non-Cannamonitor sources, and a (hypothetical) permitted Cannamonitor source,
+ * proceed unchanged.
+ */
+export function evaluatePastedMonitoringGate(
+  source: Pick<RegulatorySource, 'url'> | null | undefined,
+): PastedMonitoringGateDecision {
+  const policy = evaluateCannamonitorPolicy({ url: source?.url ?? '' })
+  if (policy.matched && !policy.monitoringAllowed) {
+    return {
+      action: 'deny',
+      code: 'cannamonitor_permission_unverified',
+      reason:
+        'Cannamonitor monitoring is disabled while commercial-processing permission remains unverified. Pasted content is not accepted for this source.',
+    }
+  }
+  return { action: 'proceed' }
+}
+
+export type PastedMonitoringResult =
+  | { ok: true; decision: MonitoringDecision }
+  | { ok: false; code: PastedMonitoringDenialCode; reason: string }
+
+/**
+ * Injectable decision builder — defaults to the real buildMonitoringDecision.
+ * Exists so a test can prove the builder (and therefore normalization + checksum
+ * construction) is NEVER reached on a denial.
+ */
+export type PastedMonitoringDecisionBuilder = (
+  sourceId: string,
+  rawContent: string,
+  previousSnapshot: SourceContentSnapshot | null,
+  knownChecksums: string[],
+) => Promise<MonitoringDecision>
+
+/**
+ * The authoritative shared entry point for a PASTED Monitoring Queue check.
+ * Runs the Cannamonitor gate FIRST; on denial it returns before the decision
+ * builder is invoked, so the pasted content never reaches normalization,
+ * checksum construction, `rawText`, a monitoring decision, a draft intake, or
+ * persistence. On `proceed` it builds the ordinary monitoring decision, so
+ * non-Cannamonitor behaviour is byte-for-byte unchanged. This function creates
+ * nothing, persists nothing, calls no AI, and schedules nothing.
+ */
+export async function runPastedMonitoringDecision(
+  source: Pick<RegulatorySource, 'url'> | null | undefined,
+  sourceKey: string,
+  pastedContent: string,
+  previousSnapshot: SourceContentSnapshot | null,
+  knownChecksums: string[] = [],
+  buildDecision: PastedMonitoringDecisionBuilder = buildMonitoringDecision,
+): Promise<PastedMonitoringResult> {
+  const gate = evaluatePastedMonitoringGate(source)
+  if (gate.action === 'deny') {
+    return { ok: false, code: gate.code, reason: gate.reason }
+  }
+  const decision = await buildDecision(sourceKey, pastedContent, previousSnapshot, knownChecksums)
+  return { ok: true, decision }
 }

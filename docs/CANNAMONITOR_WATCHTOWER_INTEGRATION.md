@@ -110,6 +110,32 @@ This is an accepted, deliberate trade-off: detection of body-only edits is given
 up in exchange for not copying the body. Change detection compares only the
 permitted metadata.
 
+### Two ingestion paths — both gated
+
+Content can enter monitoring by two routes, and **both** are gated for a
+correctly-attributed Cannamonitor source while permission is unverified:
+
+- **RSS retrieval** is metadata-only and separately gated: the connector denies a
+  Cannamonitor source before any fetch, and the metadata-only projection above
+  applies to whatever is parsed.
+- **Pasted Monitoring Queue** — an admin can paste arbitrary text against a
+  *selected* registered source. This path never goes through the RSS projection,
+  so it is gated independently by `runPastedMonitoringDecision` /
+  `evaluatePastedMonitoringGate` in `complianceManualMonitoring.ts`. A selected
+  Cannamonitor source is **denied before `buildMonitoringDecision` runs** — i.e.
+  before normalization, checksum construction, `rawText`, the monitoring
+  decision, draft intake, or any persistence. `DDPComplianceWatchtower.tsx`
+  routes the pasted-monitoring action through this shared gate rather than
+  calling `buildMonitoringDecision` directly.
+
+Attribution for the pasted path is by the **selected source's canonical URL
+only** — the pasted text is never inspected or classified (**no
+content-sniffing**). The documented limitation therefore still holds: Cannamonitor
+text pasted against a blank, false, or unrelated source cannot be identified;
+administrators must select and record the correct source. No source row and no
+activation mechanism exist, so in practice no Cannamonitor source can be selected
+today — this gate is a fail-closed guarantee for if one ever were.
+
 ---
 
 ## 5. AI restrictions (defence in depth)
