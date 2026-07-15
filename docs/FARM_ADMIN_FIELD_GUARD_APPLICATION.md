@@ -1,12 +1,20 @@
 # Farm admin-field guard — production application instructions
 
 Migration **19** — closes the `public.farms` admin-field self-approval privilege
-escalation: with the RLS policy `"farms: farmer update own"` live but no column
-guard, a farmer can set their own `compliance_status`, `risk_level`,
-`export_readiness`, `partner_tier`, `status`, `reviewed_by`, and `created_by` —
-i.e. approve their own farm. This migration installs a `BEFORE UPDATE` trigger
-that preserves those admin-controlled columns for non-admins while leaving
-descriptive/contact columns editable.
+escalation on **both** row-level write paths. RLS gates rows, not columns, so:
+
+- **UPDATE** — `"farms: farmer update own"` lets a farmer update their own farm row;
+- **INSERT** — `"farms: farmer insert own"` checks only `created_by = auth.uid()`,
+  so at creation a farmer could otherwise supply `compliance_status`, `risk_level`,
+  `status`, etc., and even spoof `created_by`.
+
+Without a guard a farmer can set their own `compliance_status`, `risk_level`,
+`export_readiness`, `partner_tier`, `status`, `reviewed_by`, and `created_by` — i.e.
+approve their own farm. This migration installs a single **`BEFORE INSERT OR UPDATE`**
+trigger that, for non-admins, **preserves** those admin-controlled columns on UPDATE
+and **forces them to canonical safe values** on INSERT (`created_by` → `auth.uid()`,
+`status` → `'Submitted to DDP'`, the rest → `NULL`), while leaving descriptive/contact
+columns editable. DDP admins may set them explicitly on either path.
 
 **These files are reviewed repository artifacts. They have not been executed
 against any database by this change. An operator applies them manually.**
@@ -58,10 +66,18 @@ and the `public.farms` table. No other migration is a prerequisite.
 Run `19_FARM_ADMIN_FIELD_GUARD_ROLLBACK.sql`. It drops only the trigger and
 function.
 
-> ⚠️ **Rollback re-opens the vulnerability.** It intentionally leaves
-> `"farms: farmer update own"` in place, so after rollback Q1 returns
-> `ESCALATION RISK` again. Only roll back deliberately, and re-apply the forward
+> ⚠️ **Rollback re-opens BOTH vectors (UPDATE and INSERT).** It intentionally
+> leaves `"farms: farmer update own"` and `"farms: farmer insert own"` in place, so
+> after rollback Q1 returns `ESCALATION RISK` again and farmer INSERT can once more
+> supply admin columns. Only roll back deliberately, and re-apply the forward
 > migration promptly.
+
+**Fail-closed behaviour:** the guard keys on `is_ddp_admin()` (which reads
+`auth.uid()`). Writes with no authenticated user — a `postgres`/SQL-editor direct
+edit, or a `service_role` connection — are treated as non-admin, so protected
+columns are preserved (UPDATE) or reset to canonical values (INSERT). To change
+protected fields directly, do so through an authenticated `ddp_admin` session, or
+temporarily disable the trigger for a deliberate maintenance operation.
 
 ## Scope / out of scope
 

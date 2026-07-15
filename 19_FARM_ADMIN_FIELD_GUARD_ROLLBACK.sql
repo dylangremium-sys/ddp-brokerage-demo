@@ -7,12 +7,14 @@
 --
 -- *** SECURITY WARNING — READ BEFORE RUNNING ***
 -- ------------------------------------------------------------------------------
--- This rollback RE-OPENS the farm admin-field self-approval privilege escalation.
--- The RLS policy "farms: farmer update own" is intentionally LEFT IN PLACE (this
--- script does NOT drop it). With that policy present and this trigger removed,
--- 16_PRODUCTION_SAFETY_VERIFY.sql Q1 returns:
+-- This rollback RE-OPENS BOTH farm admin-field self-approval vectors — UPDATE and
+-- INSERT. The RLS policies "farms: farmer update own" and "farms: farmer insert
+-- own" are intentionally LEFT IN PLACE (this script does NOT drop them). With those
+-- policies present and this trigger removed, 16_PRODUCTION_SAFETY_VERIFY.sql Q1
+-- returns:
 --     *** ESCALATION RISK — farmer UPDATE policy is LIVE and the column guard is ABSENT ***
--- i.e. any farmer can set their own farms.compliance_status / risk_level /
+-- and, in parallel, a farmer can again supply admin-controlled columns at INSERT.
+-- Either way a farmer can set their own farms.compliance_status / risk_level /
 -- export_readiness / partner_tier / status / reviewed_by / created_by — approving
 -- their own farm. Only run this if you are deliberately and temporarily reverting
 -- the guard, and re-apply 19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql promptly.
@@ -59,7 +61,11 @@ begin
                  and policyname = 'farms: farmer update own') then
     raise exception 'ROLLBACK FAILED: policy "farms: farmer update own" was dropped — rollback overreached its scope';
   end if;
-  raise warning 'ROLLBACK COMPLETE: farm admin-field guard REMOVED. Self-approval escalation is now RE-OPENED while "farms: farmer update own" remains live. Re-apply 19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql to close it.';
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'farms'
+                 and policyname = 'farms: farmer insert own') then
+    raise exception 'ROLLBACK FAILED: policy "farms: farmer insert own" was dropped — rollback overreached its scope';
+  end if;
+  raise warning 'ROLLBACK COMPLETE: farm admin-field guard REMOVED. BOTH self-approval vectors (UPDATE and INSERT) are now RE-OPENED while "farms: farmer update own" and "farms: farmer insert own" remain live. Re-apply 19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql to close them.';
 end $$;
 
 commit;

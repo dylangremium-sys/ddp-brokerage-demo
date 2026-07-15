@@ -5,19 +5,24 @@
 --
 -- WHAT THIS CLOSES
 -- ----------------
--- The RLS policy "farms: farmer update own" (FARM_RESAVE_PERSISTENCE_MIGRATION.sql)
--- lets a farmer UPDATE their own farm ROW. RLS gates rows, never columns, so the
--- ONLY thing that can stop a farmer from writing admin-controlled columns
--- (compliance_status, risk_level, export_readiness, partner_tier, status,
--- reviewed_by, created_by) is a BEFORE UPDATE trigger. 16_PRODUCTION_SAFETY_VERIFY.sql
--- Q1 states the exact rule:
---   policy present AND trigger PRESENT -> SAFE
---   policy present AND trigger ABSENT  -> *** LIVE PRIVILEGE ESCALATION ***
---                                         (a farmer can approve their own farm)
+-- RLS gates ROWS, never COLUMNS, so a farmer with a row-level write path on
+-- public.farms can supply admin-controlled columns unless a trigger stops it.
+-- There are TWO such row-level paths, and this guard closes BOTH:
+--   * UPDATE — policy "farms: farmer update own" (FARM_RESAVE_PERSISTENCE_MIGRATION.sql)
+--     lets a farmer UPDATE their own farm row. 16_PRODUCTION_SAFETY_VERIFY.sql Q1:
+--       policy present AND trigger PRESENT -> SAFE
+--       policy present AND trigger ABSENT  -> *** LIVE PRIVILEGE ESCALATION ***
+--                                             (a farmer can approve their own farm)
+--   * INSERT — policy "farms: farmer insert own" (RLS_ENABLE_STAGED.sql:177) checks
+--     ONLY `created_by = auth.uid()`, so at creation a farmer could otherwise supply
+--     their own compliance_status / risk_level / status / etc. and even spoof
+--     created_by. Same authorization boundary, second vector.
+-- The admin-controlled columns are: compliance_status, risk_level, export_readiness,
+-- partner_tier, status, reviewed_by, created_by.
 --
--- This migration installs that guard so a farmer may edit descriptive/contact
--- fields but can never self-certify their own compliance, risk, review, status,
--- tier, or provenance.
+-- This migration installs a single BEFORE INSERT OR UPDATE trigger so a farmer may
+-- edit descriptive/contact fields but can never self-certify their own compliance,
+-- risk, review, status, tier, or provenance — on either INSERT or UPDATE.
 --
 -- WHY A NEW MIGRATION (not the earlier drafts)
 -- --------------------------------------------
@@ -66,14 +71,25 @@
 --   added to farms by ALTER (AUTH_RLS_SCHEMA.sql:38-39):
 --     created_by, reviewed_by
 --
+-- CANONICAL FARMER-INSERT VALUES (from schema + application evidence, not guessed)
+-- --------------------------------------------------------------------------------
+--   created_by  -> auth.uid()          (matches the "farms: farmer insert own" RLS
+--                                        WITH CHECK; cannot be spoofed)
+--   status      -> 'Submitted to DDP'  (the only status the farmer create path sets,
+--                                        FarmerOnboarding.tsx:193; all later
+--                                        FarmStatus values are admin-assigned)
+--   reviewed_by, compliance_status, export_readiness, risk_level, partner_tier
+--               -> NULL                (admin-assessed; db.ts createFarmProfile never
+--                                        sets these at farmer creation)
+--
 -- SCOPE (deliberately narrow)
 -- ---------------------------
 -- Touches ONLY public.fn_protect_farm_admin_fields() and the trigger
 -- trg_protect_farm_admin_fields on public.farms. It does NOT alter, weaken, or
--- recreate the "farms: farmer update own" RLS policy, and it does NOT touch
--- farm_profiles, profiles, RLS on any table, or any other object. (The separate
--- profiles.role self-elevation concern noted in 16_PRODUCTION_SAFETY_VERIFY.sql is
--- out of scope for this migration.)
+-- recreate the "farms: farmer update own" or "farms: farmer insert own" RLS
+-- policies, and it does NOT touch farm_profiles, profiles, RLS on any table, or any
+-- other object. (The separate profiles.role self-elevation concern noted in
+-- 16_PRODUCTION_SAFETY_VERIFY.sql is out of scope for this migration.)
 --
 -- APPLICATION
 -- -----------
@@ -96,9 +112,41 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
-  -- Real DDP admins may change anything; delegate to the canonical predicate so
-  -- this function carries no role literal of its own.
+  -- Real DDP admins may set any admin-controlled field on INSERT or UPDATE;
+  -- delegate to the canonical predicate so this function carries no role literal.
   if public.is_ddp_admin() then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    -- Non-admin (farmer) INSERT: force every admin-controlled column to its
+    -- canonical safe initial value, so a farmer cannot self-assign a
+    -- compliance/risk/tier/review state or a downstream lifecycle status at
+    -- creation, and cannot spoof ownership. Values are taken from schema +
+    -- application evidence (NOT guessed):
+    --   created_by  -> auth.uid()          ownership anchor. Matches the RLS insert
+    --                                       policy "farms: farmer insert own"
+    --                                       (WITH CHECK created_by = auth.uid()),
+    --                                       which is evaluated AFTER this BEFORE
+    --                                       trigger, so a spoofed created_by is
+    --                                       overwritten here and cannot survive.
+    --   status      -> 'Submitted to DDP'   the farmer-submission entry state and the
+    --                                       ONLY status the farmer create path assigns
+    --                                       (FarmerOnboarding.tsx:193). Every later
+    --                                       FarmStatus value is admin-assigned
+    --                                       (App.tsx:427-432).
+    --   the rest    -> NULL                 admin-assessed fields that the farmer
+    --                                       create path never sets
+    --                                       (db.ts createFarmProfile writes none of
+    --                                       compliance_status/export_readiness/
+    --                                       risk_level/partner_tier/reviewed_by).
+    new.created_by        := auth.uid();
+    new.status            := 'Submitted to DDP';
+    new.reviewed_by       := null;
+    new.compliance_status := null;
+    new.export_readiness  := null;
+    new.risk_level        := null;
+    new.partner_tier      := null;
     return new;
   end if;
 
@@ -137,7 +185,7 @@ revoke execute on function public.fn_protect_farm_admin_fields() from public, an
 drop trigger if exists trg_protect_farm_admin_fields on public.farms;
 
 create trigger trg_protect_farm_admin_fields
-before update on public.farms
+before insert or update on public.farms
 for each row
 execute function public.fn_protect_farm_admin_fields();
 

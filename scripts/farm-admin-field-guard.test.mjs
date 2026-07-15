@@ -49,14 +49,25 @@ describe('migration 19 — forward migration (guard function + trigger)', () => 
     }
   })
 
-  it('protects exactly the enumerated columns — no drift in the assignment set', () => {
+  it('protects exactly the enumerated columns on UPDATE — no drift in the assignment set', () => {
     const assigned = [...code.matchAll(/new\.([a-z_]+)\s*:=\s*old\./gi)].map((m) => m[1].toLowerCase())
     expect([...new Set(assigned)].sort()).toEqual([...PROTECTED_COLUMNS].sort())
   })
 
-  it('installs a BEFORE UPDATE row trigger on public.farms bound to the guard', () => {
-    expect(code).toMatch(/create\s+trigger\s+trg_protect_farm_admin_fields\s+before\s+update\s+on\s+public\.farms/is)
+  it('installs a BEFORE INSERT OR UPDATE row trigger on public.farms bound to the guard', () => {
+    expect(code).toMatch(/create\s+trigger\s+trg_protect_farm_admin_fields\s+before\s+insert\s+or\s+update\s+on\s+public\.farms/is)
     expect(code).toMatch(/execute\s+function\s+public\.fn_protect_farm_admin_fields\s*\(\s*\)/is)
+  })
+
+  it('has a farmer-INSERT branch that forces created_by and neutralises every protected field', () => {
+    expect(code, 'must branch on TG_OP for INSERT').toMatch(/tg_op\s*=\s*'insert'/i)
+    // created_by anchored to the caller (cannot be spoofed); status pinned to the
+    // proven farmer entry value; the other five neutralised to NULL.
+    expect(code).toMatch(/new\.created_by\s*:=\s*auth\.uid\(\)/i)
+    expect(code).toMatch(/new\.status\s*:=\s*'Submitted to DDP'/i)
+    for (const col of ['reviewed_by', 'compliance_status', 'export_readiness', 'risk_level', 'partner_tier']) {
+      expect(code, `INSERT must set new.${col} := null`).toMatch(new RegExp(`new\\.${col}\\s*:=\\s*null`, 'i'))
+    }
   })
 
   it('is SECURITY DEFINER with a fixed search_path', () => {
@@ -84,8 +95,15 @@ describe('migration 19 — verification script', () => {
     expect(code).not.toMatch(/\bcommit\b/i)
   })
 
-  it('exercises a real UPDATE against public.farms (non-vacuous behaviour)', () => {
+  it('exercises a real UPDATE and a real INSERT against public.farms (non-vacuous behaviour)', () => {
     expect(code).toMatch(/update\s+public\.farms\s+set/i)
+    expect(code).toMatch(/insert\s+into\s+public\.farms/i)
+  })
+
+  it('has both a farmer-INSERT test and an admin-INSERT test', () => {
+    expect(code, 'farmer-INSERT test (B5) with created_by anti-spoof assertion').toMatch(/verify b5/i)
+    expect(code).toMatch(/created_by not forced/i)
+    expect(code, 'admin-INSERT test (B6)').toMatch(/verify b6/i)
   })
 
   it('asserts each protected column behaviourally', () => {
@@ -95,10 +113,13 @@ describe('migration 19 — verification script', () => {
     }
   })
 
-  it('has explicit RAISE assertions and a post-rollback residue check', () => {
+  it('has explicit RAISE assertions and a residue check covering inserted rows and auth.users', () => {
     expect(code).toMatch(/raise\s+exception/i)      // real assertions, not silent selects
-    expect(code).toMatch(/leftover_/i)              // residue check exists
     expect(code).toMatch(/residue/i)
+    const residueTail = code.slice(code.lastIndexOf('rollback;'))
+    expect(residueTail, 'residue must cover seeded auth.users').toMatch(/leftover_auth_users/i)
+    expect(residueTail, 'residue must cover the farmer-INSERT row').toContain('000fa000-0000-0000-0000-000000000003')
+    expect(residueTail, 'residue must cover the admin-INSERT row').toContain('000fa000-0000-0000-0000-000000000004')
   })
 })
 
