@@ -87,6 +87,12 @@ const FARM_GUARD_PROTECTED_COLUMNS = [
   'risk_level', 'partner_tier', 'reviewed_by', 'created_by',
 ].sort()
 
+// Corrective ACL migration (migration 20). Supabase default-grants EXECUTE on new
+// public functions directly to `authenticated`, so the trigger-only guard must be
+// revoked from public, anon, AND authenticated for the combined 19 + 20 end state.
+const FARM_GUARD_ACLFIX = '20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql'
+const FARM_GUARD_REVOKE_ROLES = ['public', 'anon', 'authenticated']
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 let failures = 0
 function pass(label) { console.log(`PASS  ${label}`) }
@@ -372,6 +378,67 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
     if (/drop\s+policy[^;]*farms: farmer (update|insert) own/i.test(rb)) rProblems.push('drops a "farms: farmer …" policy (overreach)')
     check(`${label}: ROLLBACK reverses only this migration (keeps both farmer policies)`,
       rProblems.length === 0, rProblems.join(' | '))
+  }
+}
+
+// Check 11 — farm guard EXECUTE ACL: revoked from all client roles (19 + 20), and
+// NO direct client re-grant ANYWHERE in the SQL corpus (future-proof).
+// The trigger-only guard must have EXECUTE revoked from public, anon, AND
+// authenticated across the farm-guard migrations, and no migration — INCLUDING any
+// added after 20 — may re-grant direct EXECUTE to a client role. Fails if: the
+// corrective migration 20 is missing; any of the three roles is not revoked; or a
+// GRANT EXECUTE on fn_protect_farm_admin_fields() to public/anon/authenticated
+// appears in any root *.sql file (with or without the `public.` qualifier, and
+// even if the statement spans multiple lines).
+{
+  const label = 'Farm guard EXECUTE ACL (corpus-wide)'
+  // Comment-stripped AND whitespace-normalised so a statement may span lines and
+  // the `public.` schema qualifier is optional. The trailing `;` is optional too
+  // (a valid final statement may omit it) — the role list runs to `;` OR end.
+  const norm = (file) => stripComments(read(file)).replace(/\s+/g, ' ')
+  const REVOKE_RE = /revoke\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+?)\s*(?:;|$)/gi
+  const GRANT_RE = /grant\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+?)\s*(?:;|$)/gi
+  // A role token may be double-quoted (PostgreSQL: "authenticated" == authenticated).
+  // Split on commas, trim, remove ONE surrounding pair of double quotes, lowercase.
+  const parseRoles = (list) => list.split(',').map((r) => {
+    const t = r.trim()
+    const unquoted = (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) ? t.slice(1, -1) : t
+    return unquoted.trim().toLowerCase()
+  })
+
+  if (!existsSync(join(ROOT, FARM_GUARD_ACLFIX))) {
+    fail(`${label}: corrective migration present`,
+      `missing ${FARM_GUARD_ACLFIX} — Supabase default-grants EXECUTE on new public functions to authenticated, so without it authenticated retains direct EXECUTE on the guard`)
+  } else if (!existsSync(join(ROOT, FARM_GUARD.forward))) {
+    fail(`${label}: forward migration present`, `missing ${FARM_GUARD.forward}`)
+  } else {
+    pass(`${label}: corrective migration ${FARM_GUARD_ACLFIX} present`)
+
+    // (a) Required revoke end-state across migrations 19 + 20.
+    const combined = norm(FARM_GUARD.forward) + ' ' + norm(FARM_GUARD_ACLFIX)
+    const revoked = new Set()
+    for (const m of combined.matchAll(REVOKE_RE)) {
+      for (const r of parseRoles(m[1])) revoked.add(r)
+    }
+    const revokeProblems = FARM_GUARD_REVOKE_ROLES
+      .filter((role) => !revoked.has(role))
+      .map((role) => `EXECUTE not revoked from ${role}`)
+    check(`${label}: EXECUTE revoked from public + anon + authenticated (migrations 19 + 20)`,
+      revokeProblems.length === 0, revokeProblems.join(' | '))
+
+    // (b) No direct client-role re-grant in ANY root *.sql — catches a re-grant in
+    // a future migration (e.g. 21_…), regardless of `public.` qualifier, layout,
+    // quoted role names, or a missing trailing semicolon.
+    const regrants = []
+    for (const f of [...rootSql].sort()) {
+      for (const g of norm(f).matchAll(GRANT_RE)) {
+        for (const r of parseRoles(g[1])) {
+          if (FARM_GUARD_REVOKE_ROLES.includes(r)) regrants.push(`${f}: GRANT EXECUTE … TO ${r} (re-opens direct execution)`)
+        }
+      }
+    }
+    check(`${label}: no direct client-role EXECUTE re-grant in any root *.sql`,
+      regrants.length === 0, regrants.join(' | '))
   }
 }
 

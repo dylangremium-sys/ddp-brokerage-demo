@@ -8,7 +8,7 @@
 // node types the app tsconfig deliberately does not expose to src — matching
 // scripts/migration-17-decision-set.test.mjs.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 
 const root = new URL('..', import.meta.url)
@@ -82,6 +82,46 @@ describe('migration 19 — forward migration (guard function + trigger)', () => 
 
   it('declares the deliberate no-grant ACL decision (trigger-only function)', () => {
     expect(raw).toMatch(/acl-no-grant:\s*fn_protect_farm_admin_fields/i)
+  })
+})
+
+describe('farm guard EXECUTE ACL end state (migrations 19 + 20, corpus-wide re-grant scan)', () => {
+  // Supabase default-grants EXECUTE on new public functions directly to
+  // `authenticated`, so a public+anon revoke alone leaves authenticated able to
+  // execute — the drift Production surfaced. The corrective migration 20 must
+  // revoke authenticated too; and NO migration (including any added after 20) may
+  // re-grant direct EXECUTE to a client role.
+  const CLIENT_ROLES = ['public', 'anon', 'authenticated']
+  // Comment-stripped + whitespace-normalised: `public.` optional, multi-line ok,
+  // trailing `;` optional (role list runs to `;` OR end of the normalised string).
+  const norm = (f) => stripComments(read(f)).replace(/\s+/g, ' ')
+  const REVOKE_RE = /revoke\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+from\s+([^;]+?)\s*(?:;|$)/gi
+  const GRANT_RE = /grant\s+execute\s+on\s+function\s+(?:public\.)?fn_protect_farm_admin_fields\s*\(\s*\)\s+to\s+([^;]+?)\s*(?:;|$)/gi
+  // A role token may be double-quoted ("authenticated" == authenticated in PG).
+  const parseRoles = (list) => list.split(',').map((r) => {
+    const t = r.trim()
+    const unquoted = (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) ? t.slice(1, -1) : t
+    return unquoted.trim().toLowerCase()
+  })
+
+  it('revokes EXECUTE from public, anon, AND authenticated (migrations 19 + 20)', () => {
+    const combined = norm(FORWARD) + ' ' + norm('20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql')
+    const revoked = new Set()
+    for (const m of combined.matchAll(REVOKE_RE)) parseRoles(m[1]).forEach((r) => revoked.add(r))
+    for (const role of CLIENT_ROLES) expect(revoked, `EXECUTE must be revoked from ${role}`).toContain(role)
+  })
+
+  it('no root *.sql grants direct EXECUTE to a client role (future-proof: any file/qualifier/layout/quoted-role/no-semicolon)', () => {
+    const sqlFiles = readdirSync(root).filter((f) => f.endsWith('.sql')).sort()
+    const regrants = []
+    for (const f of sqlFiles) {
+      for (const g of norm(f).matchAll(GRANT_RE)) {
+        for (const r of parseRoles(g[1])) {
+          if (CLIENT_ROLES.includes(r)) regrants.push(`${f}: TO ${r}`)
+        }
+      }
+    }
+    expect(regrants, `direct client-role re-grant(s) found: ${regrants.join(', ')}`).toEqual([])
   })
 })
 
