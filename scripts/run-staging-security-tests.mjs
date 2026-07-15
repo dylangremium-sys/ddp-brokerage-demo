@@ -97,6 +97,12 @@ export function resolveConfig(env) {
     admin: { email: env.STAGING_ADMIN_EMAIL, password: env.STAGING_ADMIN_PASSWORD },
     farmerA: { email: env.STAGING_FARMER_A_EMAIL, password: env.STAGING_FARMER_A_PASSWORD },
     farmerB: { email: env.STAGING_FARMER_B_EMAIL, password: env.STAGING_FARMER_B_PASSWORD },
+    // Optional: a staging auth user whose profiles.role is 'pending' (migration
+    // 20/21). When absent, the pending-denial group SKIPS (fail-closed) rather
+    // than fabricating a credential.
+    pending: env.STAGING_PENDING_EMAIL && env.STAGING_PENDING_PASSWORD
+      ? { email: env.STAGING_PENDING_EMAIL, password: env.STAGING_PENDING_PASSWORD }
+      : null,
     databaseUrl: env.STAGING_DATABASE_URL || null,
     allowAuditInsert: /^(1|true|yes)$/i.test(env.STAGING_ALLOW_AUDIT_INSERT || ''),
   }
@@ -439,6 +445,59 @@ async function main() {
       !!(await a.client.storage.from('farmer-documents').upload(`${b.userId}/${TAG}.txt`, new Blob(['x']))).error)
     record('anon cannot upload to farmer-documents',
       !!(await anon.storage.from('farmer-documents').upload(`${runId}/anon2.txt`, new Blob(['x']))).error)
+
+    // ── H. Pending user has NO operational access (migration 21) ─────────────
+    // A 'pending' account is authenticated but not yet provisioned as a farmer.
+    // The restrictive overlay must block it from writing/uploading farm data via
+    // the REST/Storage API even though ownership predicates would otherwise pass.
+    group('H. pending user denied operational access')
+    if (!cfg.pending) {
+      const reason = 'set STAGING_PENDING_EMAIL/STAGING_PENDING_PASSWORD to a staging user whose profiles.role = pending'
+      for (const n of [
+        'pending cannot insert farm', 'pending cannot update farm',
+        'pending cannot insert inventory_batch', 'pending cannot update inventory_batch',
+        'pending cannot insert farmer_document metadata', 'pending cannot upload to farmer-documents',
+        'pending cannot upload to farmer-photos', 'pending cannot read farmer-operated data',
+      ]) skip(n, reason)
+    } else {
+      const p = await signedInClient(cfg, cfg.pending, 'pending')
+      // Fail closed if the configured user is not actually pending — otherwise a
+      // farmer/admin credential here would produce false "denied" via other rules.
+      const roleRow = await p.client.from('profiles').select('role').eq('id', p.userId).maybeSingle()
+      if (roleRow?.data?.role && roleRow.data.role !== 'pending') {
+        skip('pending-user probes', `configured user role is "${roleRow.data.role}", not "pending" — refusing to assert`)
+      } else {
+        const denRls = (res) => isDeniedByRls(res).denied
+        record('pending cannot insert farm',
+          denRls(await p.client.from('farms').insert({ farm_name: `${TAG}-P`, created_by: p.userId }).select('id')))
+        record('pending cannot update farm',
+          denRls(await p.client.from('farms').update({ farm_name: `${TAG}-P2` }).eq('id', farmA ?? '00000000-0000-0000-0000-000000000000').select('id')))
+        // Best-effort valid rows so the ONLY barrier is RLS (see the guardrail-fix
+        // schema notes). If a NOT NULL column is added, update these payloads.
+        record('pending cannot insert inventory_batch',
+          denRls(await p.client.from('inventory_batches')
+            .insert({ created_by: p.userId, farm_id: farmA ?? '00000000-0000-0000-0000-000000000000', status: 'Pending Review', client_visible: false, notes: `${TAG}-P` })
+            .select('id')))
+        record('pending cannot update inventory_batch',
+          denRls(await p.client.from('inventory_batches').update({ notes: `${TAG}-P2` }).ilike('notes', `${TAG}%`).select('id')))
+        record('pending cannot insert farmer_document metadata',
+          denRls(await p.client.from('farmer_documents')
+            .insert({ farm_id: farmA ?? '00000000-0000-0000-0000-000000000000', doc_type: 'coa', file_path: `${p.userId}/${TAG}.pdf` })
+            .select('id')))
+        record('pending cannot upload to farmer-documents',
+          !!(await p.client.storage.from('farmer-documents').upload(`${p.userId}/${TAG}.txt`, new Blob(['x']))).error)
+        record('pending cannot upload to farmer-photos',
+          !!(await p.client.storage.from('farmer-photos').upload(`${p.userId}/${TAG}.jpg`, new Blob(['x']))).error)
+        record('pending cannot read farmer-operated data',
+          isDenied(await p.client.from('farms').select('id').limit(1)))
+
+        // Affirmative: operational farmer and admin retain access under the overlay.
+        record('operational farmer retains own-farm access (post-21)',
+          !!farmA, farmA ? '' : 'farmer A farm was not created earlier')
+        record('ddp_admin retains farms access (post-21)',
+          isAllowed(await admin.client.from('farms').select('id').limit(1)))
+      }
+    }
   } finally {
     // ── Cleanup (reverse dependency order; run-id scoped only) ────────────────
     group('cleanup')
