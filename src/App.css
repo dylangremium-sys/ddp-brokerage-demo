@@ -3356,6 +3356,10 @@ a.ln-channel-value:hover { color: #FFFFFF; }
    state in the pack header and decision blocks; the artifact does not. */
 .print-only-block { display: none; }
 
+/* The refusal page. Printed instead of the dossier when release is
+   unauthorized; never shown on screen. */
+.buyer-pack-refusal { display: none; }
+
 /* ── Print ────────────────────────────────────────────────────────────────────
    The Buyer Pack is DDP's primary external deliverable, so print is a designed
    artifact, not a screenshot of a dark screen.
@@ -3387,6 +3391,27 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 @page { margin: 18mm; }
 
 @media print {
+  /* ── FAIL CLOSED ──────────────────────────────────────────────────────────
+     Gating the Print button does not gate printing: Cmd+P, File → Print and the
+     context menu render this stylesheet without ever calling the app's click
+     handler, and `beforeprint` cannot cancel a print. The stylesheet is the one
+     layer every entry point must pass through, so authorization is enforced
+     here.
+
+     The dossier is hidden by DEFAULT and opts back in only on an exact
+     [data-print-authorized="true"] ancestor. A removed attribute, a typo, a
+     stale render or a value of "false" all print the refusal page instead of the
+     pack — the failure mode is refusal, never disclosure.
+
+     Both rules carry !important, so the cascade is decided on specificity:
+     `[data-print-authorized="true"] .buyer-pack-card` (0,2,0) beats
+     `.buyer-pack-card` (0,1,0). Reversing that order would silently print
+     unapproved dossiers, which is why the mutation tests pin it. */
+  .buyer-pack-card { display: none !important; }
+  .buyer-pack-refusal { display: block !important; }
+  [data-print-authorized="true"] .buyer-pack-card { display: block !important; }
+  [data-print-authorized="true"] .buyer-pack-refusal { display: none !important; }
+
   /* Interactive controls only. Everything evidential prints. */
   .no-print,
   .app-nav,
@@ -3521,6 +3546,49 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   }
   .buyer-pack-provenance-grid dt { color: #46524B; }
   .buyer-pack-provenance-grid dd { margin: 0; color: #1E2A24; font-family: var(--font-mono); }
+
+  /* ── The refusal page ─────────────────────────────────────────────────────
+     What an unauthorized print produces instead of a dossier. It must be
+     unmistakable: a reader who finds this on a desk must not be able to mistake
+     it for a buyer pack, and must be able to see why it is not one.
+
+     Pack identity is kept so the sheet can be traced to a batch. Evidence
+     tables, COA data, the compliance checklist and the risk register are all
+     inside .buyer-pack-card and are therefore not printed at all — an unreleased
+     pack must not emit anything a buyer could read as released.
+
+     Ruled, not filled: printed backgrounds are suppressed by default, so a
+     refusal that relied on a tint would arrive as ordinary text. */
+  .buyer-pack-refusal {
+    border: 2px solid #1E2A24 !important;
+    padding: 24px !important;
+    break-inside: avoid;
+  }
+  .buyer-pack-refusal-eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #46524B;
+  }
+  .buyer-pack-refusal-status {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1E2A24;
+    margin: 8px 0 4px;
+  }
+  .buyer-pack-refusal-reason {
+    font-size: 13px;
+    color: #1E2A24;
+    margin: 0 0 16px;
+  }
+  .buyer-pack-refusal-notice {
+    font-size: 12px;
+    color: #1E2A24;
+    margin: 16px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid #8A968C;
+  }
 
   /* Page breaks: keep blocks whole, never orphan a heading from its content. */
   .buyer-pack-grid,

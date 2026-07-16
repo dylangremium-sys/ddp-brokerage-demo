@@ -18,11 +18,16 @@ import {
   prepareBuyerPackSnapshotInput,
   generateNextBuyerPackSnapshot,
   deriveSnapshotStatus,
-  deriveBuyerPackReleaseEligibility,
   buyerPackApprovalId,
   type BuyerPackSnapshot,
   type BuyerPackSnapshotStatus,
 } from '../../lib/buyerPackSnapshot'
+import {
+  deriveBuyerPackPrintState,
+  installPrintTimestampListener,
+  PRINT_AUTHORIZED_ATTR,
+} from '../../lib/buyerPackPrintState'
+
 import { createLocalStorageBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotStore'
 import { selectBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotSupabaseStore'
 import { resolveDecision, recordDecision, type DecisionSource, type ResolvedDecision } from '../../lib/procurementDecisionStore'
@@ -34,6 +39,16 @@ import { appendBuyerPackDownload } from '../../lib/buyerPackDownloads'
 // repository remains the demo-mode fallback. Same BuyerPackSnapshotRepository
 // contract either way, so no call site below changes.
 const snapshotRepo = selectBuyerPackSnapshotRepository(createLocalStorageBuyerPackSnapshotRepository())
+
+/**
+ * The Executive Summary notice, as one string rather than two copies. It is
+ * rendered inside the pack and again on the refusal page, which replaces the
+ * pack when printing is unauthorized — a warning that exists in two places must
+ * not be able to drift between them.
+ */
+const EXECUTIVE_SUMMARY_NOTICE =
+  'INTERNAL — Executive summary not yet completed. Decision Required: this pack must not be issued to a buyer ' +
+  'until DDP staff complete this section (farm standing, batch readiness, open risks, recommended decision).'
 
 interface Props {
   inventory: InventoryItem[]
@@ -173,9 +188,10 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   // Why a print attempt was refused. Never silently swallowed: an operator who
   // presses Print must be told which release condition is unmet, in the same
   // words the Issue path uses.
-  const [printError, setPrintError] = useState<string | null>(null)
-  // Stamped at the moment of printing, so the artifact records when it was
-  // produced rather than when the page happened to mount.
+  const [printError, setPrintError] = useState<{ eligibilityKey: string; reason: string } | null>(null)
+  // Stamped by `beforeprint`, so it reflects the print that is actually
+  // happening — including native Cmd+P — rather than the last one the button
+  // initiated.
   const [printedAt, setPrintedAt] = useState<string | null>(null)
 
   const approver = (approverName && approverName.trim()) || 'DDP Admin'
@@ -388,33 +404,77 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
     }
   }
 
-  // The release gate for the print path. Printing a pack puts it in front of a
-  // buyer exactly as issuing it does, so it answers to the same predicate the
-  // issue path uses — not to a lookalike boolean. Previously this called
-  // window.print() unconditionally, so a pack that Issue refused could still be
-  // printed and handed over, and the on-screen notice forbidding that was
-  // removed from the printed artifact by `.no-print`.
-  function handlePrint() {
-    const gate = deriveBuyerPackReleaseEligibility({
-      isHumanApproved,
-      storedDecision: storedDecision ?? null,
-      approvedBy: approver,
+  // Printing a pack puts it in front of a buyer exactly as issuing it does, so
+  // both answer to one predicate. This single derivation drives the root
+  // authorization attribute, the Print button, this handler and the refusal
+  // page — they cannot disagree, because there is nothing to disagree with.
+  const printState = deriveBuyerPackPrintState({
+    isHumanApproved,
+    storedDecision: storedDecision ?? null,
+    approvedBy: approver,
+  })
+
+  // A refusal that outlives the condition that caused it is misinformation. The
+  // error is stored WITH the eligibility state that produced it, so a change in
+  // eligibility invalidates it by derivation — no effect, and therefore no frame
+  // in which the stale reason is still on screen. Scoped by key, so it can never
+  // clear an unrelated error (issueError is separate state).
+  const eligibilityKey = printState.refusalReason ?? 'authorized'
+  const activePrintError = printError?.eligibilityKey === eligibilityKey ? printError.reason : null
+
+  // Native print entry points — Cmd+P, File → Print, the context menu — never
+  // reach handlePrint(), but they all fire `beforeprint`. Stamping here is the
+  // only way a printed time can describe the print that is actually happening.
+  // flushSync because window.print() blocks synchronously after this event: an
+  // async state update would land after the page has already been rasterised.
+  useEffect(() => {
+    return installPrintTimestampListener(window, () => {
+      flushSync(() => setPrintedAt(new Date().toISOString()))
     })
-    if (!gate.eligible) {
-      setPrintError(gate.reason)
+  }, [])
+
+  // The button's own gate. Defence in depth, not the mechanism: the artifact is
+  // guarded by the print stylesheet (see PRINT_AUTHORIZED_ATTR on the root), so
+  // a native print cannot route around this.
+  function handlePrint() {
+    if (!printState.authorized) {
+      setPrintError({ eligibilityKey, reason: printState.refusalReason })
       return
     }
     setPrintError(null)
-    // flushSync so the stamped time is in the DOM before the print dialog reads
-    // it — window.print() is synchronous and would otherwise capture the prior
-    // render, leaving the artifact with a stale or empty timestamp.
-    flushSync(() => setPrintedAt(new Date().toISOString()))
     recordDownload('print-pdf')
     window.print()
   }
 
   return (
-    <div className="page-wrap ddp-wrap buyer-pack-wrap">
+    // The print stylesheet reads this attribute and hides the dossier unless it
+    // is exactly "true". Every browser print entry point renders through that
+    // stylesheet, which is why authorization lives here rather than in a click
+    // handler a native print never calls.
+    <div className="page-wrap ddp-wrap buyer-pack-wrap" {...{ [PRINT_AUTHORIZED_ATTR]: printState.attr }}>
+
+      {/* Refusal page — printed instead of the dossier when unauthorized.
+          Screen never shows it; the screen already states this in the header
+          badge and the decision block. It carries pack identity and the
+          established refusal wording, and deliberately no evidence tables: an
+          unreleased pack must not produce something a buyer could mistake for a
+          released one. */}
+      <div className="buyer-pack-refusal">
+        <div className="buyer-pack-refusal-eyebrow">DDP BUYER PACK · BATCH INFORMATION</div>
+        <div className="buyer-pack-refusal-status">{packStatusLabel}</div>
+        {printState.refusalReason && (
+          <p className="buyer-pack-refusal-reason">{printState.refusalReason}</p>
+        )}
+        <dl className="buyer-pack-provenance-grid">
+          <dt>Pack identifier</dt>
+          <dd>{item.id}</dd>
+          <dt>Batch</dt>
+          <dd>{item.productName}{item.batchNumber ? ` · ${item.batchNumber}` : ''}</dd>
+          <dt>Printed</dt>
+          <dd>{printedAt ?? 'Unknown'}</dd>
+        </dl>
+        <p className="buyer-pack-refusal-notice">{EXECUTIVE_SUMMARY_NOTICE}</p>
+      </div>
 
       {/* Action bar — hidden on print */}
       <div className="buyer-pack-actions no-print">
@@ -441,8 +501,8 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
             type="button"
             className="btn btn-primary"
             onClick={handlePrint}
-            disabled={!isHumanApproved}
-            title={isHumanApproved ? undefined : 'Requires no blocking issues and a recorded "Progress" decision'}
+            disabled={!printState.authorized}
+            title={printState.refusalReason ?? undefined}
           >
             Print / Save PDF
           </button>
@@ -451,14 +511,14 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
 
       {/* Why a print attempt was refused. Mirrors the Issue path's own notice so
           one refused act reads the same way wherever it is attempted. */}
-      {!isHumanApproved && (
+      {!printState.authorized && (
         <div className="no-print" style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4 }}>
           Printing is enabled only after this batch is human-approved for buyer discussion.
         </div>
       )}
-      {printError && (
+      {activePrintError && (
         <div className="no-print" role="alert" style={{ fontSize: 12, color: 'var(--warning)', marginTop: -4 }}>
-          {printError}
+          {activePrintError}
         </div>
       )}
 
@@ -496,8 +556,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
         <div className="detail-block buyer-pack-notice">
           <div className="detail-block-title" style={{ marginBottom: 6 }}>Executive Summary (Internal Draft)</div>
           <p style={{ fontSize: 13, color: 'var(--warning)', margin: 0 }}>
-            INTERNAL — Executive summary not yet completed. Decision Required: this pack must not be issued to a buyer
-            until DDP staff complete this section (farm standing, batch readiness, open risks, recommended decision).
+            {EXECUTIVE_SUMMARY_NOTICE}
           </p>
         </div>
 
