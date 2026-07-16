@@ -1,11 +1,11 @@
--- 21_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql
+-- 22_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql
 -- =============================================================================
 -- Operational-farmer RLS overlay — close the "pending can still write via REST"
 -- gap (Codex P1 on PR #22).
 --
 -- Problem: every farmer WRITE/UPLOAD policy authorizes by OWNERSHIP/MEMBERSHIP
 -- only (created_by = auth.uid() / has_farm_membership() / storage path), never
--- by operational role. So a 'pending' account (which migration 20 blocks at
+-- by operational role. So a 'pending' account (which migration 21 blocks at
 -- login routing and from self-promotion) can still call the Supabase REST/
 -- Storage API directly and INSERT/UPDATE/UPLOAD farm data.
 --
@@ -28,10 +28,10 @@
 -- farmer_review_requests, documents, ddp_scores, risk_flags, status_history,
 -- and the farmer-documents/farmer-photos storage buckets.
 --
--- Verify:   21_OPERATIONAL_FARMER_ACCESS_RLS_VERIFY.sql
--- Rollback: 21_OPERATIONAL_FARMER_ACCESS_RLS_ROLLBACK.sql
+-- Verify:   22_OPERATIONAL_FARMER_ACCESS_RLS_VERIFY.sql
+-- Rollback: 22_OPERATIONAL_FARMER_ACCESS_RLS_ROLLBACK.sql
 -- Precondition: public.is_ddp_admin() exists (migration 3 / AUTH_RLS_SCHEMA);
---               migration 20 (pending role) applied.
+--               migration 21 (pending role) applied.
 -- =============================================================================
 
 BEGIN;

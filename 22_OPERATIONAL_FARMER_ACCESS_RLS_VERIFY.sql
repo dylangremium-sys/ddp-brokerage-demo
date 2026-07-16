@@ -1,6 +1,6 @@
--- 21_OPERATIONAL_FARMER_ACCESS_RLS_VERIFY.sql
+-- 22_OPERATIONAL_FARMER_ACCESS_RLS_VERIFY.sql
 -- =============================================================================
--- Proves migration 21 is correctly applied. Fully transactional; ends in
+-- Proves migration 22 is correctly applied. Fully transactional; ends in
 -- ROLLBACK, so it leaves NO residue. Run AFTER the hardening migration.
 --
 -- Proves (static, via catalogs):
@@ -15,7 +15,7 @@
 --      admin identity => is_ddp_admin true, helper false
 --
 -- NOTE: auth.users is seeded with id + email only (other columns nullable in
--- this environment, as in the migration 19/20 verifies). Migration 20's trigger
+-- this environment, as in the migration 19/21 verifies). Migration 21's trigger
 -- stamps the new rows 'pending'; two are then promoted for the test.
 -- =============================================================================
 

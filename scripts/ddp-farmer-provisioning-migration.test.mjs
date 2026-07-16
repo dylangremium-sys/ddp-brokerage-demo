@@ -1,4 +1,4 @@
-// Static regression guard for migration 20 — DDP-controlled farmer provisioning.
+// Static regression guard for migration 21 — DDP-controlled farmer provisioning.
 // These assertions read the SQL (and the auth service) as text — they cannot run
 // against a database in CI — and lock in the properties that make the fix
 // correct, so a future edit cannot silently reopen public self-provisioning.
@@ -17,9 +17,9 @@ const read = (f) => readFileSync(new URL(f, root), 'utf8')
 const stripComments = (sql) =>
   sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ')
 
-const HARDENING = stripComments(read('20_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql'))
-const VERIFY = stripComments(read('20_DDP_CONTROLLED_FARMER_PROVISIONING_VERIFY.sql'))
-const ROLLBACK = stripComments(read('20_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql'))
+const HARDENING = stripComments(read('21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql'))
+const VERIFY = stripComments(read('21_DDP_CONTROLLED_FARMER_PROVISIONING_VERIFY.sql'))
+const ROLLBACK = stripComments(read('21_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql'))
 const AUTH_TS = read('src/services/auth.ts')
 
 // Extract the body of the recreated handle_new_user() function from a script.
@@ -30,7 +30,7 @@ function triggerBody(sql) {
 
 const norm = (s) => s.replace(/\s+/g, ' ')
 
-describe('migration 20 — hardening blocks self-provisioning at the DB', () => {
+describe('migration 21 — hardening blocks self-provisioning at the DB', () => {
   it('recreates handle_new_user to stamp new users as pending, not farmer', () => {
     const body = triggerBody(HARDENING)
     expect(body).not.toBe('')
@@ -61,7 +61,7 @@ describe('migration 20 — hardening blocks self-provisioning at the DB', () => 
   })
 })
 
-describe('migration 20 — verify proves the enforcement', () => {
+describe('migration 21 — verify proves the enforcement', () => {
   it('asserts a brand-new auth user is pending and fails loudly otherwise', () => {
     expect(VERIFY).toMatch(/expected pending/i)
     expect(VERIFY).toMatch(/RAISE EXCEPTION/i)
@@ -78,7 +78,7 @@ describe('migration 20 — verify proves the enforcement', () => {
   })
 })
 
-describe('migration 20 — rollback is a true inverse', () => {
+describe('migration 21 — rollback is a true inverse', () => {
   it('restores the farmer auto-assignment in handle_new_user', () => {
     expect(triggerBody(ROLLBACK)).toMatch(/'farmer'/)
   })

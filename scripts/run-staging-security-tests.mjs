@@ -98,7 +98,7 @@ export function resolveConfig(env) {
     farmerA: { email: env.STAGING_FARMER_A_EMAIL, password: env.STAGING_FARMER_A_PASSWORD },
     farmerB: { email: env.STAGING_FARMER_B_EMAIL, password: env.STAGING_FARMER_B_PASSWORD },
     // Optional: a staging auth user whose profiles.role is 'pending' (migration
-    // 20/21). When absent, the pending-denial group SKIPS (fail-closed) rather
+    // 21/22). When absent, the pending-denial group SKIPS (fail-closed) rather
     // than fabricating a credential.
     pending: env.STAGING_PENDING_EMAIL && env.STAGING_PENDING_PASSWORD
       ? { email: env.STAGING_PENDING_EMAIL, password: env.STAGING_PENDING_PASSWORD }
@@ -446,7 +446,7 @@ async function main() {
     record('anon cannot upload to farmer-documents',
       !!(await anon.storage.from('farmer-documents').upload(`${runId}/anon2.txt`, new Blob(['x']))).error)
 
-    // ── H. Pending user has NO operational access (migration 21) ─────────────
+    // ── H. Pending user has NO operational access (migration 22) ─────────────
     // A 'pending' account is authenticated but not yet provisioned as a farmer.
     // The restrictive overlay must block it from writing/uploading farm data via
     // the REST/Storage API even though ownership predicates would otherwise pass.
