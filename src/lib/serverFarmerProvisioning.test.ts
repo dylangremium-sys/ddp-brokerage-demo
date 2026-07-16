@@ -104,24 +104,38 @@ describe('handleProvisionFarmer — provisioning outcomes', () => {
     expect(res.body).toMatchObject({ ok: true, userId: 'new-1', promoted: true, alreadyExisted: false })
   })
 
-  it('reports a duplicate/existing user as 409 without promoting', async () => {
+  it('reports a duplicate/existing user as 409 with review-pending-users recovery, and does NOT promote by email', async () => {
+    let promoteCalled = false
     const res = await handleProvisionFarmer(
-      makeDeps({ inviteFarmer: async () => ({ kind: 'already_exists' }) }),
+      makeDeps({
+        inviteFarmer: async () => ({ kind: 'already_exists' }),
+        promotePendingToFarmer: async () => { promoteCalled = true; return true },
+      }),
       { token: 'admin-token', body: validBody },
     )
     expect(res.status).toBe(409)
-    expect(res.body).toMatchObject({ ok: false, reason: 'user_already_exists' })
+    expect(res.body).toMatchObject({ ok: false, reason: 'user_already_exists', recovery: 'review_pending_users' })
+    // No lookup/auto-promotion by email: the promotion path must never run here.
+    expect(promoteCalled).toBe(false)
   })
 
-  it('reports a partial failure when invite succeeds but promotion fails (502)', async () => {
+  it('partial failure (invite ok, promotion fails): userId + promotion_required + approve-by-id recovery, not success', async () => {
     const res = await handleProvisionFarmer(
       makeDeps({ promotePendingToFarmer: async () => false }),
       { token: 'admin-token', body: validBody },
     )
     expect(res.status).toBe(502)
-    expect(res.body).toMatchObject({ ok: false, stage: 'promotion', userId: 'new-1' })
-    // Must NOT claim the farmer was fully provisioned.
+    expect(res.body).toMatchObject({
+      ok: false,
+      stage: 'promotion',
+      reason: 'promotion_required',
+      userId: 'new-1',
+      recovery: 'approve_pending_user_by_id',
+    })
+    // Must NOT claim success, and must signal that retrying the same email is not a valid retry.
     expect(res.body.ok).not.toBe(true)
+    expect(String(res.body.error)).toMatch(/do not retry this email/i)
+    expect(String(res.body.error)).toMatch(/by userId|user id/i)
   })
 
   it('surfaces an invite-stage error as 502', async () => {

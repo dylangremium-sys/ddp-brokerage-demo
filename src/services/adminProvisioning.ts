@@ -13,9 +13,28 @@ export interface InviteFarmerInput {
   lineId?: string
 }
 
+// Stable machine-readable reasons the server returns so callers can branch
+// without parsing the human message. 'promotion_required' means the Auth user
+// exists but is still pending — the admin must approve it explicitly BY USER ID
+// (recovery 'approve_pending_user_by_id'); it is NOT retryable by email here.
+export type InviteFarmerReason =
+  | 'user_already_exists'
+  | 'invite_failed'
+  | 'promotion_required'
+export type InviteFarmerRecovery =
+  | 'review_pending_users'
+  | 'approve_pending_user_by_id'
+
 export type InviteFarmerResult =
   | { ok: true; userId: string }
-  | { ok: false; error: string; stage?: string; userId?: string }
+  | {
+      ok: false
+      error: string
+      stage?: string
+      reason?: InviteFarmerReason
+      recovery?: InviteFarmerRecovery
+      userId?: string
+    }
 
 const ENDPOINT = '/api/admin/provision-farmer'
 
@@ -54,6 +73,8 @@ export async function inviteFarmer(input: InviteFarmerInput): Promise<InviteFarm
     ok: false,
     error: typeof body.error === 'string' ? body.error : 'Provisioning failed.',
     stage: typeof body.stage === 'string' ? body.stage : undefined,
+    reason: typeof body.reason === 'string' ? (body.reason as InviteFarmerReason) : undefined,
+    recovery: typeof body.recovery === 'string' ? (body.recovery as InviteFarmerRecovery) : undefined,
     userId: typeof body.userId === 'string' ? body.userId : undefined,
   }
 }

@@ -94,25 +94,38 @@ export async function handleProvisionFarmer(
   // 4. Invite the user via Admin Auth.
   const invite = await deps.inviteFarmer(input)
   if (invite.kind === 'already_exists') {
-    return deny(409, 'A user with this email already exists.', { reason: 'user_already_exists' })
+    // Deliberately NOT auto-promoted by email: an email match does not prove
+    // account ownership (pre-registration / typo risk). The admin resolves an
+    // existing account explicitly by user id via the pending-approval path.
+    return deny(409, 'A user with this email already exists. Review pending users and approve by user id if appropriate.', {
+      reason: 'user_already_exists',
+      recovery: 'review_pending_users',
+    })
   }
   if (invite.kind === 'error') {
-    return { status: 502, body: { ok: false, stage: 'invite', error: invite.message } }
+    return { status: 502, body: { ok: false, stage: 'invite', reason: 'invite_failed', error: invite.message } }
   }
 
   // 5. Promote the resulting pending profile to farmer. This both confirms the
   //    pending profile exists and elevates it in one authorized DB operation.
   const promoted = await deps.promotePendingToFarmer(invite.userId)
   if (!promoted) {
-    // Partial success: the Auth user now exists but is NOT an operational farmer.
+    // Partial outcome: the Auth user now exists but is NOT an operational farmer.
+    // This is NOT retryable via the same email through this endpoint — a repeat
+    // POST would hit the existing-user 409 above. The account must be approved
+    // explicitly by user id via the pending-approval path.
     return {
       status: 502,
       body: {
         ok: false,
         stage: 'promotion',
+        reason: 'promotion_required',
         userId: invite.userId,
+        recovery: 'approve_pending_user_by_id',
         error:
-          'Invite succeeded but the account could not be promoted to farmer; it remains pending. Retry promotion or investigate.',
+          'The Auth user was invited but its profile remains pending; it was not promoted to farmer. '
+          + 'Do NOT retry this email (a repeat invite returns a 409 existing-user conflict). '
+          + 'Approve the pending account explicitly by userId via the pending-user approval path.',
       },
     }
   }
