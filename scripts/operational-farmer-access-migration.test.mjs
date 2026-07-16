@@ -65,6 +65,15 @@ describe('migration 22 restrictive overlay', () => {
     expect(HARD).toMatch(/ON storage\.objects/)
     expect(HARD).toMatch(/bucket_id NOT IN \('farmer-documents', 'farmer-photos'\)/)
   })
+
+  it('gates market_price_benchmarks with a restrictive FOR SELECT policy (narrowest command)', () => {
+    // The only pending exposure is the SELECT read; there is no farmer write
+    // policy, so FOR SELECT (not FOR ALL) is the narrowest correct control.
+    expect(HARD).toMatch(/ON public\.market_price_benchmarks\s+AS RESTRICTIVE\s+FOR SELECT/)
+    expect(HARD).toMatch(/CREATE POLICY "market_price_benchmarks: operational farmer or admin"[\s\S]*USING \(public\.has_operational_farmer_access\(\) OR public\.is_ddp_admin\(\)\)/)
+    // Enable RLS on it; do not touch its existing permissive "farmer select visible" policy.
+    expect(HARD).toMatch(/ALTER TABLE public\.market_price_benchmarks ENABLE ROW LEVEL SECURITY/)
+  })
 })
 
 describe('migration 22 verify proves the enforcement', () => {

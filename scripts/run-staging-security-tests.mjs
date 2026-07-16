@@ -490,10 +490,14 @@ async function main() {
           !!(await p.client.storage.from('farmer-photos').upload(`${p.userId}/${TAG}.jpg`, new Blob(['x']))).error)
         record('pending cannot read farmer-operated data',
           isDenied(await p.client.from('farms').select('id').limit(1)))
+        record('pending cannot read market_price_benchmarks (migration 22)',
+          isDenied(await p.client.from('market_price_benchmarks').select('id').limit(1)))
 
         // Affirmative: operational farmer and admin retain access under the overlay.
         record('operational farmer retains own-farm access (post-21)',
           !!farmA, farmA ? '' : 'farmer A farm was not created earlier')
+        record('operational farmer retains market_price_benchmarks read (migration 22)',
+          isAllowed(await a.client.from('market_price_benchmarks').select('id').limit(1)))
         record('ddp_admin retains farms access (post-21)',
           isAllowed(await admin.client.from('farms').select('id').limit(1)))
       }

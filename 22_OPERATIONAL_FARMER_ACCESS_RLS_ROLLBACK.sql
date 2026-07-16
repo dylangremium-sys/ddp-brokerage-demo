@@ -24,7 +24,8 @@ DECLARE
   tables text[] := ARRAY[
     'farms','farm_profiles','farm_memberships','inventory_batches',
     'farmer_documents','farmer_photos','farmer_review_requests',
-    'documents','ddp_scores','risk_flags','status_history'
+    'documents','ddp_scores','risk_flags','status_history',
+    'market_price_benchmarks'
   ];
 BEGIN
   FOREACH t IN ARRAY tables LOOP

@@ -122,4 +122,21 @@ CREATE POLICY "farmer buckets: operational farmer or admin"
     OR public.is_ddp_admin()
   );
 
+-- 4. market_price_benchmarks — the ONLY pending exposure here is the SELECT
+--    policy "market_price_benchmarks: farmer select visible"
+--    (USING visible_to_farmers = true AND auth.uid() IS NOT NULL), which lets any
+--    authenticated pending session read DDP price hints. There is NO farmer
+--    write policy on this table (only "admin all" governs writes), so the
+--    narrowest control that fully closes the exposure is a restrictive FOR
+--    SELECT: it denies pending reads while leaving the farmer/admin SELECT and
+--    the admin-managed writes untouched. FOR ALL is unnecessary (no farmer
+--    write path to restrict). The existing permissive policies are left as-is.
+ALTER TABLE public.market_price_benchmarks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "market_price_benchmarks: operational farmer or admin" ON public.market_price_benchmarks;
+CREATE POLICY "market_price_benchmarks: operational farmer or admin"
+  ON public.market_price_benchmarks
+  AS RESTRICTIVE
+  FOR SELECT
+  USING (public.has_operational_farmer_access() OR public.is_ddp_admin());
+
 COMMIT;

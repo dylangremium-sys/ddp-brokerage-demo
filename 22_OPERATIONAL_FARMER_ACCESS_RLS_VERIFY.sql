@@ -96,6 +96,22 @@ BEGIN
   RAISE NOTICE 'VERIFY D PASSED: storage policy is restrictive and bucket-scoped.';
 END $$;
 
+-- ── D2. market_price_benchmarks: restrictive FOR SELECT + RLS on ────────────
+DO $$
+DECLARE v_perm text; v_cmd text; v_rls boolean;
+BEGIN
+  SELECT permissive, cmd INTO v_perm, v_cmd
+  FROM pg_policies
+  WHERE schemaname = 'public' AND tablename = 'market_price_benchmarks'
+    AND policyname = 'market_price_benchmarks: operational farmer or admin';
+  IF v_perm IS NULL THEN RAISE EXCEPTION 'VERIFY D2 FAILED: market_price_benchmarks overlay policy missing'; END IF;
+  IF v_perm <> 'RESTRICTIVE' THEN RAISE EXCEPTION 'VERIFY D2 FAILED: policy is % (expected RESTRICTIVE)', v_perm; END IF;
+  IF v_cmd <> 'SELECT' THEN RAISE EXCEPTION 'VERIFY D2 FAILED: policy cmd is % (expected SELECT)', v_cmd; END IF;
+  SELECT relrowsecurity INTO v_rls FROM pg_class WHERE oid = 'public.market_price_benchmarks'::regclass;
+  IF NOT v_rls THEN RAISE EXCEPTION 'VERIFY D2 FAILED: RLS not enabled on market_price_benchmarks'; END IF;
+  RAISE NOTICE 'VERIFY D2 PASSED: market_price_benchmarks has a RESTRICTIVE FOR SELECT operational-farmer policy with RLS on.';
+END $$;
+
 -- ── E. pre-existing permissive farmer policies untouched ────────────────────
 DO $$
 DECLARE
@@ -103,7 +119,8 @@ DECLARE
     'farms|farms: farmer insert own',
     'inventory_batches|inventory_batches: farmer insert own',
     'inventory_batches|inventory_batches: farmer update own',
-    'farm_memberships|farm_memberships: farmer insert own'
+    'farm_memberships|farm_memberships: farmer insert own',
+    'market_price_benchmarks|market_price_benchmarks: farmer select visible'
   ];
   e text; parts text[];
 BEGIN
