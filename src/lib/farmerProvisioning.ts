@@ -23,20 +23,21 @@ export interface PendingProfile {
   displayName: string
 }
 
-interface MutationResultLike {
-  error: { message: string } | null
-}
 interface QueryResultLike {
   data: Array<Record<string, unknown>> | null
   error: { message: string } | null
+}
+// The update builder is chainable and ends in select(), so the wrapper can read
+// back the affected row and verify the promotion actually happened.
+interface UpdateBuilderLike {
+  eq(column: string, value: string): UpdateBuilderLike
+  select(columns: string): PromiseLike<QueryResultLike>
 }
 
 /** The narrow slice of the Supabase client this module uses. */
 export interface ProvisioningClientLike {
   from(table: string): {
-    update(values: Record<string, unknown>): {
-      eq(column: string, value: string): PromiseLike<MutationResultLike>
-    }
+    update(values: Record<string, unknown>): UpdateBuilderLike
     select(columns: string): {
       eq(column: string, value: string): PromiseLike<QueryResultLike>
     }
@@ -44,17 +45,37 @@ export interface ProvisioningClientLike {
 }
 
 /**
- * Promote a pending account to an operational farmer. Succeeds only when the
- * caller's session is ddp_admin (enforced by RLS); otherwise Supabase returns
- * an error and this reports ok:false without changing anything.
+ * Promote a *pending* account to an operational farmer. Succeeds only when the
+ * caller's session is ddp_admin (enforced by the "profiles: admin update role"
+ * RLS policy) AND the target profile is currently 'pending'.
+ *
+ * The update is constrained to `role = 'pending'` and reads back the affected id:
+ * a non-admin caller (RLS-filtered), a stale/nonexistent id, or an already-
+ * non-pending row all return ZERO rows WITHOUT a Supabase error. We therefore
+ * verify exactly one pending profile with the requested id was promoted before
+ * reporting success — mirroring the server-side promotePendingToFarmer contract.
+ * It never throws for these expected authorization/zero-row outcomes.
  */
 export async function provisionFarmer(
   client: ProvisioningClientLike,
   userId: string,
 ): Promise<ProvisionResult> {
   if (!userId) return { ok: false, error: 'A user id is required to provision a farmer.' }
-  const { error } = await client.from('profiles').update({ role: 'farmer' }).eq('id', userId)
+  const { data, error } = await client
+    .from('profiles')
+    .update({ role: 'farmer' })
+    .eq('id', userId)
+    .eq('role', 'pending')
+    .select('id')
   if (error) return { ok: false, error: error.message }
+  const rows = data ?? []
+  if (rows.length !== 1 || String(rows[0]?.id) !== userId) {
+    return {
+      ok: false,
+      error:
+        'No pending account was promoted — the user was not found, is not pending, or you are not permitted to promote it.',
+    }
+  }
   return { ok: true }
 }
 

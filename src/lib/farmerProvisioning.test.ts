@@ -9,28 +9,34 @@ import {
 // returns a scripted result. Enough to exercise the provisioning policy without
 // a live database.
 function fakeClient(opts: {
-  updateResult?: { error: { message: string } | null }
+  updateResult?: { data: Array<Record<string, unknown>> | null; error: { message: string } | null }
   selectResult?: { data: Array<Record<string, unknown>> | null; error: { message: string } | null }
 }) {
   const calls: {
     table?: string
     update?: Record<string, unknown>
-    updateEq?: [string, string]
+    updateEqs: Array<[string, string]>
+    updateSelect?: string
     select?: string
     selectEq?: [string, string]
-  } = {}
+  } = { updateEqs: [] }
   const client: ProvisioningClientLike = {
     from(table: string) {
       calls.table = table
       return {
         update(values: Record<string, unknown>) {
           calls.update = values
-          return {
+          const chain = {
             eq(column: string, value: string) {
-              calls.updateEq = [column, value]
-              return Promise.resolve(opts.updateResult ?? { error: null })
+              calls.updateEqs.push([column, value])
+              return chain
+            },
+            select(columns: string) {
+              calls.updateSelect = columns
+              return Promise.resolve(opts.updateResult ?? { data: [], error: null })
             },
           }
+          return chain
         },
         select(columns: string) {
           calls.select = columns
@@ -48,21 +54,42 @@ function fakeClient(opts: {
 }
 
 describe('provisionFarmer', () => {
-  it('promotes a pending account by setting profiles.role = farmer for that id', async () => {
-    const { client, calls } = fakeClient({ updateResult: { error: null } })
+  it('promotes exactly one pending profile → ok:true, via a pending-constrained update that reads back the id', async () => {
+    const { client, calls } = fakeClient({ updateResult: { data: [{ id: 'user-42' }], error: null } })
     const result = await provisionFarmer(client, 'user-42')
     expect(result).toEqual({ ok: true })
     expect(calls.table).toBe('profiles')
     expect(calls.update).toEqual({ role: 'farmer' })
-    expect(calls.updateEq).toEqual(['id', 'user-42'])
+    // Constrained to the id AND role = 'pending', and reads back the id.
+    expect(calls.updateEqs).toEqual([['id', 'user-42'], ['role', 'pending']])
+    expect(calls.updateSelect).toBe('id')
+    // No email-based lookup/filter anywhere in the promotion query.
+    expect(calls.updateEqs.some(([col]) => col === 'email')).toBe(false)
   })
 
-  it('reports failure (does not throw) when RLS/DB rejects the update', async () => {
-    // Simulates a non-admin caller: the "admin update role" policy denies the
-    // update, so Supabase returns an error rather than changing the row.
-    const { client } = fakeClient({ updateResult: { error: { message: 'permission denied' } } })
-    const result = await provisionFarmer(client, 'user-42')
-    expect(result).toEqual({ ok: false, error: 'permission denied' })
+  it('returns ok:false when zero rows are returned (RLS-filtered non-admin, no DB error)', async () => {
+    const { client } = fakeClient({ updateResult: { data: [], error: null } })
+    expect((await provisionFarmer(client, 'user-42')).ok).toBe(false)
+  })
+
+  it('returns ok:false for a nonexistent id (zero rows)', async () => {
+    const { client } = fakeClient({ updateResult: { data: [], error: null } })
+    expect((await provisionFarmer(client, 'ghost')).ok).toBe(false)
+  })
+
+  it('returns ok:false for an already non-pending profile (excluded by role = pending → zero rows)', async () => {
+    const { client } = fakeClient({ updateResult: { data: [], error: null } })
+    expect((await provisionFarmer(client, 'already-farmer')).ok).toBe(false)
+  })
+
+  it('returns ok:false when the returned row id does not match the requested id', async () => {
+    const { client } = fakeClient({ updateResult: { data: [{ id: 'someone-else' }], error: null } })
+    expect((await provisionFarmer(client, 'user-42')).ok).toBe(false)
+  })
+
+  it('reports failure (does not throw) when RLS/DB returns an error', async () => {
+    const { client } = fakeClient({ updateResult: { data: null, error: { message: 'permission denied' } } })
+    expect(await provisionFarmer(client, 'user-42')).toEqual({ ok: false, error: 'permission denied' })
   })
 
   it('refuses an empty user id without calling the database', async () => {
