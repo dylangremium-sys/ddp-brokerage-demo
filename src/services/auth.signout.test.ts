@@ -50,6 +50,13 @@ describe('signOut — sensitive cleanup runs even when Supabase sign-out fails',
     signOutMock.mockRejectedValueOnce(new Error('network-down'))
     const { signOut } = await import('./auth')
 
+    // An UNRELATED, non-DDP key (a user preference / another app on this origin).
+    // Sign-out is an allowlist sweep, not a blanket clear, so it must SURVIVE — even
+    // on the failure path. Seeded into both storages alongside the sensitive keys.
+    const UNRELATED = 'theme'
+    local.setItem(UNRELATED, 'dark')
+    session.setItem(UNRELATED, 'dark')
+
     // Precondition: the keys are actually present, so the post-assertions are not
     // vacuously true against empty storage.
     for (const k of SENSITIVE_DDP_KEYS) {
@@ -68,6 +75,9 @@ describe('signOut — sensitive cleanup runs even when Supabase sign-out fails',
       expect(local.getItem(k), `${k} must be cleared from localStorage on failed sign-out`).toBeNull()
       expect(session.getItem(k), `${k} must be cleared from sessionStorage on failed sign-out`).toBeNull()
     }
+    // …while the unrelated key is untouched in BOTH storages.
+    expect(local.getItem(UNRELATED), 'unrelated localStorage key must survive sign-out').toBe('dark')
+    expect(session.getItem(UNRELATED), 'unrelated sessionStorage key must survive sign-out').toBe('dark')
   })
 
   it('also clears sensitive keys on a successful sign-out (baseline)', async () => {
