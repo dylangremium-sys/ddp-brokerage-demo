@@ -1,6 +1,6 @@
--- 20_DDP_CONTROLLED_FARMER_PROVISIONING_VERIFY.sql
+-- 21_DDP_CONTROLLED_FARMER_PROVISIONING_VERIFY.sql
 -- =============================================================================
--- Behavioural proof that migration 20 enforces DDP-only farmer provisioning.
+-- Behavioural proof that migration 21 enforces DDP-only farmer provisioning.
 -- Run against a database AFTER applying the hardening migration. It is fully
 -- transactional and ends in ROLLBACK, so it leaves NO residue (mirrors the
 -- pattern of 19_FARM_ADMIN_FIELD_GUARD_VERIFY.sql).

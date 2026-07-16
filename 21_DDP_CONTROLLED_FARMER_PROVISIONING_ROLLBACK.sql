@@ -1,18 +1,18 @@
--- 20_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql
+-- 21_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql
 -- =============================================================================
--- Reverse migration 20. Restores the prior auto-farmer behaviour of
+-- Reverse migration 21. Restores the prior auto-farmer behaviour of
 -- handle_new_user() and the two-value role CHECK / 'farmer' default.
 --
 -- WARNING: this REINTRODUCES the Codex P1 self-provisioning exposure. Also
 -- re-enable "Allow new users to sign up" in the Supabase dashboard if it was
--- disabled as part of migration 20's companion configuration.
+-- disabled as part of migration 21's companion configuration.
 --
 -- PRECONDITION: no profile rows may have role = 'pending' when this runs — the
 -- narrowed CHECK cannot be re-applied while 'pending' rows exist. Promote or
 -- remove any pending accounts first (e.g. via the DDP provisioning path or by
 -- deleting the corresponding auth.users rows).
 --
--- The RLS policies re-asserted by migration 20 are the intended production
+-- The RLS policies re-asserted by migration 21 are the intended production
 -- state (from RLS_ENABLE_STAGED.sql) and are deliberately LEFT IN PLACE.
 -- =============================================================================
 

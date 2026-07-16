@@ -1,6 +1,6 @@
--- 21_OPERATIONAL_FARMER_ACCESS_RLS_ROLLBACK.sql
+-- 22_OPERATIONAL_FARMER_ACCESS_RLS_ROLLBACK.sql
 -- =============================================================================
--- Reverse migration 21. Drops ONLY the objects migration 21 created:
+-- Reverse migration 22. Drops ONLY the objects migration 22 created:
 --   • the 11 "<table>: operational farmer or admin" restrictive policies
 --   • the "farmer buckets: operational farmer or admin" storage policy
 --   • the public.has_operational_farmer_access() helper

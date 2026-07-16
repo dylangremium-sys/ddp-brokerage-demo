@@ -1,4 +1,4 @@
-// Static regression guard for migration 21 — the operational-farmer RLS overlay.
+// Static regression guard for migration 22 — the operational-farmer RLS overlay.
 // Reads the SQL (and the routing source) as text and locks in the properties
 // that make the overlay correct and safe, so a future edit cannot silently
 // weaken it or start rewriting the existing permissive policies. The live
@@ -11,9 +11,9 @@ const root = new URL('..', import.meta.url)
 const read = (f) => readFileSync(new URL(f, root), 'utf8')
 const strip = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ')
 
-const HARD = strip(read('21_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql'))
-const VERIFY = strip(read('21_OPERATIONAL_FARMER_ACCESS_RLS_VERIFY.sql'))
-const ROLLBACK = strip(read('21_OPERATIONAL_FARMER_ACCESS_RLS_ROLLBACK.sql'))
+const HARD = strip(read('22_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql'))
+const VERIFY = strip(read('22_OPERATIONAL_FARMER_ACCESS_RLS_VERIFY.sql'))
+const ROLLBACK = strip(read('22_OPERATIONAL_FARMER_ACCESS_RLS_ROLLBACK.sql'))
 const ROUTING = read('src/lib/postLoginRouting.ts')
 
 // The exact audited farmer-operated tables (must all be covered).
@@ -22,13 +22,13 @@ const AUDITED_TABLES = [
   'farmer_documents', 'farmer_photos', 'farmer_review_requests',
   'documents', 'ddp_scores', 'risk_flags', 'status_history',
 ]
-// Existing permissive/admin policy fragments migration 21 must NOT touch.
+// Existing permissive/admin policy fragments migration 22 must NOT touch.
 const EXISTING_POLICY_FRAGMENTS = [
   'farmer insert own', 'farmer update own', 'farmer select own',
   'farmer upload own', 'farmer resolve own', 'admin all',
 ]
 
-describe('migration 21 helper — database-backed farmer role check', () => {
+describe('migration 22 helper — database-backed farmer role check', () => {
   it('reads role from public.profiles (not JWT metadata)', () => {
     expect(HARD).toMatch(/FROM\s+public\.profiles[\s\S]*role\s*=\s*'farmer'/i)
     expect(HARD).not.toMatch(/raw_user_meta_data|request\.jwt|jwt[\s\S]{0,20}role/i)
@@ -44,7 +44,7 @@ describe('migration 21 helper — database-backed farmer role check', () => {
   })
 })
 
-describe('migration 21 restrictive overlay', () => {
+describe('migration 22 restrictive overlay', () => {
   it('covers every audited farmer table', () => {
     for (const t of AUDITED_TABLES) expect(HARD).toContain(`'${t}'`)
   })
@@ -67,7 +67,7 @@ describe('migration 21 restrictive overlay', () => {
   })
 })
 
-describe('migration 21 verify proves the enforcement', () => {
+describe('migration 22 verify proves the enforcement', () => {
   it('checks RESTRICTIVE + FOR ALL + RLS + anon-revoked + behaviour + no-drop', () => {
     expect(VERIFY).toMatch(/RESTRICTIVE/)
     expect(VERIFY).toMatch(/relrowsecurity/)
@@ -78,7 +78,7 @@ describe('migration 21 verify proves the enforcement', () => {
   })
 })
 
-describe('migration 21 rollback removes only its own objects', () => {
+describe('migration 22 rollback removes only its own objects', () => {
   it('drops the overlay policies + helper and nothing else, and never disables RLS', () => {
     expect(ROLLBACK).toContain('operational farmer or admin')
     expect(ROLLBACK).toMatch(/DROP FUNCTION IF EXISTS public\.has_operational_farmer_access\(\)/)

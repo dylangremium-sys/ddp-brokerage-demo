@@ -1,4 +1,4 @@
--- 20_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql
+-- 21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql
 -- =============================================================================
 -- DDP-only farmer provisioning — enforce below the UI.
 --
@@ -25,8 +25,8 @@
 --
 -- Precondition: public.is_ddp_admin() and public.handle_new_user() already
 -- exist (3_SECURITY_HARDENING_SEARCH_PATH_AND_GRANTS.sql, AUTH_RLS_SCHEMA.sql).
--- Verify:   20_DDP_CONTROLLED_FARMER_PROVISIONING_VERIFY.sql
--- Rollback: 20_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql
+-- Verify:   21_DDP_CONTROLLED_FARMER_PROVISIONING_VERIFY.sql
+-- Rollback: 21_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql
 -- =============================================================================
 
 BEGIN;
