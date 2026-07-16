@@ -442,6 +442,75 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
   }
 }
 
+// Check 12 — Migration 23 server-authoritative Buyer Pack issuance.
+// The issuance RPC must derive release status from the server decision trail, not
+// the client. Fails if any companion is missing; the RPC gates on/stores the
+// client p_procurement_decision; the authoritative lookup, same-pack match,
+// no-decision block, or hold/reject block is removed; the reason/actor re-checks
+// are dropped; the VERIFY contains COMMIT or loses its residue check.
+{
+  const BP = {
+    forward: '23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql',
+    verify: '23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE_VERIFY.sql',
+    rollback: '23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE_ROLLBACK.sql',
+  }
+  const label = 'Migration 23 buyer-pack authoritative issuance'
+  // PL/pgSQL body only (between AS $$ … $$;), so a p_procurement_decision parameter
+  // in the signature is not mistaken for a body reference.
+  const fnBody = (f) => {
+    const m = stripComments(read(f)).match(/as\s+\$\$([\s\S]*?)\$\$\s*;/i)
+    return m ? m[1] : ''
+  }
+  const missing = ['forward', 'verify', 'rollback'].filter((r) => !existsSync(join(ROOT, BP[r])))
+  if (missing.length) {
+    fail(`${label}: companion completeness`, `missing file(s): ${missing.map((r) => BP[r]).join(', ')}`)
+  } else {
+    pass(`${label}: companion completeness (HARDENING + VERIFY + ROLLBACK present)`)
+
+    const fwd = stripComments(read(BP.forward))
+    const body = fnBody(BP.forward)
+    const p = []
+    if (!/create\s+or\s+replace\s+function\s+public\.issue_buyer_pack_snapshot/i.test(fwd)) p.push('does not CREATE OR REPLACE issue_buyer_pack_snapshot')
+    if (!/procurement_decisions_current/i.test(body)) p.push('does not read the server trail (procurement_decisions_current)')
+    if (!/batch_id\s*=\s*p_pack_id/i.test(body)) p.push('does not join the decision to the same pack (batch_id = p_pack_id)')
+    if (!/v_decision\s*<>\s*'progress'/i.test(body)) p.push('does not block a non-progress server decision (hold/reject)')
+    if (!/v_decision\s+is\s+null/i.test(body)) p.push('does not block a pack with no decision')
+    if (!/v_decided_by\s+is\s+null/i.test(body)) p.push('does not re-assert a non-null decision actor')
+    if (!/v_reason\s+is\s+null\s+or\s+length\s*\(\s*btrim\s*\(\s*v_reason/i.test(body)) p.push('does not re-assert a non-blank decision reason')
+    if (!/is_ddp_admin\s*\(/i.test(body)) p.push('is no longer admin-gated')
+    if (!/p_pack_id\s+is\s+null\s+or\s+length\s*\(\s*btrim\s*\(\s*p_pack_id/i.test(body)) p.push('does not require a non-blank pack id')
+    // Client value must be neither the gate nor the stored value.
+    if (/p_procurement_decision\s*<>\s*'progress'/i.test(fwd)) p.push("re-introduces the client gate (p_procurement_decision <> 'progress')")
+    if (/p_procurement_decision/i.test(body)) p.push('function body references p_procurement_decision (client value not ignored / possibly stored)')
+    if (!/\bv_decision\b/i.test(body)) p.push('does not store the server-derived decision (v_decision)')
+    if (/service_role/i.test(fwd)) p.push('adds a service_role bypass')
+    check(`${label}: forward migration is server-authoritative (reads trail, same-pack, blocks non-progress/no-decision, ignores + does not store client value, admin+pack gated)`,
+      p.length === 0, p.join(' | '))
+
+    const ver = stripComments(read(BP.verify))
+    const residueTail = ver.slice(ver.lastIndexOf('rollback;'))
+    const vp = []
+    if (/\bcommit\b/i.test(ver)) vp.push('VERIFY contains COMMIT (must be BEGIN/ROLLBACK only)')
+    if (!/\bbegin\b/i.test(ver) || !/\brollback\b/i.test(ver)) vp.push('VERIFY lacks BEGIN/ROLLBACK')
+    if (!/issue_buyer_pack_snapshot\s*\(/i.test(ver)) vp.push('VERIFY never calls the RPC (vacuous)')
+    if (!/raise\s+exception/i.test(ver)) vp.push('VERIFY has no RAISE assertions (vacuous)')
+    if (!/leftover_/i.test(residueTail) || !/residue/i.test(residueTail)) vp.push('VERIFY has no post-rollback residue check')
+    for (const pk of ['PK-HOLD', 'PK-REJECT', 'PK-NONE', 'PK-STALE-HOLD', 'PK-STALE-REJECT']) {
+      if (!ver.includes(pk)) vp.push(`VERIFY does not exercise ${pk}`)
+    }
+    check(`${label}: VERIFY is behavioural, rollback-safe (no COMMIT), and covers the blocking scenarios`,
+      vp.length === 0, vp.join(' | '))
+
+    const rb = stripComments(read(BP.rollback))
+    const rp = []
+    if (!/create\s+or\s+replace\s+function\s+public\.issue_buyer_pack_snapshot/i.test(rb)) rp.push('does not restore the function')
+    if (!/p_procurement_decision\s*<>\s*'progress'/i.test(rb)) rp.push("does not restore migration 10's client gate")
+    if (/procurement_decisions_current/i.test(fnBody(BP.rollback))) rp.push('restored body still reads the server trail (not a true reversal)')
+    check(`${label}: ROLLBACK restores migration 10's definition`,
+      rp.length === 0, rp.join(' | '))
+  }
+}
+
 // ── Summary ─────────────────────────────────────────────────────────────────
 console.log('')
 if (failures > 0) {
