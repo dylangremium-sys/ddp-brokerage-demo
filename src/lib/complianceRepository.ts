@@ -25,6 +25,97 @@ function asUuidOrNull(value: string | null | undefined): string | null {
   return value && UUID_RE.test(value) ? value : null
 }
 
+/**
+ * Shown when an actor cannot be resolved to a real person. The audit log must
+ * never present a plausible-but-wrong identity: a fabricated name is worse than
+ * no name, because a reader (or a regulator) trusts it. See
+ * resolveActorDisplayName below.
+ */
+export const UNKNOWN_ACTOR_LABEL = 'Unknown actor'
+
+/**
+ * A privacy-safe reference to an unresolved actor: the leading segment of the
+ * UUID, never an email. Enough to correlate two rows or to look the actor up
+ * out-of-band; not enough to identify a person from the screen alone.
+ */
+export function shortActorRef(actorId: string): string {
+  return actorId.split('-')[0] ?? actorId
+}
+
+/**
+ * Resolves an actor id to a display name using names already fetched from
+ * `profiles` (see fetchProfileNames).
+ *
+ * Pure and side-effect-free so the attribution rules can be unit tested without
+ * a live database. The rules, in order:
+ *
+ *   - a known actor renders their real profile name;
+ *   - an actor we hold an id for but cannot name renders UNKNOWN_ACTOR_LABEL
+ *     plus a privacy-safe id fragment, so the row stays traceable;
+ *   - a row with no actor id renders what its actorType actually says, never a
+ *     person's name.
+ *
+ * It deliberately has no notion of "the current viewer": a viewer-relative
+ * fallback is exactly how the previous implementation came to label every other
+ * operator's actions 'DDP Admin'.
+ */
+export function resolveActorDisplayName(
+  actorId: string | null | undefined,
+  names: ReadonlyMap<string, string>,
+  actorType?: ComplianceAuditLog['actorType'],
+): string {
+  if (actorId) {
+    const known = names.get(actorId)
+    if (known) return known
+    return `${UNKNOWN_ACTOR_LABEL} (${shortActorRef(actorId)})`
+  }
+  if (actorType === 'system') return 'System'
+  if (actorType === 'ai_assistant') return 'AI assistant'
+  return UNKNOWN_ACTOR_LABEL
+}
+
+interface ProfileNameRow {
+  id: string
+  display_name: string | null
+  email: string | null
+}
+
+/**
+ * Resolves actor ids to profile display names in a single batched query.
+ *
+ * Readable under the applied RLS policy "profiles: select own or admin"
+ * (RLS_ENABLE_STAGED.sql) — a ddp_admin may select all profiles, and the
+ * Compliance Watchtower is already admin-gated. No policy change is required.
+ *
+ * Never throws. A name lookup is presentation, not evidence: if it fails or is
+ * denied, callers fall back to UNKNOWN_ACTOR_LABEL rather than losing the audit
+ * log itself. The ids are the record; the names are a convenience over them.
+ */
+export async function fetchProfileNames(
+  actorIds: ReadonlyArray<string | null | undefined>,
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>()
+  const ids = Array.from(
+    new Set(actorIds.map(asUuidOrNull).filter((id): id is string => id !== null)),
+  )
+  if (ids.length === 0 || !supabase) return names
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, display_name, email')
+      .in('id', ids)
+    if (error) return names
+    for (const row of (data as ProfileNameRow[] | null) ?? []) {
+      const name = (row.display_name ?? '').trim() || (row.email ?? '').trim()
+      if (name) names.set(row.id, name)
+    }
+  } catch {
+    return names
+  }
+  return names
+}
+
 function requireClient() {
   if (!supabase) throw new Error('Supabase is not configured for this environment.')
   return supabase
@@ -556,12 +647,12 @@ interface ComplianceAuditLogRow {
   created_at: string
 }
 
-function auditLogFromRow(row: ComplianceAuditLogRow, actorNameForId: (actorId: string | null) => string): ComplianceAuditLog {
+function auditLogFromRow(row: ComplianceAuditLogRow, actorName: string): ComplianceAuditLog {
   return {
     id: row.id,
     actorType: row.actor_type as ComplianceAuditLog['actorType'],
     actorId: row.actor_id,
-    actorName: actorNameForId(row.actor_id),
+    actorName,
     action: row.action as ComplianceAuditLog['action'],
     entityType: row.entity_type,
     entityId: row.entity_id,
@@ -572,7 +663,17 @@ function auditLogFromRow(row: ComplianceAuditLogRow, actorNameForId: (actorId: s
   }
 }
 
-export async function fetchAuditLog(actorNameForId: (actorId: string | null) => string): Promise<ComplianceAuditLog[]> {
+/**
+ * Loads the audit log and resolves each row's actor from the persisted
+ * `actor_id` — never from who is viewing.
+ *
+ * Two-phase by necessity: the actor ids are only known once the rows are read,
+ * so names are fetched afterwards in one batched query and applied here. The
+ * previous signature took an actorNameForId callback and baked a name in at map
+ * time, which is what allowed a viewer-relative fallback to fabricate
+ * 'DDP Admin' for every other operator.
+ */
+export async function fetchAuditLog(): Promise<ComplianceAuditLog[]> {
   const client = requireClient()
   const { data, error } = await client
     .from('compliance_audit_log')
@@ -580,7 +681,15 @@ export async function fetchAuditLog(actorNameForId: (actorId: string | null) => 
     .order('created_at', { ascending: false })
     .limit(500)
   raise('Loading audit log', error)
-  return (data as ComplianceAuditLogRow[] ?? []).map(row => auditLogFromRow(row, actorNameForId))
+  const rows = (data as ComplianceAuditLogRow[] | null) ?? []
+  const names = await fetchProfileNames(rows.map(row => row.actor_id))
+  return rows.map(row =>
+    auditLogFromRow(row, resolveActorDisplayName(
+      row.actor_id,
+      names,
+      row.actor_type as ComplianceAuditLog['actorType'],
+    )),
+  )
 }
 
 export interface ComplianceAuditLogInsertPayload {
@@ -618,10 +727,17 @@ export function buildAuditLogInsertPayload(
   }
 }
 
+/**
+ * Writes one audit entry. `actorDisplayName` is the *writing* user's own name —
+ * the actor is by definition the caller, so it is known and needs no lookup. It
+ * is used only to label the row returned for optimistic display; `actor_name` is
+ * never persisted (see buildAuditLogInsertPayload — the row stores `actor_id`
+ * alone, and every reader resolves the name from it).
+ */
 export async function insertAuditLog(
   entry: Omit<ComplianceAuditLog, 'id' | 'actorType' | 'actorId' | 'actorName' | 'createdAt'>,
   actorId: string | null,
-  actorNameForId: (actorId: string | null) => string,
+  actorDisplayName: string,
   actorType: ComplianceAuditLog['actorType'] = 'admin',
 ): Promise<ComplianceAuditLog> {
   const client = requireClient()
@@ -631,5 +747,5 @@ export async function insertAuditLog(
     .select('*')
     .single()
   raise('Writing audit log entry', error)
-  return auditLogFromRow(data as ComplianceAuditLogRow, actorNameForId)
+  return auditLogFromRow(data as ComplianceAuditLogRow, actorDisplayName)
 }

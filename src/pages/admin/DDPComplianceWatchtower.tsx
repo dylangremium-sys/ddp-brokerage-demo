@@ -299,14 +299,16 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const [aiDraftMessage, setAiDraftMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const aiRequestUpdateIdRef = useRef<string | null>(null)
 
-  const actorName = currentUser?.displayName || currentUser?.email || 'DDP Admin'
+  const actorName = currentUser?.displayName || currentUser?.email || repo.UNKNOWN_ACTOR_LABEL
   const actorId = currentUser?.id ?? 'local-admin'
   const isSupabaseAdmin = repo.isSupabaseConfigured && !!currentUser && currentUser.role === 'ddp_admin'
 
-  function actorNameForId(id: string | null): string {
-    if (id && currentUser?.id === id) return actorName
-    return 'DDP Admin'
-  }
+  // Real profile names for the actors referenced on this page, keyed by actor
+  // id. Populated after the main load, because the ids are only known once the
+  // rows are read. Used for rule approvers; audit rows arrive already resolved
+  // from repo.fetchAuditLog(). Never falls back to a viewer-relative guess —
+  // unresolved actors render honestly via repo.resolveActorDisplayName().
+  const [actorNames, setActorNames] = useState<ReadonlyMap<string, string>>(new Map())
 
   useEffect(() => {
     if (!isSupabaseAdmin) return
@@ -316,7 +318,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       repo.fetchReviews(),
       repo.fetchRules(),
       repo.fetchAlerts(),
-      repo.fetchAuditLog(actorNameForId),
+      repo.fetchAuditLog(),
     ]).then(([lu, rv, ru, al, au]) => {
       if (cancelled) return
       setLegalUpdates(lu)
@@ -325,13 +327,19 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       setStoredAlerts(al)
       setAuditLog(au)
       setInitialLoading(false)
+      // Names for actors this page references outside the audit log (rule
+      // approvers). Best-effort by design: fetchProfileNames never throws, so a
+      // failed name lookup degrades to an honest label instead of taking down
+      // the Watchtower.
+      void repo.fetchProfileNames(ru.map(rule => rule.approvedBy)).then(names => {
+        if (!cancelled) setActorNames(names)
+      })
     }).catch(err => {
       if (cancelled) return
       setLoadError(err instanceof Error ? err.message : 'Failed to load Compliance Watchtower data from Supabase.')
       setInitialLoading(false)
     })
     return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSupabaseAdmin])
 
   // Separate, independent effect — deliberately not folded into the
@@ -366,7 +374,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     entryActorType: ComplianceAuditLog['actorType'] = 'admin',
   ): Promise<void> {
     if (isSupabaseAdmin && currentUser) {
-      const row = await repo.insertAuditLog(entry, currentUser.id, actorNameForId, entryActorType)
+      const row = await repo.insertAuditLog(entry, currentUser.id, actorName, entryActorType)
       setAuditLog(prev => [row, ...prev])
       return
     }
@@ -1609,7 +1617,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                     <td><span className={`badge ${SEVERITY_CLASS[rule.severity]}`}>{rule.severity.toUpperCase()}</span></td>
                     <td>{rule.isBlocking ? <span className="status-pill status-reject">Blocking</span> : <span className="status-pill status-claimed">Non-blocking</span>}</td>
                     <td><span className="status-pill status-reviewed">{statusText(rule.status)}</span></td>
-                    <td>{(rule.approvedBy ? actorNameForId(rule.approvedBy) : null) || '—'}<br /><span className="td-muted">{rule.approvedAt || 'Pending human approval'}</span></td>
+                    <td>{rule.approvedBy ? repo.resolveActorDisplayName(rule.approvedBy, actorNames) : '—'}<br /><span className="td-muted">{rule.approvedAt || 'Pending human approval'}</span></td>
                     <td>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         <button className="btn btn-review" disabled={busy} onClick={() => { void updateRuleStatus(rule, 'active') }}>Approve / Activate</button>
