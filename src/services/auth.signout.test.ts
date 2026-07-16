@@ -64,9 +64,11 @@ describe('signOut — sensitive cleanup runs even when Supabase sign-out fails',
       expect(session.getItem(k), `${k} should be seeded before sign-out`).not.toBeNull()
     }
 
-    // signOut() re-propagates the Supabase failure; the contract under test is only
-    // that cleanup still happened, so tolerate whatever the promise settles to.
-    await signOut().catch(() => {})
+    // signOut() must re-propagate the Supabase failure to the caller AFTER running
+    // cleanup. Assert the rejection explicitly (not just tolerate it): a regression
+    // that swallows the error — leaving callers to believe sign-out succeeded when
+    // the session may not have ended — must fail here, not slip through.
+    await expect(signOut()).rejects.toThrow('network-down')
 
     // The failing Supabase call was actually made (we exercised the failure path)…
     expect(signOutMock).toHaveBeenCalledTimes(1)
