@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import {
   getFarmProfiles,
@@ -32,7 +32,7 @@ import {
   getCurrentProfile,
   type UserProfile,
 } from './services/auth'
-import { resolvePostLoginDecision } from './lib/postLoginRouting'
+import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
@@ -102,6 +102,10 @@ export default function App() {
   // Auth state — only meaningful when isSupabaseConfigured is true
   const [authLoading, setAuthLoading] = useState<boolean>(isSupabaseConfigured)
   const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null)
+  // Guards the one-time bootstrap route: a restored session (page reload) is routed
+  // to its role page exactly once, so later auth events (token refresh, StrictMode
+  // duplicate init) never yank the operator off a page they navigated to.
+  const didBootstrapRoute = useRef(false)
 
   // Farmer data scope — null until loaded, empty Sets if farmer has no data
   const [farmerScope, setFarmerScope] = useState<FarmerScope | null>(null)
@@ -129,6 +133,15 @@ export default function App() {
       setAuthLoading(false)
       // Clear scope on sign-out or when a non-farmer profile appears
       if (!profile || profile.role !== 'farmer') setFarmerScope(null)
+      // Bootstrap routing: on the FIRST auth resolution after a (re)load, route a
+      // restored session to its role page (a reload resets `page` to the public
+      // landing). Guarded to run once so later events cannot override navigation.
+      const routing = nextBootstrapRouting(didBootstrapRoute.current, profile)
+      didBootstrapRoute.current = routing.routed
+      if (routing.routeTo) {
+        setPage(routing.routeTo)
+        window.scrollTo(0, 0)
+      }
     })
     return unsubscribe
   }, [])
