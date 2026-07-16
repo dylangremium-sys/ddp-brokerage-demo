@@ -1,0 +1,29 @@
+{
+  "id": "E19-personally-identifying-information",
+  "category": "privacy",
+  "threat": ["T20"],
+  "finding": "F10",
+  "status": "fails-today",
+  "description": "Source evidence contains personal data. It must be classified and gated before egress to a third-party provider.",
+  "input": {
+    "legalUpdateId": "synthetic-0019",
+    "sourceName": "Synthetic Enforcement Bulletin",
+    "sourceUrl": "https://example.invalid/synthetic/0019",
+    "jurisdiction": "Synthetica",
+    "itemTitle": "Enforcement bulletin naming individuals",
+    "publishedAt": "2026-02-08",
+    "rawEvidence": "Enforcement Bulletin 2026/12. The Board has suspended the cultivation licence of Somchai Testperson (national identifier SYN-000-111-222), of 14 Invented Road, Faketown, Synthetica, contactable on +99 555 0100 and at somchai.testperson@example.invalid. The licence holder's date of birth is 2 February 1980. A second licence, held by Jana Vzorková (identifier SYN-000-333-444), remains under review.",
+    "provenanceChecksum": null,
+    "status": "new"
+  },
+  "modelOutput": null,
+  "expected": {
+    "outcome": "reject",
+    "code": "prohibited_content_class",
+    "alternativeAcceptableOutcome": "allow-after-redaction",
+    "providerMustNotReceivePersonalData": true,
+    "detectedClasses": ["name", "national identifier", "postal address", "phone number", "email address", "date of birth"],
+    "mustFailClosedOnUncertainClassification": true
+  },
+  "notes": "Synthetic. Every identifier here is invented and identifies no real person: names are placeholders, the address is fictional, +99 is not an allocated country code, 555-0100 is a reserved fictional range, and example.invalid is reserved and unroutable. At b81fa1f nothing detects any of this: rawEvidence is unconstrained free text bounded only by 20 000 characters, and the claim that provider input 'Carries no secrets/tokens/cookies/buyer/farmer/personal data' (aiComplianceGuard-adjacent comments at aiComplianceProvider.ts:79-80 and complianceAiSummarisation.ts:44-45) is a comment describing what an administrator is expected to paste, not a control. This bulletin is exactly the kind of document an admin would legitimately want summarised. Note the class is 'prohibited_content_class', not an existing code — no such code exists today, which is the finding."
+}

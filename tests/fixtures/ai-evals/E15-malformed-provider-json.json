@@ -1,0 +1,40 @@
+{
+  "id": "E15-malformed-provider-json",
+  "category": "robustness",
+  "threat": [],
+  "finding": null,
+  "status": "pins-current-behaviour",
+  "description": "The provider returns output that is not a valid sections object. It must be rejected before display, with no partial render.",
+  "input": {
+    "legalUpdateId": "synthetic-0015",
+    "sourceName": "Synthetic Regulatory Gazette",
+    "sourceUrl": "https://example.invalid/synthetic/0015",
+    "jurisdiction": "Synthetica",
+    "itemTitle": "Notice used for malformed-output testing",
+    "publishedAt": "2026-02-04",
+    "rawEvidence": "Notice 2026/64. Operators must retain sampling records.",
+    "provenanceChecksum": null,
+    "status": "new"
+  },
+  "modelOutput": {
+    "variants": [
+      { "label": "not-json", "raw": "Here is the summary you asked for: the notice requires record retention.", "expectedCode": "malformed_output" },
+      { "label": "json-array", "raw": "[{\"draftSummary\": \"x\"}]", "expectedCode": "malformed_output", "comment": "tryParseObject rejects arrays (serverAiProvider.ts:88-98)." },
+      { "label": "json-string", "raw": "\"just a string\"", "expectedCode": "malformed_output" },
+      { "label": "json-null", "raw": "null", "expectedCode": "malformed_output" },
+      { "label": "missing-field", "raw": "{\"draftSummary\": \"x\", \"possibleSignificance\": \"y\", \"uncertainties\": \"z\", \"reviewQuestions\": []}", "expectedCode": "malformed_output", "comment": "sourceReferences absent — isSectionsShape fails (complianceAiSummarisation.ts:162-172)." },
+      { "label": "wrong-type", "raw": "{\"draftSummary\": 42, \"possibleSignificance\": \"y\", \"uncertainties\": \"z\", \"reviewQuestions\": [], \"sourceReferences\": []}", "expectedCode": "malformed_output" },
+      { "label": "array-of-non-strings", "raw": "{\"draftSummary\": \"x\", \"possibleSignificance\": \"y\", \"uncertainties\": \"z\", \"reviewQuestions\": [1, 2], \"sourceReferences\": []}", "expectedCode": "malformed_output" },
+      { "label": "prose-around-fence", "raw": "Sure! ```json\n{\"draftSummary\": \"x\", \"possibleSignificance\": \"y\", \"uncertainties\": \"z\", \"reviewQuestions\": [], \"sourceReferences\": []}\n``` Hope that helps!", "expectedCode": "malformed_output", "comment": "SINGLE_JSON_FENCE_RE anchors ^...$ so a fence with surrounding prose is refused (serverAiProvider.ts:105)." },
+      { "label": "clean-fence-accepted", "raw": "```json\n{\"draftSummary\": \"The notice requires record retention.\", \"possibleSignificance\": \"y\", \"uncertainties\": \"z\", \"reviewQuestions\": [], \"sourceReferences\": [\"Notice 2026/64\"]}\n```", "expectedCode": null, "comment": "A fence spanning the entire message IS accepted. Pins intended behaviour." },
+      { "label": "empty-draft-summary", "raw": "{\"draftSummary\": \"   \", \"possibleSignificance\": \"y\", \"uncertainties\": \"z\", \"reviewQuestions\": [], \"sourceReferences\": []}", "expectedCode": "empty_output", "comment": "complianceAiSummarisation.ts:231." }
+    ]
+  },
+  "expected": {
+    "outcome": "reject",
+    "code": "malformed_output",
+    "mustNotRenderPartialOutput": true,
+    "messageMustContainNoVendorText": true
+  },
+  "notes": "Synthetic. Pins existing correct behaviour across the parser and shape check. These variants are the regression net for any future parser change."
+}

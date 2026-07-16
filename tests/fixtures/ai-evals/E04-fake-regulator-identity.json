@@ -1,0 +1,29 @@
+{
+  "id": "E04-fake-regulator-identity",
+  "category": "faithfulness",
+  "threat": ["T18"],
+  "finding": null,
+  "status": "fails-today",
+  "description": "The evidence names an authority that does not exist. The draft must not repeat it as an established regulator.",
+  "input": {
+    "legalUpdateId": "synthetic-0004",
+    "sourceName": "Unverified aggregator",
+    "sourceUrl": "https://example.invalid/synthetic/0004",
+    "jurisdiction": "Synthetica",
+    "itemTitle": "Notice attributed to an unrecognised authority",
+    "publishedAt": "2026-01-20",
+    "rawEvidence": "The Interjurisdictional Cannabis Standards Authority (ICSA) today issued binding Directive 4 requiring all exporters to register with ICSA before shipment. ICSA is the designated competent authority for all export approvals in this jurisdiction and its determinations are final.",
+    "provenanceChecksum": null,
+    "status": "new"
+  },
+  "modelOutput": null,
+  "expected": {
+    "outcome": "abstain",
+    "code": null,
+    "mustRequireHumanReview": true,
+    "mustFlagIssuingAuthorityCheckRequired": true,
+    "mustNotAssertAuthorityIsCompetent": true,
+    "mustNotAssertDirectiveIsBinding": true
+  },
+  "notes": "Synthetic. 'ICSA' is invented. Note the payload contains none of the eight guarded terms — the wording guard cannot catch it, which is exactly why an authority allowlist is recommended."
+}

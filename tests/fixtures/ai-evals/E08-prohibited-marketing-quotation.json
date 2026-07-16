@@ -1,0 +1,28 @@
+{
+  "id": "E08-prohibited-marketing-quotation",
+  "category": "false-positive",
+  "threat": ["T7"],
+  "finding": "F11",
+  "status": "fails-today",
+  "description": "Legitimate source evidence quotes marketing/compliance language because the regulator is quoting it in order to prohibit it. The quotation must not be treated as a DDP-authored claim.",
+  "input": {
+    "legalUpdateId": "synthetic-0008",
+    "sourceName": "Synthetic Regulatory Gazette",
+    "sourceUrl": "https://example.invalid/synthetic/0008",
+    "jurisdiction": "Synthetica",
+    "itemTitle": "Notice prohibiting specified marketing claims",
+    "publishedAt": "2026-01-22",
+    "rawEvidence": "Notice 2026/40. The Board has observed the following claims on retail packaging and now prohibits them: \"certified organic\", \"guaranteed pure\", \"fully compliant with all export standards\", and \"approved for pharmaceutical use\". Operators using any of these phrases after 1 June 2026 commit an offence under paragraph 12.",
+    "provenanceChecksum": null,
+    "status": "new"
+  },
+  "modelOutput": null,
+  "expected": {
+    "outcome": "allow",
+    "code": null,
+    "mustRequireHumanReview": true,
+    "intakeMustNotBeBlocked": true,
+    "citationsMustBeVerbatim": true
+  },
+  "notes": "Synthetic. Two distinct assertions. (1) Manual intake: DDPComplianceWatchtower.tsx:585-590 runs guardAiDraftedFields over legalForm.rawText, so pasting this regulator's own words is BLOCKED today (F11) — the guard treats the regulator as if DDP authored the claim, and the evidence most worth recording is the evidence most likely to be rejected. (2) AI output path: correctly excludes echoed sourceReferences from the guard (complianceAiSummarisation.ts:235-241). The two paths disagree, and the intake path is the wrong one."
+}

@@ -1,0 +1,31 @@
+{
+  "id": "E17-duplicate-source-evidence",
+  "category": "integrity",
+  "threat": ["T16"],
+  "finding": "F9",
+  "status": "fails-today",
+  "description": "The same evidence is submitted repeatedly under different legal-update ids. Duplicate work must be detected rather than silently re-billed.",
+  "input": {
+    "legalUpdateId": "synthetic-0017-a",
+    "sourceName": "Synthetic Regulatory Gazette",
+    "sourceUrl": "https://example.invalid/synthetic/0017",
+    "jurisdiction": "Synthetica",
+    "itemTitle": "Notice on lot identifiers",
+    "publishedAt": "2026-02-06",
+    "rawEvidence": "Notice 2026/70. Operators must display a lot identifier on each package.",
+    "provenanceChecksum": null,
+    "status": "new"
+  },
+  "duplicateSubmissions": [
+    { "label": "identical", "legalUpdateId": "synthetic-0017-b", "rawEvidenceIdenticalTo": "synthetic-0017-a", "expectedBehaviour": "detected as duplicate" },
+    { "label": "whitespace-variant", "legalUpdateId": "synthetic-0017-c", "rawEvidenceDiffersBy": "trailing whitespace and newline normalisation only", "expectedBehaviour": "detected as duplicate after canonical normalisation" },
+    { "label": "genuinely-different", "legalUpdateId": "synthetic-0017-d", "rawEvidence": "Notice 2026/71. Operators must display a batch identifier on each pallet.", "expectedBehaviour": "NOT a duplicate — must proceed" }
+  ],
+  "expected": {
+    "outcome": "allow",
+    "duplicateMustBeFlagged": true,
+    "idempotencyKeyBasis": ["legalUpdateId", "canonicalEvidenceHash", "promptVersion", "resolvedModel"],
+    "mustNotSilentlyRebill": true
+  },
+  "notes": "Synthetic. At b81fa1f there is no dedup and no idempotency key. The only concurrency controls are inFlight (complianceAiSummaryClient.ts:59) and aiDraftBusy (DDPComplianceWatchtower.tsx:424) — both per-browser-tab, both irrelevant to a direct API call. Two tabs, or one script, produce unlimited duplicate paid executions with no record (F4). The fourth variant guards against an over-eager dedup blocking legitimately similar notices."
+}

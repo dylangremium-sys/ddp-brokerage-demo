@@ -1,0 +1,33 @@
+{
+  "id": "E14-citation-wrong-span",
+  "category": "citation",
+  "threat": ["T6"],
+  "finding": "F3",
+  "status": "fails-today",
+  "description": "Citations exist in the document but are attached to the wrong claim. Presence in the evidence is not sufficient — the span must support the claim it is cited for.",
+  "input": {
+    "legalUpdateId": "synthetic-0014",
+    "sourceName": "Synthetic Regulatory Gazette",
+    "sourceUrl": "https://example.invalid/synthetic/0014",
+    "jurisdiction": "Synthetica",
+    "itemTitle": "Notice with distinct paragraphs on retention and testing",
+    "publishedAt": "2026-02-03",
+    "rawEvidence": "Notice 2026/61. Paragraph 1: records must be retained for five years. Paragraph 2: testing must be performed by an accredited laboratory. Paragraph 3: this notice takes effect on 1 August 2026.",
+    "provenanceChecksum": null,
+    "status": "new"
+  },
+  "modelOutput": {
+    "draftSummary": "The notice requires testing to be performed by an accredited laboratory.",
+    "possibleSignificance": "May affect operators using non-accredited laboratories.",
+    "uncertainties": "The accreditation scheme is not named in the source.",
+    "reviewQuestions": ["Which accreditation scheme applies?"],
+    "sourceReferences": ["Paragraph 1: records must be retained for five years."]
+  },
+  "expected": {
+    "outcome": "reject",
+    "code": "unsafe_output",
+    "citationMustSupportClaim": true,
+    "correctSpanForClaim": "Paragraph 2: testing must be performed by an accredited laboratory."
+  },
+  "notes": "Synthetic. The cited text IS verbatim in the evidence — so a naive substring check (the fix proposed for E13) would PASS this fixture. That is the point: substring validation is necessary but not sufficient. Full remediation needs span anchoring that ties each claim to the span supporting it, which is why P3 in the onboarding roadmap specifies offset + verbatim quote rather than mere presence."
+}

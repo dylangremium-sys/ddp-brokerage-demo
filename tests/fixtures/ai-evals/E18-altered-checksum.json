@@ -1,0 +1,35 @@
+{
+  "id": "E18-altered-checksum",
+  "category": "integrity",
+  "threat": ["T10", "T5", "T9"],
+  "finding": "F2",
+  "status": "fails-today",
+  "description": "A well-formed 64-hex checksum that does not match the evidence it accompanies. THIS FIXTURE IS THE REGRESSION GATE FOR THE RECOMMENDED NEXT PR.",
+  "input": {
+    "legalUpdateId": "synthetic-0018",
+    "sourceName": "Synthetic Regulatory Gazette",
+    "sourceUrl": "https://example.invalid/synthetic/0018",
+    "jurisdiction": "Synthetica",
+    "itemTitle": "Notice with a mismatched provenance checksum",
+    "publishedAt": "2026-02-07",
+    "rawEvidence": "Notice 2026/73. Operators must retain analysis records for five years.",
+    "provenanceChecksum": "0000000000000000000000000000000000000000000000000000000000000000",
+    "status": "new"
+  },
+  "variants": [
+    { "label": "all-zeroes", "provenanceChecksum": "0000000000000000000000000000000000000000000000000000000000000000", "expectedCode": "invalid_checksum", "codeAtBaseCommit": "ACCEPTED — matches /^[0-9a-f]{64}$/i" },
+    { "label": "plausible-but-wrong", "provenanceChecksum": "3f2a91c4e8b7d5061a9c3e7f2b8d4a6c5e1f9b3d7a2c8e4f6b1d5a9c3e7f2b8d", "expectedCode": "invalid_checksum", "codeAtBaseCommit": "ACCEPTED" },
+    { "label": "uppercase-wrong", "provenanceChecksum": "3F2A91C4E8B7D5061A9C3E7F2B8D4A6C5E1F9B3D7A2C8E4F6B1D5A9C3E7F2B8D", "expectedCode": "invalid_checksum", "codeAtBaseCommit": "ACCEPTED — the regex is case-insensitive" },
+    { "label": "wrong-length", "provenanceChecksum": "3f2a91c4", "expectedCode": "invalid_checksum", "codeAtBaseCommit": "invalid_checksum", "comment": "The ONE case the format check catches." },
+    { "label": "null-checksum", "provenanceChecksum": null, "expectedCode": "invalid_checksum", "codeAtBaseCommit": "ACCEPTED", "comment": "Optional today (serverAiSummary.ts:239). After the fix, evidence integrity should not be optional." },
+    { "label": "evidence-substituted", "provenanceChecksum": "matches the STORED evidence", "rawEvidence": "Notice 2026/73. Operators are exempt from all retention requirements.", "expectedCode": "invalid_checksum", "codeAtBaseCommit": "ACCEPTED", "comment": "The attack the fix must stop: a valid checksum paired with substituted evidence. Detectable ONLY by recomputing over the SERVER-LOADED record — which is why F2 cannot be fixed without F1." }
+  ],
+  "expected": {
+    "outcome": "reject",
+    "code": "invalid_checksum",
+    "checksumMustBeRecomputedServerSide": true,
+    "checksumMustBeComparedToPersistedEvidence": true,
+    "providerMustNotBeReached": true
+  },
+  "notes": "Synthetic. At b81fa1f the checksum is format-checked (serverAiSummary.ts:41, 246-248) and never recomputed or compared to anything. The server then writes it into reviewerNotes as 'Checksum: <value>' (:294) so buildAiSummaryRequest can parse it back out with a regex (complianceAiSummarisation.ts:47) — an unverified value round-tripping through a field named for provenance, creating the impression of integrity while providing none. The last variant is the whole argument for the recommended next PR: recomputation is meaningless unless the server loads the authoritative record first."
+}

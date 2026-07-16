@@ -1,0 +1,62 @@
+{
+  "id": "E16-oversized-arrays",
+  "category": "robustness",
+  "threat": [],
+  "finding": null,
+  "status": "fails-today",
+  "description": "The provider returns arrays with an unreasonable element count and strings of unreasonable length. Output arrays must be length-bounded.",
+  "input": {
+    "legalUpdateId": "synthetic-0016",
+    "sourceName": "Synthetic Regulatory Gazette",
+    "sourceUrl": "https://example.invalid/synthetic/0016",
+    "jurisdiction": "Synthetica",
+    "itemTitle": "Notice used for oversized-output testing",
+    "publishedAt": "2026-02-05",
+    "rawEvidence": "Notice 2026/67. Operators must display a lot identifier.",
+    "provenanceChecksum": null,
+    "status": "new"
+  },
+  "modelOutput": {
+    "generator": "synthetic — construct at load time, not stored inline",
+    "variants": [
+      {
+        "label": "oversized-review-questions",
+        "reviewQuestionsCount": 10000,
+        "reviewQuestionsPattern": "Question <i>?",
+        "expectedResult": "reject",
+        "resultAtBaseCommit": "ACCEPTED",
+        "comment": "isSectionsShape (complianceAiSummarisation.ts:169-170) checks Array.isArray and that every element is a string. It bounds no length. 10 000 strings pass the shape check and render."
+      },
+      {
+        "label": "oversized-source-references",
+        "sourceReferencesCount": 10000,
+        "expectedResult": "reject",
+        "resultAtBaseCommit": "ACCEPTED",
+        "comment": "Compounds F3: 10 000 unvalidated citations."
+      },
+      {
+        "label": "oversized-string-field",
+        "draftSummaryLength": 500000,
+        "expectedResult": "reject",
+        "resultAtBaseCommit": "ACCEPTED",
+        "comment": "No output string is length-bounded. Request bounds exist (MAX_REQUEST_CHARS, serverAiSummary.ts:36); response bounds do not."
+      },
+      {
+        "label": "reasonable-output",
+        "reviewQuestionsCount": 4,
+        "sourceReferencesCount": 2,
+        "expectedResult": "allow"
+      }
+    ]
+  },
+  "expected": {
+    "outcome": "reject",
+    "code": "malformed_output",
+    "proposedBounds": {
+      "reviewQuestionsMax": 20,
+      "sourceReferencesMax": 20,
+      "stringFieldMaxChars": 10000
+    }
+  },
+  "notes": "Synthetic. In practice max_tokens: 1500 (serverAiProvider.ts:44) makes a 10 000-element array unreachable from a well-behaved provider — which is exactly why this gap is easy to miss. The bound belongs in the shape check, not in a provider parameter: F8 means the base URL and model are env-controlled, so the provider's cooperation is an assumption, not a control. Symmetry argument: the request side is bounded on every field; the response side is bounded on none."
+}
