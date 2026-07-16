@@ -102,6 +102,42 @@ describe('migration 23 — verification script', () => {
   })
 })
 
+describe('migration 23 — VERIFY Section A scans comment-stripped source', () => {
+  // pg_proc.prosrc is the function BODY and INCLUDES its comments. Migration 23's
+  // body legitimately NAMES p_procurement_decision in comments (to document that it
+  // is ignored). A Section A scan for that identifier against RAW prosrc therefore
+  // false-fails on the correct, applied function — the exact defect this guards.
+  const raw = read(VERIFY)
+  // The object-state do-block + summary, bounded by the two real section banners
+  // (unique ASCII substrings — not the lowercase mentions in the file header).
+  const sectionA = raw.slice(
+    raw.indexOf('OBJECT STATE (read-only; RAISEs on drift)'),
+    raw.indexOf('BEHAVIOUR (ephemeral fixture'),
+  )
+
+  it('is bounded correctly (non-empty slice between the real banners)', () => {
+    expect(sectionA.length).toBeGreaterThan(0)
+  })
+
+  it('derives a comment-stripped copy of the source before scanning it', () => {
+    // v_code := regexp_replace(v_src, '--...', ...) — strips line comments.
+    expect(sectionA).toMatch(/v_code\s*:=\s*regexp_replace\(\s*v_src\s*,\s*'--/i)
+  })
+
+  it('scans the comment-stripped code (not raw prosrc/v_src) for the client argument', () => {
+    // The "client value is ignored" check must run against the stripped source…
+    expect(sectionA).toMatch(/position\(\s*'p_procurement_decision'\s+in\s+v_code\s*\)/i)
+    // …and must NOT revert to raw v_src, which reintroduces the false positive.
+    expect(sectionA).not.toMatch(/position\(\s*'p_procurement_decision'\s+in\s+v_src\s*\)/i)
+  })
+
+  it('strips comments in the informational ignores_client_decision summary too', () => {
+    // The summary boolean must also scan comment-stripped prosrc, or it reports the
+    // correct function as trusting the client value.
+    expect(sectionA).toMatch(/position\(\s*'p_procurement_decision'\s+in\s+regexp_replace\(\s*p\.prosrc\s*,\s*'--/i)
+  })
+})
+
 describe('migration 23 — rollback script', () => {
   const code = stripComments(read(ROLLBACK))
 
