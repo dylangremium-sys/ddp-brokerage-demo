@@ -77,6 +77,19 @@ function makeClient(opts: {
 }
 
 describe('createSupabaseBuyerPackSnapshotRepository — save() calls the RPC', () => {
+  it('always sends the authoritative decision key p_pack_id (server gate looks it up — migration 23)', async () => {
+    // After 23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql the server derives
+    // release status from procurement_decisions_current keyed by p_pack_id, and
+    // ignores the client p_procurement_decision. Omitting p_pack_id would leave the
+    // server gate with nothing to look up — so it must always be sent, non-empty.
+    const { client, rpcCalls } = makeClient()
+    const repo = createSupabaseBuyerPackSnapshotRepository(client)
+    await repo.save(snapshot())
+    const args = rpcCalls[0].args as Record<string, unknown>
+    expect(args.p_pack_id, 'p_pack_id (authoritative decision-trail key) must be sent').toBe('batch-1')
+    expect(typeof args.p_pack_id === 'string' && (args.p_pack_id as string).length > 0).toBe(true)
+  })
+
   it('invokes issue_buyer_pack_snapshot with the exact documented parameter names', async () => {
     const { client, rpcCalls } = makeClient()
     const repo = createSupabaseBuyerPackSnapshotRepository(client)
