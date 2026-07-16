@@ -3469,6 +3469,34 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   .disclaimer-box,
   .disclaimer-box strong { color: #1E2A24 !important; }
 
+  /* The Executive Summary notice. It prints: it forbids issuing the pack while
+     the section is incomplete, and a distribution warning removed from the
+     distributed artifact warns nobody.
+
+     Ruled and boxed rather than tinted — a printed background is suppressed by
+     default, so a warning that relied on a fill would arrive as bare text and
+     lose the emphasis that makes it a warning. The 3px rule survives on any
+     printer, on plain paper, in greyscale, with no colour management at all.
+
+     The `!important` on colour is load-bearing: the notice carries an inline
+     `color: var(--warning)` (#B8782E, 3.64:1 on white — below AA), and inline
+     styles beat stylesheet rules unless overridden this way. Without it the one
+     notice that most needs reading would print as the faintest text on the page.
+
+     Print-scoped only: on screen this class adds nothing, so the existing
+     layout is untouched. */
+  .buyer-pack-notice {
+    border: 1px solid #8A968C !important;
+    border-left: 3px solid #1E2A24 !important;
+    padding: 10px 12px !important;
+    margin-bottom: 22px !important;
+    break-inside: avoid;
+  }
+  .buyer-pack-notice .detail-block-title,
+  .buyer-pack-notice p {
+    color: #1E2A24 !important;
+  }
+
   /* Provenance block — printed identity and approval of the artifact. */
   .buyer-pack-provenance {
     margin-top: 20px;

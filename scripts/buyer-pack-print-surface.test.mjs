@@ -80,12 +80,73 @@ describe('print surface — document geometry', () => {
   })
 })
 
+// The exact notice, as written. Pinned so a "tidy-up" cannot soften, shorten or
+// re-word a distribution warning without this failing. Normalised for JSX line
+// wrapping only — every word is the source's own.
+const EXEC_SUMMARY_NOTICE =
+  'INTERNAL — Executive summary not yet completed. Decision Required: this pack must not be issued to a buyer ' +
+  'until DDP staff complete this section (farm standing, batch readiness, open risks, recommended decision).'
+
+describe('Executive Summary notice — prints, intact and readable', () => {
+  const noticeBlock = TSX.match(/<div className="detail-block buyer-pack-notice">[\s\S]*?<\/div>\s*\n\s*\n/)?.[0] ?? ''
+
+  it('is not excluded from print', () => {
+    // The whole point: a warning forbidding issuance must reach the artifact
+    // that gets issued.
+    expect(noticeBlock.length).toBeGreaterThan(0)
+    expect(noticeBlock).not.toMatch(/no-print/)
+    // And nothing in the print block may hide it.
+    const hiddenRule = PRINT.slice(0, PRINT.indexOf('display: none !important'))
+    expect(hiddenRule).not.toMatch(/buyer-pack-notice/)
+  })
+
+  it('retains the warning text exactly as written', () => {
+    const rendered = noticeBlock.replace(/\s+/g, ' ').trim()
+    expect(rendered).toContain(EXEC_SUMMARY_NOTICE)
+  })
+
+  it('still names the section it belongs to', () => {
+    expect(noticeBlock).toContain('Executive Summary (Internal Draft)')
+  })
+
+  it('has explicit readable print ink that overrides the inline --warning colour', () => {
+    // The notice carries an inline color: var(--warning) — #B8782E, 3.42:1 on
+    // white. Inline styles beat stylesheet rules without !important, so the
+    // override must be explicit or the warning prints as the faintest text.
+    const rule = PRINT.match(/\.buyer-pack-notice \.detail-block-title,\s*\.buyer-pack-notice p\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(rule).toMatch(new RegExp(`color:\\s*${INK}\\s*!important`, 'i'))
+  })
+
+  it('is visually distinct without depending on a printed background', () => {
+    const rule = PRINT.match(/\.buyer-pack-notice\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(rule).toMatch(/border-left:\s*3px solid/i)
+    expect(rule).not.toMatch(/background/i)
+    expect(rule).toMatch(/break-inside:\s*avoid/i)
+  })
+
+  it('adds no screen-scoped rules, so the on-screen layout is unchanged', () => {
+    // Every .buyer-pack-notice rule must live inside @media print.
+    const screenCss = CSS.slice(0, CSS.indexOf('@media print'))
+    expect(screenCss).not.toMatch(/\.buyer-pack-notice/)
+  })
+})
+
 describe('print surface — nothing evidential is hidden', () => {
   it('excludes only interactive controls', () => {
     const hiddenRule = PRINT.slice(0, PRINT.indexOf('display: none !important'))
-    for (const forbidden of [/disclaimer/i, /provenance/i, /buyer-pack-grid/i, /inv-table/i]) {
+    for (const forbidden of [/disclaimer/i, /provenance/i, /buyer-pack-grid/i, /inv-table/i, /buyer-pack-notice/i]) {
       expect(hiddenRule).not.toMatch(forbidden)
     }
+  })
+
+  it('still excludes the interactive controls it always did', () => {
+    // Loosening .no-print globally would make buttons and selects print.
+    const hiddenRule = PRINT.match(/\.no-print,[\s\S]*?display:\s*none\s*!important;\s*\}/)?.[0] ?? ''
+    expect(hiddenRule).toMatch(/\.no-print/)
+    expect(hiddenRule).toMatch(/\.buyer-pack-actions/)
+    expect(hiddenRule).toMatch(/display:\s*none\s*!important/)
+    // The action bar and the issue/decision blocks stay marked no-print in JSX.
+    expect(TSX).toMatch(/className="buyer-pack-actions no-print"/)
   })
 
   it('reveals the printed provenance block', () => {

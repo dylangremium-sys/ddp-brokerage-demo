@@ -484,8 +484,16 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
           </div>
         </div>
 
-        {/* Executive summary — internal draft, never printed/distributed unfinished */}
-        <div className="detail-block no-print">
+        {/* Executive summary — internal draft. This notice PRINTS.
+            It forbids issuing the pack while this section is incomplete, and a
+            distribution warning that is absent from the distributed artifact is
+            not a warning. Over-warning on paper is preferable to omission: a
+            reader who sees it can check, whereas a reader who never sees it
+            cannot. `buyer-pack-notice` carries its print treatment — the inline
+            --warning colour below is #B8782E, which prints at 3.64:1 on white
+            (below AA), so print overrides it to full ink rather than letting the
+            one notice that matters most be the faintest thing on the page. */}
+        <div className="detail-block buyer-pack-notice">
           <div className="detail-block-title" style={{ marginBottom: 6 }}>Executive Summary (Internal Draft)</div>
           <p style={{ fontSize: 13, color: 'var(--warning)', margin: 0 }}>
             INTERNAL — Executive summary not yet completed. Decision Required: this pack must not be issued to a buyer
