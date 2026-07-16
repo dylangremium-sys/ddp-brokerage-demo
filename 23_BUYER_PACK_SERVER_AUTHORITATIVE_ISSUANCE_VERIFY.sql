@@ -22,6 +22,7 @@ declare
   v_secdef   boolean;
   v_config   text[];
   v_src      text;
+  v_code     text;
   v_sp       text;
 begin
   select p.oid, p.prosecdef, p.proconfig, p.prosrc
@@ -36,39 +37,49 @@ begin
     raise exception 'VERIFY A FAILED: function is not SECURITY DEFINER';
   end if;
 
+  -- Comment-stripped executable source. pg_proc.prosrc is the function BODY, and it
+  -- INCLUDES the body's comments. Migration 23's body legitimately NAMES the client
+  -- argument in comments ("IGNORED for authorization", "never the client-supplied
+  -- p_procurement_decision"), so a raw-source scan for that identifier false-fails on
+  -- the correct function. Strip line comments (-- to end of line) and scan the
+  -- executable code only. This matches the static gate's stripComments semantics.
+  v_code := regexp_replace(v_src, '--[^\n]*', '', 'g');
+
   -- fixed search_path
   v_sp := (select c from unnest(coalesce(v_config,'{}')) c where c like 'search_path=%');
   if v_sp is null then raise exception 'VERIFY A FAILED: no fixed search_path'; end if;
 
   -- (a) reads the server-authoritative trail, keyed to the SAME pack
-  if position('procurement_decisions_current' in v_src) = 0 then
+  if position('procurement_decisions_current' in v_code) = 0 then
     raise exception 'VERIFY A FAILED: function does not read procurement_decisions_current (server trail)';
   end if;
-  if v_src !~ 'batch_id\s*=\s*p_pack_id' then
+  if v_code !~ 'batch_id\s*=\s*p_pack_id' then
     raise exception 'VERIFY A FAILED: function does not join the decision to the SAME pack (batch_id = p_pack_id)';
   end if;
 
   -- (b) server value must be the gate, not the client argument
-  if v_src !~ 'v_decision\s*<>\s*''progress''' then
+  if v_code !~ 'v_decision\s*<>\s*''progress''' then
     raise exception 'VERIFY A FAILED: function does not require the SERVER decision to be progress (v_decision <> ''progress'')';
   end if;
-  -- The body must NOT reference the client argument at all — proves it is ignored
-  -- for both authorization and storage. (prosrc is the body only; the parameter
-  -- declaration lives in pg_proc.proargnames, not here.)
-  if position('p_procurement_decision' in v_src) <> 0 then
+  -- The executable body must NOT reference the client argument at all — proves it is
+  -- ignored for both authorization and storage. Scanned against v_code (comments
+  -- stripped): the body's COMMENTS legitimately name p_procurement_decision to
+  -- document that it is ignored, so only the CODE is authoritative here. (prosrc is
+  -- the body only; the parameter declaration lives in pg_proc.proargnames, not here.)
+  if position('p_procurement_decision' in v_code) <> 0 then
     raise exception 'VERIFY A FAILED: function body references p_procurement_decision — client value is not ignored';
   end if;
 
   -- (c) actor + reason re-asserted
-  if v_src !~ 'v_decided_by\s+is\s+null' then
+  if v_code !~ 'v_decided_by\s+is\s+null' then
     raise exception 'VERIFY A FAILED: function does not re-assert a non-null decision actor';
   end if;
-  if position('v_reason' in v_src) = 0 then
+  if position('v_reason' in v_code) = 0 then
     raise exception 'VERIFY A FAILED: function does not re-assert a non-blank decision reason';
   end if;
 
   -- (d) still admin-gated
-  if position('is_ddp_admin' in v_src) = 0 then
+  if position('is_ddp_admin' in v_code) = 0 then
     raise exception 'VERIFY A FAILED: function is no longer admin-gated (is_ddp_admin absent)';
   end if;
 
@@ -84,7 +95,8 @@ select
            and position('procurement_decisions_current' in p.prosrc) > 0)               as reads_server_trail,
   not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
          where n.nspname='public' and p.proname='issue_buyer_pack_snapshot'
-           and position('p_procurement_decision' in p.prosrc) > 0)                       as ignores_client_decision,
+           and position('p_procurement_decision' in regexp_replace(p.prosrc, '--[^\n]*', '', 'g')) > 0)
+                                                                                          as ignores_client_decision,
   exists(select 1 from pg_trigger t where t.tgrelid='public.buyer_pack_snapshots'::regclass
          and t.tgname='buyer_pack_snapshots_no_update_delete' and not t.tgisinternal)    as immutability_trigger_present;
 
