@@ -355,3 +355,49 @@ describe('validateAiSummaryBody — direct unit checks', () => {
     expect(v.ok).toBe(true)
   })
 })
+
+// ─── Cannamonitor source blocked server-side (P1 bypass fix) ────────────────
+//
+// An authenticated admin cannot reach the AI provider by POSTing a Cannamonitor
+// sourceUrl: the shared execution gate (generateAiDraftSummary) denies it, and
+// the server maps that to a deterministic 403. There is no database-write
+// dependency in ServerAiSummaryDeps at all, so no write can occur on any path.
+describe('handleAiSummaryRequest — Cannamonitor source blocked server-side', () => {
+  const RAW_MARKER = 'CANNAMONITOR_SERVER_RAW_MARKER_MUST_NOT_REACH_PROVIDER'
+
+  it('authenticated-admin POST with a Cannamonitor sourceUrl → 403, provider never called, raw evidence never sent', async () => {
+    const provider = spyProvider()
+    const r = await handleAiSummaryRequest(
+      req({ body: { ...VALID_BODY, sourceUrl: 'https://www.cannamonitor.com/brief/x', rawEvidence: RAW_MARKER } }),
+      makeDeps({ provider }),
+    )
+    expect(r.status).toBe(403)
+    expect(r.body.ok).toBe(false)
+    if (!r.body.ok) expect(r.body.error).toBe('cannamonitor_permission_unverified') // the SOURCE gate, not an auth reject
+    expect(provider.calls).toHaveLength(0)
+    expect(provider.calls.some(c => JSON.stringify(c).includes(RAW_MARKER))).toBe(false)
+  })
+
+  it('denial occurs after admin authz and yields no summary body', async () => {
+    const provider = spyProvider()
+    const r = await handleAiSummaryRequest(
+      req({ body: { ...VALID_BODY, sourceUrl: 'https://cannamonitor.com/feed/' } }),
+      makeDeps({ provider }),
+    )
+    expect(r.status).toBe(403)
+    expect(r.body.ok).toBe(false)
+    if (!r.body.ok) expect(r.body.error).toBe('cannamonitor_permission_unverified')
+    expect('sections' in r.body).toBe(false)
+    expect(provider.calls).toHaveLength(0)
+  })
+
+  it('REGRESSION: an unrelated official source still succeeds (200) through the server', async () => {
+    const provider = spyProvider()
+    const r = await handleAiSummaryRequest(
+      req({ body: { ...VALID_BODY, sourceUrl: 'https://regulator.example.gov/notice' } }),
+      makeDeps({ provider }),
+    )
+    expect(r.status).toBe(200)
+    expect(provider.calls).toHaveLength(1)
+  })
+})

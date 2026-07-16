@@ -1,5 +1,6 @@
 import type { LegalUpdate } from '../types'
 import { guardAiDraftedFields } from './aiComplianceGuard.js'
+import { evaluateCannamonitorAiGate } from './complianceCannamonitorPolicy.js'
 import type {
   AiDraftSummarySections,
   AiSummaryProviderInput,
@@ -149,6 +150,10 @@ export type AiSummaryResultCode =
   | 'malformed_output'
   | 'empty_output'
   | 'unsafe_output'
+  /** A source-specific policy (today: Cannamonitor) denied AI processing in the
+   *  shared execution layer — the authoritative gate for BOTH the client
+   *  controller and the server endpoint. */
+  | 'cannamonitor_permission_unverified'
 
 export type AiSummaryResult =
   | { ok: true; draft: AiDraftSummary }
@@ -177,6 +182,22 @@ export async function generateAiDraftSummary(
   provider: ComplianceAiSummaryProvider | null,
   opts: { requestInProgress: boolean; maxEvidenceChars?: number },
 ): Promise<AiSummaryResult> {
+  // Authoritative source-policy gate (Cannamonitor). Enforced HERE — in the
+  // shared execution layer that every caller funnels through — so no path can
+  // reach the provider for a correctly-attributed Cannamonitor source while
+  // permission is unverified: not the client controller (watchtowerAiSummary.ts,
+  // which keeps its own gate as defence-in-depth) and not the server endpoint
+  // (serverAiSummary.ts → handleAiSummaryRequest, which calls this function
+  // directly). Runs before request preparation, prompt construction, provider
+  // selection, and provider invocation, so no Cannamonitor raw text is ever
+  // built into a request or sent to the provider. Attribution is by the
+  // recorded source URL only (see evaluateCannamonitorAiGate's documented
+  // limitation); no content-sniffing is added.
+  const cannamonitorGate = evaluateCannamonitorAiGate(update?.sourceUrl)
+  if (cannamonitorGate.blocked) {
+    return { ok: false, code: 'cannamonitor_permission_unverified', reason: cannamonitorGate.reason }
+  }
+
   const guard = guardAiSummarisationRequest(update, {
     providerAvailable: !!provider,
     requestInProgress: opts.requestInProgress,

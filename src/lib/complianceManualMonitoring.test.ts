@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { RegulatorySource } from '../types'
 import {
   evaluateManualMonitoringEligibility,
   canStartManualRun,
   runManualRssMonitoring,
+  runPastedMonitoringDecision,
+  evaluatePastedMonitoringGate,
   DEFAULT_MANUAL_MONITORING_USER_AGENT,
 } from './complianceManualMonitoring'
 import type { RssFetchImpl, RssFetchResponse } from './complianceRssConnector'
@@ -205,5 +207,123 @@ describe('safety guarantees', () => {
     expect(MODULE_SOURCE).not.toMatch(/aiCompliance|anthropic|openai/i)
     expect(MODULE_SOURCE).not.toMatch(/insertLegalUpdate|insertRule|createRule|approveRule|enforceRule/)
     expect(MODULE_SOURCE).not.toMatch(/setInterval|setTimeout|cron|\bschedule\b|localStorage|sessionStorage/)
+  })
+})
+
+// ─── Pasted Monitoring Queue — Cannamonitor gate (P1 pasted-content fix) ─────
+//
+// Synthetic fixtures only; no live Cannamonitor request. Proves a selected
+// Cannamonitor source cannot let pasted body text reach normalization, a
+// checksum, a monitoring decision, a draft intake, or persistence — while
+// non-Cannamonitor sources behave exactly as before.
+describe('Pasted Monitoring Queue — Cannamonitor gate', () => {
+  const MARKER = 'PASTED_CANNAMONITOR_BODY_MARKER_MUST_NOT_BE_INGESTED'
+
+  function cannamonitorSource(overrides: Partial<RegulatorySource> = {}): RegulatorySource {
+    return makeSource({
+      id: 'src-cm',
+      name: 'Cannamonitor',
+      sourceType: 'other',
+      url: 'https://cannamonitor.com/cannabis-consulting-services/',
+      ...overrides,
+    })
+  }
+
+  // A decision-builder spy that FAILS if invoked — proves the checksum/decision
+  // construction is never reached on a denial.
+  function failBuilder() {
+    return vi.fn(async () => {
+      throw new Error('buildDecision must not be called for a denied Cannamonitor source')
+    })
+  }
+
+  it('A: denies pasted content for a selected Cannamonitor source before any decision/checksum', async () => {
+    const spy = failBuilder()
+    const res = await runPastedMonitoringDecision(cannamonitorSource(), 'src-cm', MARKER, null, [], spy)
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.code).toBe('cannamonitor_permission_unverified')
+    expect(spy).not.toHaveBeenCalled()                 // checksum / rawText / decision never reached
+    expect(JSON.stringify(res)).not.toContain(MARKER)  // marker never enters any returned value
+  })
+
+  it('A: the pure gate classifies a Cannamonitor source as denied (permission unverified)', () => {
+    const g = evaluatePastedMonitoringGate(cannamonitorSource())
+    expect(g.action).toBe('deny')
+    if (g.action === 'deny') expect(g.code).toBe('cannamonitor_permission_unverified')
+  })
+
+  it('B: a direct call cannot bypass the gate (no React component involved)', async () => {
+    const spy = failBuilder()
+    const res = await runPastedMonitoringDecision({ url: 'https://www.cannamonitor.com/brief/x' }, 'k', MARKER, null, [], spy)
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.code).toBe('cannamonitor_permission_unverified')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('D: a government source with pasted text still produces the ordinary decision (checksum IS computed)', async () => {
+    const res = await runPastedMonitoringDecision(makeSource(), 'source-rss-1', 'Some official notice text', null, [])
+    expect(res.ok).toBe(true)
+    if (res.ok) {
+      expect(res.decision.kind).toBe('changed_pending_review')
+      expect(res.decision.snapshot?.checksum).toBeTruthy()
+    }
+  })
+
+  it('D: an unrelated commercial source is not blocked', async () => {
+    const res = await runPastedMonitoringDecision(makeSource({ url: 'https://unrelated.example.com/feed' }), 'k', 'text', null, [])
+    expect(res.ok).toBe(true)
+  })
+
+  it('D: a blank or unrelated source URL is not falsely blocked (documented attribution limitation)', async () => {
+    expect(evaluatePastedMonitoringGate({ url: '' }).action).toBe('proceed')
+    expect(evaluatePastedMonitoringGate(null).action).toBe('proceed')
+    const res = await runPastedMonitoringDecision({ url: '' }, 'k', 'pasted text with no attribution', null, [])
+    expect(res.ok).toBe(true)
+  })
+
+  it('E: on denial nothing persistable is produced (no decision, no snapshot; real builder never runs)', async () => {
+    const spy = failBuilder()
+    const res = await runPastedMonitoringDecision(cannamonitorSource(), 'src-cm', MARKER, null, [], spy)
+    expect(res.ok).toBe(false)
+    expect('decision' in res).toBe(false)
+    expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+// ─── Codex P2 (RM1gQ): pasted gate denies regardless of permission ──────────
+//
+// Pasted content has no metadata-only projection, so a Cannamonitor source must
+// be denied even under a hypothetical verified permission with an active source
+// (where the underlying policy would otherwise permit monitoring).
+describe('evaluatePastedMonitoringGate — denies regardless of permission', () => {
+  it('denies a Cannamonitor source under UNVERIFIED permission (default)', () => {
+    expect(evaluatePastedMonitoringGate({ url: 'https://cannamonitor.com/feed/' }).action).toBe('deny')
+  })
+
+  it('STILL denies under hypothetical VERIFIED permission + active source (the fix)', () => {
+    // Under the old `matched && !monitoringAllowed` condition this would proceed,
+    // because verified + active makes monitoringAllowed true. The fix denies on
+    // `matched` alone.
+    const g = evaluatePastedMonitoringGate({ url: 'https://cannamonitor.com/feed/', isActive: true }, 'verified')
+    expect(g.action).toBe('deny')
+    if (g.action === 'deny') expect(g.code).toBe('cannamonitor_permission_unverified')
+  })
+
+  it('denies every matched Cannamonitor form under verified (subdomain, http, creds, port, malformed)', () => {
+    for (const url of [
+      'https://www.cannamonitor.com/x',
+      'https://staging.cannamonitor.com/x',
+      'http://cannamonitor.com/x',
+      'https://user:pass@cannamonitor.com/x',
+      'https://cannamonitor.com:8443/x',
+      'ht!tp://cannamonitor.com bad',
+    ]) {
+      expect(evaluatePastedMonitoringGate({ url, isActive: true }, 'verified').action).toBe('deny')
+    }
+  })
+
+  it('unrelated sources still proceed under verified permission', () => {
+    expect(evaluatePastedMonitoringGate({ url: 'https://regulator.example.gov/rss', isActive: true }, 'verified').action).toBe('proceed')
+    expect(evaluatePastedMonitoringGate({ url: '' }, 'verified').action).toBe('proceed')
   })
 })

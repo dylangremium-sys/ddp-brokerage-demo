@@ -8,7 +8,12 @@ import {
   type RssConnectorResult,
   type RssFetchImpl,
 } from './complianceRssConnector'
-import type { MonitoringDecision, SourceContentSnapshot } from './complianceSourceMonitoring'
+import { buildMonitoringDecision, type MonitoringDecision, type SourceContentSnapshot } from './complianceSourceMonitoring'
+import {
+  evaluateCannamonitorPolicy,
+  CANNAMONITOR_PERMISSION_STATUS,
+  type CannamonitorPermissionStatus,
+} from './complianceCannamonitorPolicy'
 
 // ─── Manual Watchtower RSS monitoring — orchestration (Phase 2D) ────────────
 //
@@ -34,7 +39,12 @@ import type { MonitoringDecision, SourceContentSnapshot } from './complianceSour
 export const DEFAULT_MANUAL_MONITORING_USER_AGENT =
   'DDP-Compliance-Watchtower/1.0 (+manual read-only regulatory feed check)'
 
-export type ManualMonitoringIneligibleCode = 'inactive_source' | 'invalid_url' | 'unsupported_connector'
+export type ManualMonitoringIneligibleCode =
+  | 'inactive_source'
+  | 'invalid_url'
+  | 'unsupported_connector'
+  /** A source-specific policy (today: Cannamonitor) denies retrieval. */
+  | 'source_policy_denied'
 
 export interface ManualMonitoringEligibility {
   eligible: boolean
@@ -55,6 +65,19 @@ export function evaluateManualMonitoringEligibility(source: RegulatorySource): M
   if (!source.isActive) {
     return { eligible: false, reason: 'Source is inactive.', code: 'inactive_source' }
   }
+
+  // Source-specific policy gate. Checked here — ahead of any connector call —
+  // so the UI can disable the action with an honest reason AND no fetch is
+  // attempted. Evaluated even though `isActive` is already true: an active
+  // Cannamonitor source is still denied while its commercial permission is
+  // unverified, so marking a source active can never, on its own, enable
+  // retrieval. The connector re-checks the same policy independently, so this
+  // is a UX gate layered on top of an enforced one, not a substitute.
+  const sourcePolicy = evaluateCannamonitorPolicy(source)
+  if (sourcePolicy.matched && !sourcePolicy.monitoringAllowed) {
+    return { eligible: false, reason: sourcePolicy.reason, code: 'source_policy_denied' }
+  }
+
   if (!normalizeConnectorHost(source.url)) {
     return { eligible: false, reason: 'Source URL is missing or not a valid http(s) URL.', code: 'invalid_url' }
   }
@@ -224,4 +247,93 @@ export async function runManualRssMonitoring(
   })
 
   return mapConnectorResult(source, eligibility.connectorKind, result, previousSnapshots)
+}
+
+// ─── Pasted Monitoring Queue gate (pasted-content ingestion path) ───────────
+//
+// A SECOND ingestion path exists beside the RSS connector: an admin can paste
+// arbitrary article text into the Monitoring Queue for a SELECTED registered
+// source. That path never goes through the RSS metadata projection, so a
+// Cannamonitor source must be denied HERE — before the pasted content is
+// normalized, hashed, or turned into a monitoring decision. Attribution is by
+// the SELECTED source's canonical URL only; the pasted text is never inspected
+// or classified (no content-sniffing). The documented limitation stands: text
+// pasted against a blank / false / unrelated source cannot be identified.
+
+export type PastedMonitoringDenialCode = 'cannamonitor_permission_unverified'
+
+export type PastedMonitoringGateDecision =
+  | { action: 'proceed' }
+  | { action: 'deny'; code: PastedMonitoringDenialCode; reason: string }
+
+/**
+ * Pure source-policy gate for the pasted Monitoring Queue path. Denies ANY
+ * matched Cannamonitor source — not merely when monitoring is currently
+ * disallowed. Pasted content is arbitrary body text with NO metadata-only
+ * projection (unlike the RSS path), so it must never be accepted for a
+ * Cannamonitor source even under a (hypothetical) verified permission with an
+ * active registry source. Reuses the single existing policy
+ * (evaluateCannamonitorPolicy) — no second matcher, no host logic here.
+ * Non-Cannamonitor sources proceed unchanged. Attribution is by the selected
+ * source URL only (no content-sniffing).
+ *
+ * `permission` defaults to the module constant, so every production caller is
+ * fail-closed; the parameter exists ONLY so tests can prove that a hypothetical
+ * verified permission with an active source is STILL denied here.
+ */
+export function evaluatePastedMonitoringGate(
+  source: (Pick<RegulatorySource, 'url'> & Partial<Pick<RegulatorySource, 'isActive'>>) | null | undefined,
+  permission: CannamonitorPermissionStatus = CANNAMONITOR_PERMISSION_STATUS,
+): PastedMonitoringGateDecision {
+  const policy = evaluateCannamonitorPolicy({ url: source?.url ?? '', isActive: source?.isActive }, permission)
+  if (policy.matched) {
+    return {
+      action: 'deny',
+      code: 'cannamonitor_permission_unverified',
+      reason:
+        'Cannamonitor pasted content is not accepted: arbitrary pasted article text is not metadata-only, so it may not be ingested for a Cannamonitor source.',
+    }
+  }
+  return { action: 'proceed' }
+}
+
+export type PastedMonitoringResult =
+  | { ok: true; decision: MonitoringDecision }
+  | { ok: false; code: PastedMonitoringDenialCode; reason: string }
+
+/**
+ * Injectable decision builder — defaults to the real buildMonitoringDecision.
+ * Exists so a test can prove the builder (and therefore normalization + checksum
+ * construction) is NEVER reached on a denial.
+ */
+export type PastedMonitoringDecisionBuilder = (
+  sourceId: string,
+  rawContent: string,
+  previousSnapshot: SourceContentSnapshot | null,
+  knownChecksums: string[],
+) => Promise<MonitoringDecision>
+
+/**
+ * The authoritative shared entry point for a PASTED Monitoring Queue check.
+ * Runs the Cannamonitor gate FIRST; on denial it returns before the decision
+ * builder is invoked, so the pasted content never reaches normalization,
+ * checksum construction, `rawText`, a monitoring decision, a draft intake, or
+ * persistence. On `proceed` it builds the ordinary monitoring decision, so
+ * non-Cannamonitor behaviour is byte-for-byte unchanged. This function creates
+ * nothing, persists nothing, calls no AI, and schedules nothing.
+ */
+export async function runPastedMonitoringDecision(
+  source: Pick<RegulatorySource, 'url'> | null | undefined,
+  sourceKey: string,
+  pastedContent: string,
+  previousSnapshot: SourceContentSnapshot | null,
+  knownChecksums: string[] = [],
+  buildDecision: PastedMonitoringDecisionBuilder = buildMonitoringDecision,
+): Promise<PastedMonitoringResult> {
+  const gate = evaluatePastedMonitoringGate(source)
+  if (gate.action === 'deny') {
+    return { ok: false, code: gate.code, reason: gate.reason }
+  }
+  const decision = await buildDecision(sourceKey, pastedContent, previousSnapshot, knownChecksums)
+  return { ok: true, decision }
 }

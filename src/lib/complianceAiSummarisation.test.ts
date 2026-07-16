@@ -307,3 +307,80 @@ describe('generateAiDraftSummary — guarded orchestration', () => {
     }
   })
 })
+
+// ─── Cannamonitor authoritative execution gate (server-bypass fix) ──────────
+//
+// The Cannamonitor AI restriction is enforced HERE, in the shared execution
+// function every caller funnels through, so no path — client controller OR the
+// server endpoint (serverAiSummary.ts calls generateAiDraftSummary directly) —
+// can reach the provider for a correctly-attributed Cannamonitor source while
+// permission is unverified. Synthetic fixtures only; no live Cannamonitor request.
+describe('generateAiDraftSummary — Cannamonitor authoritative gate', () => {
+  const RUN_OPTS = { requestInProgress: false }
+  const CANNAMONITOR_URL = 'https://www.cannamonitor.com/brief/some-item'
+  const RAW_MARKER = 'CANNAMONITOR_RAW_TEXT_MARKER_MUST_NOT_REACH_PROVIDER'
+
+  function spyProvider() {
+    const inputs: AiSummaryProviderInput[] = []
+    const provider = stubProvider(async input => {
+      inputs.push(input)
+      return makeOutput(SAFE_SECTIONS)
+    })
+    return { provider, inputs }
+  }
+
+  it('denies a correctly-attributed Cannamonitor update — provider not called, raw text never sent', async () => {
+    const { provider, inputs } = spyProvider()
+    const update = makeUpdate({ sourceUrl: CANNAMONITOR_URL, sourceName: 'Cannamonitor', rawText: RAW_MARKER })
+    const result = await generateAiDraftSummary(update, provider, RUN_OPTS)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('cannamonitor_permission_unverified')
+    expect(inputs).toHaveLength(0) // provider never invoked
+    expect(inputs.some(i => JSON.stringify(i).includes(RAW_MARKER))).toBe(false)
+  })
+
+  it('cannot be bypassed by a DIRECT call that skips evaluateAiSummaryEligibility', async () => {
+    // Mirrors the server path: no client-side eligibility pre-check, straight into
+    // the shared layer. Still blocked; the provider is unreachable.
+    const { provider, inputs } = spyProvider()
+    const update = makeUpdate({ sourceUrl: 'https://cannamonitor.com/feed/', rawText: RAW_MARKER })
+    const result = await generateAiDraftSummary(update, provider, RUN_OPTS)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('cannamonitor_permission_unverified')
+    expect(inputs).toHaveLength(0)
+  })
+
+  it('blocks before the generic guard (an otherwise-eligible new draft is still denied)', async () => {
+    const { provider, inputs } = spyProvider()
+    const update = makeUpdate({ sourceUrl: CANNAMONITOR_URL, status: 'new', rawText: RAW_MARKER })
+    const result = await generateAiDraftSummary(update, provider, RUN_OPTS)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('cannamonitor_permission_unverified')
+    expect(inputs).toHaveLength(0)
+  })
+
+  it('REGRESSION: an unrelated official source still reaches the provider', async () => {
+    const { provider, inputs } = spyProvider()
+    const update = makeUpdate({ sourceUrl: 'https://regulator.example.gov/rss/item-1' })
+    const result = await generateAiDraftSummary(update, provider, RUN_OPTS)
+    expect(result.ok).toBe(true)
+    expect(inputs).toHaveLength(1)
+  })
+
+  it('REGRESSION: a blank source URL is NOT falsely blocked (documented attribution limitation)', async () => {
+    const { provider, inputs } = spyProvider()
+    const update = makeUpdate({ sourceUrl: '', rawText: 'pasted text with no attribution' })
+    const result = await generateAiDraftSummary(update, provider, RUN_OPTS)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect(result.code).not.toBe('cannamonitor_permission_unverified')
+    expect(inputs).toHaveLength(1)
+  })
+
+  it('REGRESSION: an unrelated commercial source retains ordinary behaviour', async () => {
+    const { provider, inputs } = spyProvider()
+    const update = makeUpdate({ sourceUrl: 'https://unrelated-intel.example.com/article' })
+    const result = await generateAiDraftSummary(update, provider, RUN_OPTS)
+    expect(result.ok).toBe(true)
+    expect(inputs).toHaveLength(1)
+  })
+})
