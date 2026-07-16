@@ -243,19 +243,69 @@ export interface BuyerPackSnapshotEvidenceInput {
   evidenceSummary: DocumentRequirement[]
 }
 
+/** The conditions every buyer-pack release path must satisfy, whatever the format. */
+export interface BuyerPackReleaseConditions {
+  isHumanApproved: boolean
+  storedDecision: BuyerPackStoredDecision | null
+  approvedBy: string
+}
+
+export type BuyerPackReleaseEligibility =
+  | { eligible: false; reason: string }
+  | { eligible: true; approvalDecision: BuyerPackStoredDecision }
+
+/**
+ * The single authority on whether a buyer pack may leave DDP — in ANY form.
+ *
+ * Issuing a snapshot and printing a PDF are the same act in every way that
+ * matters: both put the pack in front of a buyer. They must therefore answer to
+ * one predicate, not to two that merely look alike. A print path that checked
+ * only `isHumanApproved` would silently drop the approver-identity condition
+ * below and diverge from issuance the moment either changes.
+ *
+ * The reasons are the caller-facing strings and are deliberately worded in terms
+ * of issuance: releasing a pack IS issuing it, and inventing softer wording for
+ * the print path would create a second vocabulary for one legal act.
+ *
+ * Returns the validated decision so callers need no non-null assertion — the
+ * gate is the only thing entitled to conclude the decision is present.
+ */
+export function deriveBuyerPackReleaseEligibility(
+  conditions: BuyerPackReleaseConditions,
+): BuyerPackReleaseEligibility {
+  if (!conditions.isHumanApproved) {
+    return { eligible: false, reason: 'Batch is not human-approved for buyer discussion yet.' }
+  }
+  if (!conditions.storedDecision || conditions.storedDecision.decision !== 'progress') {
+    return { eligible: false, reason: 'A recorded "Progress" procurement decision is required before issuing a buyer pack.' }
+  }
+  if (conditions.approvedBy.trim().length === 0) {
+    return { eligible: false, reason: 'An identified human approver is required to issue a buyer pack.' }
+  }
+  return { eligible: true, approvalDecision: conditions.storedDecision }
+}
+
+/**
+ * Stable identifier for the approval event a released pack rests on: the batch
+ * plus the moment the decision was recorded. Shared so a printed pack cites the
+ * same approval identity as the issued snapshot rather than a lookalike.
+ */
+export function buyerPackApprovalId(packId: string, decidedAt: string): string {
+  return `${packId}:${decidedAt}`
+}
+
 export type BuyerPackIssueEligibility =
   | { eligible: false; reason: string }
   | { eligible: true; input: Omit<CreateBuyerPackSnapshotInput, 'version'> }
 
 export function prepareBuyerPackSnapshotInput(evidence: BuyerPackSnapshotEvidenceInput): BuyerPackIssueEligibility {
-  if (!evidence.isHumanApproved) {
-    return { eligible: false, reason: 'Batch is not human-approved for buyer discussion yet.' }
-  }
-  if (!evidence.storedDecision || evidence.storedDecision.decision !== 'progress') {
-    return { eligible: false, reason: 'A recorded "Progress" procurement decision is required before issuing a buyer pack.' }
-  }
-  if (evidence.approvedBy.trim().length === 0) {
-    return { eligible: false, reason: 'An identified human approver is required to issue a buyer pack.' }
+  const gate = deriveBuyerPackReleaseEligibility({
+    isHumanApproved: evidence.isHumanApproved,
+    storedDecision: evidence.storedDecision,
+    approvedBy: evidence.approvedBy,
+  })
+  if (!gate.eligible) {
+    return { eligible: false, reason: gate.reason }
   }
 
   const documentSummary: BuyerPackDocumentSummary = {
@@ -271,14 +321,14 @@ export function prepareBuyerPackSnapshotInput(evidence: BuyerPackSnapshotEvidenc
       generatedBy: evidence.generatedBy,
       // The approval event is identified by the batch plus the moment the
       // decision was recorded — stable for a given recorded decision.
-      approvalId: `${evidence.packId}:${evidence.storedDecision.decidedAt}`,
-      approvalTimestamp: evidence.storedDecision.decidedAt,
-      procurementDecision: evidence.storedDecision.decision,
+      approvalId: buyerPackApprovalId(evidence.packId, gate.approvalDecision.decidedAt),
+      approvalTimestamp: gate.approvalDecision.decidedAt,
+      procurementDecision: gate.approvalDecision.decision,
       approvedBy: evidence.approvedBy,
       inventory: evidence.inventory,
       coas: evidence.coas,
       complianceSummary: evidence.complianceSummary,
-      procurementNotes: evidence.storedDecision.notes ?? null,
+      procurementNotes: gate.approvalDecision.notes ?? null,
       documentSummary,
       risks: evidence.risks,
       evidenceSummary: evidence.evidenceSummary,

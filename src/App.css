@@ -3352,7 +3352,42 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 .print-only { display: none; }
 
 /* ─── Print styles ────────────────────────────────────────────────────────── */
+/* Printed provenance block. Hidden on screen — the screen already shows this
+   state in the pack header and decision blocks; the artifact does not. */
+.print-only-block { display: none; }
+
+/* ── Print ────────────────────────────────────────────────────────────────────
+   The Buyer Pack is DDP's primary external deliverable, so print is a designed
+   artifact, not a screenshot of a dark screen.
+
+   The previous block set `background` and never set `color`. The app's ink is
+   near-white (#EDF1F5) for a dark UI, and element backgrounds are suppressed by
+   default when printing — so the pack's title and values printed at ~1.14:1
+   (invisible) while its status badge and eyebrow, being mid-tone, survived. The
+   artifact printed the parts that assert and none of the parts that prove.
+
+   Two rules follow, and both matter:
+     1. Every printed foreground colour is set explicitly. Legibility must not
+        depend on the recipient ticking "background graphics" in their print
+        dialog. `print-color-adjust` below is supplementary only.
+     2. Nothing legally relevant is hidden. Only interactive controls are
+        excluded — a control cannot be operated on paper.
+
+   Literal values here are a documented, temporary exception to the constitution's
+   raw-hex rule (§19.1/§19.3): the token layer does not exist yet, and this is a
+   correctness fix that must not wait for it. They are the ratified values —
+   ink #1E2A24 (14.87:1 on white), secondary #46524B (8.17:1) — and migrate to
+   print tokens in the design programme's print-surface workstream. This block
+   deliberately does not restyle the pack on screen.
+   ────────────────────────────────────────────────────────────────────────────*/
+
+/* 18mm margins: A4 is the binding format (210mm = 793.7px at 96dpi), giving a
+   657.6px content box; Letter yields 679.9px. The pack is capped below both so
+   one measure prints identically on either. */
+@page { margin: 18mm; }
+
 @media print {
+  /* Interactive controls only. Everything evidential prints. */
   .no-print,
   .app-nav,
   .demo-utility-strip,
@@ -3361,9 +3396,113 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   .buyer-pack-actions { display: none !important; }
 
   .print-only { display: inline !important; }
+  .print-only-block { display: block !important; }
 
-  body { background: #fff !important; }
-  .buyer-pack-card { box-shadow: none !important; border: 1px solid #ddd !important; }
-  .buyer-pack-wrap { max-width: 100% !important; padding: 0 !important; }
-  .page-wrap { padding: 12px !important; }
+  /* Surface + ink. Paper is white; ink is charcoal, set explicitly. */
+  body {
+    background: #fff !important;
+    color: #1E2A24 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page-wrap { padding: 0 !important; }
+
+  /* The ratified safe document measure — identical on A4 and Letter. */
+  .buyer-pack-wrap {
+    max-width: 656px !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+  .buyer-pack-card {
+    box-shadow: none !important;
+    border: 1px solid #8A968C !important;
+    background: #fff !important;
+  }
+
+  /* Hierarchy. Headings and values carry the pack's substance and must be the
+     darkest ink on the page, not the lightest. */
+  .buyer-pack-title,
+  .buyer-pack-field .dv,
+  .detail-block-title,
+  .section-label,
+  .td-bold,
+  .page-title { color: #1E2A24 !important; }
+
+  /* Labels and secondary text. #93A1B2 prints at 2.63:1 on white; #46524B is
+     8.17:1 — the pack's labels are evidence, not chrome. */
+  .buyer-pack-lbl,
+  .buyer-pack-sub,
+  .buyer-pack-eyebrow,
+  .td-muted,
+  .page-desc,
+  .page-eyebrow,
+  .dl { color: #46524B !important; }
+
+  /* Tables: visible borders, repeated headers, unbroken rows. */
+  .inv-table,
+  .table-card { border-color: #8A968C !important; background: #fff !important; }
+  .inv-table th,
+  .inv-table td {
+    border-color: #8A968C !important;
+    color: #1E2A24 !important;
+    background: #fff !important;
+  }
+  .inv-table th { border-bottom: 1px solid #1E2A24 !important; }
+  .table-scroll { overflow: visible !important; }
+  thead { display: table-header-group; }
+  tr, .detail-row { break-inside: avoid; }
+
+  /* Status text. The label carries the meaning on paper — the tinted background
+     is suppressed by the browser, so the chip is outlined and set in dark ink
+     rather than relying on colour that may never reach the page. Risk-ranked
+     print colour belongs to the status-hierarchy workstream, not to this fix. */
+  .status-pill,
+  .badge {
+    color: #1E2A24 !important;
+    background: transparent !important;
+    border: 1px solid #6B766D !important;
+  }
+
+  /* Dividers and disclaimers. */
+  .disclaimer-box,
+  .detail-block { border-color: #8A968C !important; }
+  .disclaimer-box,
+  .disclaimer-box strong { color: #1E2A24 !important; }
+
+  /* Provenance block — printed identity and approval of the artifact. */
+  .buyer-pack-provenance {
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid #8A968C;
+    break-inside: avoid;
+  }
+  .buyer-pack-provenance-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #46524B;
+    margin-bottom: 6px;
+  }
+  .buyer-pack-provenance-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 2px 12px;
+    margin: 0;
+    font-size: 11px;
+  }
+  .buyer-pack-provenance-grid dt { color: #46524B; }
+  .buyer-pack-provenance-grid dd { margin: 0; color: #1E2A24; font-family: var(--font-mono); }
+
+  /* Page breaks: keep blocks whole, never orphan a heading from its content. */
+  .buyer-pack-grid,
+  .detail-block,
+  .table-card,
+  .pack-check-grid { break-inside: avoid; }
+  .detail-block-title,
+  .section-label,
+  h1, h2, h3 { break-after: avoid; }
+
+  /* Links must remain intelligible on paper. */
+  a { color: #1E2A24 !important; text-decoration: underline; }
 }

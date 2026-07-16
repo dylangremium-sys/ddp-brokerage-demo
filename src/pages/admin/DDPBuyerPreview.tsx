@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { flushSync } from 'react-dom'
 import type { FarmProfile, InventoryItem, ProcurementDecision } from '../../types'
 import { DDPVerifiedSupplySeal } from '../../components/logos'
 import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass, testStatusClass, testStatusLabel } from '../../data'
@@ -17,6 +18,8 @@ import {
   prepareBuyerPackSnapshotInput,
   generateNextBuyerPackSnapshot,
   deriveSnapshotStatus,
+  deriveBuyerPackReleaseEligibility,
+  buyerPackApprovalId,
   type BuyerPackSnapshot,
   type BuyerPackSnapshotStatus,
 } from '../../lib/buyerPackSnapshot'
@@ -167,6 +170,13 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   // means "no snapshot exists". A failed read knows nothing about existence, so
   // the UI must not present it as an absence.
   const [snapshotLoadError, setSnapshotLoadError] = useState<string | null>(null)
+  // Why a print attempt was refused. Never silently swallowed: an operator who
+  // presses Print must be told which release condition is unmet, in the same
+  // words the Issue path uses.
+  const [printError, setPrintError] = useState<string | null>(null)
+  // Stamped at the moment of printing, so the artifact records when it was
+  // produced rather than when the page happened to mount.
+  const [printedAt, setPrintedAt] = useState<string | null>(null)
 
   const approver = (approverName && approverName.trim()) || 'DDP Admin'
 
@@ -378,7 +388,27 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
     }
   }
 
+  // The release gate for the print path. Printing a pack puts it in front of a
+  // buyer exactly as issuing it does, so it answers to the same predicate the
+  // issue path uses — not to a lookalike boolean. Previously this called
+  // window.print() unconditionally, so a pack that Issue refused could still be
+  // printed and handed over, and the on-screen notice forbidding that was
+  // removed from the printed artifact by `.no-print`.
   function handlePrint() {
+    const gate = deriveBuyerPackReleaseEligibility({
+      isHumanApproved,
+      storedDecision: storedDecision ?? null,
+      approvedBy: approver,
+    })
+    if (!gate.eligible) {
+      setPrintError(gate.reason)
+      return
+    }
+    setPrintError(null)
+    // flushSync so the stamped time is in the DOM before the print dialog reads
+    // it — window.print() is synchronous and would otherwise capture the prior
+    // render, leaving the artifact with a stale or empty timestamp.
+    flushSync(() => setPrintedAt(new Date().toISOString()))
     recordDownload('print-pdf')
     window.print()
   }
@@ -407,11 +437,30 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
               Open Photo
             </button>
           )}
-          <button type="button" className="btn btn-primary" onClick={handlePrint}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handlePrint}
+            disabled={!isHumanApproved}
+            title={isHumanApproved ? undefined : 'Requires no blocking issues and a recorded "Progress" decision'}
+          >
             Print / Save PDF
           </button>
         </div>
       </div>
+
+      {/* Why a print attempt was refused. Mirrors the Issue path's own notice so
+          one refused act reads the same way wherever it is attempted. */}
+      {!isHumanApproved && (
+        <div className="no-print" style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4 }}>
+          Printing is enabled only after this batch is human-approved for buyer discussion.
+        </div>
+      )}
+      {printError && (
+        <div className="no-print" role="alert" style={{ fontSize: 12, color: 'var(--warning)', marginTop: -4 }}>
+          {printError}
+        </div>
+      )}
 
       {/* Pack card */}
       <div className="card buyer-pack-card">
@@ -606,8 +655,11 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
               {missingRequirements.length > 0 && <span className="status-pill status-missing">{missingRequirements.length} Missing</span>}
               {blockerRequirements.length > 0 && <span className="status-pill status-reject">{blockerRequirements.length} Blocker</span>}
             </div>
+            {/* Prints. The count above prints, so hiding the identities left the
+                artifact asserting "N Missing" without saying what — a count
+                without identities is not evidence a buyer can act on. */}
             {missingRequirements.length > 0 && (
-              <ul className="no-print" style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--text-muted)' }}>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--text-muted)' }}>
                 {missingRequirements.map(r => <li key={r.type}>{r.type.replace(/_/g, ' ')}</li>)}
               </ul>
             )}
@@ -745,6 +797,39 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
             Issuing preserves a hashed, append-only copy of exactly what this pack shows, under the recorded human approval.
             Stored in this browser only for now — tamper-evident, not a durable server record.
           </p>
+        </div>
+
+        {/* Provenance — printed only. A released pack must carry, on the artifact
+            itself, the identity and approval it rests on: the same approval id
+            the issued snapshot records, so a printout and a snapshot of the same
+            approval cite the same event and can be reconciled later. Screen
+            already shows this state in the header and decision blocks. */}
+        <div className="print-only-block buyer-pack-provenance">
+          <div className="buyer-pack-provenance-title">Pack provenance</div>
+          <dl className="buyer-pack-provenance-grid">
+            <dt>Pack identifier</dt>
+            <dd>{item.id}</dd>
+            <dt>Approval status</dt>
+            <dd>{packStatusLabel}</dd>
+            <dt>Human approver</dt>
+            <dd>{approver}</dd>
+            {storedDecision?.decidedAt && (
+              <>
+                <dt>Approval identifier</dt>
+                <dd>{buyerPackApprovalId(item.id, storedDecision.decidedAt)}</dd>
+                <dt>Approval recorded</dt>
+                <dd>{storedDecision.decidedAt}</dd>
+              </>
+            )}
+            <dt>Printed</dt>
+            <dd>{printedAt ?? ''}</dd>
+            {latestSnapshot && (
+              <>
+                <dt>Issued snapshot</dt>
+                <dd>v{latestSnapshot.manifest.version}</dd>
+              </>
+            )}
+          </dl>
         </div>
 
         {/* Safety disclaimer */}
