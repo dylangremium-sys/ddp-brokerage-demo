@@ -4041,10 +4041,29 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 .eo-farmer input::placeholder,
 .eo-farmer textarea::placeholder { color: var(--ddp-ink-500); }
 
+/* Generic ring for everything focusable that has no rule of its own. */
+.eo-farmer :focus-visible { outline: 2px solid var(--ddp-focus-light); outline-offset: 2px; }
+
+/* Form controls need the ring restated at (0,2,1). Two rules outranked the
+   generic (0,2,0) selector above on a control: the legacy base rule clears the
+   outline, and this layer's own `:focus` did the same — at (0,2,1) it won, so
+   the gold ring never rendered for keyboard users. This layer's base rule also
+   sets box-shadow to none, which removed the legacy focus affordance, leaving
+   nothing at all. `:focus` no longer clears the outline.
+
+   Keying the ring to :focus-visible rather than :focus leaves the decision to
+   the browser, so pointer focus gains no extra decoration — except in text
+   fields, where the engine treats every focus as focus-visible. */
 .eo-farmer input:focus,
 .eo-farmer select:focus,
-.eo-farmer textarea:focus { border-color: var(--ddp-green-700); outline: none; }
-.eo-farmer :focus-visible { outline: 2px solid var(--ddp-focus-light); outline-offset: 2px; }
+.eo-farmer textarea:focus { border-color: var(--ddp-green-700); }
+
+.eo-farmer input:focus-visible,
+.eo-farmer select:focus-visible,
+.eo-farmer textarea:focus-visible {
+  outline: 2px solid var(--ddp-focus-light);
+  outline-offset: 2px;
+}
 
 .eo-farmer .form-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
 
