@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase'
 import { shouldPersistToBrowser } from './browserPersistence'
+import { measurementFromRow } from './measurement'
 import {
   loadInventory as lsLoadInventory,
   saveInventory as lsSaveInventory,
@@ -604,7 +605,10 @@ function batchRowToInventoryItem(row: Record<string, any>, farmName?: string): I
     harvestDate: row.harvest_date as string ?? '',
     cureDate: row.cure_date as string ?? '',
     batchNumber: row.batch_number as string ?? '',
-    thcPct: (row.thc_percent as number) ?? 0,
+    // NULL means no reading was reported. `?? 0` erased that, presenting an
+    // absent measurement as a genuine 0.00% lab result. A stored 0 still maps
+    // to 0 — see lib/measurement.
+    thcPct: measurementFromRow(row.thc_percent),
     cbdPct: (row.cbd_percent as number) ?? 0,
     moisturePct: (row.moisture_percent as number) ?? 0,
     waterActivity: String(row.water_activity ?? ''),

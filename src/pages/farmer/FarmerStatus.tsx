@@ -228,7 +228,7 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
                   <span className="pill">{item.quantityKg.toLocaleString()} {t.kgUnit}</span>
                   <span className="pill">{t.gradePrefix} {item.qualityGrade}</span>
                   {item.moisturePct > 0 && <span className="pill">{t.moisturePrefix} {item.moisturePct}%</span>}
-                  {item.thcPct > 0 && <span className="pill">{t.thcPrefix} {item.thcPct}%</span>}
+                  {(item.thcPct ?? 0) > 0 && <span className="pill">{t.thcPrefix} {item.thcPct}%</span>}
                   {item.cbdPct > 0 && <span className="pill">{t.cbdPrefix} {item.cbdPct}%</span>}
                   {item.waterActivity && <span className="pill">{t.waPrefix} {item.waterActivity}</span>}
                   <span className="pill">฿{item.pricePerKg}/{t.kgUnit}</span>

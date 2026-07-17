@@ -65,7 +65,7 @@ export default function DDPInventoryDashboard({ inventory, onReview }: Props) {
                     <span className="td-bold">{item.productName}</span>
                     <br /><span className="td-muted">{item.farmName}</span>
                   </td>
-                  <td className="td-num td-mono" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
+                  <td className="td-num td-mono" data-label="THC %">{(item.thcPct ?? 0) > 0 ? `${item.thcPct}%` : '—'}</td>
                   <td className="td-num td-mono" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
                   <td data-label="Microbial"><span className={testStatusClass(item.microbialStatus)}>{testStatusLabel(item.microbialStatus)}</span></td>
                   <td data-label="Heavy Metals"><span className={testStatusClass(item.heavyMetalsStatus)}>{testStatusLabel(item.heavyMetalsStatus)}</span></td>

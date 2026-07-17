@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { measurementToFormValue, parseOptionalMeasurement } from '../../lib/measurement'
 import type {
   Lang, InventoryItem, FarmProfile, ProductType, TestStatus, MarketBenchmark, ReviewRequest
 } from '../../types'
@@ -51,7 +52,8 @@ function initForm(item: InventoryItem | null | undefined) {
     cureDate: item.cureDate ?? '',
     expiryDate: item.expiryDate ?? '',
     moisturePct: item.moisturePct ? String(item.moisturePct) : '',
-    totalThc: item.thcPct ? String(item.thcPct) : '',
+    // A measured 0 must edit as "0", not as a blank field.
+    totalThc: measurementToFormValue(item.thcPct),
     totalCbd: item.cbdPct ? String(item.cbdPct) : '',
     totalTerpenes: item.totalTerpenesPct ? String(item.totalTerpenesPct) : '',
     coaAvailable: item.coaAvailable ?? false,
@@ -172,7 +174,10 @@ export default function FarmerSubmitInventory({
       harvestDate: form.harvestDate,
       cureDate: form.cureDate,
       batchNumber: form.batchNumber,
-      thcPct: parseFloat(form.totalThc) || 0,
+      // THC is optional ("from your COA, if you have one"). A blank field means
+      // no reading was reported and must persist as NULL — `|| 0` turned it,
+      // and any unreadable input, into a fabricated 0% result.
+      thcPct: parseOptionalMeasurement(form.totalThc),
       cbdPct: parseFloat(form.totalCbd) || 0,
       moisturePct: parseFloat(form.moisturePct) || 0,
       waterActivity: form.waterActivity,

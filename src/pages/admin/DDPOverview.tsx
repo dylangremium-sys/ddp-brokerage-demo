@@ -28,6 +28,13 @@ import {
   isExpiredOn,
   isExpiringWithin,
 } from '../../lib/calendarDate'
+import {
+  deriveCoaEvidence,
+  COA_EVIDENCE_LABEL,
+  COA_EVIDENCE_REASON,
+  type CoaEvidencePosition,
+} from '../../lib/coaEvidence'
+import { formatMeasurement } from '../../lib/measurement'
 
 interface Props {
   farms: FarmProfile[]
@@ -110,6 +117,18 @@ interface Priority {
 }
 
 type StatusTone = 'critical' | 'high' | 'review' | 'evidence' | 'neutral' | 'warn-tint' | 'risk-tint'
+
+/**
+ * Visual weight per evidence position. A received document is evidence and sits
+ * quiet; an unreceived claim is self-asserted and uncorroborated, so it carries
+ * a fill rather than a tint and cannot be mistaken for a documented record;
+ * absent evidence stays loudest.
+ */
+const EVIDENCE_TONE: Record<CoaEvidencePosition, StatusTone> = {
+  documented: 'evidence',
+  claimed: 'high',
+  missing: 'critical',
+}
 
 /** Map an alert's own severity onto the row's visual weight. */
 function alertSeverity(s: ComplianceSeverity): Severity {
@@ -227,9 +246,8 @@ export default function DDPOverview({
       severity: 'critical',
       kind: 'Batch',
       name: `${i.productName} — ${i.farmName}`,
-      reason: i.certFileName || i.coaAvailable
-        ? 'Recorded as missing required documentation'
-        : 'Certificate of analysis not attached',
+      // States what is actually on file. A claim is not a received document.
+      reason: COA_EVIDENCE_REASON[deriveCoaEvidence(i)],
       consequence: 'Buyer requirements incomplete',
       status: i.status,
       statusTone: 'critical',
@@ -550,7 +568,10 @@ export default function DDPOverview({
             <tbody>
               {(
                 supply.map(i => {
-                  const documented = Boolean(i.coaAvailable || i.certFileName)
+                  // Same rule as the KPI and the priority queue, so no two
+                  // panels can disagree about a batch's evidence position.
+                  const evidence = deriveCoaEvidence(i)
+                  const thc = formatMeasurement(i.thcPct)
                   return (
                     <tr key={i.id}>
                       <td>
@@ -560,14 +581,17 @@ export default function DDPOverview({
                       <td data-label="Supplier">{i.farmName}</td>
                       <td className="eo-td-num" data-label="Quantity (kg)">{i.quantityKg.toLocaleString()}</td>
                       {/* A measured 0% THC is a value, not a missing one. Only a
-                          genuinely absent reading may render as unknown. */}
+                          genuinely absent reading renders as unknown. */}
                       <td className="eo-td-num" data-label="THC %">
-                        {i.thcPct == null ? MEASURE_UNKNOWN : i.thcPct.toFixed(2)}
+                        {thc === null
+                          ? <span title="No THC reading reported">{MEASURE_UNKNOWN}</span>
+                          : thc}
                       </td>
                       <td data-label="Evidence">
-                        <span className={`eo-status eo-status--${documented ? 'evidence' : 'critical'}`}>
-                          {documented ? 'Documented' : 'Missing Evidence'}
+                        <span className={`eo-status eo-status--${EVIDENCE_TONE[evidence]}`}>
+                          {COA_EVIDENCE_LABEL[evidence]}
                         </span>
+                        <span className="eo-status-reason">{COA_EVIDENCE_REASON[evidence]}</span>
                       </td>
                       <td data-label="Review state">
                         <span className={`eo-status eo-status--${reviewTone(i.status)}`}>{i.status}</span>

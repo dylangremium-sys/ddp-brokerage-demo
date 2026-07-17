@@ -59,7 +59,9 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
         (i.batchNumber || '').toLowerCase().includes(q)
       if (!matchesSearch) return false
     }
-    if (i.thcPct > 0 && (i.thcPct < thcRange.min || i.thcPct > thcRange.max)) return false
+    // An unreported THC reading is not filtered on, exactly as before: the
+    // mapper used to turn NULL into 0, which never passed the `> 0` guard.
+    if (i.thcPct !== null && i.thcPct > 0 && (i.thcPct < thcRange.min || i.thcPct > thcRange.max)) return false
     if (i.cbdPct > 0 && (i.cbdPct < cbdRange.min || i.cbdPct > cbdRange.max)) return false
     if (i.moisturePct > 0 && (i.moisturePct < moistureRange.min || i.moisturePct > moistureRange.max)) return false
     if (certFilters.length > 0) {
@@ -72,7 +74,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
 
   const sorted = [...filtered].sort((a, b) => {
     if (sortKey === 'quantity') return b.quantityKg - a.quantityKg
-    if (sortKey === 'thc') return b.thcPct - a.thcPct
+    if (sortKey === 'thc') return (b.thcPct ?? 0) - (a.thcPct ?? 0)
     if (sortKey === 'price') return b.pricePerKg - a.pricePerKg
     if (sortKey === 'farm') return a.farmName.localeCompare(b.farmName)
     return 0
@@ -202,7 +204,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                       <span className="td-bold">{item.productName || 'Unnamed batch'}</span>
                       <br /><span className="td-muted">{item.farmName || 'Unnamed farm'} · {getProvince(item)}</span>
                     </td>
-                    <td className="td-num td-mono" data-label="THC %">{item.thcPct > 0 ? `${item.thcPct}%` : '—'}</td>
+                    <td className="td-num td-mono" data-label="THC %">{(item.thcPct ?? 0) > 0 ? `${item.thcPct}%` : '—'}</td>
                     <td className="td-num td-mono" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
                     <td data-label="Microbial"><span className={testStatusClass(item.microbialStatus)}>{testStatusLabel(item.microbialStatus)}</span></td>
                     <td data-label="Heavy Metals"><span className={testStatusClass(item.heavyMetalsStatus)}>{testStatusLabel(item.heavyMetalsStatus)}</span></td>

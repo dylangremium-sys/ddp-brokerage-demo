@@ -374,7 +374,12 @@ export interface InventoryItem {
   harvestDate: string
   cureDate: string
   batchNumber: string
-  thcPct: number
+  /**
+   * THC %, or null when no reading was reported. The submission field is
+   * optional and inventory_batches.thc_percent is nullable, so absence is a
+   * real state — distinct from a measured 0. Never use 0 to mean unknown.
+   */
+  thcPct: number | null
   cbdPct: number
   moisturePct: number
   waterActivity: string
