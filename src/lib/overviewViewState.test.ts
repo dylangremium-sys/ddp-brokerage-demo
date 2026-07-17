@@ -12,8 +12,11 @@ import {
   MEASURE_PENDING_NOTE,
   MEASURE_ERROR_NOTE,
   SIGNALS_EMPTY,
+  SIGNALS_UNAVAILABLE,
+  SIGNALS_UNAVAILABLE_NOTE,
   SUPPLY_EMPTY,
   type SourceLoadState,
+  type PanelMode,
   type ComplianceLoadState,
 } from './overviewViewState'
 
@@ -292,9 +295,16 @@ const signalsPanel = (compliance: SourceLoadState, farms: SourceLoadState, compl
   // Farm signals are admitted only once the farms read has succeeded.
   const shown = complianceSignalCount + (farms === 'loaded' ? farmExpiryCount : 0)
   const sourceState = combineLoadStates(compliance, farms)
-  const mode = shown > 0 ? 'list' : derivePanelMode(sourceState, 0)
+  const mode: PanelMode = (() => {
+    if (shown > 0) return 'list'
+    if (sourceState === 'loading' || sourceState === 'error') return derivePanelMode(sourceState, 0)
+    // A source that does not exist cannot establish an absence.
+    if (compliance === 'unavailable') return 'unavailable'
+    return 'empty'
+  })()
   const notes: string[] = []
   if (compliance === 'error') notes.push('Compliance alerts could not be loaded')
+  else if (compliance === 'unavailable') notes.push(SIGNALS_UNAVAILABLE_NOTE)
   else if (compliance === 'idle' || compliance === 'loading') notes.push('Compliance alerts still loading')
   if (farms === 'error') notes.push('Farm expiry signals could not be loaded')
   else if (farms === 'idle' || farms === 'loading') notes.push('Farm expiry signals still loading')
@@ -360,9 +370,59 @@ describe('compliance signals panel is gated on BOTH compliance and farms', () =>
     expect(p.notes.length).toBeGreaterThan(0)
   })
 
-  it('demo mode: compliance unavailable + farms loaded is fully settled', () => {
+  // This assertion was wrong: it encoded the very defect under review. In demo
+  // mode no compliance source exists, so the panel was claiming an absence it
+  // had never checked. Corrected, not relaxed — the panel must say less here.
+  it('demo mode: compliance unavailable + no farm signals → unavailable, never a confirmed empty claim', () => {
     const p = signalsPanel('unavailable', 'loaded', 0, 0)
-    expect(p.mode).toBe('empty')
-    expect(p.notes).toEqual([])
+    expect(p.mode).toBe('unavailable')
+    expect(p.mode).not.toBe('empty')
+  })
+
+  it('demo mode: compliance unavailable + farm signals → the farm signals are shown, compliance flagged', () => {
+    const p = signalsPanel('unavailable', 'loaded', 0, 2)
+    expect(p.mode).toBe('list')
+    expect(p.shown).toBe(2)
+    expect(p.notes).toEqual([SIGNALS_UNAVAILABLE_NOTE])
+  })
+
+  it('an unavailable compliance source can never yield a confirmed empty state, whatever farms does', () => {
+    for (const farms of ['idle', 'loading', 'loaded', 'error', 'unavailable'] as SourceLoadState[]) {
+      expect(signalsPanel('unavailable', farms, 0, 0).mode).not.toBe('empty')
+    }
+  })
+
+  it('an unresolved source still takes precedence over the unavailable message', () => {
+    // Nothing is known yet either way; "unavailable" would overstate it.
+    expect(signalsPanel('unavailable', 'loading', 0, 0).mode).toBe('loading')
+    expect(signalsPanel('unavailable', 'error', 0, 0).mode).toBe('error')
+  })
+
+  it('only a real compliance source that returned nothing yields the confirmed empty state', () => {
+    expect(signalsPanel('loaded', 'loaded', 0, 0).mode).toBe('empty')
+  })
+
+  it('the unavailable wording states the mode, and asserts no absence', () => {
+    expect(SIGNALS_UNAVAILABLE).toBe('Compliance signals unavailable in this mode.')
+    expect(SIGNALS_UNAVAILABLE).not.toMatch(/No unresolved/i)
+    expect(SIGNALS_UNAVAILABLE_NOTE).toBe('Compliance signals unavailable in this mode')
+  })
+})
+
+/* ────────────────────────────────────────────────────────────────────────────
+   combineLoadStates is deliberately NOT changed: 'unavailable' counts as
+   settled, which is correct for Review priorities (in demo mode no compliance
+   source exists, so farm and batch rows really are the complete picture). The
+   signals panel — which makes a claim about compliance itself — overrides that
+   locally. These pin both behaviours so a future global change cannot pass
+   unnoticed.
+   ──────────────────────────────────────────────────────────────────────────── */
+describe('combineLoadStates callers', () => {
+  it('Review priorities: demo compliance unavailable + loaded farms/inventory is complete', () => {
+    expect(combineLoadStates('loaded', 'loaded', 'unavailable')).toBe('loaded')
+  })
+
+  it('Submissions awaiting review is unaffected by an unavailable compliance source', () => {
+    expect(combineLoadStates('loaded', 'loaded')).toBe('loaded')
   })
 })

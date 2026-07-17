@@ -124,6 +124,33 @@ export default function App() {
   const [complianceLoadState, setComplianceLoadState] = useState<SourceLoadState>('idle')
   const [farmsLoadState, setFarmsLoadState] = useState<SourceLoadState>('idle')
   const [inventoryLoadState, setInventoryLoadState] = useState<SourceLoadState>('idle')
+
+  // ── Session boundary ──────────────────────────────────────────────────────
+  // One session's rows must never be presented as another's. When an admin signs
+  // out and a different one signs in without reloading the SPA, the load states
+  // could still read 'loaded' from the previous identity while the new reads were
+  // in flight, so the Overview showed the previous snapshot as authoritative —
+  // and briefly exposed those actionable rows even if the new read then failed.
+  //
+  // The authenticated user id is the boundary. This resets during render rather
+  // than in an effect: an effect would paint the previous session's data for a
+  // frame first, and it is React's documented way to adjust state when an input
+  // changes. Demo mode has a constant identity, so its local data is untouched.
+  const sessionIdentity = isSupabaseConfigured ? (currentProfile?.id ?? null) : '__demo__'
+  const [loadedSessionIdentity, setLoadedSessionIdentity] = useState<string | null>(sessionIdentity)
+  if (sessionIdentity !== loadedSessionIdentity) {
+    setLoadedSessionIdentity(sessionIdentity)
+    // Back to "nothing established for this identity" before the new reads run.
+    setFarmsLoadState('idle')
+    setInventoryLoadState('idle')
+    setComplianceLoadState('idle')
+    // Drop the previous identity's rows so none can render as current. Each
+    // source repopulates from its own request.
+    setFarms([])
+    setInventory([])
+    setComplianceRules([])
+    setComplianceAlerts([])
+  }
   const [stockEditItemId, setStockEditItemId] = useState<string | null>(null)
   const [buyerPackItemId, setBuyerPackItemId] = useState<string | null>(null)
 

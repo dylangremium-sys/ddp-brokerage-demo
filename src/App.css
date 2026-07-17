@@ -3984,3 +3984,39 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   }
   .eo-table tbody td.eo-td-num { text-align: left; }
 }
+
+/* ── Print: buyer-facing document only ───────────────────────────────────────
+   A signed-in admin now renders the Buyer Pack Preview inside the editorial
+   shell, so "Print / Save PDF" was printing the sidebar, the utility header and
+   the shell's 248px column into a buyer-facing document.
+
+   Declared here, after the .eo-* base rules above, because both have equal
+   specificity and the later declaration wins. .eo-shell is not hidden — it is
+   the ancestor of the routed pack — only un-gridded so the document can use the
+   printable width. Scoped to .eo-* classes, which exist only in the admin
+   shell, so printing from public or farmer pages is untouched.
+   ────────────────────────────────────────────────────────────────────────── */
+@media print {
+  /* Admin chrome is not part of the document: navigation, utility header
+     (breadcrumb, admin identity, sign-out) and the skip link. */
+  .eo-nav,
+  .eo-header,
+  .eo-skip { display: none !important; }
+
+  /* Release the sidebar column and the viewport-height frame. */
+  .eo-shell {
+    display: block !important;
+    min-height: 0 !important;
+    background: #fff !important;
+  }
+  .eo-main { display: block !important; min-width: 0 !important; }
+
+  /* Admin-only gutter and canvas tint have no place on the printed page. */
+  .eo-content,
+  .eo-content-canvas,
+  .eo-content-legacy {
+    flex: none !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+}

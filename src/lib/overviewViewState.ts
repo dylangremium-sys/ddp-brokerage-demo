@@ -109,7 +109,9 @@ export const deriveSignalsPanelMode = derivePanelMode
  */
 export const SIGNALS_LOADING = 'Loading compliance signals…'
 export const SIGNALS_ERROR = 'Compliance signals could not be loaded'
-export const SIGNALS_UNAVAILABLE = 'Compliance signals are not available in this mode'
+export const SIGNALS_UNAVAILABLE = 'Compliance signals unavailable in this mode.'
+/** Caption when farm signals are listed but no compliance source exists. */
+export const SIGNALS_UNAVAILABLE_NOTE = 'Compliance signals unavailable in this mode'
 export const SIGNALS_EMPTY = 'No unresolved alerts or rules awaiting decision.'
 
 export const SUPPLY_LOADING = 'Loading supply position…'

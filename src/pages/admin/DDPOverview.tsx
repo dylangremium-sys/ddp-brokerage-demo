@@ -17,6 +17,7 @@ import {
   SIGNALS_ERROR,
   SIGNALS_LOADING,
   SIGNALS_UNAVAILABLE,
+  SIGNALS_UNAVAILABLE_NOTE,
   SUPPLY_EMPTY,
   SUPPLY_ERROR,
   SUPPLY_LOADING,
@@ -449,13 +450,29 @@ export default function DDPOverview({
   // claimed once BOTH have settled — compliance finishing first must not settle
   // the panel on the farms half's behalf. Signals we can truthfully show are
   // still shown: an independently successful source is never discarded.
+  //
+  // Derived here rather than through combineLoadStates alone, because this panel
+  // makes a claim *about compliance*. combineLoadStates counts 'unavailable' as
+  // settled, which is right for Review priorities — in demo mode no compliance
+  // source exists, so farm and batch rows really are the whole picture — but
+  // wrong here: a source that does not exist cannot establish that there are no
+  // compliance signals.
   const signalsSourceState = combineLoadStates(complianceLoadState, farmsLoadState)
-  const signalsMode: PanelMode =
-    signals.length > 0 ? 'list' : derivePanelMode(signalsSourceState, 0)
+  const signalsMode: PanelMode = (() => {
+    if (signals.length > 0) return 'list'
+    if (signalsSourceState === 'loading' || signalsSourceState === 'error') {
+      return derivePanelMode(signalsSourceState, 0)
+    }
+    // Everything settled — but absence of compliance signals is only a fact if
+    // a compliance source was actually consulted.
+    if (complianceLoadState === 'unavailable') return 'unavailable'
+    return 'empty'
+  })()
 
   /** Named per source, so a partial list never reads as the whole picture. */
   const signalSourceNotes: string[] = []
   if (complianceLoadState === 'error') signalSourceNotes.push('Compliance alerts could not be loaded')
+  else if (complianceLoadState === 'unavailable') signalSourceNotes.push(SIGNALS_UNAVAILABLE_NOTE)
   else if (complianceLoadState === 'idle' || complianceLoadState === 'loading') signalSourceNotes.push('Compliance alerts still loading')
   if (farmsLoadState === 'error') signalSourceNotes.push('Farm expiry signals could not be loaded')
   else if (farmsLoadState === 'idle' || farmsLoadState === 'loading') signalSourceNotes.push('Farm expiry signals still loading')
