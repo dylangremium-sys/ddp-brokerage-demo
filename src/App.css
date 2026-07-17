@@ -4300,3 +4300,12 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   color: #FFFFFF;
   font-weight: 600;
 }
+
+/* The request-count badge paints background: var(--error) with color: var(--text).
+   Inside .eo-farmer both tokens are remapped, so the count rendered near-black
+   on dark red at 1.94:1. Every --ddp-ink-* token is a dark foreground and
+   --ddp-paper-* are surfaces, so there is no light foreground token to reach
+   for; a literal white is what the rest of this stylesheet uses for text on a
+   dark fill, and it measures 8.18:1 here. Colour only — the badge's value,
+   condition, markup and background are untouched. */
+.eo-farmer .requests-badge { color: #FFFFFF; }
