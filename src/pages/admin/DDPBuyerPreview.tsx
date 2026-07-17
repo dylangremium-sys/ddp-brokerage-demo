@@ -48,7 +48,7 @@ const CHECKLIST: { key: string; label: string; pass: (i: InventoryItem) => boole
   { key: 'coa_file',    label: 'COA file received',        pass: i => !!i.coaStoragePath },
   { key: 'lab',     label: 'Lab name recorded',           pass: i => !!i.labName },
   { key: 'date',    label: 'Test date recorded',          pass: i => !!i.testDate },
-  { key: 'thc',     label: 'THC % recorded',              pass: i => (i.thcPct ?? 0) > 0 },
+  { key: 'thc',     label: 'THC % recorded',              pass: i => i.thcPct != null },
   { key: 'cbd',     label: 'CBD % recorded',              pass: i => i.cbdPct > 0 },
   { key: 'moist',   label: 'Moisture % recorded',         pass: i => i.moisturePct > 0 },
   { key: 'water',   label: 'Water activity recorded',     pass: i => !!i.waterActivity },
@@ -350,7 +350,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
       `Available Qty:    ${item.quantityKg > 0 ? `${item.quantityKg.toLocaleString()} ${item.unit ?? 'kg'}` : '—'}`,
       `Price per kg:     ${item.pricePerKg > 0 ? `฿${item.pricePerKg.toLocaleString()} THB/kg` : '—'}`,
       '',
-      `THC:              ${na(item.thcPct, '%')}`,
+      `THC:              ${item.thcPct != null ? `${item.thcPct}%` : "—"}`,
       `CBD:              ${na(item.cbdPct, '%')}`,
       `Moisture:         ${na(item.moisturePct, '%')}`,
       `Water Activity:   ${na(item.waterActivity)}`,
@@ -502,7 +502,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
             <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '0 0 10px' }}>
               COA values documented by the farm. DDP review required before relying on these figures commercially.
             </p>
-            <div className="buyer-pack-field"><span className="buyer-pack-lbl">THC</span><span>{na(item.thcPct, '%')}</span></div>
+            <div className="buyer-pack-field"><span className="buyer-pack-lbl">THC</span><span>{item.thcPct != null ? `${item.thcPct}%` : '—'}</span></div>
             <div className="buyer-pack-field"><span className="buyer-pack-lbl">CBD</span><span>{na(item.cbdPct, '%')}</span></div>
             <div className="buyer-pack-field"><span className="buyer-pack-lbl">Moisture</span><span>{na(item.moisturePct, '%')}</span></div>
             <div className="buyer-pack-field"><span className="buyer-pack-lbl">Water Activity (aw)</span><span>{na(item.waterActivity)}</span></div>
@@ -852,7 +852,7 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
                         <span className="td-bold">{item.productName}</span>
                         <br /><span className="td-muted">{item.farmName}</span>
                       </td>
-                      <td className="td-num td-mono" data-label="THC %">{(item.thcPct ?? 0) > 0 ? `${item.thcPct}%` : '—'}</td>
+                      <td className="td-num td-mono" data-label="THC %">{item.thcPct != null ? `${item.thcPct}%` : '—'}</td>
                       <td className="td-num td-mono" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
                       <td data-label="Microbial"><span className={testStatusClass(item.microbialStatus)}>{testStatusLabel(item.microbialStatus)}</span></td>
                       <td data-label="Heavy Metals"><span className={testStatusClass(item.heavyMetalsStatus)}>{testStatusLabel(item.heavyMetalsStatus)}</span></td>

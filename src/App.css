@@ -3861,6 +3861,15 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 }
 .eo-signal-sev { grid-row: 1 / span 2; }
 
+/* States which sources have not reported, so a partial list of signals cannot
+   be read as the complete picture. */
+.eo-signal-note {
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--ddp-line-soft);
+  font-size: 12px; line-height: 18px; color: var(--ddp-ink-500);
+}
+
 /* ── Focus — gold, surface-adaptive, never a shadow ─────────────────────── */
 
 .eo-shell :focus-visible,

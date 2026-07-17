@@ -59,9 +59,10 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
         (i.batchNumber || '').toLowerCase().includes(q)
       if (!matchesSearch) return false
     }
-    // An unreported THC reading is not filtered on, exactly as before: the
-    // mapper used to turn NULL into 0, which never passed the `> 0` guard.
-    if (i.thcPct !== null && i.thcPct > 0 && (i.thcPct < thcRange.min || i.thcPct > thcRange.max)) return false
+    // An unreported reading cannot be compared to a range, so it is not filtered
+    // on. A reported one is — including a measured 0, which is a value the range
+    // rule applies to, not an absence to skip over.
+    if (i.thcPct !== null && (i.thcPct < thcRange.min || i.thcPct > thcRange.max)) return false
     if (i.cbdPct > 0 && (i.cbdPct < cbdRange.min || i.cbdPct > cbdRange.max)) return false
     if (i.moisturePct > 0 && (i.moisturePct < moistureRange.min || i.moisturePct > moistureRange.max)) return false
     if (certFilters.length > 0) {
@@ -204,7 +205,7 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
                       <span className="td-bold">{item.productName || 'Unnamed batch'}</span>
                       <br /><span className="td-muted">{item.farmName || 'Unnamed farm'} · {getProvince(item)}</span>
                     </td>
-                    <td className="td-num td-mono" data-label="THC %">{(item.thcPct ?? 0) > 0 ? `${item.thcPct}%` : '—'}</td>
+                    <td className="td-num td-mono" data-label="THC %">{item.thcPct != null ? `${item.thcPct}%` : '—'}</td>
                     <td className="td-num td-mono" data-label="CBD %">{item.cbdPct > 0 ? `${item.cbdPct}%` : '—'}</td>
                     <td data-label="Microbial"><span className={testStatusClass(item.microbialStatus)}>{testStatusLabel(item.microbialStatus)}</span></td>
                     <td data-label="Heavy Metals"><span className={testStatusClass(item.heavyMetalsStatus)}>{testStatusLabel(item.heavyMetalsStatus)}</span></td>

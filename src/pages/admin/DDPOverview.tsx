@@ -12,6 +12,7 @@ import {
   formatCountMeasure,
   measureNote,
   MEASURE_UNKNOWN,
+  type PanelMode,
   SIGNALS_EMPTY,
   SIGNALS_ERROR,
   SIGNALS_LOADING,
@@ -181,7 +182,18 @@ export default function DDPOverview({
   const batchesAwaitingReview = inventory.filter(i => i.status === 'Pending Review')
   const requiresReview = farmsAwaitingReview.length + batchesAwaitingReview.length
 
-  const missingEvidenceBatches = inventory.filter(i => i.status === 'Missing Document')
+  // Evidence presence comes from the evidence fields, never from workflow
+  // status. `status === 'Missing Document'` is a review decision: it omitted a
+  // Pending Review or Approved batch that has no received COA, and it kept
+  // counting a batch after its COA arrived, because the upload handlers patch
+  // coaStoragePath without touching status.
+  const evidenceMissingBatches = inventory.filter(i => deriveCoaEvidence(i) === 'missing')
+  const evidenceClaimedBatches = inventory.filter(i => deriveCoaEvidence(i) === 'claimed')
+  // One row per batch: a batch listed for its evidence gap is not repeated as a
+  // routine review item below.
+  const evidenceFlaggedIds = new Set(
+    [...evidenceMissingBatches, ...evidenceClaimedBatches].map(i => i.id),
+  )
 
   const unresolvedAlerts = complianceAlerts.filter(
     a => a.status === 'open' || a.status === 'in_review' || a.status === 'blocked',
@@ -209,7 +221,7 @@ export default function DDPOverview({
     {
       lbl: 'Missing evidence',
       state: inventoryLoadState,
-      measure: deriveCountMeasure(inventoryLoadState, missingEvidenceBatches.length),
+      measure: deriveCountMeasure(inventoryLoadState, evidenceMissingBatches.length),
       riskTone: 'risk',
     },
     {
@@ -240,17 +252,34 @@ export default function DDPOverview({
 
   const priorities: Priority[] = []
 
-  for (const i of missingEvidenceBatches) {
+  // No COA on file at all. States what is on file, not the review decision.
+  for (const i of evidenceMissingBatches) {
     priorities.push({
       key: `batch-missing-${i.id}`,
       severity: 'critical',
       kind: 'Batch',
       name: `${i.productName} — ${i.farmName}`,
-      // States what is actually on file. A claim is not a received document.
-      reason: COA_EVIDENCE_REASON[deriveCoaEvidence(i)],
+      reason: COA_EVIDENCE_REASON.missing,
       consequence: 'Buyer requirements incomplete',
-      status: i.status,
-      statusTone: 'critical',
+      status: COA_EVIDENCE_LABEL.missing,
+      statusTone: EVIDENCE_TONE.missing,
+      sortAt: i.submittedAt,
+      onOpen: () => onReviewItem(i.id),
+    })
+  }
+
+  // A COA was claimed but never received. Still outstanding work — the file
+  // has to be chased — but it is not the same fact as nothing being claimed.
+  for (const i of evidenceClaimedBatches) {
+    priorities.push({
+      key: `batch-claimed-${i.id}`,
+      severity: 'important',
+      kind: 'Batch',
+      name: `${i.productName} — ${i.farmName}`,
+      reason: COA_EVIDENCE_REASON.claimed,
+      consequence: 'Buyer requirements incomplete',
+      status: COA_EVIDENCE_LABEL.claimed,
+      statusTone: EVIDENCE_TONE.claimed,
       sortAt: i.submittedAt,
       onOpen: () => onReviewItem(i.id),
     })
@@ -350,6 +379,8 @@ export default function DDPOverview({
   }
 
   for (const i of batchesAwaitingReview) {
+    // Already listed above with its evidence gap, which is the more urgent fact.
+    if (evidenceFlaggedIds.has(i.id)) continue
     priorities.push({
       key: `batch-review-${i.id}`,
       severity: 'standard',
@@ -400,15 +431,34 @@ export default function DDPOverview({
         title: a.alertTitle,
         detail: `${a.entityType} · raised ${ageLabel(a.createdAt, now)} ago`,
       })),
-    ...expiredFarms.map(f => ({
-      key: `sig-exp-${f.id}`,
-      severity: 'critical' as Severity,
-      title: `${f.tradingName} — documentation expired`,
-      detail: `Expired ${formatCalendarDate(f.documentExpiry) ?? 'on an unrecorded date'}`,
-    })),
+    // Farm expiry signals are admitted only once the farms read has actually
+    // succeeded. `farms` starts populated from the local store, so including
+    // them while that read is pending or failed would present seed data as a
+    // current expiry alert.
+    ...(farmsLoadState === 'loaded'
+      ? expiredFarms.map(f => ({
+          key: `sig-exp-${f.id}`,
+          severity: 'critical' as Severity,
+          title: `${f.tradingName} — documentation expired`,
+          detail: `Expired ${formatCalendarDate(f.documentExpiry) ?? 'on an unrecorded date'}`,
+        }))
+      : []),
   ].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
 
-  const signalsMode = derivePanelMode(complianceLoadState, signals.length)
+  // This panel is fed by two sources, so "no unresolved signals" may only be
+  // claimed once BOTH have settled — compliance finishing first must not settle
+  // the panel on the farms half's behalf. Signals we can truthfully show are
+  // still shown: an independently successful source is never discarded.
+  const signalsSourceState = combineLoadStates(complianceLoadState, farmsLoadState)
+  const signalsMode: PanelMode =
+    signals.length > 0 ? 'list' : derivePanelMode(signalsSourceState, 0)
+
+  /** Named per source, so a partial list never reads as the whole picture. */
+  const signalSourceNotes: string[] = []
+  if (complianceLoadState === 'error') signalSourceNotes.push('Compliance alerts could not be loaded')
+  else if (complianceLoadState === 'idle' || complianceLoadState === 'loading') signalSourceNotes.push('Compliance alerts still loading')
+  if (farmsLoadState === 'error') signalSourceNotes.push('Farm expiry signals could not be loaded')
+  else if (farmsLoadState === 'idle' || farmsLoadState === 'loading') signalSourceNotes.push('Farm expiry signals still loading')
 
   // ── Supply position ──────────────────────────────────────────────────────
 
@@ -523,6 +573,12 @@ export default function DDPOverview({
                 <div className="eo-signal-detail">{s.detail}</div>
               </div>
             ))}
+            {/* Shown alongside a list so a partial one never reads as complete. */}
+            {signalsMode === 'list' && signalSourceNotes.length > 0 && (
+              <p className="eo-signal-note" role="status">
+                {signalSourceNotes.join(' · ')} — this list may be incomplete.
+              </p>
+            )}
           </div>
         </section>
       </div>

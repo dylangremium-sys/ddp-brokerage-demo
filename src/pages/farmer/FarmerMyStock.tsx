@@ -224,7 +224,7 @@ export default function FarmerMyStock({
                 {item.pricePerKg > 0 && (
                   <span className="pill">฿{item.pricePerKg.toLocaleString()}/{item.unit ?? 'kg'}</span>
                 )}
-                {(item.thcPct ?? 0) > 0 && <span className="pill">THC {item.thcPct}%</span>}
+                {item.thcPct != null && <span className="pill">THC {item.thcPct}%</span>}
                 {item.cbdPct > 0 && <span className="pill">CBD {item.cbdPct}%</span>}
                 {item.certFileName || item.coaAvailable || item.coaStoragePath
                   ? (

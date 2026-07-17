@@ -85,7 +85,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
     { label: 'Farmer details complete', pass: !!(item.farmerName && item.farmName && item.location) },
     { label: 'Batch number supplied', pass: !!item.batchNumber },
     { label: 'COA supplied', pass: !!item.certFileName },
-    { label: 'THC recorded', pass: (item.thcPct ?? 0) > 0 },
+    { label: 'THC recorded', pass: item.thcPct != null },
     { label: 'CBD recorded', pass: item.cbdPct > 0 },
     { label: 'Moisture recorded', pass: item.moisturePct > 0 },
     { label: 'Water activity recorded', pass: !!item.waterActivity },
@@ -152,7 +152,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
               </p>
               <div className="detail-rows">
                 <div className="detail-row"><span className="dl">Batch Number</span><span className="dv mono">{item.batchNumber || '—'}</span></div>
-                <div className="detail-row"><span className="dl">THC %</span><span className="dv">{(item.thcPct ?? 0) > 0 ? `${item.thcPct}%` : <span className="text-missing">Not recorded</span>}</span></div>
+                <div className="detail-row"><span className="dl">THC %</span><span className="dv">{item.thcPct != null ? `${item.thcPct}%` : <span className="text-missing">Not recorded</span>}</span></div>
                 <div className="detail-row"><span className="dl">CBD %</span><span className="dv">{item.cbdPct > 0 ? `${item.cbdPct}%` : <span className="text-missing">Not recorded</span>}</span></div>
                 <div className="detail-row"><span className="dl">Moisture %</span><span className="dv">{item.moisturePct > 0 ? `${item.moisturePct}%` : <span className="text-missing">Not recorded</span>}</span></div>
                 <div className="detail-row"><span className="dl">Water Activity</span><span className="dv">{item.waterActivity || <span className="text-missing">Not recorded</span>}</span></div>

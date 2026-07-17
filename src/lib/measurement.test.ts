@@ -126,15 +126,16 @@ describe('formatMeasurement — display', () => {
 })
 
 describe('sorting and filtering must not treat unknown as measured zero', () => {
-  // The legacy admin surfaces guard on `(x.thcPct ?? 0) > 0`, which excludes
-  // unknown from THC filters and ranks it last — exactly as before the model
-  // became nullable, when NULL was already mapped to 0.
-  it('unknown is excluded from a THC range filter, a measured 0 is evaluated', () => {
-    const inRange = (thc: number | null, min: number, max: number) =>
-      thc !== null && thc > 0 && !(thc < min || thc > max)
-    expect(inRange(null, 5, 30)).toBe(false)   // unknown: not filtered in
-    expect(inRange(0, 5, 30)).toBe(false)      // measured 0: below range
-    expect(inRange(12, 5, 30)).toBe(true)
+  // Mirrors the Master Inventory filter: an unreported reading cannot be
+  // compared to a range, so it is not filtered on; a reported one is, including
+  // a measured 0.
+  it('unknown is not range-filtered, while a measured 0 is evaluated against it', () => {
+    const passesRange = (thc: number | null, min: number, max: number) =>
+      !(thc !== null && (thc < min || thc > max))
+    expect(passesRange(null, 5, 30)).toBe(true)  // unknown: cannot be excluded by a range
+    expect(passesRange(0, 5, 30)).toBe(false)    // measured 0: genuinely below the range
+    expect(passesRange(12, 5, 30)).toBe(true)
+    expect(passesRange(0, 0, 35)).toBe(true)     // measured 0 inside the default bounds
   })
 
   it('unknown and measured zero remain distinguishable after guarding', () => {
@@ -142,5 +143,86 @@ describe('sorting and filtering must not treat unknown as measured zero', () => 
     const measuredZero: number | null = 0
     expect(unknown).not.toBe(measuredZero)
     expect(formatMeasurement(unknown)).not.toBe(formatMeasurement(measuredZero))
+  })
+})
+
+/* ────────────────────────────────────────────────────────────────────────────
+   "Recorded" means present, not positive.
+
+   The defect: after the model became nullable, predicates still tested
+   `thcPct > 0`, so a genuine stored 0 rendered "Not recorded" and left the
+   review and buyer-pack checklists incomplete for a valid measurement.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/** The predicate every checklist gate and "recorded?" display now uses. */
+const isRecorded = (thc: number | null | undefined) => thc != null
+
+describe('isRecorded — a measurement is recorded when it exists', () => {
+  it('a measured 0 is recorded', () => {
+    expect(isRecorded(0)).toBe(true)
+    // The old test failed exactly here.
+    expect((0 as number) > 0).toBe(false)
+  })
+
+  it('a positive value is recorded', () => {
+    expect(isRecorded(26.86)).toBe(true)
+    expect(isRecorded(0.01)).toBe(true)
+  })
+
+  it('null and undefined are not recorded', () => {
+    expect(isRecorded(null)).toBe(false)
+    expect(isRecorded(undefined)).toBe(false)
+  })
+
+  it('recording never depends on the magnitude of the value', () => {
+    for (const v of [0, 0.1, 12, 35, 100]) expect(isRecorded(v)).toBe(true)
+  })
+})
+
+describe('checklist gates complete for a measured zero', () => {
+  it('the review checklist counts a stored 0 as recorded', () => {
+    expect(isRecorded(0)).toBe(true)
+  })
+
+  it('the buyer-pack gate counts a stored 0 as recorded', () => {
+    expect(isRecorded(0)).toBe(true)
+  })
+
+  it('both gates stay incomplete for an absent reading', () => {
+    expect(isRecorded(null)).toBe(false)
+  })
+})
+
+describe('display distinguishes measured zero from unknown', () => {
+  it('a measured 0 displays as a value, not "Not recorded"', () => {
+    const display = (thc: number | null) => (thc != null ? `${thc}%` : 'Not recorded')
+    expect(display(0)).toBe('0%')
+    expect(display(0)).not.toBe('Not recorded')
+    expect(display(null)).toBe('Not recorded')
+  })
+
+  it('the overview renders a measured 0 as 0.00 and unknown as an em-dash', () => {
+    expect(formatMeasurement(0)).toBe('0.00')
+    expect(formatMeasurement(null)).toBeNull()
+  })
+})
+
+describe('thresholds still apply their own numeric rules', () => {
+  // Recording and range filtering are different questions: a measured 0 is
+  // recorded, and it is also genuinely below a 5–30 range.
+  const outOfRange = (thc: number | null, min: number, max: number) =>
+    thc !== null && (thc < min || thc > max)
+
+  it('a measured 0 is recorded but still filtered out of a 5–30 range', () => {
+    expect(isRecorded(0)).toBe(true)
+    expect(outOfRange(0, 5, 30)).toBe(true)
+  })
+
+  it('an unknown reading cannot be compared to a range, so it is not filtered', () => {
+    expect(outOfRange(null, 5, 30)).toBe(false)
+  })
+
+  it('a measured 0 passes a range that includes it', () => {
+    expect(outOfRange(0, 0, 35)).toBe(false)
   })
 })

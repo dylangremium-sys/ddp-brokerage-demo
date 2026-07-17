@@ -277,3 +277,92 @@ describe('deriveSignalsPanelMode remains the same rule under its retained name',
     expect(s).toBe('loaded')
   })
 })
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Compliance signals panel: fed by TWO sources.
+
+   The defect: the panel's mode came from complianceLoadState alone, while its
+   signal list also contained farm-derived expiry entries. Compliance finishing
+   first settled the panel on the farms half's behalf, and because `farms` is
+   pre-populated from the local store, stale seed expiry could show as current.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/** The Overview's rule, stated exactly as the page derives it. */
+const signalsPanel = (compliance: SourceLoadState, farms: SourceLoadState, complianceSignalCount: number, farmExpiryCount: number) => {
+  // Farm signals are admitted only once the farms read has succeeded.
+  const shown = complianceSignalCount + (farms === 'loaded' ? farmExpiryCount : 0)
+  const sourceState = combineLoadStates(compliance, farms)
+  const mode = shown > 0 ? 'list' : derivePanelMode(sourceState, 0)
+  const notes: string[] = []
+  if (compliance === 'error') notes.push('Compliance alerts could not be loaded')
+  else if (compliance === 'idle' || compliance === 'loading') notes.push('Compliance alerts still loading')
+  if (farms === 'error') notes.push('Farm expiry signals could not be loaded')
+  else if (farms === 'idle' || farms === 'loading') notes.push('Farm expiry signals still loading')
+  return { mode, shown, notes }
+}
+
+describe('compliance signals panel is gated on BOTH compliance and farms', () => {
+  it('farms loading → no farm expiry statement is made', () => {
+    const p = signalsPanel('loaded', 'loading', 0, 3)
+    expect(p.shown).toBe(0)                       // the 3 stale farm entries are withheld
+    expect(p.mode).not.toBe('empty')              // and absence is not claimed either
+    expect(p.mode).toBe('loading')
+    expect(p.notes).toContain('Farm expiry signals still loading')
+  })
+
+  it('farms error → stale seed expiry is never shown as current', () => {
+    const p = signalsPanel('loaded', 'error', 0, 3)
+    expect(p.shown).toBe(0)
+    expect(p.mode).toBe('error')
+    expect(p.notes).toContain('Farm expiry signals could not be loaded')
+  })
+
+  it('compliance loaded while farms pending → loaded compliance signals are still shown, farms flagged', () => {
+    // Independently successful data is not discarded.
+    const p = signalsPanel('loaded', 'loading', 2, 5)
+    expect(p.mode).toBe('list')
+    expect(p.shown).toBe(2)                       // compliance only
+    expect(p.notes).toEqual(['Farm expiry signals still loading'])
+  })
+
+  it('compliance pending while farms loaded → farm signals shown, compliance flagged', () => {
+    const p = signalsPanel('loading', 'loaded', 0, 2)
+    expect(p.mode).toBe('list')
+    expect(p.shown).toBe(2)
+    expect(p.notes).toEqual(['Compliance alerts still loading'])
+  })
+
+  it('both loaded → normal signals with no caveat', () => {
+    const p = signalsPanel('loaded', 'loaded', 2, 1)
+    expect(p.mode).toBe('list')
+    expect(p.shown).toBe(3)
+    expect(p.notes).toEqual([])
+  })
+
+  it('both loaded with zero results → confirmed empty state is allowed', () => {
+    const p = signalsPanel('loaded', 'loaded', 0, 0)
+    expect(p.mode).toBe('empty')
+    expect(p.notes).toEqual([])
+  })
+
+  it('the empty claim requires BOTH sources — compliance alone can never settle it', () => {
+    for (const farms of ['idle', 'loading', 'error'] as SourceLoadState[]) {
+      expect(signalsPanel('loaded', farms, 0, 0).mode).not.toBe('empty')
+    }
+    for (const compliance of ['idle', 'loading', 'error'] as SourceLoadState[]) {
+      expect(signalsPanel(compliance, 'loaded', 0, 0).mode).not.toBe('empty')
+    }
+  })
+
+  it('a list drawn from an unsettled source always carries a caveat', () => {
+    const p = signalsPanel('error', 'loaded', 0, 1)
+    expect(p.mode).toBe('list')
+    expect(p.notes.length).toBeGreaterThan(0)
+  })
+
+  it('demo mode: compliance unavailable + farms loaded is fully settled', () => {
+    const p = signalsPanel('unavailable', 'loaded', 0, 0)
+    expect(p.mode).toBe('empty')
+    expect(p.notes).toEqual([])
+  })
+})

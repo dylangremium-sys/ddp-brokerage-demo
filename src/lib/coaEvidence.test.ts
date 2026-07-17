@@ -117,3 +117,87 @@ describe('matches the evidence rule the codebase already uses', () => {
     }
   })
 })
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Selecting batches by evidence, not by workflow status.
+
+   The defect: the Overview selected "missing evidence" with
+   `status === 'Missing Document'`. That is a review decision, not an evidence
+   field, so it omitted a Pending Review / Approved batch with no received COA,
+   and kept counting a batch after its COA arrived — the upload handlers patch
+   coaStoragePath without touching status.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+type Batch = CoaEvidenceInput & { id: string; status: string }
+
+const b = (id: string, status: string, coa: Partial<CoaEvidenceInput>): Batch => ({
+  id, status, coaStoragePath: undefined, coaAvailable: undefined, certFileName: '', ...coa,
+})
+
+/** The Overview's selection rules, stated exactly as the page derives them. */
+const selectMissing = (inv: Batch[]) => inv.filter(i => deriveCoaEvidence(i) === 'missing')
+const selectClaimed = (inv: Batch[]) => inv.filter(i => deriveCoaEvidence(i) === 'claimed')
+
+describe('missing evidence is selected from evidence fields, not workflow status', () => {
+  it('an Approved batch with no received COA is still identified', () => {
+    const inv = [b('1', 'Approved', {})]
+    expect(selectMissing(inv).map(i => i.id)).toEqual(['1'])
+    // The old status filter found nothing here.
+    expect(inv.filter(i => i.status === 'Missing Document')).toHaveLength(0)
+  })
+
+  it('a Pending Review batch with no received COA is still identified', () => {
+    expect(selectMissing([b('2', 'Pending Review', {})]).map(i => i.id)).toEqual(['2'])
+  })
+
+  it('a batch stops counting as missing once its COA file arrives, even though status is unchanged', () => {
+    // Exactly what handleCoaUpload does: sets coaStoragePath/coaAvailable/
+    // certFileName and leaves status alone.
+    const uploaded = b('3', 'Missing Document', {
+      coaStoragePath: 'farm/coa.pdf', coaAvailable: true, certFileName: 'coa.pdf',
+    })
+    expect(deriveCoaEvidence(uploaded)).toBe('documented')
+    expect(selectMissing([uploaded])).toHaveLength(0)
+    expect(selectClaimed([uploaded])).toHaveLength(0)
+    // The old status filter would still have counted it.
+    expect([uploaded].filter(i => i.status === 'Missing Document')).toHaveLength(1)
+  })
+
+  it('a claimed-only batch is selected as claimed, never as documented', () => {
+    const inv = [b('4', 'Approved', { coaAvailable: true })]
+    expect(selectClaimed(inv).map(i => i.id)).toEqual(['4'])
+    expect(selectMissing(inv)).toHaveLength(0)
+    expect(deriveCoaEvidence(inv[0])).not.toBe('documented')
+  })
+
+  it('workflow status never changes the evidence position', () => {
+    for (const status of ['Approved', 'Pending Review', 'Missing Document', 'Rejected']) {
+      expect(deriveCoaEvidence(b('x', status, { coaStoragePath: 'p.pdf' }))).toBe('documented')
+      expect(deriveCoaEvidence(b('x', status, { coaAvailable: true }))).toBe('claimed')
+      expect(deriveCoaEvidence(b('x', status, {}))).toBe('missing')
+    }
+  })
+
+  it('every panel selecting on this rule agrees for the same batch', () => {
+    // KPI, priority queue and supply table all call deriveCoaEvidence, so one
+    // batch cannot be missing in one panel and documented in another.
+    const inv = [
+      b('doc', 'Missing Document', { coaStoragePath: 'p.pdf' }),
+      b('claim', 'Approved', { coaAvailable: true }),
+      b('none', 'Pending Review', {}),
+    ]
+    expect(selectMissing(inv).map(i => i.id)).toEqual(['none'])
+    expect(selectClaimed(inv).map(i => i.id)).toEqual(['claim'])
+    expect(inv.filter(i => deriveCoaEvidence(i) === 'documented').map(i => i.id)).toEqual(['doc'])
+    // Each batch lands in exactly one bucket.
+    expect(inv.every(i => [selectMissing, selectClaimed].filter(f => f(inv).includes(i)).length <= 1)).toBe(true)
+  })
+
+  it('a batch flagged for its evidence gap is not also listed as a routine review row', () => {
+    const inv = [b('5', 'Pending Review', { coaAvailable: true })]
+    const flagged = new Set([...selectMissing(inv), ...selectClaimed(inv)].map(i => i.id))
+    const routine = inv.filter(i => i.status === 'Pending Review' && !flagged.has(i.id))
+    expect(flagged.has('5')).toBe(true)
+    expect(routine).toHaveLength(0)
+  })
+})
