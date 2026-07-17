@@ -63,6 +63,7 @@ import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
 import FarmerNav from './components/farmer/FarmerNav'
 import AdminNav from './components/admin/AdminNav'
+import AdminShell from './components/admin/AdminShell'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 
 const FARMER_PAGES: Page[] = [
@@ -524,11 +525,17 @@ export default function App() {
   const showFarmerNav = isDemo || isFarmerRole
   const showDDPNav = isAdminRole
 
+  // Which chrome to draw around the routed page. Presentation only: it reads the
+  // existing values and decides nothing about roles, routes or data. A session
+  // showing the farmer navigation keeps the existing top navbar, so the farmer
+  // portal and demo mode are visually untouched.
+  const useEditorialShell = showDDPNav && !showFarmerNav
+
   return (
     <div className="app">
 
-      {/* ── Navbar (all non-landing pages) ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
+      {/* ── Navbar (all non-landing pages; the editorial shell draws its own) ── */}
+      {!useEditorialShell && page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
         <nav className="navbar">
           <div
             className="navbar-brand"
@@ -612,8 +619,9 @@ export default function App() {
       )}
 
       {/* ── App pages ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
-        <main className="main-content">
+      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (() => {
+        const appPages = (
+          <>
 
           {page === 'farmer-dashboard' && (
             <FarmerDashboard
@@ -813,8 +821,19 @@ export default function App() {
               currentUser={isDemo ? null : currentProfile}
             />
           )}
-        </main>
-      )}
+          </>
+        )
+
+        // Identical routed content in both frames — only the surrounding chrome
+        // differs, so no page's behaviour depends on which one is drawn.
+        return useEditorialShell ? (
+          <AdminShell page={page} goTo={goTo} profile={currentProfile} onSignOut={handleSignOut}>
+            {appPages}
+          </AdminShell>
+        ) : (
+          <main className="main-content">{appPages}</main>
+        )
+      })()}
 
       {page !== 'landing' && (isDemo || buildVersion) && (
         <div className="demo-utility-strip">

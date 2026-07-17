@@ -3367,3 +3367,464 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   .buyer-pack-wrap { max-width: 100% !important; padding: 0 !important; }
   .page-wrap { padding: 12px !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DDP EDITORIAL OPERATIONS — appearance layer
+   Purely presentational and entirely additive: every selector below is new and
+   .eo-* scoped, so no existing rule changes and no public or farmer surface can
+   be reached by it. Consumed only by the admin shell and the Admin Overview,
+   which render exactly the data, labels and conditions they always have.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --ddp-canvas:       #F3F0E7;
+  --ddp-paper:        #FBF9F3;
+  --ddp-paper-strong: #FFFFFF;
+  --ddp-paper-muted:  #ECE8DC;
+
+  /* Deep green is structure — nav and header only, never an accent block. */
+  --ddp-green-950: #102B22;
+  --ddp-green-900: #17382D;
+  --ddp-green-800: #21493A;
+  --ddp-green-700: #315E4A;
+
+  --ddp-ink-950: #20231F;
+  --ddp-ink-700: #4E524C;
+  /* Darkened from the supplied #73776F, which measures 3.73:1 on paper-muted
+     and 4.01 on canvas — below the 4.5 floor for the 12px label role. */
+  --ddp-ink-500: #62665D;
+
+  --ddp-line-strong: #C8C3B6;
+  --ddp-line-soft:   #DED9CD;
+
+  /* Gold is a restrained accent: rules and focus only, never a fill. */
+  --ddp-gold-700: #9A762F;
+  --ddp-gold-500: #B89446;
+
+  --ddp-risk-700:    #8C3028;
+  --ddp-warning-700: #90601D;
+  --ddp-success-700: #37664C;
+
+  /* Focus is surface-adaptive: one gold cannot clear 3:1 on both cream and
+     deep green. gold-700 measures 3.42–4.19 on light; gold-500 3.54–5.29 on green. */
+  --ddp-focus-light: var(--ddp-gold-700);
+  --ddp-focus-dark:  var(--ddp-gold-500);
+
+  --ddp-serif: 'Noto Serif', Georgia, 'Times New Roman', serif;
+  --ddp-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --ddp-r-surface: 2px;
+  --ddp-r-control: 3px;
+  --ddp-nav-w:     248px;
+  --ddp-header-h:  64px;
+  --ddp-content-max: 1480px;
+}
+
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+
+.eo-shell {
+  display: grid;
+  grid-template-columns: var(--ddp-nav-w) 1fr;
+  min-height: 100vh;
+  background: var(--ddp-canvas);
+}
+
+.eo-skip {
+  position: absolute; left: -9999px; top: 0; z-index: 400;
+  background: var(--ddp-paper-strong); color: var(--ddp-ink-950);
+  padding: 12px 16px; border: 1px solid var(--ddp-line-strong);
+  border-radius: var(--ddp-r-control); font-size: 14px; font-weight: 600;
+}
+.eo-skip:focus { left: 16px; top: 16px; }
+
+.eo-nav {
+  background: var(--ddp-green-950);
+  border-right: 1px solid var(--ddp-green-800);
+  display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+
+.eo-nav-brand {
+  display: flex; align-items: center; gap: 12px;
+  height: var(--ddp-header-h); padding: 0 20px; width: 100%;
+  border: 0; border-bottom: 1px solid var(--ddp-green-800);
+  background: none; cursor: pointer; text-align: left;
+  color: #FFFFFF; font-family: var(--ddp-serif); font-size: 15px; font-weight: 500;
+  flex-shrink: 0;
+}
+.eo-nav-brand:hover { background: var(--ddp-green-900); }
+
+.eo-nav-scroll { flex: 1; padding: 16px 0 24px; }
+
+.eo-nav-label {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: #C7D2C7; padding: 4px 20px 6px;
+}
+
+.eo-nav-item {
+  display: flex; align-items: center;
+  width: 100%; min-height: 44px; padding: 10px 20px;
+  background: none; border: 0; border-left: 2px solid transparent;
+  color: #FFFFFF; font-family: var(--ddp-sans); font-size: 14px; line-height: 20px;
+  text-align: left; cursor: pointer;
+}
+.eo-nav-item:hover { background: var(--ddp-green-900); }
+
+/* Current location: a thin gold rule and a slightly lighter surface. */
+.eo-nav-item--active {
+  background: var(--ddp-green-800);
+  border-left-color: var(--ddp-gold-500);
+  font-weight: 600;
+}
+
+.eo-main { display: flex; flex-direction: column; min-width: 0; }
+
+.eo-header {
+  height: var(--ddp-header-h); flex-shrink: 0;
+  background: var(--ddp-green-900);
+  border-bottom: 1px solid var(--ddp-green-800);
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 32px;
+  position: sticky; top: 0; z-index: 100;
+}
+
+.eo-crumb {
+  font-size: 12px; line-height: 18px; color: #C7D2C7;
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+}
+.eo-crumb-current { color: #FFFFFF; font-weight: 500; }
+.eo-crumb-sep { color: var(--ddp-green-700); }
+
+.eo-header-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* Account controls restyled for the green header only. The shared UserBadge
+   markup is untouched, so the farmer navbar keeps its existing appearance. */
+.eo-header .user-badge { display: flex; align-items: center; gap: 10px; }
+.eo-header .user-email { color: #FFFFFF; font-size: 13px; line-height: 18px; }
+.eo-header .user-role-chip {
+  background: var(--ddp-green-800); color: #C7D2C7;
+  border: 1px solid var(--ddp-green-700); border-radius: var(--ddp-r-control);
+  padding: 2px 8px; font-size: 11px; line-height: 16px; font-weight: 600;
+}
+.eo-header .nav-reset-btn {
+  min-height: 32px; padding: 0 10px;
+  background: none; color: #C7D2C7;
+  border: 1px solid var(--ddp-green-700); border-radius: var(--ddp-r-control);
+  font-size: 13px; cursor: pointer;
+}
+.eo-header .nav-reset-btn:hover { background: var(--ddp-green-800); color: #FFFFFF; }
+
+.eo-content { flex: 1; min-width: 0; }
+/* Only the Overview is restyled; every other admin route keeps the gutter it
+   inherited from .main-content before the shell existed. */
+.eo-content-legacy { padding: 32px; }
+.eo-content-canvas { background: var(--ddp-canvas); }
+
+/* ── Admin Overview appearance ──────────────────────────────────────────── */
+
+.eo-page {
+  max-width: var(--ddp-content-max);
+  margin: 0 auto;
+  padding: 32px;
+  color: var(--ddp-ink-950);
+  font-family: var(--ddp-sans);
+  font-size: 14px; line-height: 21px;
+}
+
+.eo-page-head { margin-bottom: 24px; }
+
+.eo-eyebrow {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ddp-ink-500); margin-bottom: 8px;
+}
+
+.eo-title {
+  font-family: var(--ddp-serif);
+  font-size: 34px; line-height: 40px; font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ddp-ink-950); margin: 0 0 8px;
+}
+
+.eo-page-desc {
+  font-size: 14px; line-height: 21px; color: var(--ddp-ink-700);
+  margin: 0; max-width: 68ch;
+}
+
+/* One continuous ruled strip rather than floating cards. */
+.eo-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: var(--ddp-r-surface);
+  margin-bottom: 32px;
+  overflow: hidden;
+}
+
+.eo-kpi {
+  min-height: 88px; padding: 16px 20px;
+  display: flex; flex-direction: column; justify-content: center;
+  border-left: 1px solid var(--ddp-line-soft);
+  border-top: 1px solid var(--ddp-line-soft);
+}
+.eo-kpi:nth-child(4n + 1) { border-left: 0; }
+.eo-kpi:nth-child(-n + 4) { border-top: 0; }
+
+.eo-kpi-val {
+  font-family: var(--ddp-serif);
+  font-size: 27px; line-height: 30px; font-weight: 500;
+  color: var(--ddp-ink-950); margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+/* Tone follows the existing summary-card intent — risk louder than resolved. */
+.eo-kpi--missing .eo-kpi-val { color: var(--ddp-risk-700); }
+.eo-kpi--pending .eo-kpi-val { color: var(--ddp-warning-700); }
+
+.eo-kpi-lbl { font-size: 12px; line-height: 18px; color: var(--ddp-ink-700); }
+
+.eo-section { margin-bottom: 32px; }
+
+.eo-section-head {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 12px;
+}
+
+.eo-section-title {
+  font-family: var(--ddp-serif);
+  font-size: 21px; line-height: 28px; font-weight: 500;
+  color: var(--ddp-ink-950); margin: 0;
+}
+.eo-section-title--risk { color: var(--ddp-risk-700); }
+
+.eo-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.eo-panel {
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: var(--ddp-r-surface);
+  overflow: hidden;
+}
+
+.eo-table-scroll { overflow-x: auto; }
+
+.eo-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; }
+
+.eo-table thead th {
+  height: 40px; padding: 0 12px;
+  background: var(--ddp-paper-muted);
+  border-bottom: 1px solid var(--ddp-line-strong);
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ddp-ink-700); text-align: left;
+  white-space: normal; vertical-align: middle;
+}
+.eo-table thead th:first-child { padding-left: 16px; }
+
+.eo-table tbody td {
+  height: 48px; padding: 8px 12px;
+  border-bottom: 1px solid var(--ddp-line-soft);
+  color: var(--ddp-ink-700); vertical-align: middle;
+}
+.eo-table tbody td:first-child { padding-left: 16px; }
+.eo-table tbody tr:last-child td { border-bottom: 0; }
+.eo-table tbody tr:hover td { background: var(--ddp-paper-strong); }
+
+.eo-td-primary { color: var(--ddp-ink-950); font-weight: 600; }
+.eo-td-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.eo-empty {
+  padding: 24px 16px; text-align: center;
+  font-size: 13px; line-height: 18px; color: var(--ddp-ink-500);
+}
+
+/* Attention rows: a thin red rule, supplemental to the status text already there. */
+.eo-alert-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px 12px 14px;
+  border-bottom: 1px solid var(--ddp-line-soft);
+  border-left: 2px solid var(--ddp-risk-700);
+}
+.eo-alert-row:last-child { border-bottom: 0; }
+.eo-alert-row:hover { background: var(--ddp-paper-strong); }
+
+.eo-alert-kind {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ddp-ink-500);
+}
+.eo-alert-name { font-size: 14px; font-weight: 600; color: var(--ddp-ink-950); }
+.eo-alert-row .btn { margin-left: auto; }
+
+/* Score rows keep their existing meter; only the surface is restyled. */
+.eo-score-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ddp-line-soft);
+}
+.eo-score-row:last-child { border-bottom: 0; }
+.eo-score-name { font-size: 14px; font-weight: 600; color: var(--ddp-ink-950); }
+.eo-score-province { font-size: 12px; color: var(--ddp-ink-500); }
+.eo-score-total {
+  font-family: var(--ddp-serif); font-size: 15px; font-weight: 500;
+  color: var(--ddp-ink-950); font-variant-numeric: tabular-nums;
+}
+
+/* Focus — gold, surface-adaptive, never a shadow. */
+.eo-shell :focus-visible, .eo-page :focus-visible {
+  outline: 2px solid var(--ddp-focus-light); outline-offset: 2px;
+}
+.eo-nav :focus-visible, .eo-header :focus-visible {
+  outline: 2px solid var(--ddp-focus-dark); outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eo-shell *, .eo-page * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (min-width: 1600px) {
+  .eo-page { padding: 32px 40px; }
+  .eo-header { padding: 0 40px; }
+}
+
+@media (max-width: 1200px) {
+  .eo-grid { grid-template-columns: minmax(0, 1fr); }
+  .eo-kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .eo-kpi:nth-child(4n + 1) { border-left: 1px solid var(--ddp-line-soft); }
+  .eo-kpi:nth-child(odd) { border-left: 0; }
+  .eo-kpi:nth-child(-n + 2) { border-top: 0; }
+  .eo-kpi:nth-child(n + 3) { border-top: 1px solid var(--ddp-line-soft); }
+}
+
+/* Below the nav breakpoint the sidebar becomes a horizontal rail. */
+@media (max-width: 900px) {
+  .eo-shell { grid-template-columns: minmax(0, 1fr); }
+  .eo-nav {
+    position: static; height: auto;
+    border-right: 0; border-bottom: 1px solid var(--ddp-green-800);
+  }
+  .eo-nav-scroll { display: flex; align-items: center; gap: 4px; overflow-x: auto; padding: 8px 12px; }
+  .eo-nav-label { display: none; }
+  .eo-nav-item {
+    border-left: 0; border-bottom: 2px solid transparent;
+    white-space: nowrap; padding: 8px 12px; border-radius: var(--ddp-r-control);
+    width: auto; min-height: 40px;
+  }
+  .eo-nav-item--active { border-left: 0; border-bottom-color: var(--ddp-gold-500); }
+  .eo-header { padding: 0 16px; }
+  .eo-page { padding: 20px 16px; }
+  .eo-content-legacy { padding: 20px 16px; }
+}
+
+@media (max-width: 640px) {
+  .eo-title { font-size: 26px; line-height: 32px; }
+  .eo-page-head { margin-bottom: 20px; }
+  .eo-section { margin-bottom: 20px; }
+  .eo-grid { gap: 20px; }
+  .eo-kpi-strip { grid-template-columns: minmax(0, 1fr); margin-bottom: 20px; }
+  .eo-kpi { min-height: 0; padding: 12px 16px; border-left: 0 !important; border-top: 1px solid var(--ddp-line-soft); }
+  .eo-kpi:first-child { border-top: 0; }
+  .eo-kpi-val { font-size: 21px; line-height: 26px; }
+
+  /* Tables become stacked records — a phone never scrolls sideways. */
+  .eo-table-scroll { overflow-x: visible; }
+  .eo-table, .eo-table tbody, .eo-table tr, .eo-table td { display: block; width: 100%; }
+  .eo-table thead { display: none; }
+  .eo-table tbody tr { padding: 12px 16px; border-bottom: 1px solid var(--ddp-line-strong); }
+  .eo-table tbody tr:last-child { border-bottom: 0; }
+  .eo-table tbody tr:hover td { background: none; }
+  .eo-table tbody td {
+    height: auto; padding: 3px 0; border-bottom: 0;
+    display: grid; grid-template-columns: 40% minmax(0, 1fr); gap: 12px; align-items: baseline;
+  }
+  .eo-table tbody td:first-child { padding-left: 0; padding-bottom: 6px; }
+  .eo-table tbody td[data-label]::before {
+    content: attr(data-label);
+    font-size: 11px; line-height: 16px; font-weight: 600;
+    letter-spacing: 0.05em; text-transform: uppercase; color: var(--ddp-ink-500);
+  }
+  .eo-table tbody td.eo-td-num { text-align: left; }
+  .eo-alert-row { align-items: flex-start; }
+  .eo-alert-row .btn { margin-left: 0; }
+}
+
+/* ── Overview: restyle the shared classes it already uses ────────────────────
+   Scoped to .eo-page so the same classes keep their existing appearance on every
+   other admin page. This is why the Overview's status maps, badge class names
+   and button class names are unchanged from origin/main — only the surrounding
+   layout elements were re-classed.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Summary tones, carried over from the existing s-* classes. */
+.eo-kpi.s-missing .eo-kpi-val  { color: var(--ddp-risk-700); }
+.eo-kpi.s-pending .eo-kpi-val  { color: var(--ddp-warning-700); }
+.eo-kpi.s-approved .eo-kpi-val { color: var(--ddp-success-700); }
+
+/* Status badges: one editorial treatment per existing class, 1:1. No class is
+   merged with another, so every status keeps its own distinct appearance. */
+.eo-page .badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; min-height: 20px;
+  border: 1px solid transparent;
+  border-radius: var(--ddp-r-control);
+  font-size: 12px; line-height: 18px; font-weight: 600;
+  letter-spacing: 0; text-transform: none;
+  white-space: normal;
+}
+.eo-page .badge-missing,
+.eo-page .badge-rejected      { background: var(--ddp-risk-700); color: #FFFFFF; border-color: var(--ddp-risk-700); }
+.eo-page .badge-orange        { background: #F5EAD4; color: var(--ddp-warning-700); border-color: #E4D2A9; }
+.eo-page .badge-pending       { background: #F5EAD4; color: var(--ddp-warning-700); border-color: #E4D2A9; }
+.eo-page .badge-under-review  { background: #E6ECEE; color: #3F5C68; border-color: #CBD8DE; }
+.eo-page .badge-approved      { background: #E4EEE7; color: var(--ddp-success-700); border-color: #C9DED2; }
+.eo-page .badge-watchlist     { background: #F4E4E0; color: var(--ddp-risk-700); border-color: #E6C9C2; }
+.eo-page .badge-purple        { background: var(--ddp-paper-muted); color: var(--ddp-ink-700); border-color: var(--ddp-line-strong); }
+.eo-page .badge-gray          { background: var(--ddp-paper-muted); color: var(--ddp-ink-700); border-color: var(--ddp-line-strong); }
+.eo-page .badge-blue          { background: #E6ECEE; color: #3F5C68; border-color: #CBD8DE; }
+.eo-page .badge-risk-high     { background: var(--ddp-risk-700); color: #FFFFFF; border-color: var(--ddp-risk-700); }
+
+/* Row action: restrained, so it never competes with the record itself. */
+.eo-page .btn-review {
+  background: none;
+  border: 1px solid var(--ddp-line-strong);
+  color: var(--ddp-green-900);
+  min-height: 32px; padding: 0 10px;
+  border-radius: var(--ddp-r-control);
+  font-size: 13px; font-weight: 600;
+  box-shadow: none;
+}
+.eo-page .btn-review:hover {
+  background: var(--ddp-paper-muted);
+  border-color: var(--ddp-green-700);
+  color: var(--ddp-green-950);
+}
+
+.eo-page .grade-chip {
+  background: var(--ddp-paper-muted);
+  border: 1px solid var(--ddp-line-strong);
+  color: var(--ddp-ink-700);
+  border-radius: var(--ddp-r-control);
+  padding: 1px 8px; font-size: 12px;
+}
+
+.eo-page .empty-table-cell {
+  color: var(--ddp-ink-500);
+  font-size: 13px; letter-spacing: 0; text-align: center;
+  padding: 24px 16px;
+}
+
+/* The existing score meter, on paper. */
+.eo-page .score-bar-mini-wrap {
+  background: var(--ddp-paper-muted);
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: 999px; height: 6px; width: 120px; overflow: hidden;
+}
+.eo-page .score-bar-mini { background: var(--ddp-green-700); height: 100%; }
