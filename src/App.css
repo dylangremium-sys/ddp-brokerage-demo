@@ -3828,3 +3828,475 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   border-radius: 999px; height: 6px; width: 120px; overflow: hidden;
 }
 .eo-page .score-bar-mini { background: var(--ddp-green-700); height: 100%; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FARMER — editorial appearance
+   Presentational and additive. Two surfaces are restyled:
+
+   1. The top navbar. It renders only when the routed page is not landing,
+      login, signup or farmer-register, so these rules reach the farmer screens
+      and demo mode — where FarmerNav and AdminNav share one bar — and nothing
+      public. Every existing class name is kept, so no farmer or admin component
+      markup had to change.
+   2. .eo-farmer, added to the routed <main> on farmer pages only, so the same
+      shared classes keep their existing appearance everywhere else.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Navbar: the same institutional green frame as the admin shell ───────── */
+
+.navbar {
+  background: var(--ddp-green-950);
+  border-bottom: 1px solid var(--ddp-green-800);
+  height: var(--ddp-header-h);
+  padding: 0 24px;
+}
+
+.navbar-brand { gap: 10px; }
+.navbar-brand .brand-name {
+  font-family: var(--ddp-serif);
+  font-size: 15px; font-weight: 500; letter-spacing: 0.01em;
+  color: #FFFFFF;
+}
+
+.nav-group { display: flex; align-items: center; gap: 2px; }
+
+.nav-group-label {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: #C7D2C7; opacity: 1; margin-right: 6px;
+}
+.ddp-label { color: #C7D2C7; opacity: 1; }
+
+.nav-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--ddp-r-control);
+  color: #FFFFFF;
+  font-family: var(--ddp-sans);
+  font-size: 13px; font-weight: 400; letter-spacing: 0;
+  padding: 8px 12px; min-height: 36px;
+  transition: background-color 140ms, border-color 140ms;
+}
+.nav-btn:hover { background: var(--ddp-green-900); color: #FFFFFF; }
+
+/* Current location: a thin gold rule, matching the admin sidebar. */
+.nav-btn.nav-active,
+.ddp-nav-btn.nav-active {
+  background: var(--ddp-green-800);
+  border-color: transparent;
+  border-bottom-color: var(--ddp-gold-500);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.ddp-nav-btn { color: #FFFFFF; opacity: 1; }
+.ddp-nav-btn:hover { background: var(--ddp-green-900); color: #FFFFFF; border-color: transparent; }
+
+.nav-sep { background: var(--ddp-green-700); height: 24px; margin: 0 10px; }
+
+.navbar .user-badge { display: flex; align-items: center; gap: 10px; }
+.navbar .user-email { color: #FFFFFF; font-size: 13px; }
+.navbar .user-role-chip {
+  background: var(--ddp-green-800); color: #C7D2C7;
+  border: 1px solid var(--ddp-green-700); border-radius: var(--ddp-r-control);
+  padding: 2px 8px; font-size: 11px; font-weight: 600;
+}
+.navbar .nav-reset-btn,
+.navbar .lang-toggle button {
+  background: none; color: #C7D2C7;
+  border: 1px solid var(--ddp-green-700); border-radius: var(--ddp-r-control);
+  min-height: 32px; padding: 0 10px; font-size: 13px;
+}
+.navbar .nav-reset-btn:hover,
+.navbar .lang-toggle button:hover { background: var(--ddp-green-800); color: #FFFFFF; }
+.navbar .lang-toggle button.active { background: var(--ddp-green-800); color: #FFFFFF; }
+
+.navbar :focus-visible { outline: 2px solid var(--ddp-focus-dark); outline-offset: 2px; }
+
+/* The navbar wraps rather than overflows on narrow screens. */
+@media (max-width: 900px) {
+  .navbar {
+    height: auto; min-height: var(--ddp-header-h);
+    flex-wrap: wrap; gap: 8px; padding: 10px 16px;
+  }
+  .navbar-links { flex-wrap: wrap; gap: 4px; width: 100%; order: 3; }
+  .nav-group { flex-wrap: wrap; }
+  .nav-sep { display: none; }
+  .navbar-right { margin-left: auto; }
+}
+
+/* ── Farmer content surfaces ────────────────────────────────────────────── */
+
+.eo-farmer {
+  /* The farmer screens are painted almost entirely from the legacy dark-theme
+     tokens, so the surface is remapped here rather than by chasing individual
+     classes: every descendant reading var(--bg-card), var(--text) and so on
+     becomes light in one place, and any farmer markup added later inherits it.
+     Scoped to this class, so the same tokens keep their existing values on the
+     login, signup and register screens, which share .main-content.
+     (.landing-shell already establishes this pattern.) */
+  --bg:            var(--ddp-canvas);
+  --bg-card:       var(--ddp-paper);
+  --bg-elevated:   var(--ddp-paper-muted);
+  --bg-deep:       var(--ddp-paper-strong);
+  --text:          var(--ddp-ink-950);
+  --text-muted:    var(--ddp-ink-500);
+  --border:        var(--ddp-line-soft);
+  --accent:        var(--ddp-gold-700);
+  --accent-strong: var(--ddp-green-900);
+  --jade:          var(--ddp-green-700);
+  --success:       var(--ddp-success-700);
+  --warning:       var(--ddp-warning-700);
+  --error:         var(--ddp-risk-700);
+
+  background: var(--ddp-canvas);
+  color: var(--ddp-ink-950);
+  font-family: var(--ddp-sans);
+  font-size: 14px; line-height: 21px;
+  padding: 32px;
+}
+
+.eo-farmer .page-wrap { max-width: 1100px; margin: 0 auto; }
+
+/* Page hierarchy */
+.eo-farmer .page-header,
+.eo-farmer .farmer-header { margin-bottom: 24px; }
+
+.eo-farmer .page-eyebrow {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ddp-ink-500); margin-bottom: 8px;
+}
+
+.eo-farmer .page-title,
+.eo-farmer h1 {
+  font-family: var(--ddp-serif);
+  font-size: 34px; line-height: 40px; font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ddp-ink-950); margin: 0 0 8px;
+}
+
+.eo-farmer .page-desc {
+  font-size: 14px; line-height: 21px; color: var(--ddp-ink-700);
+  margin: 0; max-width: 68ch;
+}
+
+.eo-farmer h2 {
+  font-family: var(--ddp-serif);
+  font-size: 21px; line-height: 28px; font-weight: 500;
+  color: var(--ddp-ink-950);
+}
+
+.eo-farmer .section-label-row { margin-bottom: 12px; }
+.eo-farmer .section-label {
+  font-family: var(--ddp-serif);
+  font-size: 21px; line-height: 28px; font-weight: 500;
+  letter-spacing: 0; text-transform: none;
+  color: var(--ddp-ink-950);
+}
+
+/* Paper surfaces: thin borders, no decorative shadow. */
+.eo-farmer .card,
+.eo-farmer .form-card {
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: var(--ddp-r-surface);
+  box-shadow: none;
+}
+.eo-farmer .form-card { padding: 24px; margin-bottom: 24px; }
+
+/* Forms: label, control, helper — in that order of weight. */
+.eo-farmer .field { margin-bottom: 20px; }
+
+.eo-farmer .field-label {
+  display: block;
+  font-size: 13px; line-height: 20px; font-weight: 600;
+  letter-spacing: 0; text-transform: none;
+  color: var(--ddp-ink-950); margin-bottom: 6px;
+}
+
+.eo-farmer .field-hint {
+  font-size: 12px; line-height: 18px; color: var(--ddp-ink-500);
+  margin-top: 6px;
+}
+
+/* Matches inputs with no type attribute too — several farmer fields omit it,
+   and a [type='text'] selector silently skips them. Checkbox, radio, file and
+   hidden inputs keep their own presentation. */
+.eo-farmer input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']),
+.eo-farmer select,
+.eo-farmer textarea {
+  background: var(--ddp-paper-strong);
+  border: 1px solid var(--ddp-line-strong);
+  border-radius: var(--ddp-r-control);
+  color: var(--ddp-ink-950);
+  /* 16px keeps iOS from zooming the page on focus. */
+  font-size: 16px; line-height: 24px;
+  padding: 9px 12px;
+  min-height: 44px;
+  width: 100%;
+  box-shadow: none;
+}
+.eo-farmer textarea { min-height: 96px; line-height: 22px; }
+.eo-farmer input::placeholder,
+.eo-farmer textarea::placeholder { color: var(--ddp-ink-500); }
+
+.eo-farmer input:focus,
+.eo-farmer select:focus,
+.eo-farmer textarea:focus { border-color: var(--ddp-green-700); outline: none; }
+.eo-farmer :focus-visible { outline: 2px solid var(--ddp-focus-light); outline-offset: 2px; }
+
+.eo-farmer .form-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+
+/* Actions: one obvious primary, everything else quieter. */
+.eo-farmer .btn {
+  border-radius: var(--ddp-r-control);
+  font-family: var(--ddp-sans);
+  font-size: 14px; font-weight: 500;
+  min-height: 40px; padding: 0 16px;
+  box-shadow: none;
+  transition: background-color 140ms, border-color 140ms;
+}
+.eo-farmer .btn-primary {
+  background: var(--ddp-green-900);
+  border: 1px solid var(--ddp-green-900);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.eo-farmer .btn-primary:hover { background: var(--ddp-green-950); border-color: var(--ddp-green-950); }
+.eo-farmer .btn-ghost,
+.eo-farmer .btn-secondary {
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-strong);
+  color: var(--ddp-ink-950);
+}
+.eo-farmer .btn-ghost:hover,
+.eo-farmer .btn-secondary:hover { background: var(--ddp-paper-muted); border-color: var(--ddp-green-700); }
+.eo-farmer .btn-review {
+  background: none; border: 1px solid var(--ddp-line-strong);
+  color: var(--ddp-green-900); min-height: 32px; padding: 0 10px;
+  font-size: 13px; font-weight: 600;
+}
+.eo-farmer .btn-review:hover { background: var(--ddp-paper-muted); border-color: var(--ddp-green-700); }
+
+/* Status presentation — colour is supplemental to the text already there. */
+.eo-farmer .pill,
+.eo-farmer .review-pill,
+.eo-farmer .badge {
+  display: inline-flex; align-items: center;
+  border-radius: var(--ddp-r-control);
+  border: 1px solid var(--ddp-line-strong);
+  background: var(--ddp-paper-muted);
+  color: var(--ddp-ink-700);
+  padding: 2px 8px; min-height: 20px;
+  font-size: 12px; line-height: 18px; font-weight: 600;
+  letter-spacing: 0; text-transform: none;
+  white-space: normal;
+}
+.eo-farmer .badge-approved,
+.eo-farmer .pill-approved  { background: #E4EEE7; color: var(--ddp-success-700); border-color: #C9DED2; }
+.eo-farmer .badge-pending,
+.eo-farmer .pill-pending   { background: #F5EAD4; color: var(--ddp-warning-700); border-color: #E4D2A9; }
+.eo-farmer .badge-missing,
+.eo-farmer .badge-rejected { background: var(--ddp-risk-700); color: #FFFFFF; border-color: var(--ddp-risk-700); }
+.eo-farmer .badge-under-review { background: #E6ECEE; color: #3F5C68; border-color: #CBD8DE; }
+.eo-farmer .badge-orange   { background: #F5EAD4; color: var(--ddp-warning-700); border-color: #E4D2A9; }
+.eo-farmer .badge-gray     { background: var(--ddp-paper-muted); color: var(--ddp-ink-700); border-color: var(--ddp-line-strong); }
+
+.eo-farmer .alert {
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-soft);
+  border-left: 2px solid var(--ddp-line-strong);
+  border-radius: var(--ddp-r-surface);
+  color: var(--ddp-ink-700);
+  padding: 12px 16px;
+  box-shadow: none;
+}
+.eo-farmer .alert-warning { border-left-color: var(--ddp-warning-700); background: #FBF6EA; }
+.eo-farmer .alert-error   { border-left-color: var(--ddp-risk-700); background: #FBF1EF; }
+.eo-farmer .alert-success { border-left-color: var(--ddp-success-700); background: #F1F6F2; }
+
+/* Dashboard quick actions */
+.eo-farmer .quick-action-icon { color: var(--ddp-green-700); }
+.eo-farmer .quick-action-label {
+  font-size: 15px; font-weight: 600; color: var(--ddp-ink-950);
+  letter-spacing: 0; text-transform: none;
+}
+.eo-farmer .quick-action-desc { font-size: 13px; line-height: 19px; color: var(--ddp-ink-700); }
+
+/* Status / activity rows */
+.eo-farmer .status-list { border-top: 1px solid var(--ddp-line-soft); }
+.eo-farmer .status-product { font-size: 14px; font-weight: 600; color: var(--ddp-ink-950); }
+.eo-farmer .status-meta { font-size: 12px; color: var(--ddp-ink-500); }
+
+/* Tables */
+.eo-farmer table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; }
+.eo-farmer thead th {
+  height: 40px; padding: 0 12px;
+  background: var(--ddp-paper-muted);
+  border-bottom: 1px solid var(--ddp-line-strong);
+  color: var(--ddp-ink-700);
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  text-align: left; white-space: normal;
+}
+.eo-farmer tbody td {
+  height: 48px; padding: 8px 12px;
+  border-bottom: 1px solid var(--ddp-line-soft);
+  color: var(--ddp-ink-700);
+}
+.eo-farmer tbody tr:last-child td { border-bottom: 0; }
+.eo-farmer .td-bold { color: var(--ddp-ink-950); font-weight: 600; }
+.eo-farmer .td-num { text-align: right; font-variant-numeric: tabular-nums; }
+.eo-farmer .table-scroll { overflow-x: auto; }
+
+/* Onboarding wizard: progress, grouping and choices */
+.eo-farmer .wizard-yn-grid { display: grid; gap: 8px; }
+.eo-farmer .wizard-yn-row,
+.eo-farmer .role-selector {
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: var(--ddp-r-control);
+}
+.eo-farmer .step-dot, .eo-farmer .wizard-step { border-color: var(--ddp-line-strong); }
+.eo-farmer .step-dot.active, .eo-farmer .wizard-step.active {
+  background: var(--ddp-green-900); border-color: var(--ddp-green-900); color: #FFFFFF;
+}
+.eo-farmer .progress-bar, .eo-farmer .wizard-progress {
+  background: var(--ddp-paper-muted); border: 1px solid var(--ddp-line-soft);
+}
+.eo-farmer .progress-fill, .eo-farmer .wizard-progress-fill { background: var(--ddp-green-700); }
+
+@media (prefers-reduced-motion: reduce) {
+  .eo-farmer *, .navbar * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ── Farmer responsive ──────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .eo-farmer { padding: 20px 16px; }
+  .eo-farmer .form-card { padding: 16px; margin-bottom: 20px; }
+  .eo-farmer .form-grid-2 { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+
+@media (max-width: 640px) {
+  .eo-farmer .page-title, .eo-farmer h1 { font-size: 26px; line-height: 32px; }
+  .eo-farmer h2, .eo-farmer .section-label { font-size: 18px; line-height: 26px; }
+  /* Buttons may fill their own row but must never exceed it: a blanket
+     width:100% pushed the inline back-buttons out of their flex header row and
+     scrolled the page sideways. */
+  .eo-farmer .btn { max-width: 100%; justify-content: center; }
+
+  /* Tables become stacked records — a phone never scrolls sideways. */
+  .eo-farmer .table-scroll { overflow-x: visible; }
+  .eo-farmer table, .eo-farmer tbody, .eo-farmer tr, .eo-farmer td { display: block; width: 100%; }
+  .eo-farmer thead { display: none; }
+  .eo-farmer tbody tr {
+    padding: 12px 0; border-bottom: 1px solid var(--ddp-line-strong);
+  }
+  .eo-farmer tbody tr:last-child { border-bottom: 0; }
+  .eo-farmer tbody td { height: auto; padding: 3px 0; border-bottom: 0; }
+  .eo-farmer tbody td.td-num { text-align: left; }
+}
+
+/* Hard-coded dark gradients: the token remap cannot reach a literal hex, and
+   the approved direction uses flat paper surfaces rather than gradients. */
+.eo-farmer .farmer-header,
+.eo-farmer .dashboard-welcome-card {
+  background: var(--ddp-paper);
+  background-image: none;
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: var(--ddp-r-surface);
+  box-shadow: none;
+  color: var(--ddp-ink-950);
+}
+
+.eo-farmer .dashboard-welcome-name {
+  font-family: var(--ddp-serif);
+  font-weight: 500;
+  color: var(--ddp-ink-950);
+}
+.eo-farmer .dashboard-welcome-desc,
+.eo-farmer .dashboard-completion-hint { color: var(--ddp-ink-700); }
+.eo-farmer .dashboard-completion-label {
+  color: var(--ddp-ink-500);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+}
+
+/* Progress meters on paper. */
+.eo-farmer .completion-bar-track,
+.eo-farmer .dashboard-bar-track {
+  background: var(--ddp-paper-muted);
+  border: 1px solid var(--ddp-line-soft);
+}
+.eo-farmer .completion-bar-fill,
+.eo-farmer .dashboard-bar-fill {
+  background: var(--ddp-green-700);
+  background-image: none;
+}
+
+/* Dashboard quick actions: paper cards with a readable hierarchy. */
+.eo-farmer .quick-action-card {
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: var(--ddp-r-surface);
+  box-shadow: none;
+  color: var(--ddp-ink-950);
+  text-align: left;
+}
+.eo-farmer .quick-action-card:hover {
+  background: var(--ddp-paper-strong);
+  border-color: var(--ddp-green-700);
+}
+.eo-farmer .dashboard-help-strip {
+  background: var(--ddp-paper-muted);
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: var(--ddp-r-surface);
+  color: var(--ddp-ink-700);
+}
+
+/* Two farmer back-buttons carry an inline `color: rgba(255,255,255,…)` left
+   from the dark theme (FarmerRequests, FarmerSubmitInventory). On paper that
+   renders white-on-white at 1.05:1 — invisible. An inline style can only be
+   overridden by !important; this is that case, and it is deliberately narrow:
+   colour only, inside .eo-farmer, on .btn-ghost. Their inline padding and font
+   size still apply, and no component markup had to change. */
+.eo-farmer .btn-ghost { color: var(--ddp-ink-950) !important; }
+.eo-farmer .btn-ghost:hover { color: var(--ddp-green-950) !important; }
+
+/* Long unbroken identifiers — an email in the dashboard welcome heading, a
+   batch reference in a table — have no break opportunity, so at 390px they push
+   the page sideways even though every box measures within the viewport. Allow
+   them to break rather than let the document scroll horizontally. */
+.eo-farmer h1,
+.eo-farmer h2,
+.eo-farmer .page-title,
+.eo-farmer .dashboard-welcome-name,
+.eo-farmer .section-label,
+.eo-farmer .status-product,
+.eo-farmer .user-email,
+.eo-farmer td,
+.eo-farmer .field-hint { overflow-wrap: anywhere; }
+
+/* The navbar identity is already truncated by its own ellipsis; keep it so. */
+.navbar .user-email { overflow-wrap: normal; }
+
+/* Stock filter chips were 29px tall — too small to tap reliably. Kept compact
+   so the row still reads as a filter, but comfortably tappable. */
+.eo-farmer .filter-tab {
+  min-height: 36px;
+  display: inline-flex; align-items: center;
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-strong);
+  border-radius: var(--ddp-r-control);
+  color: var(--ddp-ink-700);
+  font-size: 13px; font-weight: 500;
+  padding: 0 12px;
+}
+.eo-farmer .filter-tab:hover { background: var(--ddp-paper-muted); border-color: var(--ddp-green-700); }
+.eo-farmer .filter-tab.filter-active {
+  background: var(--ddp-green-900);
+  border-color: var(--ddp-green-900);
+  color: #FFFFFF;
+  font-weight: 600;
+}

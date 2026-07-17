@@ -555,7 +555,9 @@ export default function App() {
 
             {showFarmerNav && showDDPNav && <div className="nav-sep" />}
 
-            {showDDPNav && <AdminNav page={page} goTo={goTo} />}
+            {/* Compact markup: this navbar is 56px and may also hold FarmerNav.
+                The editorial sidebar renders only inside AdminShell. */}
+            {showDDPNav && <AdminNav page={page} goTo={goTo} variant="topbar" />}
           </div>
 
           <div className="navbar-right">
@@ -831,7 +833,10 @@ export default function App() {
             {appPages}
           </AdminShell>
         ) : (
-          <main className="main-content">{appPages}</main>
+          // eo-farmer applies the editorial appearance to the farmer screens.
+          // Class only — isFarmerPage is the app's existing value, and the
+          // public login/signup screens render through their own <main>.
+          <main className={`main-content${isFarmerPage ? ' eo-farmer' : ''}`}>{appPages}</main>
         )
       })()}
 

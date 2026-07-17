@@ -51,7 +51,7 @@ export default function AdminShell({ page, goTo, profile, onSignOut, children }:
           <DDPMonogramLogo height={32} />
           <span>DDP Brokerage</span>
         </button>
-        <AdminNav page={page} goTo={goTo} />
+        <AdminNav page={page} goTo={goTo} variant="sidebar" />
       </aside>
 
       <div className="eo-main">
