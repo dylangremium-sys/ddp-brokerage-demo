@@ -4309,3 +4309,56 @@ a.ln-channel-value:hover { color: #FFFFFF; }
    dark fill, and it measures 8.18:1 here. Colour only — the badge's value,
    condition, markup and background are untouched. */
 .eo-farmer .requests-badge { color: #FFFFFF; }
+
+/* ── Overview canvas: independent of the shell ───────────────────────────────
+   Demo mode makes showDDPNav and showFarmerNav both true, so useEditorialShell
+   is false and the Overview renders in the legacy <main> instead of AdminShell.
+   The cream came only from .eo-content-canvas, which the shell supplies, so the
+   page's --ddp-ink-950 headings landed on the global navy --bg: dark on dark.
+
+   The page now carries its own canvas, so it is readable in any context, and
+   the legacy main it sits in is given the same canvas so the cream reaches the
+   gutters above .eo-page's max-width. :has() is progressive — where it is not
+   supported the page box is still cream and readable. Both selectors require an
+   .eo-page, so no other route, farmer screen or public page is reachable.
+   ────────────────────────────────────────────────────────────────────────── */
+.eo-page { background: var(--ddp-canvas); }
+
+.main-content:has(> .eo-page) {
+  background: var(--ddp-canvas);
+  /* .eo-page brings its own 32px; the legacy gutter would double it. */
+  padding: 0;
+}
+
+/* ── Print: buyer-facing document only ───────────────────────────────────────
+   A signed-in admin prints the Buyer Pack Preview from inside the editorial
+   shell, and the existing print block never mentions it, so the sidebar, the
+   utility header (breadcrumb, admin identity, sign-out) and the shell's 248px
+   column were printed into the commercial document.
+
+   Declared after the .eo-* base rules above, because at equal specificity the
+   later declaration wins. .eo-shell is NOT hidden — it is the routed pack's
+   ancestor — only un-gridded so the document can use the printable width.
+   Scoped to .eo-* classes, which exist only in the admin shell, so printing
+   from public or farmer pages is untouched, as is all screen rendering.
+   ────────────────────────────────────────────────────────────────────────── */
+@media print {
+  .eo-nav,
+  .eo-header,
+  .eo-skip { display: none !important; }
+
+  .eo-shell {
+    display: block !important;
+    min-height: 0 !important;
+    background: #fff !important;
+  }
+  .eo-main { display: block !important; min-width: 0 !important; }
+
+  .eo-content,
+  .eo-content-canvas,
+  .eo-content-legacy {
+    flex: none !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+}
