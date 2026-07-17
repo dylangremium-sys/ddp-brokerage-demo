@@ -44,14 +44,14 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
   const topFarms = [...farms].sort((a, b) => farmTotalScore(b) - farmTotalScore(a)).slice(0, 3)
 
   return (
-    <div className="page-wrap ddp-wrap">
-      <div className="page-header ddp-header">
-        <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS</div>
-        <h1 className="page-title">Operations Overview</h1>
-        <p className="page-desc">Supply intelligence summary — all farm registrations, inventory submissions, and compliance status.</p>
-      </div>
+    <div className="eo-page">
+      <header className="eo-page-head">
+        <div className="eo-eyebrow">DDP OPERATIONS</div>
+        <h1 className="eo-title">Operations Overview</h1>
+        <p className="eo-page-desc">Supply intelligence summary — all farm registrations, inventory submissions, and compliance status.</p>
+      </header>
 
-      <div className="summary-grid-8">
+      <div className="eo-kpi-strip">
         <SummaryCard val={totalFarms} lbl="Registered Farms" cls="s-total" />
         <SummaryCard val={pendingFarms} lbl="Awaiting Review" cls="s-pending" />
         <SummaryCard val={approvedFarms} lbl="Approved Farms" cls="s-approved" />
@@ -62,21 +62,21 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
         <SummaryCard val={exportReadyFarms} lbl="Export Document Review" cls="s-farms" />
       </div>
 
-      <div className="overview-grid">
-        <div>
-          <div className="section-label-row"><div className="section-label">Recent Farm Registrations</div></div>
-          <div className="card table-card">
-            <div className="table-scroll">
-            <table className="inv-table inv-table--compact">
+      <div className="eo-grid eo-section">
+        <section>
+          <div className="eo-section-head"><h2 className="eo-section-title">Recent Farm Registrations</h2></div>
+          <div className="eo-panel">
+            <div className="eo-table-scroll">
+            <table className="eo-table">
               <thead><tr><th>Farm</th><th>Province</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {recentFarms.length === 0 ? (
                   <tr><td colSpan={4} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
                 ) : recentFarms.map(f => (
                   <tr key={f.id}>
-                    <td className="td-bold">{f.tradingName}</td>
-                    <td>{f.province}</td>
-                    <td><span className={`badge ${FARM_STATUS_CLASS[f.status]}`}>{f.status}</span></td>
+                    <td className="eo-td-primary" data-label="Farm">{f.tradingName}</td>
+                    <td data-label="Province">{f.province}</td>
+                    <td data-label="Status"><span className={`badge ${FARM_STATUS_CLASS[f.status]}`}>{f.status}</span></td>
                     <td><button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Open Review</button></td>
                   </tr>
                 ))}
@@ -84,23 +84,23 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
             </table>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div>
-          <div className="section-label-row"><div className="section-label">Recent Inventory Batches</div></div>
-          <div className="card table-card">
-            <div className="table-scroll">
-            <table className="inv-table inv-table--compact">
+        <section>
+          <div className="eo-section-head"><h2 className="eo-section-title">Recent Inventory Batches</h2></div>
+          <div className="eo-panel">
+            <div className="eo-table-scroll">
+            <table className="eo-table">
               <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {recentInventory.length === 0 ? (
                   <tr><td colSpan={5} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
                 ) : recentInventory.map(i => (
                   <tr key={i.id}>
-                    <td className="td-bold">{i.productName}</td>
-                    <td>{i.farmName}</td>
-                    <td className="td-num">{i.quantityKg.toLocaleString()}</td>
-                    <td><span className={`badge ${INV_STATUS_CLASS[i.status]}`}>{i.status}</span></td>
+                    <td className="eo-td-primary" data-label="Product">{i.productName}</td>
+                    <td data-label="Farm">{i.farmName}</td>
+                    <td className="eo-td-num" data-label="Qty (kg)">{i.quantityKg.toLocaleString()}</td>
+                    <td data-label="Status"><span className={`badge ${INV_STATUS_CLASS[i.status]}`}>{i.status}</span></td>
                     <td><button className="btn btn-review" onClick={() => onReviewItem(i.id)}>Open Review</button></td>
                   </tr>
                 ))}
@@ -108,74 +108,74 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
             </table>
             </div>
           </div>
-        </div>
+        </section>
       </div>
 
       {(riskAlertFarms.length > 0 || riskAlertInventory.length > 0) && (
-        <div style={{ marginTop: 24 }}>
-          <div className="section-label-row"><div className="section-label" style={{ color: 'var(--error)' }}>Action Required</div></div>
-          <div className="card" style={{ padding: '16px 20px' }}>
+        <section className="eo-section">
+          <div className="eo-section-head"><h2 className="eo-section-title eo-section-title--risk">Action Required</h2></div>
+          <div className="eo-panel">
             {riskAlertFarms.map(f => (
-              <div key={f.id} className="risk-alert-row">
-                <span className="risk-icon" style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Farm</span>
-                <span className="risk-name">{f.tradingName}</span>
+              <div key={f.id} className="eo-alert-row">
+                <span className="eo-alert-kind">Farm</span>
+                <span className="eo-alert-name">{f.tradingName}</span>
                 <span className={`badge ${FARM_STATUS_CLASS[f.status]}`}>{f.status}</span>
                 <button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Open Review</button>
               </div>
             ))}
             {riskAlertInventory.map(i => (
-              <div key={i.id} className="risk-alert-row">
-                <span className="risk-icon" style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Batch</span>
-                <span className="risk-name">{i.productName} — {i.farmName}</span>
+              <div key={i.id} className="eo-alert-row">
+                <span className="eo-alert-kind">Batch</span>
+                <span className="eo-alert-name">{i.productName} — {i.farmName}</span>
                 <span className="badge badge-missing">Missing Document</span>
                 <button className="btn btn-review" onClick={() => onReviewItem(i.id)}>Open Review</button>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      <div className="overview-grid" style={{ marginTop: 24 }}>
-        <div>
-          <div className="section-label-row"><div className="section-label">Largest Approved Batches</div></div>
-          <div className="card table-card">
-            <div className="table-scroll">
-            <table className="inv-table inv-table--compact">
+      <div className="eo-grid eo-section">
+        <section>
+          <div className="eo-section-head"><h2 className="eo-section-title">Largest Approved Batches</h2></div>
+          <div className="eo-panel">
+            <div className="eo-table-scroll">
+            <table className="eo-table">
               <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Grade</th><th>Status</th></tr></thead>
               <tbody>
                 {topInventory.length === 0 ? (
                   <tr><td colSpan={5} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
                 ) : topInventory.map(i => (
                   <tr key={i.id}>
-                    <td className="td-bold">{i.productName}</td>
-                    <td>{i.farmName}</td>
-                    <td className="td-num">{i.quantityKg.toLocaleString()}</td>
-                    <td><span className="grade-chip">{i.qualityGrade ? `Grade ${i.qualityGrade}` : '—'}</span></td>
-                    <td><span className={`badge ${INV_STATUS_CLASS[i.status]}`}>{i.status}</span></td>
+                    <td className="eo-td-primary" data-label="Product">{i.productName}</td>
+                    <td data-label="Farm">{i.farmName}</td>
+                    <td className="eo-td-num" data-label="Qty (kg)">{i.quantityKg.toLocaleString()}</td>
+                    <td data-label="Grade"><span className="grade-chip">{i.qualityGrade ? `Grade ${i.qualityGrade}` : '—'}</span></td>
+                    <td data-label="Status"><span className={`badge ${INV_STATUS_CLASS[i.status]}`}>{i.status}</span></td>
                   </tr>
                 ))}
               </tbody>
             </table>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div>
-          <div className="section-label-row"><div className="section-label">Top-Scored Farm Profiles</div></div>
-          <div className="card" style={{ overflow: 'hidden' }}>
+        <section>
+          <div className="eo-section-head"><h2 className="eo-section-title">Top-Scored Farm Profiles</h2></div>
+          <div className="eo-panel">
             {topFarms.length === 0
               ? <div className="empty-table-cell">NO RECORDS ON FILE</div>
               : topFarms.map(f => {
               const total = farmTotalScore(f)
               const avg = Math.round(total / 9)
               return (
-                <div key={f.id} className="score-farm-row">
+                <div key={f.id} className="eo-score-row">
                   <div>
-                    <div className="score-farm-name">{f.tradingName}</div>
-                    <div className="score-farm-province">{f.province}</div>
+                    <div className="eo-score-name">{f.tradingName}</div>
+                    <div className="eo-score-province">{f.province}</div>
                   </div>
                   <div className="score-farm-right">
-                    <div className="score-farm-total">{total} / 900</div>
+                    <div className="eo-score-total">{total} / 900</div>
                     <div className="score-bar-mini-wrap">
                       <div className="score-bar-mini" style={{ width: `${avg}%` }} />
                     </div>
@@ -184,7 +184,7 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
               )
             })}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   )
@@ -192,9 +192,9 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
 
 function SummaryCard({ val, lbl, cls }: { val: string | number; lbl: string; cls: string }) {
   return (
-    <div className={`summary-card ${cls}`}>
-      <div className="summary-val">{val}</div>
-      <div className="summary-lbl">{lbl}</div>
+    <div className={`eo-kpi ${cls}`}>
+      <div className="eo-kpi-val">{val}</div>
+      <div className="eo-kpi-lbl">{lbl}</div>
     </div>
   )
 }
