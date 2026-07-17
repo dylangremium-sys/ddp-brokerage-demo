@@ -1,200 +1,591 @@
-import { farmTotalScore } from '../../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus } from '../../types'
+import type {
+  FarmProfile,
+  InventoryItem,
+  ComplianceAlert,
+  ComplianceRule,
+  ComplianceSeverity,
+} from '../../types'
+import {
+  combineLoadStates,
+  deriveCountMeasure,
+  derivePanelMode,
+  formatCountMeasure,
+  measureNote,
+  MEASURE_UNKNOWN,
+  SIGNALS_EMPTY,
+  SIGNALS_ERROR,
+  SIGNALS_LOADING,
+  SIGNALS_UNAVAILABLE,
+  SUPPLY_EMPTY,
+  SUPPLY_ERROR,
+  SUPPLY_LOADING,
+  SUPPLY_UNAVAILABLE,
+  type SourceLoadState,
+} from '../../lib/overviewViewState'
 
 interface Props {
   farms: FarmProfile[]
   inventory: InventoryItem[]
   onReviewFarm: (id: string) => void
   onReviewItem: (id: string) => void
+  complianceRules: ComplianceRule[]
+  complianceAlerts: ComplianceAlert[]
+  /**
+   * Lifecycle of each source. Absence may only be claimed at 'loaded', and each
+   * measure below is bound to exactly the sources its calculation reads.
+   */
+  complianceLoadState: SourceLoadState
+  farmsLoadState: SourceLoadState
+  inventoryLoadState: SourceLoadState
 }
 
-const INV_STATUS_CLASS: Record<InventoryStatus, string> = {
-  'Pending Review': 'badge-pending',
-  'Approved': 'badge-approved',
-  'Missing Document': 'badge-missing',
-  'Rejected': 'badge-rejected',
+/* ── Derivation helpers ─────────────────────────────────────────────────────
+   Every value below is read from a field that already exists on the record.
+   Where a field is absent or unparseable the row states that fact rather than
+   substituting a plausible one.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const DAY_MS = 86_400_000
+
+/** Parse a stored date, or null. Never guesses. */
+function parseDate(v: string | undefined | null): Date | null {
+  if (!v) return null
+  const t = Date.parse(v)
+  return Number.isNaN(t) ? null : new Date(t)
 }
 
-const FARM_STATUS_CLASS: Record<FarmStatus, string> = {
-  'Draft': 'badge-gray',
-  'Submitted to DDP': 'badge-pending',
-  'Under Review': 'badge-under-review',
-  'More Information Required': 'badge-orange',
-  'Approved': 'badge-approved',
-  'Watchlist': 'badge-watchlist',
-  'Strategic Partner': 'badge-purple',
-  'Rejected': 'badge-rejected',
+function daysBetween(from: Date, to: Date): number {
+  return Math.floor((to.getTime() - from.getTime()) / DAY_MS)
 }
 
-export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewItem }: Props) {
-  const totalFarms = farms.length
-  const pendingFarms = farms.filter(f => f.status === 'Submitted to DDP' || f.status === 'Under Review').length
-  const approvedFarms = farms.filter(f => f.status === 'Approved' || f.status === 'Strategic Partner').length
-  const watchlistFarms = farms.filter(f => f.status === 'Watchlist').length
-  const totalKg = inventory.reduce((s, i) => s + i.quantityKg, 0)
-  const approvedKg = inventory.filter(i => i.status === 'Approved').reduce((s, i) => s + i.quantityKg, 0)
-  const missingDocItems = inventory.filter(i => i.status === 'Missing Document').length
-  const exportReadyFarms = farms.filter(f => f.exportLicence && f.exportLicence !== '').length
+/** "16 Jul 2026" — never raw ISO on an operator's desk. */
+function formatDate(v: string | undefined | null): string {
+  const d = parseDate(v)
+  if (!d) return 'Not recorded'
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 
-  const recentFarms = [...farms].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()).slice(0, 3)
-  const recentInventory = [...inventory].sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()).slice(0, 3)
-  const riskAlertFarms = farms.filter(f => f.status === 'More Information Required' || f.status === 'Watchlist')
-  const riskAlertInventory = inventory.filter(i => i.status === 'Missing Document')
-  const topInventory = [...inventory].sort((a, b) => b.quantityKg - a.quantityKg).slice(0, 5)
-  const topFarms = [...farms].sort((a, b) => farmTotalScore(b) - farmTotalScore(a)).slice(0, 3)
+function ageLabel(v: string | undefined | null, now: Date): string {
+  const d = parseDate(v)
+  if (!d) return 'Age unknown'
+  const days = daysBetween(d, now)
+  if (days < 0) return 'Age unknown'
+  if (days === 0) return 'Today'
+  if (days === 1) return '1 day'
+  return `${days} days`
+}
+
+type Severity = 'critical' | 'important' | 'standard' | 'info'
+
+const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, important: 1, standard: 2, info: 3 }
+
+interface Priority {
+  key: string
+  severity: Severity
+  kind: 'Farm' | 'Batch' | 'Alert'
+  name: string
+  /** Why this row is here, stated from the record's own fields. */
+  reason: string
+  /** What the state means operationally. Approved vocabulary only. */
+  consequence: string
+  status: string
+  statusTone: StatusTone
+  sortAt: string | null
+  onOpen?: () => void
+}
+
+type StatusTone = 'critical' | 'high' | 'review' | 'evidence' | 'neutral' | 'warn-tint' | 'risk-tint'
+
+/** Map an alert's own severity onto the row's visual weight. */
+function alertSeverity(s: ComplianceSeverity): Severity {
+  if (s === 'critical') return 'critical'
+  if (s === 'high') return 'important'
+  if (s === 'medium') return 'standard'
+  return 'info'
+}
+
+export default function DDPOverview({
+  farms,
+  inventory,
+  onReviewFarm,
+  onReviewItem,
+  complianceRules,
+  complianceAlerts,
+  complianceLoadState,
+  farmsLoadState,
+  inventoryLoadState,
+}: Props) {
+  const now = new Date()
+
+  // ── Measure → source binding ─────────────────────────────────────────────
+  // Each measure is bound to exactly the sources its calculation reads below.
+  // Nothing here may report a number until every source it depends on has
+  // completed successfully.
+  //   farms      → Expiring within 30 days
+  //   inventory  → Missing evidence, Supply position (evidence fields live on
+  //                the batch row; there is no separate evidence source)
+  //   both       → Submissions awaiting review
+  //   all three  → Review priorities
+  //   compliance → Blocked decisions, Compliance signals
+  const submissionsState = combineLoadStates(farmsLoadState, inventoryLoadState)
+  const prioritiesState = combineLoadStates(farmsLoadState, inventoryLoadState, complianceLoadState)
+  const supplyMode = derivePanelMode(inventoryLoadState, inventory.length)
+
+  // Whether every source feeding Review priorities has settled. Until then the
+  // list is provably partial, so it may not present as the complete picture.
+  const prioritiesResolved = prioritiesState === 'loaded' || prioritiesState === 'unavailable'
+
+  // ── Attention summary ────────────────────────────────────────────────────
+  // Only measures derivable from fields present on these records. A planned
+  // "Buyer-Ready for Discussion" measure is omitted: readiness lives on
+  // ComplianceEntityStatus, which this page is not given, and inventing it
+  // would assert a commercial position the data does not support.
+
+  const farmsAwaitingReview = farms.filter(
+    f => f.status === 'Submitted to DDP' || f.status === 'Under Review',
+  )
+  const batchesAwaitingReview = inventory.filter(i => i.status === 'Pending Review')
+  const requiresReview = farmsAwaitingReview.length + batchesAwaitingReview.length
+
+  const missingEvidenceBatches = inventory.filter(i => i.status === 'Missing Document')
+
+  const unresolvedAlerts = complianceAlerts.filter(
+    a => a.status === 'open' || a.status === 'in_review' || a.status === 'blocked',
+  )
+  const blockedAlerts = complianceAlerts.filter(a => a.status === 'blocked')
+
+  const expiringFarms = farms.filter(f => {
+    const d = parseDate(f.documentExpiry)
+    if (!d) return false
+    const days = daysBetween(now, d)
+    return days >= 0 && days <= 30
+  })
+
+  const expiredFarms = farms.filter(f => {
+    const d = parseDate(f.documentExpiry)
+    if (!d) return false
+    return daysBetween(now, d) < 0
+  })
+
+  // Each measure is gated on its own sources: a number, including zero, appears
+  // only once every source it reads has completed successfully. Otherwise "—".
+  const kpis = [
+    {
+      // Named for exactly what it counts: farm profiles in 'Submitted to DDP' /
+      // 'Under Review' plus batches in 'Pending Review'. It deliberately excludes
+      // missing-evidence batches and open alerts, which are counted beside it.
+      lbl: 'Submissions awaiting review',
+      state: submissionsState,
+      measure: deriveCountMeasure(submissionsState, requiresReview),
+      riskTone: 'warning',
+    },
+    {
+      lbl: 'Missing evidence',
+      state: inventoryLoadState,
+      measure: deriveCountMeasure(inventoryLoadState, missingEvidenceBatches.length),
+      riskTone: 'risk',
+    },
+    {
+      lbl: 'Blocked decisions',
+      state: complianceLoadState,
+      measure: deriveCountMeasure(complianceLoadState, blockedAlerts.length),
+      riskTone: 'risk',
+    },
+    {
+      lbl: 'Expiring within 30 days',
+      state: farmsLoadState,
+      measure: deriveCountMeasure(farmsLoadState, expiringFarms.length),
+      riskTone: 'warning',
+    },
+  ].map(k => ({
+    ...k,
+    val: formatCountMeasure(k.measure),
+    note: measureNote(k.state),
+    // Derived from the load state, never from the note's wording — reworded
+    // copy must not be able to silently break the busy signal.
+    busy: k.state === 'idle' || k.state === 'loading',
+    // Tone reflects risk only when the value is known AND non-zero. An unknown
+    // measure is never coloured as if it were a confirmed clean result.
+    tone: k.measure.known && k.measure.value > 0 ? k.riskTone : 'zero',
+  }))
+
+  // ── Review priorities ────────────────────────────────────────────────────
+
+  const priorities: Priority[] = []
+
+  for (const i of missingEvidenceBatches) {
+    priorities.push({
+      key: `batch-missing-${i.id}`,
+      severity: 'critical',
+      kind: 'Batch',
+      name: `${i.productName} — ${i.farmName}`,
+      reason: i.certFileName || i.coaAvailable
+        ? 'Recorded as missing required documentation'
+        : 'Certificate of analysis not attached',
+      consequence: 'Buyer requirements incomplete',
+      status: i.status,
+      statusTone: 'critical',
+      sortAt: i.submittedAt,
+      onOpen: () => onReviewItem(i.id),
+    })
+  }
+
+  for (const f of expiredFarms) {
+    priorities.push({
+      key: `farm-expired-${f.id}`,
+      severity: 'critical',
+      kind: 'Farm',
+      name: f.tradingName,
+      reason: `Documentation expired ${formatDate(f.documentExpiry)}`,
+      consequence: 'Blocked Pending Review',
+      status: 'Expired',
+      statusTone: 'critical',
+      sortAt: f.documentExpiry,
+      onOpen: () => onReviewFarm(f.id),
+    })
+  }
+
+  for (const a of unresolvedAlerts) {
+    priorities.push({
+      key: `alert-${a.id}`,
+      severity: a.status === 'blocked' ? 'critical' : alertSeverity(a.severity),
+      kind: 'Alert',
+      name: a.alertTitle,
+      reason: a.alertDetail || `${a.entityType} ${a.entityId}`,
+      consequence: a.status === 'blocked' ? 'Blocked Pending Review' : 'Human Decision Required',
+      status: a.status === 'blocked' ? 'Blocked Pending Review' : 'Under Review',
+      statusTone: a.status === 'blocked' ? 'critical' : 'review',
+      sortAt: a.createdAt,
+    })
+  }
+
+  for (const f of expiringFarms) {
+    const d = parseDate(f.documentExpiry)
+    const days = d ? daysBetween(now, d) : 0
+    priorities.push({
+      key: `farm-expiring-${f.id}`,
+      severity: 'important',
+      kind: 'Farm',
+      name: f.tradingName,
+      reason: days === 0
+        ? 'Documentation expires today'
+        : `Documentation expires in ${days} day${days === 1 ? '' : 's'}`,
+      consequence: 'Export-readiness incomplete',
+      status: 'Needs Review',
+      statusTone: 'warn-tint',
+      sortAt: f.documentExpiry,
+      onOpen: () => onReviewFarm(f.id),
+    })
+  }
+
+  for (const f of farms.filter(f => f.status === 'More Information Required')) {
+    priorities.push({
+      key: `farm-info-${f.id}`,
+      severity: 'important',
+      kind: 'Farm',
+      name: f.tradingName,
+      reason: 'Supplier response outstanding',
+      consequence: 'Human Decision Required',
+      status: f.status,
+      statusTone: 'warn-tint',
+      sortAt: f.submittedAt,
+      onOpen: () => onReviewFarm(f.id),
+    })
+  }
+
+  for (const f of farms.filter(f => f.status === 'Watchlist')) {
+    priorities.push({
+      key: `farm-watch-${f.id}`,
+      severity: 'important',
+      kind: 'Farm',
+      name: f.tradingName,
+      reason: 'Watchlist condition unresolved',
+      consequence: 'Human Decision Required',
+      status: f.status,
+      statusTone: 'warn-tint',
+      sortAt: f.submittedAt,
+      onOpen: () => onReviewFarm(f.id),
+    })
+  }
+
+  for (const f of farmsAwaitingReview) {
+    priorities.push({
+      key: `farm-review-${f.id}`,
+      severity: 'standard',
+      kind: 'Farm',
+      name: f.tradingName,
+      reason: `Profile ${f.completionPct}% complete · ${f.province || 'Province not recorded'}`,
+      consequence: 'Human Decision Required',
+      status: f.status,
+      statusTone: 'review',
+      sortAt: f.submittedAt,
+      onOpen: () => onReviewFarm(f.id),
+    })
+  }
+
+  for (const i of batchesAwaitingReview) {
+    priorities.push({
+      key: `batch-review-${i.id}`,
+      severity: 'standard',
+      kind: 'Batch',
+      name: `${i.productName} — ${i.farmName}`,
+      reason: `${i.quantityKg.toLocaleString()} kg submitted`,
+      consequence: 'Human Decision Required',
+      status: i.status,
+      statusTone: 'review',
+      sortAt: i.submittedAt,
+      onOpen: () => onReviewItem(i.id),
+    })
+  }
+
+  priorities.sort((a, b) => {
+    const s = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
+    if (s !== 0) return s
+    const at = parseDate(a.sortAt)?.getTime() ?? 0
+    const bt = parseDate(b.sortAt)?.getTime() ?? 0
+    return at - bt // oldest first within a severity
+  })
+
+  // ── Compliance signals ───────────────────────────────────────────────────
+  // Unresolved conditions only. No positive news is manufactured.
+
+  const rulesAwaitingDecision = complianceRules.filter(
+    r => r.status === 'suggested' || r.status === 'draft',
+  )
+
+  const signals: { key: string; severity: Severity; title: string; detail: string }[] = [
+    ...blockedAlerts.map(a => ({
+      key: `sig-blocked-${a.id}`,
+      severity: 'critical' as Severity,
+      title: a.alertTitle,
+      detail: `Blocked Pending Review · raised ${ageLabel(a.createdAt, now)} ago`,
+    })),
+    ...rulesAwaitingDecision.map(r => ({
+      key: `sig-rule-${r.id}`,
+      severity: (r.isBlocking ? 'important' : 'standard') as Severity,
+      title: r.title,
+      detail: `${r.ruleCode} · Human Decision Required`,
+    })),
+    ...unresolvedAlerts
+      .filter(a => a.status !== 'blocked')
+      .map(a => ({
+        key: `sig-alert-${a.id}`,
+        severity: alertSeverity(a.severity),
+        title: a.alertTitle,
+        detail: `${a.entityType} · raised ${ageLabel(a.createdAt, now)} ago`,
+      })),
+    ...expiredFarms.map(f => ({
+      key: `sig-exp-${f.id}`,
+      severity: 'critical' as Severity,
+      title: `${f.tradingName} — documentation expired`,
+      detail: `Expired ${formatDate(f.documentExpiry)}`,
+    })),
+  ].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+
+  const signalsMode = derivePanelMode(complianceLoadState, signals.length)
+
+  // ── Supply position ──────────────────────────────────────────────────────
+
+  const supply = [...inventory]
+    .sort((a, b) => {
+      const at = parseDate(a.submittedAt)?.getTime() ?? 0
+      const bt = parseDate(b.submittedAt)?.getTime() ?? 0
+      return bt - at
+    })
+    .slice(0, 8)
 
   return (
-    <div className="page-wrap ddp-wrap">
-      <div className="page-header ddp-header">
-        <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS</div>
-        <h1 className="page-title">Operations Overview</h1>
-        <p className="page-desc">Supply intelligence summary — all farm registrations, inventory submissions, and compliance status.</p>
+    <div className="eo-page">
+      <header className="eo-page-head">
+        <div className="eo-eyebrow">DDP operations</div>
+        <h1 className="eo-title">Operations overview</h1>
+        <p className="eo-page-desc">
+          Review supplier evidence, blocked batches and buyer-discussion readiness.
+        </p>
+      </header>
+
+      {/* Attention summary — one continuous ruled strip.
+          Counts name their identities in the Review priorities panel below. */}
+      <div
+        className="eo-kpi-strip"
+        style={{ ['--eo-kpi-count' as string]: kpis.length }}
+      >
+        {kpis.map(k => (
+          <div className="eo-kpi" key={k.lbl} aria-busy={k.busy}>
+            <div className={`eo-kpi-val eo-kpi-val--${k.tone}`}>{k.val}</div>
+            <div className="eo-kpi-lbl">{k.lbl}</div>
+            {k.note && <div className="eo-kpi-note">{k.note}</div>}
+          </div>
+        ))}
       </div>
 
-      <div className="summary-grid-8">
-        <SummaryCard val={totalFarms} lbl="Registered Farms" cls="s-total" />
-        <SummaryCard val={pendingFarms} lbl="Awaiting Review" cls="s-pending" />
-        <SummaryCard val={approvedFarms} lbl="Approved Farms" cls="s-approved" />
-        <SummaryCard val={watchlistFarms} lbl="Watchlist" cls="s-missing" />
-        <SummaryCard val={`${totalKg.toLocaleString()} kg`} lbl="Total Submitted Stock" cls="s-total" />
-        <SummaryCard val={`${approvedKg.toLocaleString()} kg`} lbl="Approved Stock" cls="s-approved" />
-        <SummaryCard val={missingDocItems} lbl="Missing Documents" cls="s-missing" />
-        <SummaryCard val={exportReadyFarms} lbl="Export Document Review" cls="s-farms" />
-      </div>
-
-      <div className="overview-grid">
-        <div>
-          <div className="section-label-row"><div className="section-label">Recent Farm Registrations</div></div>
-          <div className="card table-card">
-            <div className="table-scroll">
-            <table className="inv-table inv-table--compact">
-              <thead><tr><th>Farm</th><th>Province</th><th>Status</th><th></th></tr></thead>
-              <tbody>
-                {recentFarms.length === 0 ? (
-                  <tr><td colSpan={4} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
-                ) : recentFarms.map(f => (
-                  <tr key={f.id}>
-                    <td className="td-bold">{f.tradingName}</td>
-                    <td>{f.province}</td>
-                    <td><span className={`badge ${FARM_STATUS_CLASS[f.status]}`}>{f.status}</span></td>
-                    <td><button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Open Review</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
+      <div className="eo-grid">
+        {/* Review priorities — the primary area */}
+        <section className="eo-panel" aria-labelledby="eo-prio-h">
+          <div className="eo-panel-bar">
+            <h2 className="eo-panel-heading" id="eo-prio-h">Review priorities</h2>
+            <span className="eo-meta">
+              {/* Rows are contributed by all three sources, so this count may not
+                  present as complete until every one of them has settled. */}
+              {prioritiesState === 'error'
+                ? `${priorities.length} shown · some sources could not be loaded`
+                : !prioritiesResolved
+                  ? `${priorities.length} so far · sources still loading`
+                  : priorities.length === 0
+                    ? 'Nothing outstanding'
+                    : `${priorities.length} open · most urgent first`}
+            </span>
           </div>
-        </div>
-
-        <div>
-          <div className="section-label-row"><div className="section-label">Recent Inventory Batches</div></div>
-          <div className="card table-card">
-            <div className="table-scroll">
-            <table className="inv-table inv-table--compact">
-              <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Status</th><th></th></tr></thead>
-              <tbody>
-                {recentInventory.length === 0 ? (
-                  <tr><td colSpan={5} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
-                ) : recentInventory.map(i => (
-                  <tr key={i.id}>
-                    <td className="td-bold">{i.productName}</td>
-                    <td>{i.farmName}</td>
-                    <td className="td-num">{i.quantityKg.toLocaleString()}</td>
-                    <td><span className={`badge ${INV_STATUS_CLASS[i.status]}`}>{i.status}</span></td>
-                    <td><button className="btn btn-review" onClick={() => onReviewItem(i.id)}>Open Review</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {(riskAlertFarms.length > 0 || riskAlertInventory.length > 0) && (
-        <div style={{ marginTop: 24 }}>
-          <div className="section-label-row"><div className="section-label" style={{ color: 'var(--error)' }}>Action Required</div></div>
-          <div className="card" style={{ padding: '16px 20px' }}>
-            {riskAlertFarms.map(f => (
-              <div key={f.id} className="risk-alert-row">
-                <span className="risk-icon" style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Farm</span>
-                <span className="risk-name">{f.tradingName}</span>
-                <span className={`badge ${FARM_STATUS_CLASS[f.status]}`}>{f.status}</span>
-                <button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Open Review</button>
-              </div>
-            ))}
-            {riskAlertInventory.map(i => (
-              <div key={i.id} className="risk-alert-row">
-                <span className="risk-icon" style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Batch</span>
-                <span className="risk-name">{i.productName} — {i.farmName}</span>
-                <span className="badge badge-missing">Missing Document</span>
-                <button className="btn btn-review" onClick={() => onReviewItem(i.id)}>Open Review</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="overview-grid" style={{ marginTop: 24 }}>
-        <div>
-          <div className="section-label-row"><div className="section-label">Largest Approved Batches</div></div>
-          <div className="card table-card">
-            <div className="table-scroll">
-            <table className="inv-table inv-table--compact">
-              <thead><tr><th>Product</th><th>Farm</th><th>Qty (kg)</th><th>Grade</th><th>Status</th></tr></thead>
-              <tbody>
-                {topInventory.length === 0 ? (
-                  <tr><td colSpan={5} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
-                ) : topInventory.map(i => (
-                  <tr key={i.id}>
-                    <td className="td-bold">{i.productName}</td>
-                    <td>{i.farmName}</td>
-                    <td className="td-num">{i.quantityKg.toLocaleString()}</td>
-                    <td><span className="grade-chip">{i.qualityGrade ? `Grade ${i.qualityGrade}` : '—'}</span></td>
-                    <td><span className={`badge ${INV_STATUS_CLASS[i.status]}`}>{i.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <div className="section-label-row"><div className="section-label">Top-Scored Farm Profiles</div></div>
-          <div className="card" style={{ overflow: 'hidden' }}>
-            {topFarms.length === 0
-              ? <div className="empty-table-cell">NO RECORDS ON FILE</div>
-              : topFarms.map(f => {
-              const total = farmTotalScore(f)
-              const avg = Math.round(total / 9)
-              return (
-                <div key={f.id} className="score-farm-row">
-                  <div>
-                    <div className="score-farm-name">{f.tradingName}</div>
-                    <div className="score-farm-province">{f.province}</div>
-                  </div>
-                  <div className="score-farm-right">
-                    <div className="score-farm-total">{total} / 900</div>
-                    <div className="score-bar-mini-wrap">
-                      <div className="score-bar-mini" style={{ width: `${avg}%` }} />
+          <div className="eo-panel-body" aria-busy={prioritiesState === 'loading'}>
+            {priorities.length === 0 ? (
+              <p className="eo-empty" role={prioritiesResolved ? undefined : 'status'}>
+                {prioritiesState === 'error'
+                  ? 'Review priorities could not be confirmed — one or more sources failed to load.'
+                  : !prioritiesResolved
+                    ? 'Loading review priorities…'
+                    : 'No records require review.'}
+              </p>
+            ) : (
+              <ul className="eo-prio">
+                {priorities.map(p => (
+                  <li className={`eo-prio-row eo-prio-row--${p.severity}`} key={p.key}>
+                    <div className="eo-prio-main">
+                      <div className="eo-prio-entity">
+                        <span className="eo-prio-kind">{p.kind}</span>
+                        <span className="eo-prio-name">{p.name}</span>
+                      </div>
+                      <div className="eo-prio-reason">{p.reason}</div>
+                      <div className="eo-prio-consequence">{p.consequence}</div>
                     </div>
-                  </div>
-                </div>
-              )
-            })}
+                    <div className="eo-prio-side">
+                      <span className={`eo-status eo-status--${p.statusTone}`}>{p.status}</span>
+                      <span className="eo-prio-age">{ageLabel(p.sortAt, now)}</span>
+                      {p.onOpen && (
+                        <button className="eo-btn eo-btn--tertiary" onClick={p.onOpen}>
+                          Open review
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        </div>
+        </section>
+
+        {/* Compliance signals — narrower secondary panel.
+            The panel may only assert absence once the fetch has succeeded. */}
+        <section className="eo-panel" aria-labelledby="eo-sig-h">
+          <div className="eo-panel-bar">
+            <h2 className="eo-panel-heading" id="eo-sig-h">Compliance signals</h2>
+            {signalsMode === 'list' && <span className="eo-meta">Unresolved only</span>}
+          </div>
+          <div className="eo-panel-body" aria-busy={signalsMode === 'loading'}>
+            {signalsMode === 'loading' && (
+              <p className="eo-empty" role="status">{SIGNALS_LOADING}</p>
+            )}
+            {signalsMode === 'error' && (
+              <p className="eo-empty eo-empty--error" role="status">{SIGNALS_ERROR}</p>
+            )}
+            {signalsMode === 'unavailable' && (
+              <p className="eo-empty" role="status">{SIGNALS_UNAVAILABLE}</p>
+            )}
+            {signalsMode === 'empty' && <p className="eo-empty">{SIGNALS_EMPTY}</p>}
+            {signalsMode === 'list' && signals.map(s => (
+              <div className={`eo-signal eo-signal--${s.severity}`} key={s.key}>
+                <div className="eo-signal-title">{s.title}</div>
+                <div className="eo-signal-detail">{s.detail}</div>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
+
+      {/* Supply position */}
+      <section className="eo-panel eo-supply" aria-labelledby="eo-supply-h">
+        <div className="eo-panel-bar">
+          <h2 className="eo-panel-heading" id="eo-supply-h">Supply position</h2>
+          {/* Only a settled inventory read may describe the batch count. */}
+          {supplyMode === 'list' && (
+            <span className="eo-meta">
+              {`${supply.length} of ${inventory.length} batches · most recent first`}
+            </span>
+          )}
+        </div>
+
+        {supplyMode !== 'list' ? (
+          <div className="eo-panel-body" aria-busy={supplyMode === 'loading'}>
+            <p
+              className={`eo-empty${supplyMode === 'error' ? ' eo-empty--error' : ''}`}
+              role={supplyMode === 'loading' || supplyMode === 'error' ? 'status' : undefined}
+            >
+              {supplyMode === 'loading' && SUPPLY_LOADING}
+              {supplyMode === 'error' && SUPPLY_ERROR}
+              {supplyMode === 'unavailable' && SUPPLY_UNAVAILABLE}
+              {supplyMode === 'empty' && `${SUPPLY_EMPTY}.`}
+            </p>
+          </div>
+        ) : (
+        <div className="eo-table-scroll">
+          <table className="eo-table">
+            <thead>
+              <tr>
+                <th scope="col">Batch</th>
+                <th scope="col">Supplier</th>
+                <th scope="col" className="eo-td-num">Quantity (kg)</th>
+                <th scope="col" className="eo-td-num">THC %</th>
+                <th scope="col">Evidence position</th>
+                <th scope="col">Review state</th>
+                <th scope="col">Last updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(
+                supply.map(i => {
+                  const documented = Boolean(i.coaAvailable || i.certFileName)
+                  return (
+                    <tr key={i.id}>
+                      <td>
+                        <div className="eo-td-primary">{i.productName}</div>
+                        <div className="eo-id">{i.batchNumber || 'No batch number'}</div>
+                      </td>
+                      <td data-label="Supplier">{i.farmName}</td>
+                      <td className="eo-td-num" data-label="Quantity (kg)">{i.quantityKg.toLocaleString()}</td>
+                      {/* A measured 0% THC is a value, not a missing one. Only a
+                          genuinely absent reading may render as unknown. */}
+                      <td className="eo-td-num" data-label="THC %">
+                        {i.thcPct == null ? MEASURE_UNKNOWN : i.thcPct.toFixed(2)}
+                      </td>
+                      <td data-label="Evidence">
+                        <span className={`eo-status eo-status--${documented ? 'evidence' : 'critical'}`}>
+                          {documented ? 'Documented' : 'Missing Evidence'}
+                        </span>
+                      </td>
+                      <td data-label="Review state">
+                        <span className={`eo-status eo-status--${reviewTone(i.status)}`}>{i.status}</span>
+                      </td>
+                      <td data-label="Last updated">{formatDate(i.submittedAt)}</td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        )}
+      </section>
     </div>
   )
 }
 
-function SummaryCard({ val, lbl, cls }: { val: string | number; lbl: string; cls: string }) {
-  return (
-    <div className={`summary-card ${cls}`}>
-      <div className="summary-val">{val}</div>
-      <div className="summary-lbl">{lbl}</div>
-    </div>
-  )
+/** Visual weight for an existing InventoryStatus. The stored value is never
+ *  reworded — only its prominence changes, so absence outranks presence. */
+function reviewTone(status: InventoryItem['status']): StatusTone {
+  switch (status) {
+    case 'Missing Document': return 'critical'
+    case 'Rejected': return 'high'
+    case 'Pending Review': return 'review'
+    case 'Approved': return 'evidence'
+    default: return 'neutral'
+  }
 }

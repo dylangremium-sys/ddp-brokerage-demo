@@ -35,6 +35,7 @@ import {
 import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
+import { shouldLoadComplianceData, type SourceLoadState } from './lib/overviewViewState'
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
 import LoginPage from './pages/public/LoginPage'
@@ -63,6 +64,7 @@ import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
 import FarmerNav from './components/farmer/FarmerNav'
 import AdminNav from './components/admin/AdminNav'
+import AdminShell from './components/admin/AdminShell'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 
 const FARMER_PAGES: Page[] = [
@@ -115,6 +117,13 @@ export default function App() {
   const [marketBenchmarks, setMarketBenchmarks] = useState<MarketBenchmark[]>(() => loadMarketBenchmarks())
   const [complianceRules, setComplianceRules] = useState<ComplianceRule[]>([])
   const [complianceAlerts, setComplianceAlerts] = useState<ComplianceAlert[]>([])
+  // Lifecycle of each independently-loaded admin source. Presentation must not
+  // report an unresolved or failed query as a confirmed zero — see
+  // lib/overviewViewState.ts. Tracked per source because they can now fail
+  // independently, and a measure is only as trustworthy as its weakest source.
+  const [complianceLoadState, setComplianceLoadState] = useState<SourceLoadState>('idle')
+  const [farmsLoadState, setFarmsLoadState] = useState<SourceLoadState>('idle')
+  const [inventoryLoadState, setInventoryLoadState] = useState<SourceLoadState>('idle')
   const [stockEditItemId, setStockEditItemId] = useState<string | null>(null)
   const [buyerPackItemId, setBuyerPackItemId] = useState<string | null>(null)
 
@@ -181,14 +190,40 @@ export default function App() {
   }, [currentProfile])
 
   // ── Load all farms + inventory from Supabase when admin signs in ────────────
+  //
+  // The two reads settle independently rather than through one Promise.all: a
+  // combined catch discarded a successful inventory result whenever the farms
+  // read failed, so one failing source silently emptied the other. Each source
+  // now records its own outcome, which is what lets the Operations overview say
+  // "could not be confirmed" for the affected measure only, and keep the rest
+  // usable. Same two queries as before.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
-    Promise.all([loadFarmsFromDB(), loadInventoryFromDB()])
-      .then(([dbFarms, dbInventory]) => {
+    let cancelled = false
+
+    loadFarmsFromDB()
+      .then(dbFarms => {
+        if (cancelled) return
         setFarms(dbFarms)
-        setInventory(dbInventory)
+        setFarmsLoadState('loaded')
       })
-      .catch(err => console.warn('Admin Supabase data load failed:', err))
+      .catch(err => {
+        console.warn('Admin Supabase data load failed:', err)
+        if (!cancelled) setFarmsLoadState('error')
+      })
+
+    loadInventoryFromDB()
+      .then(dbInventory => {
+        if (cancelled) return
+        setInventory(dbInventory)
+        setInventoryLoadState('loaded')
+      })
+      .catch(err => {
+        console.warn('Admin Supabase data load failed:', err)
+        if (!cancelled) setInventoryLoadState('error')
+      })
+
+    return () => { cancelled = true }
   }, [currentProfile])
 
   // ── Load market benchmarks from Supabase once a farmer session exists ────
@@ -212,15 +247,33 @@ export default function App() {
   // in the Watchtower would otherwise not be reflected here until the whole
   // app reloaded. Re-running on page navigation is the minimal fix that
   // closes that staleness window without merging the two states.
+  //
+  // Also runs on ddp-overview: the Operations overview presents Compliance
+  // signals and a Blocked decisions measure, so gating this to Supply Ledger
+  // pages made a direct landing claim there were no unresolved alerts when it
+  // had simply never asked. shouldLoadComplianceData owns that rule.
+  // The state starts at 'idle', which presents exactly as 'loading' does — as
+  // "not established" — so there is no transition to 'loading' here. That keeps
+  // this effect free of a synchronous setState, and means a refetch keeps
+  // showing the last successful result rather than flickering. A refetch that
+  // fails still drops to 'error', so stale items never pass as a fresh result.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
-    if (!SUPPLY_LEDGER_PAGES.includes(page)) return
+    if (!shouldLoadComplianceData(page, SUPPLY_LEDGER_PAGES)) return
+    let cancelled = false
     Promise.all([fetchComplianceRules(), fetchComplianceAlerts()])
       .then(([rules, alerts]) => {
+        if (cancelled) return
         setComplianceRules(rules)
         setComplianceAlerts(alerts)
+        setComplianceLoadState('loaded')
       })
-      .catch(err => console.warn('Compliance rule impact data load failed:', err))
+      .catch(err => {
+        console.warn('Compliance rule impact data load failed:', err)
+        if (cancelled) return
+        setComplianceLoadState('error')
+      })
+    return () => { cancelled = true }
   }, [currentProfile, page])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
@@ -524,11 +577,16 @@ export default function App() {
   const showFarmerNav = isDemo || isFarmerRole
   const showDDPNav = isAdminRole
 
+  // Editorial Operations shell: signed-in DDP admin only. Demo sessions show
+  // the farmer nav too (isAdminRole is true in demo), so they keep the existing
+  // navbar and are unaffected by this redesign.
+  const useEditorialShell = showDDPNav && !showFarmerNav
+
   return (
     <div className="app">
 
-      {/* ── Navbar (all non-landing pages) ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
+      {/* ── Navbar (all non-landing pages; editorial shell supplies its own) ── */}
+      {!useEditorialShell && page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
         <nav className="navbar">
           <div
             className="navbar-brand"
@@ -612,8 +670,9 @@ export default function App() {
       )}
 
       {/* ── App pages ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
-        <main className="main-content">
+      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (() => {
+        const appPages = (
+          <>
 
           {page === 'farmer-dashboard' && (
             <FarmerDashboard
@@ -708,6 +767,15 @@ export default function App() {
               inventory={inventory}
               onReviewFarm={handleReviewFarm}
               onReviewItem={handleReviewItem}
+              complianceRules={complianceRules}
+              complianceAlerts={complianceAlerts}
+              // Demo mode has no compliance source, so the fetch never runs.
+              // That is "unavailable", not a pending query and not a zero.
+              complianceLoadState={isSupabaseConfigured ? complianceLoadState : 'unavailable'}
+              // In demo mode the local store IS the source, and useState read it
+              // synchronously — so it has genuinely loaded, not stalled at idle.
+              farmsLoadState={isSupabaseConfigured ? farmsLoadState : 'loaded'}
+              inventoryLoadState={isSupabaseConfigured ? inventoryLoadState : 'loaded'}
             />
           )}
 
@@ -813,8 +881,24 @@ export default function App() {
               currentUser={isDemo ? null : currentProfile}
             />
           )}
-        </main>
-      )}
+          </>
+        )
+
+        // Same routed content in both frames — only the surrounding chrome
+        // differs, so no page behaviour changes with the shell.
+        return useEditorialShell ? (
+          <AdminShell
+            page={page}
+            goTo={goTo}
+            profile={currentProfile}
+            onSignOut={handleSignOut}
+          >
+            {appPages}
+          </AdminShell>
+        ) : (
+          <main className="main-content">{appPages}</main>
+        )
+      })()}
 
       {page !== 'landing' && (isDemo || buildVersion) && (
         <div className="demo-utility-strip">

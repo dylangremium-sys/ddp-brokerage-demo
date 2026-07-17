@@ -861,7 +861,11 @@ export async function loadFarmsFromDB(): Promise<FarmProfile[]> {
     .order('created_at', { ascending: false })
   if (error) {
     console.warn('loadFarmsFromDB:', error.message)
-    return []
+    // Must reject, not resolve empty: a caller cannot tell "no farms on file"
+    // from "the query failed" if both arrive as []. The Operations overview
+    // reports counts from this data, so a failure presented as zero is a false
+    // compliance claim. The query itself is unchanged.
+    throw new Error(`Loading farms: ${error.message}`)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((row: any) => farmRowToProfile(row))
@@ -876,7 +880,10 @@ export async function loadInventoryFromDB(): Promise<InventoryItem[]> {
     .order('created_at', { ascending: false })
   if (error) {
     console.warn('loadInventoryFromDB:', error.message)
-    return []
+    // Must reject, not resolve empty — see loadFarmsFromDB. "No batches on file"
+    // and "Missing evidence: 0" are assertions of absence; a failed read may
+    // never produce them. The query itself is unchanged.
+    throw new Error(`Loading inventory batches: ${error.message}`)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((row: any) => batchRowToInventoryItem(row))
