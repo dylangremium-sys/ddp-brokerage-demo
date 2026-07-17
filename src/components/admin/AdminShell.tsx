@@ -4,6 +4,7 @@ import type { UserProfile } from '../../services/auth'
 import { DDPMonogramLogo } from '../logos'
 import UserBadge from '../shared/UserBadge'
 import AdminNav from './AdminNav'
+import { contentVariantClass } from './adminPresentation'
 
 /**
  * Breadcrumb label per existing route. Presentation only — this maps the
@@ -74,10 +75,7 @@ export default function AdminShell({ page, goTo, profile, onSignOut, children }:
           </div>
         </header>
 
-        <main
-          id="eo-content"
-          className={`eo-content${page === 'ddp-overview' ? ' eo-content-canvas' : ''}`}
-        >
+        <main id="eo-content" className={`eo-content ${contentVariantClass(page)}`}>
           {children}
         </main>
       </div>

@@ -116,6 +116,11 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   opacity: 0.6;
 }
 
+.ddp-label {
+  color: var(--accent);
+  opacity: 1;
+}
+
 .nav-sep {
   width: 1px;
   height: 28px;
@@ -146,6 +151,26 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   background: rgba(198, 161, 91, 0.12);
   border-color: rgba(198, 161, 91, 0.45);
   color: var(--accent);
+}
+
+/* Legacy top-navbar admin buttons. Used by AdminNav variant="topbar", which
+   demo mode renders inside .navbar. */
+.ddp-nav-btn {
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+.ddp-nav-btn:hover,
+.ddp-nav-btn.nav-active {
+  background: var(--bg-elevated);
+  color: var(--accent);
+  border-color: rgba(100,116,139,0.3);
+  opacity: 1;
+}
+
+.ddp-nav-btn.nav-active {
+  background: rgba(198, 161, 91, 0.12);
+  border-color: rgba(198, 161, 91, 0.45);
 }
 
 /* ── Main Content ── */
@@ -3520,6 +3545,12 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 .eo-content { flex: 1; min-width: 0; }
 .eo-content-canvas { background: var(--ddp-canvas); }
 
+/* Non-Overview admin routes: reproduce the gutter they had from .main-content
+   before the shell existed. Scoped to this class, so no public or farmer
+   surface can be reached by it. The Overview never carries this class — its
+   padding comes from .eo-page. */
+.eo-content-legacy { padding: 32px; }
+
 /* ── Page furniture ─────────────────────────────────────────────────────── */
 
 .eo-page {
@@ -3891,6 +3922,10 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   .eo-nav-item[aria-current='page'] { border-left: 0; border-bottom-color: var(--ddp-gold-500); }
   .eo-header { padding: 0 16px; }
   .eo-page { padding: 20px 16px; }
+  /* Legacy admin routes keep the same mobile gutter they had from
+     .main-content. Declared here, after the 32px base rule above, because both
+     have equal specificity and the later declaration wins. */
+  .eo-content-legacy { padding: 20px 16px; }
 }
 
 /* Mobile: 16px gutter, 20px section rhythm, records not shrunken tables */

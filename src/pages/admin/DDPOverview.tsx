@@ -22,6 +22,12 @@ import {
   SUPPLY_UNAVAILABLE,
   type SourceLoadState,
 } from '../../lib/overviewViewState'
+import {
+  daysUntilCalendarDate,
+  formatCalendarDate,
+  isExpiredOn,
+  isExpiringWithin,
+} from '../../lib/calendarDate'
 
 interface Props {
   farms: FarmProfile[]
@@ -66,9 +72,18 @@ function formatDate(v: string | undefined | null): string {
 }
 
 function ageLabel(v: string | undefined | null, now: Date): string {
+  // A date-only value (documentExpiry reaching this via a priority's sortAt) is
+  // a calendar date. Age it in calendar days so the count cannot drift with the
+  // viewer's timezone. Instants (created_at, submittedAt) keep instant maths.
+  const untilCalendarDay = daysUntilCalendarDate(v, now)
+  if (untilCalendarDay !== null) return describeAge(-untilCalendarDay)
+
   const d = parseDate(v)
   if (!d) return 'Age unknown'
-  const days = daysBetween(d, now)
+  return describeAge(daysBetween(d, now))
+}
+
+function describeAge(days: number): string {
   if (days < 0) return 'Age unknown'
   if (days === 0) return 'Today'
   if (days === 1) return '1 day'
@@ -154,18 +169,11 @@ export default function DDPOverview({
   )
   const blockedAlerts = complianceAlerts.filter(a => a.status === 'blocked')
 
-  const expiringFarms = farms.filter(f => {
-    const d = parseDate(f.documentExpiry)
-    if (!d) return false
-    const days = daysBetween(now, d)
-    return days >= 0 && days <= 30
-  })
-
-  const expiredFarms = farms.filter(f => {
-    const d = parseDate(f.documentExpiry)
-    if (!d) return false
-    return daysBetween(now, d) < 0
-  })
+  // documentExpiry is captured by input type="date", so it is a calendar date,
+  // not an instant. Classifying it against a UTC instant reported a licence
+  // valid *through* today as expired for viewers east of UTC. See lib/calendarDate.
+  const expiringFarms = farms.filter(f => isExpiringWithin(f.documentExpiry, now, 30))
+  const expiredFarms = farms.filter(f => isExpiredOn(f.documentExpiry, now))
 
   // Each measure is gated on its own sources: a number, including zero, appears
   // only once every source it reads has completed successfully. Otherwise "—".
@@ -236,7 +244,7 @@ export default function DDPOverview({
       severity: 'critical',
       kind: 'Farm',
       name: f.tradingName,
-      reason: `Documentation expired ${formatDate(f.documentExpiry)}`,
+      reason: `Documentation expired ${formatCalendarDate(f.documentExpiry) ?? 'on an unrecorded date'}`,
       consequence: 'Blocked Pending Review',
       status: 'Expired',
       statusTone: 'critical',
@@ -260,8 +268,8 @@ export default function DDPOverview({
   }
 
   for (const f of expiringFarms) {
-    const d = parseDate(f.documentExpiry)
-    const days = d ? daysBetween(now, d) : 0
+    // Non-null: isExpiringWithin only admits parseable date-only values.
+    const days = daysUntilCalendarDate(f.documentExpiry, now) ?? 0
     priorities.push({
       key: `farm-expiring-${f.id}`,
       severity: 'important',
@@ -378,7 +386,7 @@ export default function DDPOverview({
       key: `sig-exp-${f.id}`,
       severity: 'critical' as Severity,
       title: `${f.tradingName} — documentation expired`,
-      detail: `Expired ${formatDate(f.documentExpiry)}`,
+      detail: `Expired ${formatCalendarDate(f.documentExpiry) ?? 'on an unrecorded date'}`,
     })),
   ].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
 

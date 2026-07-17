@@ -606,7 +606,9 @@ export default function App() {
 
             {showFarmerNav && showDDPNav && <div className="nav-sep" />}
 
-            {showDDPNav && <AdminNav page={page} goTo={goTo} />}
+            {/* Compact markup: this navbar is 56px tall and may also hold
+                FarmerNav. The editorial sidebar renders only in AdminShell. */}
+            {showDDPNav && <AdminNav page={page} goTo={goTo} variant="topbar" />}
           </div>
 
           <div className="navbar-right">
