@@ -14,6 +14,11 @@ import {
 } from '../../lib/procurementControl'
 import { deriveBuyerApprovalGate } from '../../lib/buyerApprovalGate'
 import {
+  canEmitBuyerPackOutput,
+  BUYER_PACK_OUTPUT_BLOCKED_TITLE,
+  BUYER_PACK_OUTPUT_BLOCKED_DETAIL,
+} from '../../lib/buyerPackOutputGate'
+import {
   prepareBuyerPackSnapshotInput,
   generateNextBuyerPackSnapshot,
   deriveSnapshotStatus,
@@ -304,6 +309,11 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   const checkResults = CHECKLIST.map(c => ({ ...c, result: c.pass(item) }))
   const passCount = checkResults.filter(c => c.result).length
 
+  // Whether this pack may emit BUYER-FACING output (Print / PDF / Copy). Uses the
+  // single authoritative eligibility result — never inventory status. When false,
+  // the in-app actions are blocked AND the print rendering fails closed (§CSS).
+  const canEmitOutput = canEmitBuyerPackOutput(isHumanApproved)
+
   // A claimed filename/checkbox is not a received document — only a real
   // storage path means DDP actually has the file. Buyer-facing COA display
   // must key off the file, not the claim.
@@ -368,6 +378,9 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   }
 
   async function handleCopy() {
+    // Buyer-facing output gate: never write commercial content to the clipboard,
+    // and never record an output event, for a pack that is not human-approved.
+    if (!canEmitOutput) return
     try {
       await navigator.clipboard.writeText(buildSummaryText())
       setCopied(true)
@@ -379,12 +392,31 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   }
 
   function handlePrint() {
+    // Buyer-facing output gate: never trigger print or record an output event for
+    // a pack that is not human-approved. (Command+P is failed closed in print CSS.)
+    if (!canEmitOutput) return
     recordDownload('print-pdf')
     window.print()
   }
 
   return (
-    <div className="page-wrap ddp-wrap buyer-pack-wrap">
+    <div className={`page-wrap ddp-wrap buyer-pack-wrap${canEmitOutput ? '' : ' buyer-pack--output-blocked'}`}>
+
+      {/* Print-only blocking document. Rendered only for a not-human-approved pack;
+          hidden on screen, and — via @media print — it is the ONLY thing that prints
+          while the commercial .buyer-pack-card is suppressed, so browser Command+P /
+          PDF fail closed from the rendered approval state, not merely from JS. It is
+          deliberately NOT inside .no-print. */}
+      {!canEmitOutput && (
+        <div className="buyer-pack-print-block" role="note" aria-hidden="true">
+          <div className="buyer-pack-print-block-title">{BUYER_PACK_OUTPUT_BLOCKED_TITLE}</div>
+          <p className="buyer-pack-print-block-detail">{BUYER_PACK_OUTPUT_BLOCKED_DETAIL}</p>
+          <p className="buyer-pack-print-block-ref">
+            Internal reference only — {item.productName}
+            {item.batchNumber ? ` · Batch ${item.batchNumber}` : ''}. DDP status: {packStatusLabel}.
+          </p>
+        </div>
+      )}
 
       {/* Action bar — hidden on print */}
       <div className="buyer-pack-actions no-print">
@@ -394,7 +426,13 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
           </button>
         )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" className="btn btn-ghost" onClick={handleCopy}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={handleCopy}
+            disabled={!canEmitOutput}
+            title={canEmitOutput ? undefined : BUYER_PACK_OUTPUT_BLOCKED_TITLE}
+          >
             {copied ? '✓ Copied' : 'Copy Summary'}
           </button>
           {hasCoaFile && canOpenCoa && (
@@ -407,10 +445,21 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
               Open Photo
             </button>
           )}
-          <button type="button" className="btn btn-primary" onClick={handlePrint}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handlePrint}
+            disabled={!canEmitOutput}
+            title={canEmitOutput ? undefined : BUYER_PACK_OUTPUT_BLOCKED_TITLE}
+          >
             Print / Save PDF
           </button>
         </div>
+        {!canEmitOutput && (
+          <p className="buyer-pack-output-blocked-note" style={{ flexBasis: '100%', margin: '2px 0 0', fontSize: 12.5, fontWeight: 600, color: 'var(--warning)' }}>
+            {BUYER_PACK_OUTPUT_BLOCKED_TITLE} — {BUYER_PACK_OUTPUT_BLOCKED_DETAIL}
+          </p>
+        )}
       </div>
 
       {/* Pack card */}

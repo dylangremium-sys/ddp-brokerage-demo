@@ -3351,6 +3351,11 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 /* Elements hidden on screen but shown when printing */
 .print-only { display: none; }
 
+/* Buyer Pack output gate: the print-only NOT-APPROVED notice is hidden on screen;
+   it is revealed (and the commercial card suppressed) only in print, for a pack
+   whose root carries .buyer-pack--output-blocked. */
+.buyer-pack-print-block { display: none; }
+
 /* ─── Print styles ────────────────────────────────────────────────────────── */
 @media print {
   .no-print,
@@ -3366,6 +3371,20 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   .buyer-pack-card { box-shadow: none !important; border: 1px solid #ddd !important; }
   .buyer-pack-wrap { max-width: 100% !important; padding: 0 !important; }
   .page-wrap { padding: 12px !important; }
+
+  /* Fail closed for a not-human-approved pack: browser Command+P / PDF / print
+     preview print ONLY the NOT-APPROVED notice — the entire commercial pack card
+     (farm, quantity, price, lab values, checklist, compliance matrix, seal and the
+     buyer footer are all inside it) is suppressed. Protects the app Print action,
+     Command+P and print preview alike, from the rendered approval state. */
+  .buyer-pack--output-blocked .buyer-pack-card { display: none !important; }
+  .buyer-pack--output-blocked .buyer-pack-print-block { display: block !important; }
+  .buyer-pack-print-block-title {
+    font-size: 18pt; font-weight: 800; letter-spacing: 0.02em;
+    color: #8C1515; margin: 0 0 8px;
+  }
+  .buyer-pack-print-block-detail { font-size: 11pt; margin: 0 0 8px; }
+  .buyer-pack-print-block-ref { font-size: 9pt; color: #555; margin: 0; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
