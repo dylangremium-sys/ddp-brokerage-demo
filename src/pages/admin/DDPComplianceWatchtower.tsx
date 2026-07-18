@@ -126,7 +126,7 @@ const SEVERITY_CLASS: Record<ComplianceSeverity, string> = {
 }
 
 const ALERT_STATUS_CLASS: Record<ComplianceStatus, string> = {
-  open: 'status-pending',
+  open: 'status-review-pending',
   in_review: 'status-reviewed',
   blocked: 'status-reject',
   resolved: 'status-verified',
