@@ -4381,3 +4381,351 @@ a.ln-channel-value:hover { color: #FFFFFF; }
     background: #fff !important;
   }
 }
+
+/* ── Admin editorial appearance ─────────────────────────────────────────────
+   The admin pages other than the Overview still paint from the legacy
+   dark-theme tokens, so the surface is remapped here rather than by chasing
+   individual classes — the same approach .eo-farmer and .landing-shell already
+   take. Every descendant reading var(--bg-card), var(--text) and so on becomes
+   light in one place.
+
+   Scoped to .ddp-wrap, which is each admin page's own root, rather than to the
+   shell's .eo-content-legacy: demo mode renders the admin pages with
+   useEditorialShell === false, so a shell-scoped rule would miss them entirely
+   and leave those screens navy. .ddp-wrap is admin-only — .page-wrap is shared
+   with the farmer and public screens, so it cannot carry this.
+
+   Appearance only: no page's markup, routing, data or behaviour is touched. */
+.ddp-wrap {
+  --bg:            var(--ddp-canvas);
+  --bg-card:       var(--ddp-paper);
+  --bg-elevated:   var(--ddp-paper-muted);
+  --bg-deep:       var(--ddp-paper-strong);
+  --text:          var(--ddp-ink-950);
+  --text-muted:    var(--ddp-ink-500);
+  --border:        var(--ddp-line-soft);
+  --accent:        var(--ddp-gold-700);
+  --accent-strong: var(--ddp-green-900);
+  --jade:          var(--ddp-green-700);
+  --success:       var(--ddp-success-700);
+  --warning:       var(--ddp-warning-700);
+  --error:         var(--ddp-risk-700);
+
+  /* Paint the canvas, not just the tokens. In the authenticated shell the
+     backdrop behind .ddp-wrap is already .eo-shell cream, so this is a no-op
+     there; but in demo mode these pages render inside the legacy transparent
+     .main-content over the global navy body, and without this the remapped
+     dark title/description text would sit on navy. */
+  background: var(--ddp-canvas);
+  color: var(--ddp-ink-950);
+  font-family: var(--ddp-sans);
+}
+
+/* Demo-mode gutters. .ddp-wrap paints its own column, but in demo mode it sits
+   in .main-content, whose 32px gutter (and the area past its max-width) stays
+   navy. Paint that legacy parent too — the same fix .eo-page uses above, and
+   only when a direct child is .ddp-wrap, so it is admin-only and never touches
+   the authenticated shell (whose parent is .eo-content, not .main-content).
+   No padding:0 here: unlike .eo-page, .ddp-wrap relies on the legacy gutter. */
+.main-content:has(> .ddp-wrap) { background: var(--ddp-canvas); }
+
+/* Hard-coded dark gradients: the token remap cannot reach a literal hex, and
+   the approved direction uses flat surfaces rather than gradients.
+
+   The page hero drops its panel entirely to match .eo-page-head on the already
+   approved Overview — eyebrow, serif title and description sitting directly on
+   the canvas. Deep green stays reserved for the navigation and the shell
+   header, so a green hero here would compete with them, and a paper hero would
+   read as a card the page does not have. The master banner keeps its panel: it
+   carries stats, so it is a surface rather than a heading. */
+.ddp-wrap .ddp-header {
+  background: none;
+  background-image: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 24px;
+}
+.ddp-wrap .master-banner {
+  background: var(--ddp-paper);
+  background-image: none;
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: var(--ddp-r-surface);
+  box-shadow: none;
+}
+
+/* ── Admin typography: Noto Serif headings, Inter body ── */
+.ddp-wrap .page-eyebrow,
+.ddp-wrap .ddp-eyebrow,
+.ddp-wrap .master-eyebrow,
+.ddp-wrap .buyer-pack-eyebrow {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  /* Not var(--accent): gold measures 3.98 on paper, below the 4.5 text floor,
+     and the approved system spends gold on active nav and focus only. */
+  color: var(--ddp-ink-500);
+  margin-bottom: 8px;
+}
+
+/* Contrast-safe admin accent. Inside .ddp-wrap, var(--accent) remaps to gold
+   (--ddp-gold-700), which fails the 4.5:1 text floor on the admin paper/canvas
+   surfaces (measured 3.42-4.19). Gold stays reserved for focus,
+   active nav and decoration (the .s-farms border, range-slider thumbs, checkbox
+   accent-color and focus rings keep it); these remaining legacy foreground TEXT
+   uses move to approved green/ink tokens. Scoped to .ddp-wrap, so the farmer and
+   public screens -- where --accent resolves to the global slate -- are untouched. */
+.ddp-wrap a { color: var(--ddp-green-700); }        /* link: 6.51 on canvas / 7.42 on paper-strong */
+.ddp-wrap a:hover { color: var(--accent-strong); }  /* --accent-strong = --ddp-green-900 in .ddp-wrap: hover darkens (monotonic) */
+.ddp-wrap .s-farms .summary-val,
+.ddp-wrap .doc-name { color: var(--ddp-ink-950); }   /* value/name: 12.97 on paper-muted / 15.89 on paper-strong */
+.ddp-wrap .page-title,
+.ddp-wrap .master-title,
+.ddp-wrap .buyer-pack-title {
+  font-family: var(--ddp-serif);
+  font-size: 34px; line-height: 40px; font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ddp-ink-950);
+  margin: 0 0 8px;
+}
+.ddp-wrap .page-desc,
+.ddp-wrap .master-desc,
+.ddp-wrap .buyer-pack-sub {
+  font-size: 14px; line-height: 21px;
+  color: var(--ddp-ink-700);
+  margin: 0; max-width: 68ch;
+}
+.ddp-wrap h2,
+.ddp-wrap .table-card-title,
+.ddp-wrap .detail-block-title,
+.ddp-wrap .detail-section-title,
+.ddp-wrap .decision-title,
+.ddp-wrap .review-card > h3 {
+  font-family: var(--ddp-serif);
+  font-weight: 500;
+  color: var(--ddp-ink-950);
+}
+.ddp-wrap .section-label,
+.ddp-wrap .risk-flags-label,
+.ddp-wrap .ddp-label {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ddp-ink-500);
+}
+
+/* ── Admin surfaces ── */
+.ddp-wrap .card,
+.ddp-wrap .table-card,
+.ddp-wrap .summary-card,
+.ddp-wrap .filter-sidebar,
+.ddp-wrap .ledger-card,
+.ddp-wrap .review-card,
+.ddp-wrap .decision-card,
+.ddp-wrap .buyer-pack-card {
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-soft);
+  border-radius: var(--ddp-r-surface);
+  box-shadow: none;
+}
+
+/* ── Admin tables: the Overview's .eo-table treatment ── */
+.ddp-wrap .inv-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; }
+.ddp-wrap .inv-table thead th {
+  height: 40px; padding: 0 12px;
+  background: var(--ddp-paper-muted);
+  border-bottom: 1px solid var(--ddp-line-strong);
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ddp-ink-700); text-align: left;
+  white-space: normal; vertical-align: middle;
+}
+.ddp-wrap .inv-table tbody td {
+  padding: 12px;
+  border-bottom: 1px solid var(--ddp-line-soft);
+  color: var(--ddp-ink-950);
+  vertical-align: middle;
+}
+.ddp-wrap .inv-table tbody tr:last-child td { border-bottom: none; }
+.ddp-wrap .inv-table tbody tr:hover td { background: var(--ddp-paper-muted); }
+.ddp-wrap .td-muted { color: var(--ddp-ink-500); }
+.ddp-wrap .td-mono, .ddp-wrap .mono { font-family: var(--font-mono); font-size: 12px; }
+.ddp-wrap .td-bold { font-weight: 600; color: var(--ddp-ink-950); }
+.ddp-wrap .empty-table-cell {
+  padding: 32px 12px; text-align: center;
+  color: var(--ddp-ink-500);
+  font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+}
+
+/* ── Tabs. The supply-ledger row is navigation, the filter rows are filters;
+      both use .filter-tab, so they share one treatment. Active is green rather
+      than gold: gold on paper measures 3.98, under the 4.5 text floor. ── */
+.ddp-wrap .filter-tab {
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-strong);
+  border-radius: var(--ddp-r-control);
+  color: var(--ddp-ink-700);
+  font-family: var(--ddp-sans);
+  font-size: 13px; font-weight: 500;
+  min-height: 36px; padding: 0 14px;
+}
+.ddp-wrap .filter-tab:hover { background: var(--ddp-paper-muted); border-color: var(--ddp-green-700); }
+.ddp-wrap .filter-tab.filter-active {
+  background: var(--ddp-green-900);
+  border-color: var(--ddp-green-900);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+/* ── Action bars and buttons ── */
+.ddp-wrap .btn {
+  border-radius: var(--ddp-r-control);
+  font-family: var(--ddp-sans);
+  font-size: 14px; font-weight: 500;
+  min-height: 40px; padding: 0 16px;
+  box-shadow: none;
+  transition: background-color 140ms, border-color 140ms;
+}
+.ddp-wrap .btn-primary {
+  background: var(--ddp-green-900);
+  border: 1px solid var(--ddp-green-900);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.ddp-wrap .btn-primary:hover { background: var(--ddp-green-950); border-color: var(--ddp-green-950); }
+.ddp-wrap .btn-ghost,
+.ddp-wrap .btn-review,
+.ddp-wrap .btn-pack {
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-strong);
+  color: var(--ddp-ink-950);
+  font-weight: 500;
+}
+.ddp-wrap .btn-ghost:hover,
+.ddp-wrap .btn-review:hover,
+.ddp-wrap .btn-pack:hover { background: var(--ddp-paper-muted); border-color: var(--ddp-green-700); }
+.ddp-wrap .btn-approve { background: var(--ddp-success-700); border: 1px solid var(--ddp-success-700); color: #FFFFFF; }
+.ddp-wrap .btn-reject  { background: var(--ddp-risk-700); border: 1px solid var(--ddp-risk-700); color: #FFFFFF; }
+
+/* ── Toolbar (search / sort) ── */
+.ddp-wrap .toolbar-row {
+  background: var(--ddp-paper-muted);
+  border-bottom: 1px solid var(--ddp-line-soft);
+}
+.ddp-wrap .toolbar-count { color: var(--ddp-ink-500); }
+.ddp-wrap .toolbar-input,
+.ddp-wrap .toolbar-select,
+.ddp-wrap .select-control,
+/* type='range' is excluded too: the RangeSlider overlays two transparent range
+   inputs, and an opaque paper background here would cover the lower track and
+   hide the minimum handle. Range keeps its own .filter-range-track styling. */
+.ddp-wrap input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='range']),
+.ddp-wrap select,
+.ddp-wrap textarea {
+  /* background-color, not the `background` shorthand: .field select sets
+     appearance:none and supplies its dropdown arrow via background-image at
+     equal (0,2,0) specificity. The shorthand (later in source) would win and
+     reset background-image to none, leaving those admin selects with no arrow.
+     background-color sets only the fill, so the arrow image survives. No
+     .ddp-wrap input/textarea uses a background-image, so this is a no-op for them. */
+  background-color: var(--ddp-paper-strong);
+  border: 1px solid var(--ddp-line-strong);
+  border-radius: var(--ddp-r-control);
+  color: var(--ddp-ink-950);
+  box-shadow: none;
+}
+.ddp-wrap input::placeholder,
+.ddp-wrap textarea::placeholder { color: var(--ddp-ink-500); }
+
+/* Focus. Keyed to :focus-visible so the browser decides, and restated at the
+   specificity of the control rules above so the ring is not outranked. */
+.ddp-wrap :focus-visible { outline: 2px solid var(--ddp-focus-light); outline-offset: 2px; }
+.ddp-wrap input:focus-visible,
+.ddp-wrap select:focus-visible,
+.ddp-wrap textarea:focus-visible,
+.ddp-wrap button:focus-visible,
+.ddp-wrap a:focus-visible {
+  outline: 2px solid var(--ddp-focus-light);
+  outline-offset: 2px;
+}
+
+/* ── Status pills & tier badges. The legacy pills paint light text on a faint
+      tint that only reads on navy — on paper that is light-on-light (measured
+      1.41). Rebuilt as light tint + dark tinted ink, the .eo-farmer badge
+      pattern. Grey/neutral states use ink; semantic states keep their hue. ── */
+.ddp-wrap .status-claimed,
+.ddp-wrap .tier-cultivator-claimed,
+.ddp-wrap .status-review-pending,
+.ddp-wrap .status-progress {
+  background: var(--ddp-paper-muted); color: var(--ddp-ink-700); border: 1px solid var(--ddp-line-strong);
+}
+.ddp-wrap .status-documented,
+.ddp-wrap .status-hold,
+.ddp-wrap .tier-ddp-documented {
+  background: #F5EAD4; color: var(--ddp-warning-700); border: 1px solid #E4D2A9;
+}
+.ddp-wrap .status-verified { background: var(--ddp-green-700); color: #FFFFFF; border: 1px solid var(--ddp-green-700); }
+.ddp-wrap .status-buyer-ready,
+.ddp-wrap .status-coa-received,
+.ddp-wrap .badge-blue {
+  background: #E4EEE7; color: var(--ddp-success-700); border: 1px solid #C9DED2;
+}
+.ddp-wrap .status-missing,
+.ddp-wrap .status-coa-missing {
+  background: #FBF1EF; color: var(--ddp-risk-700); border: 1px solid #E9CFCB;
+}
+.ddp-wrap .status-reject { background: var(--ddp-risk-700); color: #FFFFFF; border: 1px solid var(--ddp-risk-700); }
+.ddp-wrap .status-reviewed {
+  background: #E6ECEE; color: #3F5C68; border: 1px solid #CBD8DE;
+}
+.ddp-wrap .status-expired {
+  background: #FBF1EF; color: var(--ddp-risk-700); border: 1px solid #E9CFCB;
+}
+.ddp-wrap .tier-advanced-documentation-review,
+.ddp-wrap .badge-purple {
+  background: #EDEAF3; color: #5B4B8A; border: 1px solid #D8D0E6;
+}
+.ddp-wrap .badge-gray { background: var(--ddp-paper-muted); color: var(--ddp-ink-700); border: 1px solid var(--ddp-line-strong); }
+.ddp-wrap .badge-orange { background: #F5EAD4; color: var(--ddp-warning-700); border: 1px solid #E4D2A9; }
+
+/* Badges that route through the shared .badge-* vocabulary (used by the
+   Overview status maps too, but that page is .eo-page, unaffected here). */
+.ddp-wrap .badge-approved  { background: #E4EEE7; color: var(--ddp-success-700); border: 1px solid #C9DED2; }
+.ddp-wrap .badge-pending   { background: #F5EAD4; color: var(--ddp-warning-700); border: 1px solid #E4D2A9; }
+.ddp-wrap .badge-missing,
+.ddp-wrap .badge-rejected  { background: var(--ddp-risk-700); color: #FFFFFF; border: 1px solid var(--ddp-risk-700); }
+.ddp-wrap .badge-under-review { background: #E6ECEE; color: #3F5C68; border: 1px solid #CBD8DE; }
+.ddp-wrap .badge-watchlist { background: #F5EAD4; color: var(--ddp-warning-700); border: 1px solid #E4D2A9; }
+/* High severity (Risk Register, Compliance Watchtower). The scoped palette above
+   omitted this class, so it fell back to legacy #C4491D on a faint orange tint
+   (~3.97-4.62 on the admin surfaces, below 4.5). Reuse the same ratified risk
+   tint as status-missing (--ddp-risk-700 #8C3028 on #FBF1EF = 7.37) so it stays
+   readable and in the red/risk family. The ladder stays distinct: medium = amber
+   tint, HIGH = red TINT, critical = SOLID red (fill outranks tint). It shares the
+   tint with status-missing but never appears in the same column and carries its
+   own "High" label, so the meanings do not collide. */
+.ddp-wrap .badge-risk-high { background: #FBF1EF; color: var(--ddp-risk-700); border: 1px solid #E9CFCB; }
+
+/* ── Farm/Inventory review decision buttons. These carry hard-coded light text
+      that only read on navy, or gold text (3.98 on paper, below the 4.5 floor).
+      Restyled as quiet tinted-outline actions beside the solid green primary,
+      each keeping its semantic hue at a measured-safe weight. ── */
+.ddp-wrap .btn-missing,
+.ddp-wrap .btn-watchlist {
+  background: var(--ddp-paper);
+  color: var(--ddp-warning-700);      /* 5.15 on paper */
+  border: 1px solid #E4D2A9;
+}
+.ddp-wrap .btn-missing:hover,
+.ddp-wrap .btn-watchlist:hover { background: #F5EAD4; border-color: var(--ddp-warning-700); }
+.ddp-wrap .btn-strategic {
+  background: var(--ddp-paper);
+  color: var(--ddp-green-700);        /* 7.05 on paper — was gold at 3.98 */
+  border: 1px solid var(--ddp-line-strong);
+}
+.ddp-wrap .btn-strategic:hover { background: var(--ddp-paper-muted); border-color: var(--ddp-green-700); }
+.ddp-wrap .btn-approve {
+  background: var(--ddp-success-700);
+  color: #FFFFFF;                     /* 6.63 on success-700 */
+  border: 1px solid var(--ddp-success-700);
+}
+.ddp-wrap .btn-approve:hover { background: var(--ddp-green-900); border-color: var(--ddp-green-900); }
