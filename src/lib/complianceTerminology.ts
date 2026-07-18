@@ -23,5 +23,5 @@ export const NO_RULE_IMPACT_LABEL = 'No rule impact'
 export const RULE_IMPACT_LABEL_CLASS: Record<SafeRuleImpactLabel, string> = {
   [SAFE_RULE_IMPACT_LABEL.blockedPendingLegalReview]: 'status-reject',
   [SAFE_RULE_IMPACT_LABEL.missingEvidence]: 'status-missing',
-  [SAFE_RULE_IMPACT_LABEL.needsReview]: 'status-pending',
+  [SAFE_RULE_IMPACT_LABEL.needsReview]: 'status-review-pending',
 }
