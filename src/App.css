@@ -4695,6 +4695,15 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 .ddp-wrap .badge-rejected  { background: var(--ddp-risk-700); color: #FFFFFF; border: 1px solid var(--ddp-risk-700); }
 .ddp-wrap .badge-under-review { background: #E6ECEE; color: #3F5C68; border: 1px solid #CBD8DE; }
 .ddp-wrap .badge-watchlist { background: #F5EAD4; color: var(--ddp-warning-700); border: 1px solid #E4D2A9; }
+/* High severity (Risk Register, Compliance Watchtower). The scoped palette above
+   omitted this class, so it fell back to legacy #C4491D on a faint orange tint
+   (~3.97-4.62 on the admin surfaces, below 4.5). Reuse the same ratified risk
+   tint as status-missing (--ddp-risk-700 #8C3028 on #FBF1EF = 7.37) so it stays
+   readable and in the red/risk family. The ladder stays distinct: medium = amber
+   tint, HIGH = red TINT, critical = SOLID red (fill outranks tint). It shares the
+   tint with status-missing but never appears in the same column and carries its
+   own "High" label, so the meanings do not collide. */
+.ddp-wrap .badge-risk-high { background: #FBF1EF; color: var(--ddp-risk-700); border: 1px solid #E9CFCB; }
 
 /* ── Farm/Inventory review decision buttons. These carry hard-coded light text
       that only read on navy, or gold text (3.98 on paper, below the 4.5 floor).
