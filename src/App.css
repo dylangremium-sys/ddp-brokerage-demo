@@ -4467,6 +4467,18 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   color: var(--ddp-ink-500);
   margin-bottom: 8px;
 }
+
+/* Contrast-safe admin accent. Inside .ddp-wrap, var(--accent) remaps to gold
+   (--ddp-gold-700), which fails the 4.5:1 text floor on the admin paper/canvas
+   surfaces (measured 3.42-4.19). Gold stays reserved for focus,
+   active nav and decoration (the .s-farms border, range-slider thumbs, checkbox
+   accent-color and focus rings keep it); these remaining legacy foreground TEXT
+   uses move to approved green/ink tokens. Scoped to .ddp-wrap, so the farmer and
+   public screens -- where --accent resolves to the global slate -- are untouched. */
+.ddp-wrap a { color: var(--ddp-green-700); }        /* link: 6.51 on canvas / 7.42 on paper-strong */
+.ddp-wrap a:hover { color: var(--accent-strong); }  /* --accent-strong = --ddp-green-900 in .ddp-wrap: hover darkens (monotonic) */
+.ddp-wrap .s-farms .summary-val,
+.ddp-wrap .doc-name { color: var(--ddp-ink-950); }   /* value/name: 12.97 on paper-muted / 15.89 on paper-strong */
 .ddp-wrap .page-title,
 .ddp-wrap .master-title,
 .ddp-wrap .buyer-pack-title {
