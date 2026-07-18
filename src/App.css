@@ -4411,9 +4411,23 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   --warning:       var(--ddp-warning-700);
   --error:         var(--ddp-risk-700);
 
+  /* Paint the canvas, not just the tokens. In the authenticated shell the
+     backdrop behind .ddp-wrap is already .eo-shell cream, so this is a no-op
+     there; but in demo mode these pages render inside the legacy transparent
+     .main-content over the global navy body, and without this the remapped
+     dark title/description text would sit on navy. */
+  background: var(--ddp-canvas);
   color: var(--ddp-ink-950);
   font-family: var(--ddp-sans);
 }
+
+/* Demo-mode gutters. .ddp-wrap paints its own column, but in demo mode it sits
+   in .main-content, whose 32px gutter (and the area past its max-width) stays
+   navy. Paint that legacy parent too — the same fix .eo-page uses above, and
+   only when a direct child is .ddp-wrap, so it is admin-only and never touches
+   the authenticated shell (whose parent is .eo-content, not .main-content).
+   No padding:0 here: unlike .eo-page, .ddp-wrap relies on the legacy gutter. */
+.main-content:has(> .ddp-wrap) { background: var(--ddp-canvas); }
 
 /* Hard-coded dark gradients: the token remap cannot reach a literal hex, and
    the approved direction uses flat surfaces rather than gradients.
@@ -4589,7 +4603,10 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 .ddp-wrap .toolbar-input,
 .ddp-wrap .toolbar-select,
 .ddp-wrap .select-control,
-.ddp-wrap input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']),
+/* type='range' is excluded too: the RangeSlider overlays two transparent range
+   inputs, and an opaque paper background here would cover the lower track and
+   hide the minimum handle. Range keeps its own .filter-range-track styling. */
+.ddp-wrap input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='range']),
 .ddp-wrap select,
 .ddp-wrap textarea {
   background: var(--ddp-paper-strong);
