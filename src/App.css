@@ -4621,7 +4621,13 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 .ddp-wrap input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='range']),
 .ddp-wrap select,
 .ddp-wrap textarea {
-  background: var(--ddp-paper-strong);
+  /* background-color, not the `background` shorthand: .field select sets
+     appearance:none and supplies its dropdown arrow via background-image at
+     equal (0,2,0) specificity. The shorthand (later in source) would win and
+     reset background-image to none, leaving those admin selects with no arrow.
+     background-color sets only the fill, so the arrow image survives. No
+     .ddp-wrap input/textarea uses a background-image, so this is a no-op for them. */
+  background-color: var(--ddp-paper-strong);
   border: 1px solid var(--ddp-line-strong);
   border-radius: var(--ddp-r-control);
   color: var(--ddp-ink-950);
