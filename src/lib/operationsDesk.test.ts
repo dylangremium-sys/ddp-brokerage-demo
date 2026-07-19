@@ -186,6 +186,39 @@ describe('Operations Desk aggregation — inclusion conditions', () => {
     expect(followUps[0].destinationPage).toBe('ddp-inventory-review')
   })
 
+  it('routes a stock-level follow-up to the inventory review with its item id', () => {
+    const result = buildOperationsDeskItems(input({
+      // farmProfileId is also present, but a batch-linked request must still
+      // open the inventory record — never the farm review.
+      reviewRequests: [reviewRequest({ id: 'r-stock', status: 'open', stockItemId: 'batch-9', farmProfileId: 'farm-9' })],
+    }))
+    const item = result.items.find(i => i.sourceEntityId === 'r-stock')!
+    expect(item.destinationPage).toBe('ddp-inventory-review')
+    expect(item.destinationParams).toEqual({ itemId: 'batch-9' })
+    expect(item.actionLabel).toBe('Review')
+  })
+
+  it('routes a farm-level follow-up to that farm’s review, not the generic farm list', () => {
+    const result = buildOperationsDeskItems(input({
+      // farm-level request: farmProfileId set, no batch — surfaced by the admin loader.
+      reviewRequests: [reviewRequest({ id: 'r-farm', status: 'open', stockItemId: undefined, farmProfileId: 'farm-42' })],
+    }))
+    const item = result.items.find(i => i.sourceEntityId === 'r-farm')!
+    expect(item.destinationPage).toBe('ddp-farm-review')
+    expect(item.destinationParams).toEqual({ farmId: 'farm-42' })
+    expect(item.destinationPage).not.toBe('ddp-farms')
+    expect(item.actionLabel).toBe('Open farm')
+  })
+
+  it('keeps the safe farm-list fallback for a request with neither identifier', () => {
+    const result = buildOperationsDeskItems(input({
+      reviewRequests: [reviewRequest({ id: 'r-none', status: 'open', stockItemId: undefined, farmProfileId: undefined })],
+    }))
+    const item = result.items.find(i => i.sourceEntityId === 'r-none')!
+    expect(item.destinationPage).toBe('ddp-farms')
+    expect(item.destinationParams).toBeUndefined()
+  })
+
   it('queues a farm awaiting more information as follow-up', () => {
     const result = buildOperationsDeskItems(input({
       farms: [makeFarm({ status: 'More Information Required' })],

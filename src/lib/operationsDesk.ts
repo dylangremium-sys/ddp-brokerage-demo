@@ -412,9 +412,22 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
         occurredAt: req.createdAt,
         ageInDays: daysBetween(req.createdAt, now),
         statusLabel: req.status,
-        destinationPage: (req.stockItemId ? 'ddp-inventory-review' : 'ddp-farms') as Page,
-        destinationParams: req.stockItemId ? { itemId: req.stockItemId } : undefined,
-        actionLabel: req.stockItemId ? 'Review' : 'Open',
+        // Route to the authoritative record: a batch-linked request opens the
+        // inventory review; a farm-level request (farmProfileId, no batch —
+        // these are now surfaced by the admin loader) opens that farm's review
+        // rather than a generic farm list; a request with neither identifier
+        // keeps the safe farm-list fallback.
+        destinationPage: (req.stockItemId
+          ? 'ddp-inventory-review'
+          : req.farmProfileId
+            ? 'ddp-farm-review'
+            : 'ddp-farms') as Page,
+        destinationParams: (req.stockItemId
+          ? { itemId: req.stockItemId }
+          : req.farmProfileId
+            ? { farmId: req.farmProfileId }
+            : undefined) as Record<string, string> | undefined,
+        actionLabel: req.stockItemId ? 'Review' : req.farmProfileId ? 'Open farm' : 'Open',
         sourceEntityType: 'review-request',
         sourceEntityId: req.id,
       })), collected, failures)

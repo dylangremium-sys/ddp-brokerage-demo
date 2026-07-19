@@ -157,6 +157,20 @@ describe('Operations Desk — read-only guarantees', () => {
     expect(PAGE_SRC).not.toContain('isHumanApproved')
   })
 
+  it('derives navigation targets only — the aggregator performs no write or mutation', () => {
+    // The follow-up routing maps records to destination pages/params; it must
+    // never call a write, status transition, request closure, procurement or
+    // Buyer Pack action.
+    const AGGREGATOR_SRC = raw(import.meta.glob('./operationsDesk.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+    for (const forbidden of [
+      'sbInsert', 'sbUpdate', 'sbDelete', '.insert(', '.update(', '.delete(', '.upsert(',
+      'updateFarmProfileStatus', 'updateInventoryStatus', 'resolveReviewRequest', 'createReviewRequest',
+      'saveProcurementDecision', 'createBuyerPackSnapshot', 'window.print', 'navigator.clipboard',
+    ]) {
+      expect(AGGREGATOR_SRC).not.toContain(forbidden)
+    }
+  })
+
   it('introduces no compliance approval or rule-state mutation', () => {
     for (const forbidden of ['activateRule', 'approveRule', 'pauseRule', 'retireRule', 'rejectRule', 'saveRule']) {
       expect(PAGE_SRC).not.toContain(forbidden)
