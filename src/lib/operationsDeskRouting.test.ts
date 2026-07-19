@@ -442,6 +442,39 @@ describe('Operations Desk — truthful loading + stale-load guard (Codex P2)', (
   })
 })
 
+describe('Operations Desk — compliance refetch is marked loading (Codex P2)', () => {
+  // The compliance effect refetches on every desk entry; a refetch must be
+  // represented as loading so a stale 'ready' snapshot cannot show an all-clear
+  // while it is in flight. The pure trigger decision is tested in
+  // complianceRefetch.test.ts; the guarded-load drop in asyncLoadGuard.test.ts.
+
+  it('adds a loading state and counts it as pending on the desk', () => {
+    // The load-state union includes an explicit in-flight value…
+    expect(APP_SRC).toContain("useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')")
+    // …and complianceLoading treats it (and idle) as pending.
+    expect(APP_SRC).toContain("complianceLoadState === 'idle' || complianceLoadState === 'loading'")
+  })
+
+  it('marks the refetch loading during render (not via set-state-in-effect)', () => {
+    expect(APP_SRC).toContain('complianceRefetchStarted(complianceFetchTrigger')
+    expect(APP_SRC).toContain("setComplianceLoadState('loading')")
+    // The marker is derived during render, not inside the fetch effect.
+    const effect = APP_SRC.slice(
+      APP_SRC.indexOf('runGuardedLoad(Promise.all([fetchComplianceRules'),
+      APP_SRC.indexOf('}, [currentProfile, page])'),
+    )
+    expect(effect).not.toContain("setComplianceLoadState('loading')")
+  })
+
+  it('guards the compliance refetch against a superseded or hung request', () => {
+    const effect = APP_SRC.slice(APP_SRC.indexOf('runGuardedLoad(Promise.all([fetchComplianceRules'))
+    const body = effect.slice(0, effect.indexOf('}, [currentProfile, page])'))
+    expect(body).toContain('() => active')
+    // cleanup flips the guard when the effect re-runs / unmounts
+    expect(APP_SRC).toContain('return () => { active = false }')
+  })
+})
+
 describe('Operations Desk — mobile layout containment', () => {
   // The wide matters table must scroll inside a bounded container so the page
   // root never scrolls sideways on narrow viewports. `.ops-desk-table-scroll`

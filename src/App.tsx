@@ -37,6 +37,7 @@ import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginR
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
+import { complianceRefetchStarted } from './lib/complianceRefetch'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
@@ -131,7 +132,13 @@ export default function App() {
   // able to tell "loaded and empty" apart from "could not load" so it never
   // presents a failed source as an all-clear. 'idle' means the fetch has not
   // settled yet, which the desk reads as still loading rather than as empty.
-  const [complianceLoadState, setComplianceLoadState] = useState<'idle' | 'ready' | 'failed'>('idle')
+  const [complianceLoadState, setComplianceLoadState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  // The {profile, page} the compliance fetch was last (re)started for. Compared
+  // during render to mark an imminent refetch as loading (see below), since the
+  // fetch effect cannot set a loading flag synchronously without tripping
+  // set-state-in-effect. `profile` is compared by identity to mirror the effect's
+  // currentProfile dependency (so a token refresh is treated as a fresh fetch).
+  const [complianceFetchTrigger, setComplianceFetchTrigger] = useState<{ profile: unknown; page: string } | null>(null)
   // Load outcome for the admin review-request fetch. Same three-state contract
   // as compliance: 'idle' = not yet settled (the desk shows loading, never a
   // premature zero), 'ready' = loaded (possibly empty), 'failed' = the desk
@@ -298,18 +305,24 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
     // The Operations Desk reads the same alert snapshot, so it refetches on
-    // entry for the same staleness reason the Supply Ledger pages do.
+    // entry for the same staleness reason the Supply Ledger pages do. The
+    // imminent 'loading' state is set during render (see the fetch-trigger block
+    // below), because it cannot be set synchronously here. The active guard drops
+    // a superseded or hung refetch so a stale result cannot overwrite a newer one.
     if (!SUPPLY_LEDGER_PAGES.includes(page) && page !== 'ddp-operations-desk') return
-    Promise.all([fetchComplianceRules(), fetchComplianceAlerts()])
-      .then(([rules, alerts]) => {
+    let active = true
+    runGuardedLoad(Promise.all([fetchComplianceRules(), fetchComplianceAlerts()]), () => active, {
+      onSuccess: ([rules, alerts]) => {
         setComplianceRules(rules)
         setComplianceAlerts(alerts)
         setComplianceLoadState('ready')
-      })
-      .catch(err => {
+      },
+      onError: err => {
         console.warn('Compliance rule impact data load failed:', err)
         setComplianceLoadState('failed')
-      })
+      },
+    })
+    return () => { active = false }
   }, [currentProfile, page])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
@@ -321,6 +334,27 @@ export default function App() {
   const isFarmerPage = FARMER_PAGES.includes(page)
   // Derived — true while a farmer's scope is being fetched from Supabase
   const scopeLoading = isFarmerRole && farmerScope === null
+
+  // Mark the compliance queue as loading the moment a refetch becomes imminent.
+  // The fetch effect above re-runs whenever {currentProfile, page} changes onto
+  // the Operations Desk, but it cannot flip a loading flag synchronously (that is
+  // set-state-in-effect). We detect the same change here during render — React's
+  // supported "adjust state while rendering" — and move the load state to
+  // 'loading', so the desk never presents a stale 'ready' snapshot as an
+  // all-clear while a refetch (including a slow or hung one) is in flight.
+  // `profile` is compared by identity to mirror the effect's currentProfile dep,
+  // so a token-refresh refetch is also shown as loading; the trigger clears on
+  // leaving so a return to the desk is detected as a fresh entry.
+  const onOperationsDeskAsAdmin =
+    !isDemo && currentProfile?.role === 'ddp_admin' && page === 'ddp-operations-desk'
+  if (onOperationsDeskAsAdmin) {
+    if (complianceRefetchStarted(complianceFetchTrigger, { profile: currentProfile, page })) {
+      setComplianceFetchTrigger({ profile: currentProfile, page })
+      if (complianceLoadState !== 'loading') setComplianceLoadState('loading')
+    }
+  } else if (complianceFetchTrigger !== null) {
+    setComplianceFetchTrigger(null)
+  }
 
   // ── Scoped data for farmer pages ─────────────────────────────────────────
   // In demo mode or for admin, pass everything through unchanged.
@@ -951,7 +985,7 @@ export default function App() {
               // store (empty [] when none stored). In Supabase mode a failed
               // fetch passes null so the desk reports the gap.
               complianceAlerts={isDemo ? demoComplianceAlerts : (complianceLoadState !== 'failed' ? complianceAlerts : null)}
-              complianceLoading={!isDemo && complianceLoadState === 'idle'}
+              complianceLoading={!isDemo && (complianceLoadState === 'idle' || complianceLoadState === 'loading')}
               onOpenFarm={handleReviewFarm}
               onOpenItem={handleReviewItem}
               goTo={goTo}
