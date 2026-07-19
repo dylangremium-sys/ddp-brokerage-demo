@@ -44,10 +44,14 @@ export function deskAdminDataView<F, I>(
   inventory: I[],
   farmsFresh: boolean,
   inventoryFresh: boolean,
-): { farms: F[]; inventory: I[] } {
+): { farms: F[]; inventory: I[] | null } {
   if (isDemo) return { farms, inventory }
   return {
+    // Farms: [] when unavailable — an empty farm list simply yields no farm
+    // matters (no false positives). Inventory: null when unavailable — distinct
+    // from a genuine [] so the desk never treats it as "no batches" and fabricates
+    // document gaps; only a fulfilled inventory load reaches the desk as an array.
     farms: farmsFresh ? farms : [],
-    inventory: inventoryFresh ? inventory : [],
+    inventory: inventoryFresh ? inventory : null,
   }
 }

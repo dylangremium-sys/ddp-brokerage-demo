@@ -47,24 +47,25 @@ describe('deskAdminDataView — only current-load-fresh data reaches the desk', 
     expect(deskAdminDataView(true, FARMS, INV, false, false)).toEqual({ farms: FARMS, inventory: INV })
   })
 
-  it('idle/loading (neither fresh) → desk receives [] / [], never the stale arrays', () => {
-    expect(deskAdminDataView(false, FARMS, INV, false, false)).toEqual({ farms: [], inventory: [] })
+  it('idle/loading (neither fresh) → farms [], inventory null (unavailable, not empty)', () => {
+    // Inventory is null, NOT [], so the desk never reads it as "no batches".
+    expect(deskAdminDataView(false, FARMS, INV, false, false)).toEqual({ farms: [], inventory: null })
   })
 
   it('both fulfilled → both fresh datasets exposed', () => {
     expect(deskAdminDataView(false, FARMS, INV, true, true)).toEqual({ farms: FARMS, inventory: INV })
   })
 
-  it('farms fulfilled / inventory rejected → only fresh farms; inventory []', () => {
-    expect(deskAdminDataView(false, FARMS, INV, true, false)).toEqual({ farms: FARMS, inventory: [] })
+  it('farms fulfilled / inventory rejected → fresh farms; inventory null (unavailable)', () => {
+    expect(deskAdminDataView(false, FARMS, INV, true, false)).toEqual({ farms: FARMS, inventory: null })
   })
 
   it('inventory fulfilled / farms rejected → only fresh inventory; farms []', () => {
     expect(deskAdminDataView(false, FARMS, INV, false, true)).toEqual({ farms: [], inventory: INV })
   })
 
-  it('both rejected → neither exposed', () => {
-    expect(deskAdminDataView(false, FARMS, INV, false, false)).toEqual({ farms: [], inventory: [] })
+  it('both rejected → farms [], inventory null', () => {
+    expect(deskAdminDataView(false, FARMS, INV, false, false)).toEqual({ farms: [], inventory: null })
   })
 
   it('a rejected dataset never leaks the retained (stale) rows it still holds', () => {

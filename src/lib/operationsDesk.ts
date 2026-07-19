@@ -1,5 +1,6 @@
 import type {
   ComplianceAlert,
+  DocumentRequirementType,
   FarmProfile,
   InventoryItem,
   Page,
@@ -13,6 +14,22 @@ import {
   deriveFarmDocumentRequirements,
   DOCUMENT_REQUIREMENT_LABELS,
 } from './procurementControl'
+
+/**
+ * Document requirements derived ENTIRELY from FarmProfile fields — safe to show
+ * even when the inventory source is unavailable. A fail-closed whitelist: any
+ * requirement type not listed here is treated as inventory/batch-dependent and
+ * suppressed while inventory is unavailable, so a future requirement type is
+ * hidden by default until it is deliberately classified as farm-only.
+ */
+const FARM_ONLY_REQUIREMENT_TYPES: ReadonlySet<DocumentRequirementType> = new Set<DocumentRequirementType>([
+  'farm_identity',
+  'farm_license',
+  'gacp_evidence',
+  'gmp_evidence',
+  'export_readiness_docs',
+  'responsible_contact',
+])
 import { farmForItem } from './complianceEvidence'
 import {
   classifyOperationsDeskPriority,
@@ -114,7 +131,13 @@ export interface OperationsDeskResult {
 
 export interface OperationsDeskInput {
   farms: FarmProfile[]
-  inventory: InventoryItem[]
+  /**
+   * `null` means the inventory source is unavailable (the current admin load did
+   * not fulfil it) — distinct from `[]`, which means loaded and genuinely empty.
+   * Never collapse the two: a null inventory must not be read as proof a farm has
+   * no batches, or the document queue emits false batch-dependent gaps.
+   */
+  inventory: InventoryItem[] | null
   /**
    * `null` means the review-request source could not be loaded — distinct from
    * `[]`, which means loaded and genuinely empty. Never collapse the two: an
@@ -178,6 +201,10 @@ function safeQueue(
 export function buildOperationsDeskItems(input: OperationsDeskInput): OperationsDeskResult {
   const now = input.now ?? new Date()
   const farms = input.farms ?? []
+  // `null` = inventory unavailable (current admin load did not fulfil it). Keep
+  // that distinct from a genuine [] — inventory-dependent derivations must not
+  // treat unavailable as "the farm has no batches". Normalize only for iteration.
+  const inventoryAvailable = input.inventory !== null
   const inventory = input.inventory ?? []
 
   const collected: OperationsDeskItem[] = []
@@ -240,7 +267,17 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
   // the same pairing DDPMissingDocuments and DDPBuyerPreview both use.
   safeQueue('document', () =>
     farms.flatMap(farm => {
-      const requirements = applyRequirementOverrides(deriveFarmDocumentRequirements(farm, inventory))
+      // While inventory is unavailable, deriveFarmDocumentRequirements would read
+      // its batch-dependent statuses (COA, batch number, photos, storage…) from an
+      // empty batch list and report them missing — false positives. Keep only the
+      // farm-only requirements (fail-closed whitelist), and apply overrides to just
+      // those eligible ones. When inventory IS available (including a genuine []),
+      // the complete original behaviour is preserved.
+      const derived = deriveFarmDocumentRequirements(farm, inventory)
+      const eligible = inventoryAvailable
+        ? derived
+        : derived.filter(req => FARM_ONLY_REQUIREMENT_TYPES.has(req.type))
+      const requirements = applyRequirementOverrides(eligible)
       return requirements
         .filter(req => ACTIONABLE_EVIDENCE.has(req.status))
         .map(req => ({

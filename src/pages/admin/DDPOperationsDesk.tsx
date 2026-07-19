@@ -47,7 +47,8 @@ export default function DDPOperationsDesk({
   goTo,
 }: {
   farms: FarmProfile[]
-  inventory: InventoryItem[]
+  /** null means the inventory source is unavailable — distinct from a genuine []. */
+  inventory: InventoryItem[] | null
   /** null means the review-request source failed to load — not "no requests". */
   reviewRequests: ReviewRequest[] | null
   reviewRequestsLoading: boolean
@@ -82,7 +83,7 @@ export default function DDPOperationsDesk({
   // partial/stale, or a malformed request) the review page would be an empty
   // shell, so the action is disabled instead of navigating nowhere.
   const loadedFarmIds = useMemo(() => new Set(farms.map(f => f.id)), [farms])
-  const loadedItemIds = useMemo(() => new Set(inventory.map(i => i.id)), [inventory])
+  const loadedItemIds = useMemo(() => new Set((inventory ?? []).map(i => i.id)), [inventory])
 
   const isFiltered =
     filters.search.trim() !== '' || filters.category !== 'all' || filters.priority !== 'all'

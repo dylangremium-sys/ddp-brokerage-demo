@@ -527,7 +527,9 @@ export default function App() {
     () => resolveDeskComplianceAlerts(
       !isDemo && complianceLoadState === 'failed',
       deskData.farms,
-      deskData.inventory,
+      // Unavailable inventory (null) derives no batch rule-alerts — rule-derived
+      // alerts use only current-load-fresh data; farm-rule alerts still derive.
+      deskData.inventory ?? [],
       isDemo ? (demoComplianceRules ?? []) : complianceRules,
       (isDemo ? demoComplianceAlerts : complianceAlerts) ?? [],
     ),

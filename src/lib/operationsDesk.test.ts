@@ -404,3 +404,58 @@ describe('Operations Desk aggregation — safety and integrity', () => {
     expect(RISK_OVERRIDE_KEY).toBe('ddp_risk_overrides')
   })
 })
+
+describe('Operations Desk — unavailable inventory does not fabricate document gaps', () => {
+  const INV_DEPENDENT = ['coa', 'batch_number', 'inventory_quantity_proof', 'inventory_photos', 'inventory_video', 'storage_evidence', 'chain_of_custody']
+
+  it('inventory unavailable (null): NO inventory/batch-dependent document requirements', () => {
+    const result = buildOperationsDeskItems(input({ farms: [makeFarm({ id: 'f1' })], inventory: null }))
+    const docIds = result.items.filter(i => i.category === 'document').map(i => i.id)
+    for (const t of INV_DEPENDENT) expect(docIds).not.toContain(`document:farm:f1:${t}`)
+  })
+
+  it('inventory unavailable (null): farm-only requirements still appear', () => {
+    const result = buildOperationsDeskItems(input({ farms: [makeFarm({ id: 'f1' })], inventory: null }))
+    const docIds = result.items.filter(i => i.category === 'document').map(i => i.id)
+    expect(docIds).toContain('document:farm:f1:farm_license') // derived from FarmProfile only
+  })
+
+  it('inventory genuinely loaded as [] preserves the original requirements (incl. COA missing)', () => {
+    const result = buildOperationsDeskItems(input({ farms: [makeFarm({ id: 'f1' })], inventory: [] }))
+    const docIds = result.items.filter(i => i.category === 'document').map(i => i.id)
+    expect(docIds).toContain('document:farm:f1:farm_license')
+    expect(docIds).toContain('document:farm:f1:coa') // genuinely no batches → COA genuinely missing
+  })
+
+  it('inventory unavailable (null): farm approval / onboarding / follow-up queues remain', () => {
+    expect(buildOperationsDeskItems(input({ farms: [makeFarm({ status: 'Submitted to DDP' })], inventory: null }))
+      .items.some(i => i.category === 'farmer-approval')).toBe(true)
+    expect(buildOperationsDeskItems(input({ farms: [makeFarm({ status: 'Draft', completionPct: 20 })], inventory: null }))
+      .items.some(i => i.category === 'onboarding')).toBe(true)
+    expect(buildOperationsDeskItems(input({ farms: [makeFarm({ status: 'More Information Required' })], inventory: null }))
+      .items.some(i => i.id.startsWith('follow-up:farm:'))).toBe(true)
+  })
+
+  it('inventory unavailable (null): farm-derived risks remain, inventory-derived risks do not', () => {
+    // A Watchlist farm produces a HIGH farm-derived risk (surfaced by the risk
+    // queue); it must survive an unavailable inventory, while no batch risk exists.
+    const result = buildOperationsDeskItems(input({ farms: [makeFarm({ id: 'f1', status: 'Watchlist' })], inventory: null }))
+    expect(result.items.some(i => i.id.includes('risk-farm-f1'))).toBe(true) // farm-derived risk kept
+    expect(result.items.some(i => i.id.includes(':risk:risk-batch'))).toBe(false) // no batch risk
+  })
+
+  it('inventory unavailable (null): no COA or inventory-review rows (no stale inventory leaks)', () => {
+    const result = buildOperationsDeskItems(input({ farms: [makeFarm({ id: 'f1' })], inventory: null }))
+    expect(result.items.some(i => i.category === 'coa')).toBe(false)
+    expect(result.items.some(i => i.id.startsWith('inventory-review:batch:'))).toBe(false)
+  })
+
+  it('inventory available with records: full document / COA / inventory-review behaviour remains', () => {
+    const item = makeInventoryItem({ id: 'b1', status: 'Pending Review', coaAvailable: false, coaStoragePath: undefined, certFileName: '' })
+    const result = buildOperationsDeskItems(input({ farms: [makeFarm({ id: 'f1' })], inventory: [item] }))
+    expect(result.items.some(i => i.id === 'inventory-review:batch:b1')).toBe(true)
+    expect(result.items.some(i => i.category === 'coa')).toBe(true)
+    // batch-dependent document requirements are back when inventory is available
+    expect(result.items.some(i => i.id === 'document:farm:f1:coa')).toBe(true)
+  })
+})

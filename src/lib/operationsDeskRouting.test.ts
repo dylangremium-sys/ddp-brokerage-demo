@@ -558,7 +558,7 @@ describe('Operations Desk — no routing to missing detail records (Codex P2)', 
 
   it('scopes availability to the currently loaded farm/inventory ids', () => {
     expect(PAGE_SRC).toContain('const loadedFarmIds = useMemo(() => new Set(farms.map(f => f.id))')
-    expect(PAGE_SRC).toContain('const loadedItemIds = useMemo(() => new Set(inventory.map(i => i.id))')
+    expect(PAGE_SRC).toContain('const loadedItemIds = useMemo(() => new Set((inventory ?? []).map(i => i.id))')
   })
 })
 
@@ -600,6 +600,26 @@ describe('Operations Desk — includes rule-derived compliance alerts (Codex P2)
 
   it('preserves failure truthfulness (failed → null to the merge)', () => {
     expect(APP_SRC).toContain("!isDemo && complianceLoadState === 'failed'")
+  })
+})
+
+describe('Operations Desk — unavailable inventory ≠ empty (Codex P2)', () => {
+  // The document-queue behaviour is covered in operationsDesk.test.ts; here we
+  // assert the fail-closed wiring so a future requirement type is suppressed by
+  // default while inventory is unavailable.
+  it('distinguishes inventory-unavailable with a fail-closed farm-only whitelist', () => {
+    const AGG = raw(import.meta.glob('./operationsDesk.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+    expect(AGG).toContain('const inventoryAvailable = input.inventory !== null')
+    expect(AGG).toContain('FARM_ONLY_REQUIREMENT_TYPES')
+    // whitelist (allow-list), applied only when inventory is NOT available
+    expect(AGG).toContain('inventoryAvailable\n        ? derived\n        : derived.filter(req => FARM_ONLY_REQUIREMENT_TYPES.has(req.type))')
+    // the input type carries the availability distinction
+    expect(AGG).toContain('inventory: InventoryItem[] | null')
+  })
+
+  it('App derives rule alerts from fresh inventory only (null → [])', () => {
+    expect(APP_SRC).toContain('deskData.inventory ?? []')
+    expect(APP_SRC).toContain('inventory={deskData.inventory}')
   })
 })
 
