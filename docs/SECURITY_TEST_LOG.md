@@ -1136,8 +1136,89 @@ cannot and must not be deleted.
 
 ### Running / CI status
 
-Run locally: `npm run security:staging`. It prints a concise PASS/FAIL/SKIP
+Run locally: `npm run security:staging`. It prints a concise PASS/FAIL/SKIP/BLOCK
 matrix, never logs secrets (keys, passwords, tokens, or full URLs), and exits
 non-zero on any failed assertion. **It is intentionally NOT wired into the CI
 workflow yet**, because GitHub Actions secrets for staging are not configured; it
 is a local/manual gate for now.
+
+## §10 — Pending-user matrix (migration 22 operational-farmer overlay)
+
+**Status: harness coverage implemented; authenticated staging execution pending
+application of migrations 21 and 22.** Nothing in this section has yet been
+executed against a database. No pending-user denial is claimed as verified.
+
+### Scope
+
+Migration 22 applies one `AS RESTRICTIVE FOR ALL` policy —
+`<table>: operational farmer or admin` — to **eleven** tables:
+
+`farms`, `farm_profiles`, `farm_memberships`, `inventory_batches`,
+`farmer_documents`, `farmer_photos`, `farmer_review_requests`, `documents`,
+`ddp_scores`, `risk_flags`, `status_history`
+
+(plus a bucket-scoped policy on `storage.objects` and one on
+`market_price_benchmarks`).
+
+The pending matrix now covers **all eleven, across SELECT / INSERT / UPDATE /
+DELETE — 44 probes.** It previously covered three tables, leaving seven
+unverified. `MIGRATION_22_TABLES` in the harness is asserted against the
+migration's own `tables text[]` array by `scripts/pending-user-matrix.test.mjs`,
+so adding a table to the migration without adding probes fails CI.
+
+### The harness refuses to run when migrations 21/22 are absent
+
+A pending account cannot exist without migration 21, and without migration 22
+there is no overlay to test — so every "denied" would be ordinary ownership
+denial. That is a green run proving nothing. Before any probe executes, a
+read-only catalog preflight requires all of:
+
+- `profiles` role constraint permits `pending`
+- `profiles.role` default is `pending`
+- `handle_new_user()` assigns `pending`
+- `has_operational_farmer_access()` exists
+- all **11** restrictive migration-22 policies exist
+
+If any fact is absent the run reports
+`PENDING PREFLIGHT FAILED — MIGRATIONS 21/22 NOT PRESENT` and every probe is
+recorded **BLOCK**.
+
+### A skipped or blocked probe is not a pass
+
+`BLOCK` is a distinct status from `SKIP` and **exits non-zero**. The pending
+matrix merge gate is `failed = skipped = blocked = cleanupFailures = 0`. Missing
+pending credentials, a missing `STAGING_DATABASE_URL`, a failed preflight, or a
+missing fixture all BLOCK — none of them silently skip.
+
+Fixture-dependent probes (every UPDATE and DELETE) are BLOCKED with a precise
+fixture requirement when the fixture is absent, because "0 rows affected" is
+otherwise indistinguishable from an RLS denial.
+
+Storage results are classified as `denied` / `not-found` / `invalid` /
+`unavailable`; **only `denied` counts as a pass.** An object-not-found result is
+not proof of authorization denial.
+
+### Environment
+
+- Approved staging project: **`szqocdabwkjrggrddocx`**.
+- Production **`iihxjrfxmycjafbtjvvq`** is explicitly prohibited — the harness
+  refuses the production ref, any unknown ref, and a production connection
+  string in the preflight.
+- Credential values (`STAGING_PENDING_EMAIL` / `STAGING_PENDING_PASSWORD` and
+  all other `STAGING_*` vars) must remain in the local gitignored
+  `.env.staging.local`. They are never committed, never added to
+  `.env.example`, and never printed; all probe detail passes through a
+  redaction filter.
+
+### Prerequisite before authenticated pending testing
+
+1. Apply migration 21 to the approved staging project; run its Section A
+   verification.
+2. Apply migration 22; run its Section A verification.
+3. Create a disposable staging account left at role `pending` (no farm, no
+   membership, never promoted).
+4. Configure `STAGING_PENDING_*` locally.
+5. Run the full 11-table matrix and require zero skips and zero blocks.
+
+Until steps 1–2 are done, the matrix is expected to report BLOCK. That is the
+intended behaviour, not a failure of the harness.

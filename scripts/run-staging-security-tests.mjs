@@ -116,6 +116,13 @@ function record(name, ok, detail = '') {
   results.push({ group: currentGroup, name, status: ok ? 'PASS' : 'FAIL', detail })
 }
 function skip(name, reason) { results.push({ group: currentGroup, name, status: 'SKIP', detail: reason }) }
+// BLOCK: the probe could not be executed under conditions that would make its
+// result meaningful. Unlike SKIP it is never a pass and always fails the run —
+// a pending probe that cannot run must not leave the suite green.
+function block(name, reason) {
+  results.push({ group: currentGroup, name, status: 'BLOCK', detail: reason, pendingMatrix: true })
+}
+function blockAll(names, reason) { for (const n of names) block(n, reason) }
 
 // Assert that a Supabase write/rpc was DENIED (error present, or zero rows).
 function isDenied(res) {
@@ -148,6 +155,207 @@ export async function countResidualFarms(client, tag) {
   if (!client) return 0
   const res = await client.from('farms').select('id').ilike(SYNTHETIC_FARM_COLUMN, `${tag}%`)
   return res?.data?.length ?? 0
+}
+
+// ── Migration 22: operational-farmer restrictive overlay ────────────────────
+//
+// Migration 22 applies ONE `AS RESTRICTIVE FOR ALL` policy per farmer-operated
+// table. This list is the authoritative mirror of the `tables text[]` array in
+// 22_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql. A regression test asserts the
+// two stay in step, so adding a table to the migration without adding a probe
+// here fails CI rather than silently shrinking pending-user coverage.
+export const MIGRATION_22_TABLES = Object.freeze([
+  'farms',
+  'farm_profiles',
+  'farm_memberships',
+  'inventory_batches',
+  'farmer_documents',
+  'farmer_photos',
+  'farmer_review_requests',
+  'documents',
+  'ddp_scores',
+  'risk_flags',
+  'status_history',
+])
+
+// The policy name migration 22 builds as `t || ': operational farmer or admin'`.
+export function migration22PolicyName(table) {
+  return `${table}: operational farmer or admin`
+}
+
+// ── Pending preflight ───────────────────────────────────────────────────────
+//
+// The pending matrix is only meaningful when migrations 21 AND 22 are actually
+// present on the target database. Without them a 'pending' role cannot exist,
+// and every "denied" below would be ordinary ownership denial — a green run
+// that proves nothing. These are the facts we require before asserting.
+export const PENDING_PREFLIGHT_FACTS = Object.freeze([
+  'role_constraint_allows_pending',
+  'role_default_is_pending',
+  'handle_new_user_assigns_pending',
+  'has_operational_farmer_access_exists',
+  ...MIGRATION_22_TABLES.map((t) => `policy_present:${t}`),
+])
+
+// Read-only catalog SQL producing one `fact=true|false` line per required fact.
+export function buildPendingPreflightSql() {
+  const policyChecks = MIGRATION_22_TABLES.map((t) =>
+    `select 'policy_present:${t}=' || (count(*) > 0)::text from pg_policies` +
+    ` where schemaname='public' and tablename='${t}' and policyname='${migration22PolicyName(t)}';`
+  ).join('\n')
+  return [
+    `select 'role_constraint_allows_pending=' || coalesce(bool_or(pg_get_constraintdef(oid) like '%pending%'), false)::text` +
+    ` from pg_constraint where conrelid='public.profiles'::regclass and contype='c';`,
+    `select 'role_default_is_pending=' || coalesce(bool_or(column_default like '%pending%'), false)::text` +
+    ` from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='role';`,
+    `select 'handle_new_user_assigns_pending=' || coalesce(bool_or(prosrc like '%pending%'), false)::text` +
+    ` from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='handle_new_user';`,
+    `select 'has_operational_farmer_access_exists=' || (count(*) > 0)::text from pg_proc p` +
+    ` join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='has_operational_farmer_access';`,
+    policyChecks,
+  ].join('\n')
+}
+
+// Parse `fact=true` lines from psql -At output into a plain object.
+export function parsePreflightFacts(psqlOutput) {
+  const facts = {}
+  for (const line of String(psqlOutput || '').split('\n')) {
+    const m = line.trim().match(/^(.+)=(true|false)$/)
+    if (m) facts[m[1]] = m[2] === 'true'
+  }
+  return facts
+}
+
+// Pure gate: every required fact must be explicitly true. Anything missing or
+// false blocks the matrix. Returns blockers so the operator sees exactly what
+// is absent rather than a bare refusal.
+export function evaluatePendingPreflight(facts) {
+  const f = facts || {}
+  const blockers = PENDING_PREFLIGHT_FACTS.filter((k) => f[k] !== true)
+  return {
+    ok: blockers.length === 0,
+    blockers,
+    summary: blockers.length === 0
+      ? 'migrations 21 and 22 present'
+      : `PENDING PREFLIGHT FAILED — MIGRATIONS 21/22 NOT PRESENT (${blockers.length} missing: ${blockers.slice(0, 4).join(', ')}${blockers.length > 4 ? ', …' : ''})`,
+  }
+}
+
+// ── Pending probe registry ──────────────────────────────────────────────────
+//
+// Data-driven so all 11 tables are covered uniformly and the table/operation
+// that failed is always named explicitly in the probe name.
+//
+// `requires` names a fixture the probe needs to be MEANINGFUL. UPDATE/DELETE
+// against a table with no matching row returns "0 rows affected", which is
+// indistinguishable from an RLS denial — so those probes target a real fixture
+// row and are BLOCKED (never silently skipped or passed) when it is absent.
+const FIXTURE_FARM = 'farmFixture'
+
+export function buildPendingProbeRegistry() {
+  const rows = []
+  for (const table of MIGRATION_22_TABLES) {
+    rows.push({ table, operation: 'select', requires: [] })
+    rows.push({ table, operation: 'insert', requires: table === 'farms' ? [] : [FIXTURE_FARM] })
+    rows.push({ table, operation: 'update', requires: [FIXTURE_FARM] })
+    rows.push({ table, operation: 'delete', requires: [FIXTURE_FARM] })
+  }
+  return rows.map((r) => ({ ...r, probeName: `pending cannot ${r.operation} ${r.table}` }))
+}
+
+// Minimal INSERT payloads. Every column here was confirmed against the staging
+// catalog: only farmer_photos.file_url, farmer_review_requests.request_type and
+// .message are NOT NULL without a default. Payloads must satisfy CHECK
+// constraints too, because a CHECK fires BEFORE RLS (see PRE_RLS_SQLSTATES) and
+// would make the probe test the schema instead of the policy.
+export function pendingInsertPayload(table, ctx) {
+  const { tag, userId, farmId } = ctx
+  switch (table) {
+    case 'farms': return { farm_name: `${tag}-P`, created_by: userId }
+    case 'farm_profiles': return { farm_id: farmId }
+    case 'farm_memberships': return { farm_id: farmId, user_id: userId, role: 'operator' }
+    case 'inventory_batches': return { created_by: userId, farm_id: farmId, notes: `${tag}-P` }
+    case 'farmer_documents': return { farm_id: farmId, document_type: 'coa', file_name: `${tag}.pdf` }
+    case 'farmer_photos': return { farm_id: farmId, photo_type: 'facility', file_url: `${tag}.jpg` }
+    case 'farmer_review_requests': return { farm_id: farmId, request_type: 'coa', message: `${tag}-P`, status: 'open' }
+    case 'documents': return { farm_id: farmId, document_type: 'coa', file_name: `${tag}.pdf` }
+    case 'ddp_scores': return { farm_id: farmId, total_score: 1 }
+    case 'risk_flags': return { farm_id: farmId, flag_type: 'other', label: `${tag}-P`, severity: 'low' }
+    case 'status_history': return { entity_type: 'farm', entity_id: farmId, new_status: `${tag}-P` }
+    default: throw new Error(`no pending insert payload defined for ${table}`)
+  }
+}
+
+// A tag-scoped UPDATE payload, so a probe that wrongly succeeds is traceable
+// and removable rather than corrupting a shared fixture.
+export function pendingUpdatePayload(table, ctx) {
+  const { tag } = ctx
+  switch (table) {
+    case 'farms': return { farm_name: `${tag}-PU` }
+    case 'inventory_batches': return { notes: `${tag}-PU` }
+    case 'farm_memberships': return { role: 'operator' }
+    case 'farmer_documents': case 'documents': return { file_name: `${tag}-PU.pdf` }
+    case 'farmer_photos': return { file_url: `${tag}-PU.jpg` }
+    case 'farmer_review_requests': return { message: `${tag}-PU` }
+    case 'ddp_scores': return { total_score: 2 }
+    case 'risk_flags': return { label: `${tag}-PU` }
+    case 'status_history': return { note: `${tag}-PU` }
+    case 'farm_profiles': return { business_info: { probe: `${tag}-PU` } }
+    default: throw new Error(`no pending update payload defined for ${table}`)
+  }
+}
+
+// ── Storage outcome classification ──────────────────────────────────────────
+//
+// "Object not found" is NOT proof of authorization denial — the object may
+// simply be absent. Callers must treat only 'denied' as a security pass.
+export function classifyStorageOutcome(res) {
+  if (!res) return { outcome: 'unavailable', reason: 'no response from storage' }
+  const err = res.error
+  if (!err) return { outcome: 'allowed', reason: 'operation succeeded' }
+  const status = err.statusCode ?? err.status ?? null
+  const msg = String(err.message || '').toLowerCase()
+  if (String(status) === '404' || msg.includes('not found')) {
+    return { outcome: 'not-found', reason: 'object not found — NOT proof of denial' }
+  }
+  if (String(status) === '400' || msg.includes('invalid')) {
+    return { outcome: 'invalid', reason: `invalid request — does not exercise policy (${status ?? 'n/a'})` }
+  }
+  if (String(status) === '401' || String(status) === '403'
+      || msg.includes('unauthor') || msg.includes('denied') || msg.includes('violates row-level security')) {
+    return { outcome: 'denied', reason: `denied by policy (${status ?? 'n/a'})` }
+  }
+  return { outcome: 'unavailable', reason: `unclassified storage error (${status ?? 'n/a'})` }
+}
+
+// ── Matrix aggregation ──────────────────────────────────────────────────────
+//
+// The merge gate requires failed = skipped = blocked = cleanupFailures = 0.
+// A blocked probe is explicitly NOT a pass.
+export function summarisePendingMatrix(rows) {
+  const list = Array.isArray(rows) ? rows : []
+  const count = (s) => list.filter((r) => r.status === s).length
+  const cleanupFailures = list.filter((r) => r.cleanupVerified === false).length
+  const summary = {
+    total: list.length,
+    passed: count('PASS'),
+    failed: count('FAIL'),
+    skipped: count('SKIP'),
+    blocked: count('BLOCK'),
+    cleanupFailures,
+  }
+  summary.overallPassing = summary.total > 0
+    && summary.failed === 0 && summary.skipped === 0
+    && summary.blocked === 0 && summary.cleanupFailures === 0
+  return summary
+}
+
+// Strip anything credential-shaped from probe detail text before printing.
+export function redactSecrets(text) {
+  return String(text ?? '')
+    .replace(/postgres(ql)?:\/\/[^\s]*/gi, '<redacted-connection-string>')
+    .replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g, '<redacted-jwt>')
+    .replace(/(password|passwd|secret|token|apikey|api_key|service_role)("?\s*[:=]\s*)("[^"]*"|\S+)/gi, '$1$2<redacted>')
 }
 
 // Postgres SQLSTATEs that must NOT be accepted as evidence that RLS denied a
@@ -190,6 +398,94 @@ async function signedInClient(cfg, creds, label) {
   const { data, error } = await c.auth.signInWithPassword({ email: creds.email, password: creds.password })
   if (error || !data?.session) throw new Error(`could not sign in ${label} (check staging test-user creds)`)
   return { client: c, userId: data.user.id }
+}
+
+// ── Pending preflight + matrix drivers (live) ───────────────────────────────
+
+// Run the catalog preflight. Returns true only when every required migration
+// 21/22 fact is present. Records one PASS/FAIL line so the operator can see
+// exactly which fact is missing.
+function runPendingPreflight(databaseUrl) {
+  if (databaseUrl.includes(PRODUCTION_REF)) {
+    record('pending preflight refused (production connection string)', false,
+      'STAGING_DATABASE_URL contains the production ref')
+    return false
+  }
+  let facts
+  try {
+    const out = execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-X', '-A', '-t', '-c', buildPendingPreflightSql()],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    facts = parsePreflightFacts(out)
+  } catch (e) {
+    record('pending preflight (migrations 21/22 present)', false,
+      redactSecrets(`psql error: ${String(e?.message || e).split('\n')[0].slice(0, 80)}`))
+    return false
+  }
+  const verdict = evaluatePendingPreflight(facts)
+  record('pending preflight (migrations 21/22 present)', verdict.ok, redactSecrets(verdict.summary))
+  return verdict.ok
+}
+
+// Execute the 11-table × 4-operation pending matrix. Every probe is recorded
+// with its table and operation named, so a failure is never ambiguous.
+async function runPendingMatrix(ctx) {
+  const { client, userId, tag, farmId } = ctx
+  const fixtures = { farmFixture: farmId || null }
+  const createdIds = []
+
+  for (const probe of buildPendingProbeRegistry()) {
+    const missing = probe.requires.filter((r) => !fixtures[r])
+    if (missing.length > 0) {
+      // Precise fixture requirement, never a silent skip (§7).
+      block(probe.probeName,
+        `requires fixture(s) ${missing.join(', ')} — an operational farmer fixture row is needed for this probe to distinguish RLS denial from "no matching row"`)
+      continue
+    }
+    const { table, operation } = probe
+    let res
+    try {
+      if (operation === 'select') {
+        res = await client.from(table).select('id').limit(1)
+        // A restrictive overlay yields zero readable rows. Recorded via isDenied
+        // because SELECT denial surfaces as an empty set, not an error.
+        record(probe.probeName, isDenied(res), redactSecrets(res?.error?.message || 'no rows readable'))
+        continue
+      }
+      if (operation === 'insert') {
+        res = await client.from(table).insert(pendingInsertPayload(table, { tag, userId, farmId })).select('id')
+        if (Array.isArray(res?.data)) for (const row of res.data) if (row?.id) createdIds.push({ table, id: row.id })
+      } else if (operation === 'update') {
+        res = await client.from(table).update(pendingUpdatePayload(table, { tag })).eq('farm_id', farmId).select('id')
+      } else {
+        res = await client.from(table).delete().eq('farm_id', farmId).select('id')
+      }
+    } catch (e) {
+      record(probe.probeName, false, redactSecrets(`probe threw: ${String(e?.message || e).slice(0, 80)}`))
+      continue
+    }
+    // isDeniedByRls FAILS the probe when the rejection came from a CHECK/NOT
+    // NULL/undefined-column error, i.e. it never reached the policy at all.
+    const verdict = isDeniedByRls(res)
+    record(probe.probeName, verdict.denied, redactSecrets(verdict.reason))
+  }
+
+  // Cleanup: anything a probe managed to create is a security failure AND must
+  // be removed. Cleanup runs regardless of earlier failures and is verified.
+  for (const { table, id } of createdIds) {
+    let removed = false
+    try {
+      await client.from(table).delete().eq('id', id)
+      const check = await client.from(table).select('id').eq('id', id)
+      removed = (check?.data?.length ?? 0) === 0
+    } catch { removed = false }
+    results.push({
+      group: currentGroup,
+      name: `cleanup: pending-created ${table} row removed`,
+      status: removed ? 'PASS' : 'FAIL',
+      detail: removed ? '' : 'row created by a pending probe could not be removed',
+      cleanupVerified: removed,
+    })
+  }
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -452,13 +748,16 @@ async function main() {
     // the REST/Storage API even though ownership predicates would otherwise pass.
     group('H. pending user denied operational access')
     if (!cfg.pending) {
-      const reason = 'set STAGING_PENDING_EMAIL/STAGING_PENDING_PASSWORD to a staging user whose profiles.role = pending'
-      for (const n of [
-        'pending cannot insert farm', 'pending cannot update farm',
-        'pending cannot insert inventory_batch', 'pending cannot update inventory_batch',
-        'pending cannot insert farmer_document metadata', 'pending cannot upload to farmer-documents',
-        'pending cannot upload to farmer-photos', 'pending cannot read farmer-operated data',
-      ]) skip(n, reason)
+      // Absent credentials BLOCK the matrix; they do not skip it. A skip would
+      // leave the run green while migration 22's central guarantee is untested.
+      blockAll(buildPendingProbeRegistry().map((p) => p.probeName),
+        'set STAGING_PENDING_EMAIL/STAGING_PENDING_PASSWORD to a staging user whose profiles.role = pending')
+    } else if (!cfg.databaseUrl) {
+      blockAll(buildPendingProbeRegistry().map((p) => p.probeName),
+        'set STAGING_DATABASE_URL — the pending matrix requires a catalog preflight proving migrations 21/22 are present')
+    } else if (!runPendingPreflight(cfg.databaseUrl)) {
+      blockAll(buildPendingProbeRegistry().map((p) => p.probeName),
+        'pending preflight failed — migrations 21/22 are not present on the target database')
     } else {
       const p = await signedInClient(cfg, cfg.pending, 'pending')
       // Fail closed if the configured user is not actually pending — otherwise a
@@ -475,31 +774,33 @@ async function main() {
           : `configured user role is "${observedRole ?? 'missing'}", not "pending" — refusing to assert`
         skip('pending-user probes', detail)
       } else {
-        const denRls = (res) => isDeniedByRls(res).denied
-        record('pending cannot insert farm',
-          denRls(await p.client.from('farms').insert({ farm_name: `${TAG}-P`, created_by: p.userId }).select('id')))
-        record('pending cannot update farm',
-          denRls(await p.client.from('farms').update({ farm_name: `${TAG}-P2` }).eq('id', farmA ?? '00000000-0000-0000-0000-000000000000').select('id')))
-        // Best-effort valid rows so the ONLY barrier is RLS (see the guardrail-fix
-        // schema notes). If a NOT NULL column is added, update these payloads.
-        record('pending cannot insert inventory_batch',
-          denRls(await p.client.from('inventory_batches')
-            .insert({ created_by: p.userId, farm_id: farmA ?? '00000000-0000-0000-0000-000000000000', status: 'Pending Review', client_visible: false, notes: `${TAG}-P` })
-            .select('id')))
-        record('pending cannot update inventory_batch',
-          denRls(await p.client.from('inventory_batches').update({ notes: `${TAG}-P2` }).ilike('notes', `${TAG}%`).select('id')))
-        record('pending cannot insert farmer_document metadata',
-          denRls(await p.client.from('farmer_documents')
-            .insert({ farm_id: farmA ?? '00000000-0000-0000-0000-000000000000', doc_type: 'coa', file_path: `${p.userId}/${TAG}.pdf` })
-            .select('id')))
-        record('pending cannot upload to farmer-documents',
-          !!(await p.client.storage.from('farmer-documents').upload(`${p.userId}/${TAG}.txt`, new Blob(['x']))).error)
-        record('pending cannot upload to farmer-photos',
-          !!(await p.client.storage.from('farmer-photos').upload(`${p.userId}/${TAG}.jpg`, new Blob(['x']))).error)
-        record('pending cannot read farmer-operated data',
-          isDenied(await p.client.from('farms').select('id').limit(1)))
+        await runPendingMatrix({ client: p.client, userId: p.userId, tag: TAG, farmId: farmA })
+
         record('pending cannot read market_price_benchmarks (migration 22)',
           isDenied(await p.client.from('market_price_benchmarks').select('id').limit(1)))
+
+        // Storage: an object-not-found result is NOT proof of denial, so the
+        // outcome is classified rather than treated as a boolean error check.
+        for (const bucket of ['farmer-documents', 'farmer-photos']) {
+          const up = await p.client.storage.from(bucket).upload(`${p.userId}/${TAG}.txt`, new Blob(['x']))
+          const cls = classifyStorageOutcome(up)
+          record(`pending cannot upload to ${bucket}`, cls.outcome === 'denied', redactSecrets(cls.reason))
+          if (cls.outcome === 'allowed') {
+            const rm = await p.client.storage.from(bucket).remove([`${p.userId}/${TAG}.txt`])
+            record(`cleanup: removed pending upload from ${bucket}`, !rm?.error,
+              rm?.error ? redactSecrets(String(rm.error.message)) : '')
+          }
+        }
+        // Writing beneath another user's prefix must also be denied.
+        const foreign = await p.client.storage.from('farmer-documents')
+          .upload(`${b.userId}/${TAG}-pending.txt`, new Blob(['x']))
+        const foreignCls = classifyStorageOutcome(foreign)
+        record('pending cannot upload beneath another user prefix',
+          foreignCls.outcome === 'denied', redactSecrets(foreignCls.reason))
+        const listRes = await p.client.storage.from('farmer-documents').list(`${b.userId}`)
+        record('pending cannot list another user private objects',
+          !listRes?.data || listRes.data.length === 0,
+          redactSecrets(classifyStorageOutcome(listRes).reason))
 
         // Affirmative: operational farmer and admin retain access under the overlay.
         record('operational farmer retains own-farm access (post-21)',
@@ -552,7 +853,18 @@ async function main() {
   // ── Matrix + exit ──────────────────────────────────────────────────────────
   printMatrix()
   const failed = results.filter((r) => r.status === 'FAIL').length
-  process.exit(failed > 0 ? 1 : 0)
+  // A BLOCK means a probe could not run under meaningful conditions. It is
+  // never a pass, so it must fail the process just as a FAIL does — otherwise
+  // an unconfigured pending matrix would leave the suite green.
+  const blocked = results.filter((r) => r.status === 'BLOCK').length
+  const cleanupFailures = results.filter((r) => r.cleanupVerified === false).length
+  if (blocked > 0) {
+    console.log(`\n${blocked} probe(s) BLOCKED — not executed under meaningful conditions; this is not a pass.`)
+  }
+  if (cleanupFailures > 0) {
+    console.log(`\n${cleanupFailures} cleanup failure(s) — synthetic rows may remain.`)
+  }
+  process.exit(failed > 0 || blocked > 0 || cleanupFailures > 0 ? 1 : 0)
 }
 
 // Catalog checks run the committed SELECT-only VERIFY files against staging and
@@ -590,13 +902,23 @@ function printMatrix() {
   let g = ''
   for (const r of results) {
     if (r.group !== g) { g = r.group; console.log(`\n${g}`) }
-    const mark = r.status === 'PASS' ? '✓' : r.status === 'SKIP' ? '•' : '✗'
-    console.log(`  ${mark} [${r.status}] ${r.name}${r.detail ? `  — ${r.detail}` : ''}`)
+    const mark = r.status === 'PASS' ? '✓' : r.status === 'SKIP' ? '•' : r.status === 'BLOCK' ? '⊘' : '✗'
+    console.log(`  ${mark} [${r.status}] ${r.name}${r.detail ? `  — ${redactSecrets(r.detail)}` : ''}`)
   }
   const p = results.filter((r) => r.status === 'PASS').length
   const f = results.filter((r) => r.status === 'FAIL').length
   const s = results.filter((r) => r.status === 'SKIP').length
-  console.log(`\n──────── ${p} PASS · ${f} FAIL · ${s} SKIP ────────`)
+  const bl = results.filter((r) => r.status === 'BLOCK').length
+  console.log(`\n──────── ${p} PASS · ${f} FAIL · ${s} SKIP · ${bl} BLOCK ────────`)
+
+  // Pending-matrix aggregate, reported separately because its merge gate is
+  // stricter: failed = skipped = blocked = cleanupFailures = 0.
+  const pendingRows = results.filter((r) => r.group?.startsWith('H.') || r.pendingMatrix)
+  if (pendingRows.length > 0) {
+    const m = summarisePendingMatrix(pendingRows)
+    console.log(`pending matrix: ${m.total} total · ${m.passed} pass · ${m.failed} fail · ${m.skipped} skip · ${m.blocked} blocked · ${m.cleanupFailures} cleanup-failures`)
+    console.log(`pending matrix merge-gate: ${m.overallPassing ? 'SATISFIED' : 'NOT SATISFIED'}`)
+  }
 }
 
 // Auto-run only when executed directly (so the guards can be imported and
