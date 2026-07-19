@@ -515,19 +515,36 @@ describe('Operations Desk — admin farm/inventory source tracking (Codex P2)', 
     expect(APP_SRC).toContain("farmInventoryFailed={!isDemo && adminDataLoadState === 'failed'}")
     // loading is set during render (adjust-state), not synchronously in the effect
     expect(APP_SRC).toContain("setAdminDataLoadState('loading')")
-    // allSettled + the pure outcome helper, so a partial failure keeps the good half
+    // allSettled + the pure apply plan (SET fulfilled, CLEAR rejected)
     expect(APP_SRC).toContain('runGuardedLoad(Promise.allSettled([loadFarmsFromDB(), loadInventoryFromDB()])')
-    expect(APP_SRC).toContain('resolveAdminDataLoad(farmsResult, inventoryResult)')
+    expect(APP_SRC).toContain('resolveAdminDataApply(farmsResult, inventoryResult)')
     const effect = APP_SRC.slice(
       APP_SRC.indexOf('runGuardedLoad(Promise.allSettled([loadFarmsFromDB'),
       APP_SRC.indexOf('}, [currentProfile])', APP_SRC.indexOf('runGuardedLoad(Promise.allSettled([loadFarmsFromDB')),
     )
     expect(effect).not.toContain("setAdminDataLoadState('loading')")
-    // only whichever dataset succeeded is applied (the good half is kept)
-    expect(effect).toContain('if (outcome.farms !== undefined) setFarms(outcome.farms)')
-    expect(effect).toContain('if (outcome.inventory !== undefined) setInventory(outcome.inventory)')
+    // fulfilled → set; rejected → CLEAR (not retain) + drop the selected detail id
+    expect(effect).toContain("if (plan.farms.kind === 'set') setFarms(plan.farms.value)")
+    expect(effect).toContain('setFarms([])')
+    expect(effect).toContain("if (plan.inventory.kind === 'set') setInventory(plan.inventory.value)")
+    expect(effect).toContain('setInventory([])')
+    expect(effect).toContain('if (plan.clearFarmDetail) setReviewFarmId(null)')
+    expect(effect).toContain('if (plan.clearItemDetail) setReviewItemId(null)')
     // guarded against a superseded/hung load
     expect(effect).toContain('() => active')
+  })
+
+  it('fails closed on a {userId, role} scope change — clears shared farms/inventory for ALL admin pages', () => {
+    // Reuses the stable review-request scope key; on change, drops the shared
+    // arrays, availability, and selected detail ids so Farm/Inventory Review and
+    // other admin pages cannot render a previous scope's rows.
+    const block = APP_SRC.slice(APP_SRC.indexOf('reviewRequestScopeChanged(reviewScopeKeyRef.current'))
+    const scoped = block.slice(0, block.indexOf('// Bootstrap routing'))
+    expect(scoped).toContain('setFarms([])')
+    expect(scoped).toContain('setInventory([])')
+    expect(scoped).toContain('setAdminDataAvailability({ farms: false, inventory: false })')
+    expect(scoped).toContain('setReviewFarmId(null)')
+    expect(scoped).toContain('setReviewItemId(null)')
   })
 
   it('the admin loaders throw on error (no silent [] that masks a failure)', () => {
@@ -638,12 +655,11 @@ describe('Operations Desk — only fresh admin data reaches the desk (Codex P2)'
     expect(APP_SRC).not.toMatch(/resolveDeskComplianceAlerts\(\s*[^)]*\bfarms\b,\s*inventory,/)
   })
 
-  it('tracks per-dataset freshness: reset on load start, set from allSettled result', () => {
+  it('tracks per-dataset freshness: reset on load start, set from the apply plan', () => {
     // reset when a new admin load starts (render-time trigger)
     expect(APP_SRC).toContain('setAdminDataAvailability({ farms: false, inventory: false })')
-    // set from the actual fulfilled/rejected status of each dataset
-    expect(APP_SRC).toContain("farms: farmsResult.status === 'fulfilled'")
-    expect(APP_SRC).toContain("inventory: inventoryResult.status === 'fulfilled'")
+    // set from the apply plan's per-dataset availability once the load settles
+    expect(APP_SRC).toContain('setAdminDataAvailability({ farms: plan.farmsAvailable, inventory: plan.inventoryAvailable })')
   })
 })
 

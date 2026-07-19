@@ -1,30 +1,45 @@
 /**
- * Resolves the outcome of the coordinated admin farm/inventory load from the two
- * settled (allSettled) results.
+ * Turns the two settled (allSettled) results of a coordinated admin farm/
+ * inventory load into an explicit apply plan.
  *
- * Applies whichever dataset succeeded — a transient or RLS failure in one table
- * must not discard the good half (Supabase mode starts these arrays empty, so
- * discarding a success blanks otherwise-usable admin pages) — while marking the
- * source `failed` unless BOTH succeeded, so the Operations Desk still reports the
- * gap and never shows an all-clear. A value is present only when its load was
- * fulfilled; a fulfilled empty array is a legitimate value, distinct from an
- * absent (rejected) one. Pure, so it is unit-testable.
+ * A fulfilled dataset is SET (including a genuine empty array — distinct from a
+ * rejection). A REJECTED dataset is CLEARED, not retained: once a load has
+ * definitively failed, keeping the previous rows would let any admin page (Farm
+ * Review, Inventory Review, …) silently reuse stale/prior-scope data, so the
+ * shared array is emptied and its selected detail id dropped (fail closed). The
+ * fulfilled half of a partial failure is preserved. The source is `ready` only
+ * when BOTH succeed, else `failed`. Pure, so it is unit-testable.
  */
-export interface AdminDataLoadOutcome<F, I> {
-  farms?: F
-  inventory?: I
+export type DatasetApply<T> = { kind: 'set'; value: T } | { kind: 'clear' }
+
+export interface AdminDataApplyPlan<F, I> {
+  farms: DatasetApply<F>
+  inventory: DatasetApply<I>
+  farmsAvailable: boolean
+  inventoryAvailable: boolean
+  clearFarmDetail: boolean
+  clearItemDetail: boolean
   state: 'ready' | 'failed'
 }
 
-export function resolveAdminDataLoad<F, I>(
+export function resolveAdminDataApply<F, I>(
   farmsResult: PromiseSettledResult<F>,
   inventoryResult: PromiseSettledResult<I>,
-): AdminDataLoadOutcome<F, I> {
-  const bothOk = farmsResult.status === 'fulfilled' && inventoryResult.status === 'fulfilled'
-  const outcome: AdminDataLoadOutcome<F, I> = { state: bothOk ? 'ready' : 'failed' }
-  if (farmsResult.status === 'fulfilled') outcome.farms = farmsResult.value
-  if (inventoryResult.status === 'fulfilled') outcome.inventory = inventoryResult.value
-  return outcome
+): AdminDataApplyPlan<F, I> {
+  const farmsOk = farmsResult.status === 'fulfilled'
+  const inventoryOk = inventoryResult.status === 'fulfilled'
+  return {
+    farms: farmsOk ? { kind: 'set', value: farmsResult.value } : { kind: 'clear' },
+    inventory: inventoryOk ? { kind: 'set', value: inventoryResult.value } : { kind: 'clear' },
+    farmsAvailable: farmsOk,
+    inventoryAvailable: inventoryOk,
+    // Drop the selected detail id whose backing dataset was cleared, so an
+    // already-open Farm/Inventory Review fails closed instead of showing a stale
+    // record.
+    clearFarmDetail: !farmsOk,
+    clearItemDetail: !inventoryOk,
+    state: farmsOk && inventoryOk ? 'ready' : 'failed',
+  }
 }
 
 /**

@@ -37,7 +37,7 @@ import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginR
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer, deskReviewRequestsView } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
-import { resolveAdminDataLoad, deskAdminDataView } from './lib/adminDataLoad'
+import { resolveAdminDataApply, deskAdminDataView } from './lib/adminDataLoad'
 import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
@@ -198,6 +198,18 @@ export default function App() {
         reviewScopeKeyRef.current = nextScopeKey
         setReviewRequests([])
         setReviewRequestsLoadState('idle')
+        // Fail closed on a {userId, role} scope change (farmer↔admin, admin A→B,
+        // sign-out): drop the shared farm/inventory arrays and their availability
+        // and selected detail ids so NO admin page — not just the Operations Desk
+        // — can render a previous scope's rows before this scope's load settles.
+        // A same-admin token refresh keeps the same key, so it is not cleared here
+        // (the loaders clear a rejected dataset themselves once it definitively
+        // fails). Runs only in Supabase mode (this effect early-returns in demo).
+        setFarms([])
+        setInventory([])
+        setAdminDataAvailability({ farms: false, inventory: false })
+        setReviewFarmId(null)
+        setReviewItemId(null)
       }
       // Bootstrap routing: on the FIRST auth resolution after a (re)load, route a
       // restored session to its role page (a reload resets `page` to the public
@@ -265,30 +277,28 @@ export default function App() {
   // ── Load all farms + inventory from Supabase when admin signs in ────────────
   // Loaded with allSettled: the Operations Desk source is 'ready' only when BOTH
   // succeed, and 'failed' if either loader throws (partial failure included), so
-  // the desk reports the gap rather than a false all-clear. Crucially, whichever
-  // dataset DID succeed is still applied — a transient/RLS failure in one table
-  // must not discard the good half and blank otherwise-usable admin pages; the
-  // desk's 'failed' state (not the arrays) suppresses the all-clear. The imminent
-  // 'loading' state is set during render (see the trigger below). The active
-  // guard drops a superseded or hung load after an account switch.
+  // the desk reports the gap rather than a false all-clear. The fulfilled half of
+  // a partial failure is still applied. A REJECTED dataset is CLEARED (not
+  // retained) once the load has definitively failed, and its selected detail id
+  // is dropped, so no admin page — Farm/Inventory Review included — can reuse a
+  // stale/prior-scope row. (A same-admin token refresh keeps prior rows only
+  // WHILE pending; this runs after the load settles.) The imminent 'loading'
+  // state is set during render (see the trigger below); the active guard drops a
+  // superseded or hung load after an account switch so it cannot repopulate.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
     let active = true
     runGuardedLoad(Promise.allSettled([loadFarmsFromDB(), loadInventoryFromDB()]), () => active, {
       onSuccess: ([farmsResult, inventoryResult]) => {
-        const outcome = resolveAdminDataLoad(farmsResult, inventoryResult)
-        if (outcome.farms !== undefined) setFarms(outcome.farms)
-        if (outcome.inventory !== undefined) setInventory(outcome.inventory)
-        if (farmsResult.status === 'rejected') console.warn('Admin farms load failed:', farmsResult.reason)
-        if (inventoryResult.status === 'rejected') console.warn('Admin inventory load failed:', inventoryResult.reason)
-        setAdminDataLoadState(outcome.state)
-        // Record which datasets THIS load actually fulfilled, so only fresh data
-        // reaches the desk (a rejected dataset stays [] there even though the
-        // shared array retains its prior rows for other admin pages).
-        setAdminDataAvailability({
-          farms: farmsResult.status === 'fulfilled',
-          inventory: inventoryResult.status === 'fulfilled',
-        })
+        const plan = resolveAdminDataApply(farmsResult, inventoryResult)
+        if (plan.farms.kind === 'set') setFarms(plan.farms.value)
+        else { console.warn('Admin farms load failed:', farmsResult.status === 'rejected' ? farmsResult.reason : ''); setFarms([]) }
+        if (plan.inventory.kind === 'set') setInventory(plan.inventory.value)
+        else { console.warn('Admin inventory load failed:', inventoryResult.status === 'rejected' ? inventoryResult.reason : ''); setInventory([]) }
+        if (plan.clearFarmDetail) setReviewFarmId(null)
+        if (plan.clearItemDetail) setReviewItemId(null)
+        setAdminDataLoadState(plan.state)
+        setAdminDataAvailability({ farms: plan.farmsAvailable, inventory: plan.inventoryAvailable })
       },
       onError: err => {
         // Promise.allSettled does not reject; defensive fallback only.
