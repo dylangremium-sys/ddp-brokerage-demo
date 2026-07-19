@@ -26,6 +26,33 @@ export function resolvePostLoginDecision(profile: UserProfile | null): PostLogin
 }
 
 /**
+ * Where the public landing page's "Secure Login" control leads.
+ *
+ * In demo mode there is no Supabase client at all, so signIn/signUpFarmer both
+ * throw 'Supabase not configured' and the sign-in form can never succeed. The
+ * demo admin shell is already authorised in that mode — App derives
+ * `isSignedIn` and `isAdminRole` as unconditionally true when Supabase is
+ * absent — but since PR #17 replaced the landing page's entry handlers with a
+ * single login route, nothing could reach it. This restores that entry.
+ *
+ * This is NOT an authentication bypass. It changes only which public page the
+ * control opens, and only when no backend is configured: demo mode has no
+ * account, no session and no server data, and every read is local fixture
+ * data. Whenever Supabase IS configured this returns 'login' and the real
+ * sign-in flow is untouched. `goTo` additionally refuses to route an
+ * unauthenticated user to a non-public page in configured mode, so this
+ * function cannot open the admin shell there even if it were called with the
+ * wrong argument.
+ *
+ * `isDemo` must come from the application's single definition of demo mode
+ * (`!isSupabaseConfigured`) — never from a URL parameter, browser storage,
+ * user input, or any other client-controlled value.
+ */
+export function resolveSecureLoginDestination(isDemo: boolean): Page {
+  return isDemo ? 'ddp-overview' : 'login'
+}
+
+/**
  * Outcome of the one-time auth bootstrap that runs when the app (re)loads.
  *
  * A page reload resets the in-memory page state to the public landing, but the

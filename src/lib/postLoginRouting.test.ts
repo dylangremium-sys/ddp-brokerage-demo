@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolvePostLoginDecision, resolveBootstrap, nextBootstrapRouting } from './postLoginRouting'
+import { resolvePostLoginDecision, resolveBootstrap, nextBootstrapRouting, resolveSecureLoginDestination } from './postLoginRouting'
 import type { UserProfile } from '../services/auth'
 import type { Page } from '../types'
 
@@ -128,5 +128,102 @@ describe('nextBootstrapRouting (route-once gate)', () => {
     expect(first.routed).toBe(true)
     expect(nextBootstrapRouting(first.routed, { ...baseProfile, role: 'ddp_admin' }))
       .toEqual({ routed: true, routeTo: null })
+  })
+})
+
+// ── Demo admin entry (regression: PR #17 left the demo shell unreachable) ────
+//
+// PR #17 replaced the landing page's entry handlers with a single unconditional
+// goTo('login'). In demo mode Supabase is deliberately absent, so signIn and
+// signUpFarmer both throw and login can never succeed — leaving the already
+// authorised demo admin shell with no reachable route. These lock in the
+// restored behaviour AND the unchanged configured-mode behaviour.
+function raw(glob: Record<string, string>): string {
+  return Object.values(glob)[0] ?? ''
+}
+const APP_SRC = raw(import.meta.glob('../App.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+const LANDING_SRC = raw(import.meta.glob('../pages/public/LandingPage.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+
+describe('resolveSecureLoginDestination — demo admin entry', () => {
+  it('opens the admin overview in demo mode', () => {
+    expect(resolveSecureLoginDestination(true)).toBe('ddp-overview')
+  })
+
+  it('does not select the login page in demo mode', () => {
+    expect(resolveSecureLoginDestination(true)).not.toBe('login')
+  })
+
+  it('still routes to login whenever Supabase is configured', () => {
+    expect(resolveSecureLoginDestination(false)).toBe('login')
+  })
+
+  it('never routes a configured environment to the admin shell', () => {
+    expect(resolveSecureLoginDestination(false)).not.toBe('ddp-overview')
+  })
+
+  it('is a pure function of the single demo flag — nothing else can change it', () => {
+    // No profile, storage, URL or user input participates in the decision.
+    expect(resolveSecureLoginDestination(true)).toBe(resolveSecureLoginDestination(true))
+    expect(resolveSecureLoginDestination(false)).toBe(resolveSecureLoginDestination(false))
+    expect(resolveSecureLoginDestination(true)).not.toBe(resolveSecureLoginDestination(false))
+  })
+
+  it('leaves post-login routing untouched for every role', () => {
+    expect(resolvePostLoginDecision({ ...baseProfile, role: 'ddp_admin' })).toEqual({ kind: 'route', page: 'ddp-overview' })
+    expect(resolvePostLoginDecision({ ...baseProfile, role: 'farmer' })).toEqual({ kind: 'route', page: 'farmer-dashboard' })
+    expect(resolvePostLoginDecision(null)).toEqual({ kind: 'denied', reason: 'unresolved-role' })
+    expect(resolvePostLoginDecision({ ...baseProfile, role: 'pending' } as unknown as UserProfile))
+      .toEqual({ kind: 'denied', reason: 'unresolved-role' })
+  })
+
+  it('does not promote farmer, pending or anonymous users anywhere', () => {
+    // The landing entry is role-independent; roles are still resolved solely
+    // by resolvePostLoginDecision, which denies anything unknown.
+    for (const role of ['farmer', 'pending', 'buyer', undefined]) {
+      const decision = resolvePostLoginDecision(role ? ({ ...baseProfile, role } as unknown as UserProfile) : null)
+      expect(decision).not.toEqual({ kind: 'route', page: 'ddp-overview' })
+    }
+  })
+})
+
+describe('demo admin entry — wiring and scope', () => {
+  it('App routes Secure Login through the resolver, not an unconditional login', () => {
+    expect(APP_SRC).toContain('onSecureLogin={() => goTo(resolveSecureLoginDestination(isDemo))}')
+    expect(APP_SRC).not.toContain("onSecureLogin={() => goTo('login')}")
+  })
+
+  it('derives demo mode from the single existing definition only', () => {
+    expect(APP_SRC).toContain('const isDemo = !isSupabaseConfigured')
+    // No second definition, and no client-controlled activation path.
+    expect(APP_SRC.match(/const isDemo = /g) ?? []).toHaveLength(1)
+    for (const backdoor of ['URLSearchParams', 'location.search', 'location.hash', "localStorage.getItem('demo", 'VITE_DEMO', 'isDemoOverride']) {
+      expect(APP_SRC).not.toContain(backdoor)
+    }
+  })
+
+  it('leaves isSignedIn and isAdminRole exactly as they were', () => {
+    expect(APP_SRC).toContain('const isSignedIn = isDemo || currentProfile !== null')
+    expect(APP_SRC).toContain("const isAdminRole = isDemo || currentProfile?.role === 'ddp_admin'")
+  })
+
+  it('does not restore the old secondary homepage entry buttons', () => {
+    for (const removed of ['onEnterFarmer', 'onEnterDDP', 'handleEnterDDP', 'handleEnterFarmer']) {
+      expect(APP_SRC).not.toContain(removed)
+      expect(LANDING_SRC).not.toContain(removed)
+    }
+    // Secure Login remains the landing page's only entry control.
+    expect(LANDING_SRC).toContain('onSecureLogin')
+  })
+
+  it('does not newly expose farmer-register', () => {
+    expect(APP_SRC).not.toContain("goTo('farmer-register')")
+  })
+
+  it('changes no authentication service call', () => {
+    // The landing entry must not touch sign-in/sign-up at all.
+    const landingWiring = APP_SRC.match(/<LandingPage[\s\S]*?\/>/)?.[0] ?? ''
+    expect(landingWiring).not.toContain('signIn')
+    expect(landingWiring).not.toContain('signUp')
+    expect(landingWiring).toContain('resolveSecureLoginDestination')
   })
 })

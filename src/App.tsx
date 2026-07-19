@@ -32,7 +32,7 @@ import {
   getCurrentProfile,
   type UserProfile,
 } from './services/auth'
-import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
+import { resolvePostLoginDecision, nextBootstrapRouting, resolveSecureLoginDestination } from './lib/postLoginRouting'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
@@ -577,7 +577,9 @@ export default function App() {
         <LandingPage
           lang={lang}
           setLang={setLang}
-          onSecureLogin={() => goTo('login')}
+          // Demo mode has no sign-in backend, so this opens the already-
+          // authorised demo admin shell; configured mode still goes to login.
+          onSecureLogin={() => goTo(resolveSecureLoginDestination(isDemo))}
         />
       )}
 
