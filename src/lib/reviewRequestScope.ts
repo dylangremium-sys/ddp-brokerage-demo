@@ -55,3 +55,25 @@ export function scopeReviewRequestsToFarmer(
       (r.farmProfileId != null && scope.farmIds.has(r.farmProfileId)),
   )
 }
+
+export type ReviewRequestsLoadState = 'idle' | 'loading' | 'ready' | 'failed'
+
+/**
+ * What the admin Operations Desk should receive for review requests, given the
+ * load state. `null` = the source failed (the desk reports the gap). While the
+ * load is still settling — `idle` (first load) OR `loading` (a refetch, e.g. a
+ * same-admin token refresh, or a hung one) — the desk gets `[]` and `loading:
+ * true`, NEVER the previous array, so a stale/empty queue is never presented as
+ * current and no all-clear is shown. Demo passes its in-memory requests through.
+ * Pure, so the states are unit-testable.
+ */
+export function deskReviewRequestsView(
+  isDemo: boolean,
+  loadState: ReviewRequestsLoadState,
+  reviewRequests: ReviewRequest[],
+): { requests: ReviewRequest[] | null; loading: boolean } {
+  if (isDemo) return { requests: reviewRequests, loading: false }
+  if (loadState === 'failed') return { requests: null, loading: false }
+  if (loadState === 'ready') return { requests: reviewRequests, loading: false }
+  return { requests: [], loading: true } // idle | loading — still settling
+}

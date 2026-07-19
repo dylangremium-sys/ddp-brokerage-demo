@@ -12,14 +12,18 @@ import { createBaselineComplianceRules } from './complianceRules'
 export const COMPLIANCE_ALERTS_STORAGE_KEY = 'ddp_compliance_alerts'
 
 /**
- * Reads the stored demo compliance alerts with the same safe-parse-or-empty
- * fallback the Watchtower uses, so malformed local data degrades to [] rather
- * than throwing. Returns a genuine [] when nothing is stored.
+ * Reads the stored demo compliance alerts, degrading safely to [] for anything
+ * that is not a genuine array — nothing stored, malformed JSON, or valid but
+ * non-array JSON (null, {}, a string, a number). Callers spread/iterate the
+ * result (mergeComplianceAlerts), so a non-array must never leak through and
+ * crash the Watchtower or desk. Read-only.
  */
 export function loadStoredComplianceAlerts(): ComplianceAlert[] {
   try {
     const raw = localStorage.getItem(COMPLIANCE_ALERTS_STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as ComplianceAlert[]) : []
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as ComplianceAlert[]) : []
   } catch {
     return []
   }

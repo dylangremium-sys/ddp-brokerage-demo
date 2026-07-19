@@ -289,14 +289,26 @@ describe('Operations Desk — admin review-request loading (Codex P2)', () => {
     expect(effect).not.toMatch(/if\s*\(\s*requests\.length/)
   })
 
-  it('tracks a three-state load outcome and reports failure truthfully', () => {
-    expect(APP_SRC).toContain('reviewRequestsLoadState')
+  it('tracks a four-state load outcome and feeds the desk the sanitized view', () => {
+    // Explicit 'loading' so a refetch (not just the initial idle) is pending.
+    expect(APP_SRC).toContain("useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')")
     expect(APP_SRC).toContain(`setReviewRequestsLoadState('ready')`)
     expect(APP_SRC).toContain(`setReviewRequestsLoadState('failed')`)
-    // On failure the desk receives null (report the gap), never a stale/empty
-    // array masquerading as a confirmed zero.
-    expect(APP_SRC).toContain(`reviewRequestsLoadState === 'failed'`)
-    expect(APP_SRC).toContain('reviewRequestsLoading')
+    // The desk consumes the pure projection: null on failure, [] + loading while
+    // settling (idle/loading), rows once ready — never a stale array.
+    expect(APP_SRC).toContain('deskReviewRequestsView(isDemo, reviewRequestsLoadState, reviewRequests)')
+    expect(APP_SRC).toContain('reviewRequests={deskReviewRequests.requests}')
+    expect(APP_SRC).toContain('reviewRequestsLoading={deskReviewRequests.loading}')
+  })
+
+  it('marks an admin review-request refetch loading on a profile-identity change', () => {
+    // A same-admin token refresh replaces currentProfile without changing the
+    // scope key, so the state is moved to 'loading' during render (like the
+    // compliance / farm-inventory loaders) — never left 'ready' over a refetch.
+    expect(APP_SRC).toContain('reviewRequestsFetchProfile')
+    const trig = APP_SRC.slice(APP_SRC.indexOf('reviewRequestsFetchProfile !== adminDataProfile'))
+    const block = trig.slice(0, trig.indexOf('}'))
+    expect(block).toContain("setReviewRequestsLoadState('loading')")
   })
 
   it('leaves the farmer-scoped review-request path unchanged', () => {

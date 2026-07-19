@@ -56,6 +56,14 @@ describe('loadStoredComplianceAlerts', () => {
     expect(loadStoredComplianceAlerts()).toEqual([])
   })
 
+  it('falls back to [] for valid but NON-array JSON (null / object / string / number)', () => {
+    for (const bad of ['null', '{}', '"a string"', '42', 'true']) {
+      store.set(COMPLIANCE_ALERTS_STORAGE_KEY, bad)
+      // must never leak a non-array that mergeComplianceAlerts would spread/crash on
+      expect(loadStoredComplianceAlerts()).toEqual([])
+    }
+  })
+
   it('performs no write — it is a reader only', () => {
     store.set(COMPLIANCE_ALERTS_STORAGE_KEY, JSON.stringify([alert()]))
     const before = store.get(COMPLIANCE_ALERTS_STORAGE_KEY)

@@ -4,6 +4,7 @@ import {
   reviewRequestScopeKey,
   reviewRequestScopeChanged,
   scopeReviewRequestsToFarmer,
+  deskReviewRequestsView,
   type ReviewRequestScope,
 } from './reviewRequestScope'
 
@@ -91,5 +92,37 @@ describe('scopeReviewRequestsToFarmer — fail-closed farmer projection', () => 
     // then expose nothing, even though the shared array may still hold rows.
     const failScope: ReviewRequestScope = { farmIds: new Set(), itemIds: new Set() }
     expect(scopeReviewRequestsToFarmer(ADMIN_WIDE, failScope)).toEqual([])
+  })
+})
+
+describe('deskReviewRequestsView — admin desk review-request states', () => {
+  const loaded: ReviewRequest[] = [
+    { id: 'r1', requestType: 'general', message: 'm', status: 'open', createdBy: 'admin', createdAt: '2026-02-01T00:00:00.000Z' },
+  ]
+
+  it('first load (idle) → [] + loading, never the (empty/stale) array', () => {
+    expect(deskReviewRequestsView(false, 'idle', loaded)).toEqual({ requests: [], loading: true })
+  })
+
+  it('refetch (loading, e.g. token refresh) → [] + loading, NOT the previous array', () => {
+    // The bug: a token-refresh refetch left the state ready and showed the old
+    // array. Now the refetch is 'loading' → the desk gets [] + loading.
+    expect(deskReviewRequestsView(false, 'loading', loaded)).toEqual({ requests: [], loading: true })
+  })
+
+  it('a hung refetch stays [] + loading indefinitely (never a settled queue)', () => {
+    expect(deskReviewRequestsView(false, 'loading', [])).toEqual({ requests: [], loading: true })
+  })
+
+  it('ready → the loaded rows, not loading', () => {
+    expect(deskReviewRequestsView(false, 'ready', loaded)).toEqual({ requests: loaded, loading: false })
+  })
+
+  it('failed → null (the desk reports the gap), not loading', () => {
+    expect(deskReviewRequestsView(false, 'failed', loaded)).toEqual({ requests: null, loading: false })
+  })
+
+  it('demo → the in-memory requests pass through, not loading', () => {
+    expect(deskReviewRequestsView(true, 'idle', loaded)).toEqual({ requests: loaded, loading: false })
   })
 })

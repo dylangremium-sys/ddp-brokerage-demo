@@ -34,7 +34,7 @@ import {
   type UserProfile,
 } from './services/auth'
 import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
-import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer } from './lib/reviewRequestScope'
+import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer, deskReviewRequestsView } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
 import { resolveAdminDataLoad, deskAdminDataView } from './lib/adminDataLoad'
@@ -163,7 +163,12 @@ export default function App() {
   // premature zero), 'ready' = loaded (possibly empty), 'failed' = the desk
   // reports the gap instead of an all-clear. Only meaningful in Supabase admin
   // sessions — demo review requests live in memory and never load from a source.
-  const [reviewRequestsLoadState, setReviewRequestsLoadState] = useState<'idle' | 'ready' | 'failed'>('idle')
+  const [reviewRequestsLoadState, setReviewRequestsLoadState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  // The admin profile the review-request load reflects — compared by identity
+  // during render to mark a refetch (e.g. a same-admin token refresh, which
+  // replaces currentProfile without changing the scope key) as loading, so a
+  // stale/hung refetch is never shown as a settled queue.
+  const [reviewRequestsFetchProfile, setReviewRequestsFetchProfile] = useState<unknown>(null)
   const [stockEditItemId, setStockEditItemId] = useState<string | null>(null)
   const [buyerPackItemId, setBuyerPackItemId] = useState<string | null>(null)
 
@@ -422,6 +427,22 @@ export default function App() {
     setAdminDataFetchProfile(null)
   }
 
+  // Mark the admin review-request load pending the moment a (re)fetch becomes
+  // imminent — the effect keys on currentProfile, so a same-admin token refresh
+  // re-runs it while the scope-key guard leaves the state 'ready'. Detect the
+  // profile-identity change during render (like the compliance and farm/inventory
+  // loaders) and move to 'loading', so a slow/hung refetch is never presented as
+  // a settled queue and no all-clear is shown. Cleared on sign-out / farmer so an
+  // admin re-login is a fresh load.
+  if (adminDataProfile !== null) {
+    if (reviewRequestsFetchProfile !== adminDataProfile) {
+      setReviewRequestsFetchProfile(adminDataProfile)
+      if (reviewRequestsLoadState !== 'loading') setReviewRequestsLoadState('loading')
+    }
+  } else if (reviewRequestsFetchProfile !== null) {
+    setReviewRequestsFetchProfile(null)
+  }
+
   // ── Scoped data for farmer pages ─────────────────────────────────────────
   // In demo mode or for admin, pass everything through unchanged.
   // For a signed-in farmer in Supabase mode, filter to only their owned records.
@@ -451,6 +472,15 @@ export default function App() {
   const farmerReviewRequests: ReviewRequest[] = isDemo || !isFarmerRole
     ? reviewRequests
     : scopeReviewRequestsToFarmer(reviewRequests, farmerScope)
+
+  // What the admin Operations Desk receives for review requests: null on a
+  // failed fetch; [] + loading while still settling (first load or a refetch —
+  // including a same-admin token refresh — so a stale/empty queue is never shown
+  // as current and no all-clear appears); the loaded rows once ready.
+  const deskReviewRequests = useMemo(
+    () => deskReviewRequestsView(isDemo, reviewRequestsLoadState, reviewRequests),
+    [isDemo, reviewRequestsLoadState, reviewRequests],
+  )
 
   // Demo-only compliance alerts for the Operations Desk. In demo mode the App's
   // fetched `complianceAlerts` stays [] (the Supabase fetch effect early-returns),
@@ -1082,16 +1112,8 @@ export default function App() {
               // still loading so a stale localStorage/farmer-scoped array is never
               // shown as admin data (the loading flag below explains the empty count);
               // the loaded rows once ready.
-              reviewRequests={
-                isDemo
-                  ? reviewRequests
-                  : reviewRequestsLoadState === 'failed'
-                    ? null
-                    : reviewRequestsLoadState === 'ready'
-                      ? reviewRequests
-                      : []
-              }
-              reviewRequestsLoading={!isDemo && reviewRequestsLoadState === 'idle'}
+              reviewRequests={deskReviewRequests.requests}
+              reviewRequestsLoading={deskReviewRequests.loading}
               // The same merged view the Watchtower shows: rule-derived (enforced)
               // alerts unioned with the persisted/stored alerts, deduped by id;
               // null on a failed fetch so the desk reports the gap.
