@@ -13,6 +13,7 @@ import {
   createReviewRequest,
   resolveReviewRequest,
   loadReviewRequestsFromDB,
+  loadAllReviewRequestsFromDB,
   loadMarketBenchmarksFromDB,
   loadFarmsFromDB,
   loadInventoryFromDB,
@@ -122,6 +123,12 @@ export default function App() {
   // presents a failed source as an all-clear. 'idle' means the fetch has not
   // settled yet, which the desk reads as still loading rather than as empty.
   const [complianceLoadState, setComplianceLoadState] = useState<'idle' | 'ready' | 'failed'>('idle')
+  // Load outcome for the admin review-request fetch. Same three-state contract
+  // as compliance: 'idle' = not yet settled (the desk shows loading, never a
+  // premature zero), 'ready' = loaded (possibly empty), 'failed' = the desk
+  // reports the gap instead of an all-clear. Only meaningful in Supabase admin
+  // sessions — demo review requests live in memory and never load from a source.
+  const [reviewRequestsLoadState, setReviewRequestsLoadState] = useState<'idle' | 'ready' | 'failed'>('idle')
   const [stockEditItemId, setStockEditItemId] = useState<string | null>(null)
   const [buyerPackItemId, setBuyerPackItemId] = useState<string | null>(null)
 
@@ -196,6 +203,33 @@ export default function App() {
         setInventory(dbInventory)
       })
       .catch(err => console.warn('Admin Supabase data load failed:', err))
+  }, [currentProfile])
+
+  // ── Load all review requests from Supabase when admin signs in ──────────────
+  // The farmer effect above populates reviewRequests only within a farmer's own
+  // batch scope, and browser persistence is disabled outside demo mode — so
+  // without this effect an administrator's Operations Desk follow-up queue would
+  // be empty after a login or hard reload (or briefly reflect stale farmer-scoped
+  // state). The `farmer_review_requests: admin all` RLS policy lets an admin read
+  // every row; loadAllReviewRequestsFromDB performs no write. The result REPLACES
+  // state unconditionally — including [] — so no stale farmer-scoped request can
+  // survive into an admin view. A load failure is surfaced as an unavailable
+  // source (below), never as a confirmed zero.
+  // reviewRequestsLoadState starts 'idle' (its useState default), so the fetch
+  // for a fresh admin login or reload begins in the loading state without a
+  // synchronous reset here. Only this admin effect ever changes it, and it
+  // settles to 'ready'/'failed' in the async callbacks below.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
+    loadAllReviewRequestsFromDB()
+      .then(requests => {
+        setReviewRequests(requests)
+        setReviewRequestsLoadState('ready')
+      })
+      .catch(err => {
+        console.warn('Admin review requests load failed:', err)
+        setReviewRequestsLoadState('failed')
+      })
   }, [currentProfile])
 
   // ── Load market benchmarks from Supabase once a farmer session exists ────
@@ -835,7 +869,21 @@ export default function App() {
             <DDPOperationsDesk
               farms={farms}
               inventory={inventory}
-              reviewRequests={reviewRequests}
+              // Demo: the in-memory review requests are the honest value. Supabase
+              // admin: null on a failed fetch so the desk reports the gap; [] while
+              // still loading so a stale localStorage/farmer-scoped array is never
+              // shown as admin data (the loading flag below explains the empty count);
+              // the loaded rows once ready.
+              reviewRequests={
+                isDemo
+                  ? reviewRequests
+                  : reviewRequestsLoadState === 'failed'
+                    ? null
+                    : reviewRequestsLoadState === 'ready'
+                      ? reviewRequests
+                      : []
+              }
+              reviewRequestsLoading={!isDemo && reviewRequestsLoadState === 'idle'}
               // In demo mode there is no compliance source to fetch, so [] is
               // the honest value: loaded, and genuinely empty. In Supabase mode
               // a failed fetch passes null so the desk reports the gap.

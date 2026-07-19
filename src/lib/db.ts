@@ -478,6 +478,22 @@ export async function resolveReviewRequest(requestId: string): Promise<void> {
   )
 }
 
+function mapReviewRequestRow(row: Record<string, unknown>): ReviewRequest {
+  return {
+    id: row.id as string,
+    stockItemId: row.inventory_batch_id as string | undefined,
+    farmProfileId: row.farm_id as string | undefined,
+    requestType: row.request_type as ReviewRequest['requestType'],
+    message: row.message as string,
+    status: row.status as 'open' | 'resolved',
+    createdBy: row.created_by as string ?? 'DDP Admin',
+    createdAt: row.created_at as string,
+    resolvedAt: row.resolved_at as string | undefined,
+    productName: row.product_name as string | undefined,
+    farmName: row.farm_name as string | undefined,
+  }
+}
+
 export async function loadReviewRequestsFromDB(
   userId: string,
   _farmIds: Set<string>,
@@ -499,19 +515,33 @@ export async function loadReviewRequestsFromDB(
     return []
   }
 
-  return (data ?? []).map(row => ({
-    id: row.id as string,
-    stockItemId: row.inventory_batch_id as string | undefined,
-    farmProfileId: row.farm_id as string | undefined,
-    requestType: row.request_type as ReviewRequest['requestType'],
-    message: row.message as string,
-    status: row.status as 'open' | 'resolved',
-    createdBy: row.created_by as string ?? 'DDP Admin',
-    createdAt: row.created_at as string,
-    resolvedAt: row.resolved_at as string | undefined,
-    productName: row.product_name as string | undefined,
-    farmName: row.farm_name as string | undefined,
-  }))
+  return (data ?? []).map(mapReviewRequestRow)
+}
+
+// Read-only admin loader. Returns EVERY review request the caller may see; the
+// `farmer_review_requests: admin all` RLS policy (USING is_ddp_admin()) scopes
+// this to administrators server-side, so no client-side user/batch filter is
+// applied. Unlike loadReviewRequestsFromDB it is not batch-scoped, so it also
+// returns farm-level requests (inventory_batch_id IS NULL) and never depends on
+// the admin having first loaded inventory. This performs NO write.
+//
+// A rejected promise (thrown below) — not a silent [] — signals a genuine load
+// failure so the Operations Desk can report an unavailable source rather than a
+// confirmed zero. (A query error is distinct from "loaded, and legitimately
+// empty", which returns [].)
+export async function loadAllReviewRequestsFromDB(): Promise<ReviewRequest[]> {
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('farmer_review_requests')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(`loadAllReviewRequestsFromDB: ${error.message}`)
+  }
+
+  return (data ?? []).map(mapReviewRequestRow)
 }
 
 // ---------------------------------------------------------------------------

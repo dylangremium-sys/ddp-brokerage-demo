@@ -115,7 +115,12 @@ export interface OperationsDeskResult {
 export interface OperationsDeskInput {
   farms: FarmProfile[]
   inventory: InventoryItem[]
-  reviewRequests: ReviewRequest[]
+  /**
+   * `null` means the review-request source could not be loaded — distinct from
+   * `[]`, which means loaded and genuinely empty. Never collapse the two: an
+   * admin whose request fetch failed must not be shown "no open requests".
+   */
+  reviewRequests: ReviewRequest[] | null
   /**
    * `null` means the compliance source could not be loaded (or was not
    * available in this mode) — distinct from `[]`, which means loaded and
@@ -174,7 +179,6 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
   const now = input.now ?? new Date()
   const farms = input.farms ?? []
   const inventory = input.inventory ?? []
-  const reviewRequests = input.reviewRequests ?? []
 
   const collected: OperationsDeskItem[] = []
   const failures: OperationsDeskFailure[] = []
@@ -384,6 +388,17 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
   // Source: existing ReviewRequest records (open) and farms already marked
   // 'More Information Required'. Both are real recorded next actions — no
   // generic task system is introduced.
+  //
+  // A null reviewRequests source means the fetch failed (admin RLS load error),
+  // NOT that there are no open requests. Report the gap rather than presenting a
+  // silent zero; the farm-based follow-ups below still run from the loaded farms.
+  if (input.reviewRequests === null) {
+    failures.push({
+      category: 'follow-up',
+      message: 'Open information requests could not be loaded — they are not represented below.',
+    })
+  } else {
+  const reviewRequests = input.reviewRequests
   safeQueue('follow-up', () =>
     reviewRequests
       .filter(req => req.status === 'open')
@@ -403,7 +418,10 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
         sourceEntityType: 'review-request',
         sourceEntityId: req.id,
       })), collected, failures)
+  }
 
+  // Farm 'More Information Required' follow-ups come from the already-loaded
+  // farms, so they run whether or not the review-request source loaded.
   safeQueue('follow-up', () =>
     farms
       .filter(farm => farm.status === 'More Information Required')

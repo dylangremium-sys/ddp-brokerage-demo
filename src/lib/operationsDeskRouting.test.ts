@@ -21,6 +21,15 @@ const TYPES_SRC = raw(import.meta.glob('../types.ts', { query: '?raw', import: '
 const NAV_SRC = raw(import.meta.glob('../components/admin/AdminNav.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
 const SHELL_SRC = raw(import.meta.glob('../components/admin/AdminShell.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
 const PAGE_SRC = raw(import.meta.glob('../pages/admin/DDPOperationsDesk.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+const DB_SRC = raw(import.meta.glob('./db.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+
+/** Extract a single top-level function body by name, for scoped source assertions. */
+function fnBody(src: string, signature: string): string {
+  const start = src.indexOf(signature)
+  if (start === -1) return ''
+  const nextExport = src.indexOf('\nexport ', start + signature.length)
+  return src.slice(start, nextExport === -1 ? undefined : nextExport)
+}
 
 const PAGE_ID = 'ddp-operations-desk'
 
@@ -231,6 +240,68 @@ describe('Operations Desk — accessibility and print contract', () => {
 
   it('excludes filter chrome from print output', () => {
     expect(PAGE_SRC).toContain('ops-desk-controls no-print')
+  })
+})
+
+describe('Operations Desk — admin review-request loading (Codex P2)', () => {
+  // Regression guard for the review finding: in Supabase admin sessions the
+  // follow-up queue was empty after login/reload because reviewRequests was
+  // populated only by the farmer-scoped effect. This repo's vitest env is
+  // 'node' (no DOM, no live Supabase), so the wiring is asserted from source;
+  // the runtime data flow is exercised behaviourally in operationsDesk.test.ts
+  // (null vs empty vs open review-request handling). What these source-contract
+  // tests do NOT prove: that the live Supabase query returns rows — that
+  // depends on data + RLS and is covered by the browser/RLS evidence in the PR.
+
+  it('loads all review requests on admin sign-in via a scope-free read path', () => {
+    expect(APP_SRC).toContain('loadAllReviewRequestsFromDB')
+    // Called with NO farmer scope arguments — admin RLS scopes it server-side.
+    expect(APP_SRC).toContain('loadAllReviewRequestsFromDB()')
+    // The admin effect is gated to ddp_admin like the other admin loaders.
+    expect(APP_SRC).toContain(`currentProfile.role !== 'ddp_admin'`)
+  })
+
+  it('replaces review-request state unconditionally so no stale farmer data survives', () => {
+    // Unlike the farmer effect (which merges only when dbRequests.length > 0),
+    // the admin effect must overwrite — including with [] — so a prior farmer
+    // session cannot leak its scoped requests into an admin view.
+    // Anchor on the call site (with parens), not the import line.
+    const adminEffect = APP_SRC.slice(APP_SRC.indexOf('loadAllReviewRequestsFromDB()'))
+    const effect = adminEffect.slice(0, adminEffect.indexOf('}, [currentProfile])'))
+    expect(effect).toContain('setReviewRequests(requests)')
+    expect(effect).not.toMatch(/if\s*\(\s*requests\.length/)
+  })
+
+  it('tracks a three-state load outcome and reports failure truthfully', () => {
+    expect(APP_SRC).toContain('reviewRequestsLoadState')
+    expect(APP_SRC).toContain(`setReviewRequestsLoadState('ready')`)
+    expect(APP_SRC).toContain(`setReviewRequestsLoadState('failed')`)
+    // On failure the desk receives null (report the gap), never a stale/empty
+    // array masquerading as a confirmed zero.
+    expect(APP_SRC).toContain(`reviewRequestsLoadState === 'failed'`)
+    expect(APP_SRC).toContain('reviewRequestsLoading')
+  })
+
+  it('leaves the farmer-scoped review-request path unchanged', () => {
+    // Farmer isolation is not weakened: farmers still load only their own
+    // batch-scoped requests through the original loader.
+    expect(APP_SRC).toContain('loadReviewRequestsFromDB(currentProfile.id, scope.farmIds, scope.itemIds)')
+  })
+
+  it('the admin loader performs no write and applies no client-side scope filter', () => {
+    const loader = fnBody(DB_SRC, 'export async function loadAllReviewRequestsFromDB')
+    expect(loader.length).toBeGreaterThan(0)
+    // Read-only: no insert/update/delete/upsert of any kind.
+    for (const write of ['sbInsert', 'sbUpdate', 'sbDelete', '.insert(', '.update(', '.delete(', '.upsert(']) {
+      expect(loader).not.toContain(write)
+    }
+    // Reads the review-request table, ordered — but is NOT batch- or user-scoped
+    // on the client (admin RLS does the scoping), so it also returns null-batch
+    // (farm-level) requests the batch-scoped farmer loader would miss.
+    expect(loader).toContain("from('farmer_review_requests')")
+    expect(loader).toContain('.select(')
+    expect(loader).not.toContain(".in('inventory_batch_id'")
+    expect(loader).not.toContain(".eq('created_by'")
   })
 })
 

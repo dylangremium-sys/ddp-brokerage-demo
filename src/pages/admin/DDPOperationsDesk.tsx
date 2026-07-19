@@ -35,6 +35,7 @@ export default function DDPOperationsDesk({
   farms,
   inventory,
   reviewRequests,
+  reviewRequestsLoading,
   complianceAlerts,
   complianceLoading,
   onOpenFarm,
@@ -43,7 +44,9 @@ export default function DDPOperationsDesk({
 }: {
   farms: FarmProfile[]
   inventory: InventoryItem[]
-  reviewRequests: ReviewRequest[]
+  /** null means the review-request source failed to load — not "no requests". */
+  reviewRequests: ReviewRequest[] | null
+  reviewRequestsLoading: boolean
   /** null means the compliance source failed to load — not "no alerts". */
   complianceAlerts: ComplianceAlert[] | null
   complianceLoading: boolean
@@ -99,6 +102,10 @@ export default function DDPOperationsDesk({
             ))}
           </ul>
         </div>
+      )}
+
+      {reviewRequestsLoading && (
+        <p className="ops-desk-loading" role="status">Loading follow-up requests…</p>
       )}
 
       {complianceLoading && (

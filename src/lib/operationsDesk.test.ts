@@ -283,6 +283,31 @@ describe('Operations Desk aggregation — safety and integrity', () => {
     expect(empty.failures).toHaveLength(0)
   })
 
+  it('distinguishes an unavailable review-request source from an empty one', () => {
+    // null = the admin fetch failed → report the gap, never a silent zero.
+    const failed = buildOperationsDeskItems(input({ reviewRequests: null }))
+    expect(failed.failures.some(f => f.category === 'follow-up')).toBe(true)
+    // No review-request follow-up item is fabricated on failure.
+    expect(failed.items.some(i => i.id.startsWith('follow-up:review-request:'))).toBe(false)
+
+    // [] = loaded and genuinely empty → no failure, no follow-up request items.
+    const empty = buildOperationsDeskItems(input({ reviewRequests: [] }))
+    expect(empty.failures.some(f => f.category === 'follow-up')).toBe(false)
+    expect(empty.items.some(i => i.id.startsWith('follow-up:review-request:'))).toBe(false)
+  })
+
+  it('still surfaces farm follow-ups and other matters when the review-request source failed', () => {
+    // A failed review-request load must not blank the rest of the desk.
+    const result = buildOperationsDeskItems(input({
+      reviewRequests: null,
+      farms: [makeFarm({ status: 'More Information Required' }), makeFarm({ id: 'f2', status: 'Submitted to DDP' })],
+    }))
+    expect(result.items.some(i => i.id.startsWith('follow-up:farm:'))).toBe(true)
+    expect(result.items.some(i => i.category === 'farmer-approval')).toBe(true)
+    // The gap is reported alongside the still-usable matters.
+    expect(result.failures.some(f => f.category === 'follow-up')).toBe(true)
+  })
+
   it('degrades a throwing queue to a visible failure instead of a silent all-clear', () => {
     // A farm whose getter throws simulates a corrupt record reaching the desk.
     const hostile = makeFarm({ status: 'Approved' })
