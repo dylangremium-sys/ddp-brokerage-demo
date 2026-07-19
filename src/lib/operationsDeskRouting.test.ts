@@ -386,9 +386,12 @@ describe('Operations Desk — demo compliance alert source (Codex P2)', () => {
     expect(APP_SRC).toContain('demoComplianceAlerts')
   })
 
-  it('passes the demo store to the desk but leaves Supabase failure semantics intact', () => {
-    // demo → demoComplianceAlerts; Supabase → null on a failed fetch (unchanged).
-    expect(APP_SRC).toContain('isDemo ? demoComplianceAlerts : (complianceLoadState !== \'failed\' ? complianceAlerts : null)')
+  it('feeds the demo store into the desk alerts and keeps failure → null', () => {
+    // The demo store now flows through the merged deskComplianceAlerts (with the
+    // rule-derived alerts); the Supabase failure path still yields null via the
+    // `failed` flag passed into resolveDeskComplianceAlerts.
+    expect(APP_SRC).toContain('(isDemo ? demoComplianceAlerts : complianceAlerts) ?? []')
+    expect(APP_SRC).toContain("!isDemo && complianceLoadState === 'failed'")
   })
 
   it('shares ONE alert-store key between App and Watchtower — no duplicate literal', () => {
@@ -544,6 +547,29 @@ describe('Operations Desk — no routing to missing detail records (Codex P2)', 
   it('scopes availability to the currently loaded farm/inventory ids', () => {
     expect(PAGE_SRC).toContain('const loadedFarmIds = useMemo(() => new Set(farms.map(f => f.id))')
     expect(PAGE_SRC).toContain('const loadedItemIds = useMemo(() => new Set(inventory.map(i => i.id))')
+  })
+})
+
+describe('Operations Desk — includes rule-derived compliance alerts (Codex P2)', () => {
+  // The merge equivalence to the Watchtower is tested behaviourally in
+  // operationsDeskComplianceAlerts.test.ts. Here we assert the wiring: the desk
+  // is fed the merged view, with demo baseline rules vs fetched rules.
+  it('feeds the desk the merged (rule-derived + persisted) alerts', () => {
+    expect(APP_SRC).toContain('resolveDeskComplianceAlerts(')
+    expect(APP_SRC).toContain('complianceAlerts={deskComplianceAlerts}')
+    // never persists auto alerts — derived read-only in a memo
+    expect(APP_SRC).toContain('const deskComplianceAlerts = useMemo')
+  })
+
+  it('uses demo baseline rules in demo mode and fetched rules in Supabase mode', () => {
+    expect(APP_SRC).toContain('createBaselineComplianceRules()')
+    expect(APP_SRC).toContain('isDemo ? baselineComplianceRules : complianceRules')
+    // stored/persisted alerts source: demo local store vs fetched rows
+    expect(APP_SRC).toContain('(isDemo ? demoComplianceAlerts : complianceAlerts) ?? []')
+  })
+
+  it('preserves failure truthfulness (failed → null to the merge)', () => {
+    expect(APP_SRC).toContain("!isDemo && complianceLoadState === 'failed'")
   })
 })
 

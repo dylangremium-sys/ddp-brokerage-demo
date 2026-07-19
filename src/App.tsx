@@ -38,6 +38,8 @@ import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsTo
 import { loadStoredComplianceAlerts } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
 import { resolveAdminDataLoad } from './lib/adminDataLoad'
+import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
+import { createBaselineComplianceRules } from './lib/complianceRules'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
@@ -441,6 +443,25 @@ export default function App() {
   const demoComplianceAlerts = useMemo<ComplianceAlert[] | null>(
     () => (isDemo && page === 'ddp-operations-desk' ? loadStoredComplianceAlerts() : null),
     [isDemo, page],
+  )
+
+  // The compliance alerts the Operations Desk sees must match the Watchtower:
+  // rule-derived alerts (from ENFORCED rules) merged with the persisted/stored
+  // alerts, deduplicated by id — otherwise an enforced rule generating an
+  // unresolved auto alert (e.g. BATCH_COA_REQUIRED) is invisible and the queue
+  // shows a false all-clear. Rules: demo baseline in demo mode, the fetched
+  // rules in Supabase mode. Auto alerts are derived here for display, never
+  // persisted. Failure still passes null so the desk reports the gap.
+  const baselineComplianceRules = useMemo(() => createBaselineComplianceRules(), [])
+  const deskComplianceAlerts = useMemo<ComplianceAlert[] | null>(
+    () => resolveDeskComplianceAlerts(
+      !isDemo && complianceLoadState === 'failed',
+      farms,
+      inventory,
+      isDemo ? baselineComplianceRules : complianceRules,
+      (isDemo ? demoComplianceAlerts : complianceAlerts) ?? [],
+    ),
+    [isDemo, complianceLoadState, farms, inventory, baselineComplianceRules, complianceRules, demoComplianceAlerts, complianceAlerts],
   )
 
   // ── Error handler ────────────────────────────────────────────────────────
@@ -1027,10 +1048,10 @@ export default function App() {
                       : []
               }
               reviewRequestsLoading={!isDemo && reviewRequestsLoadState === 'idle'}
-              // In demo mode the desk reads the Watchtower's shared local alert
-              // store (empty [] when none stored). In Supabase mode a failed
-              // fetch passes null so the desk reports the gap.
-              complianceAlerts={isDemo ? demoComplianceAlerts : (complianceLoadState !== 'failed' ? complianceAlerts : null)}
+              // The same merged view the Watchtower shows: rule-derived (enforced)
+              // alerts unioned with the persisted/stored alerts, deduped by id;
+              // null on a failed fetch so the desk reports the gap.
+              complianceAlerts={deskComplianceAlerts}
               complianceLoading={!isDemo && (complianceLoadState === 'idle' || complianceLoadState === 'loading')}
               // The farm/inventory source feeds most queues. In Supabase admin it
               // is pending until BOTH loaders settle, and failed if either throws;
