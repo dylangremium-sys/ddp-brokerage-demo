@@ -316,6 +316,7 @@ export type Page =
   | 'ddp-coa-intelligence'
   | 'ddp-risk-register'
   | 'ddp-compliance-watchtower'
+  | 'ddp-operations-desk'
 
 export type StockStatus =
   | 'draft'

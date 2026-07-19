@@ -21,6 +21,7 @@ const AREA_LABEL: Partial<Record<Page, string>> = {
   'ddp-coa-intelligence': 'COA Intelligence',
   'ddp-risk-register': 'Risk Register',
   'ddp-compliance-watchtower': 'Compliance Watchtower',
+  'ddp-operations-desk': 'Operations Desk',
 }
 
 /**

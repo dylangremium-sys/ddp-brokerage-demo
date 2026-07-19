@@ -27,6 +27,7 @@ export default function AdminNav({ page, goTo, variant = 'sidebar' }: {
   const isFarms = page === 'ddp-farms' || page === 'ddp-farm-review'
   const isSupply = SUPPLY_LEDGER_PAGES.includes(page)
   const isWatchtower = page === 'ddp-compliance-watchtower'
+  const isOpsDesk = page === 'ddp-operations-desk'
 
   if (variant === 'topbar') {
     return (
@@ -37,6 +38,11 @@ export default function AdminNav({ page, goTo, variant = 'sidebar' }: {
           aria-current={isOverview ? 'page' : undefined}
           onClick={() => goTo('ddp-overview')}
         >Overview</button>
+        <button
+          className={`nav-btn ddp-nav-btn${isOpsDesk ? ' nav-active' : ''}`}
+          aria-current={isOpsDesk ? 'page' : undefined}
+          onClick={() => goTo('ddp-operations-desk')}
+        >Operations Desk</button>
         <button
           className={`nav-btn ddp-nav-btn${isFarms ? ' nav-active' : ''}`}
           aria-current={isFarms ? 'page' : undefined}
@@ -64,6 +70,11 @@ export default function AdminNav({ page, goTo, variant = 'sidebar' }: {
         aria-current={isOverview ? 'page' : undefined}
         onClick={() => goTo('ddp-overview')}
       >Overview</button>
+      <button
+        className={`eo-nav-item${isOpsDesk ? ' eo-nav-item--active' : ''}`}
+        aria-current={isOpsDesk ? 'page' : undefined}
+        onClick={() => goTo('ddp-operations-desk')}
+      >Operations Desk</button>
       <button
         className={`eo-nav-item${isFarms ? ' eo-nav-item--active' : ''}`}
         aria-current={isFarms ? 'page' : undefined}

@@ -58,6 +58,7 @@ import DDPMissingDocuments from './pages/admin/DDPMissingDocuments'
 import DDPCoaIntelligence from './pages/admin/DDPCoaIntelligence'
 import DDPRiskRegister from './pages/admin/DDPRiskRegister'
 import DDPComplianceWatchtower from './pages/admin/DDPComplianceWatchtower'
+import DDPOperationsDesk from './pages/admin/DDPOperationsDesk'
 import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
@@ -71,7 +72,7 @@ const FARMER_PAGES: Page[] = [
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower']
+const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
 
@@ -116,6 +117,11 @@ export default function App() {
   const [marketBenchmarks, setMarketBenchmarks] = useState<MarketBenchmark[]>(() => loadMarketBenchmarks())
   const [complianceRules, setComplianceRules] = useState<ComplianceRule[]>([])
   const [complianceAlerts, setComplianceAlerts] = useState<ComplianceAlert[]>([])
+  // Load outcome for the compliance fetch below. The Operations Desk must be
+  // able to tell "loaded and empty" apart from "could not load" so it never
+  // presents a failed source as an all-clear. 'idle' means the fetch has not
+  // settled yet, which the desk reads as still loading rather than as empty.
+  const [complianceLoadState, setComplianceLoadState] = useState<'idle' | 'ready' | 'failed'>('idle')
   const [stockEditItemId, setStockEditItemId] = useState<string | null>(null)
   const [buyerPackItemId, setBuyerPackItemId] = useState<string | null>(null)
 
@@ -215,13 +221,19 @@ export default function App() {
   // closes that staleness window without merging the two states.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
-    if (!SUPPLY_LEDGER_PAGES.includes(page)) return
+    // The Operations Desk reads the same alert snapshot, so it refetches on
+    // entry for the same staleness reason the Supply Ledger pages do.
+    if (!SUPPLY_LEDGER_PAGES.includes(page) && page !== 'ddp-operations-desk') return
     Promise.all([fetchComplianceRules(), fetchComplianceAlerts()])
       .then(([rules, alerts]) => {
         setComplianceRules(rules)
         setComplianceAlerts(alerts)
+        setComplianceLoadState('ready')
       })
-      .catch(err => console.warn('Compliance rule impact data load failed:', err))
+      .catch(err => {
+        console.warn('Compliance rule impact data load failed:', err)
+        setComplianceLoadState('failed')
+      })
   }, [currentProfile, page])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
@@ -813,6 +825,25 @@ export default function App() {
               onBack={() => { setBuyerPackItemId(null); goTo('ddp-master') }}
               onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
               approverName={currentProfile?.displayName || currentProfile?.email || undefined}
+            />
+          )}
+
+          {/* Operations Desk — read-only index over existing records. The
+              `&& isAdminRole` conjunction is the guard, exactly as on every
+              other DDP page; the database's RLS remains the real boundary. */}
+          {page === 'ddp-operations-desk' && isAdminRole && (
+            <DDPOperationsDesk
+              farms={farms}
+              inventory={inventory}
+              reviewRequests={reviewRequests}
+              // In demo mode there is no compliance source to fetch, so [] is
+              // the honest value: loaded, and genuinely empty. In Supabase mode
+              // a failed fetch passes null so the desk reports the gap.
+              complianceAlerts={isDemo || complianceLoadState !== 'failed' ? complianceAlerts : null}
+              complianceLoading={!isDemo && complianceLoadState === 'idle'}
+              onOpenFarm={handleReviewFarm}
+              onOpenItem={handleReviewItem}
+              goTo={goTo}
             />
           )}
 
