@@ -305,6 +305,54 @@ describe('Operations Desk — admin review-request loading (Codex P2)', () => {
   })
 })
 
+describe('Operations Desk — cross-role review-request isolation (Codex P1)', () => {
+  // Regression guard for the follow-up finding: the admin loader fills the
+  // shared reviewRequests state with every admin-visible request, and farmer
+  // pages consume that state — so a farmer signing into the same SPA session
+  // must not inherit it. The privacy guarantee itself is proven behaviourally
+  // in reviewRequestScope.test.ts (pure projection + scope-change decision);
+  // these source-contract tests only assert the wiring uses them.
+
+  it('feeds farmer pages the scoped projection, never the raw shared state', () => {
+    // Every farmer-facing review-request prop must read farmerReviewRequests
+    // (the fail-closed projection), not the raw reviewRequests array.
+    expect(APP_SRC).toContain('const farmerReviewRequests')
+    expect(APP_SRC).toContain('scopeReviewRequestsToFarmer(reviewRequests, farmerScope)')
+    for (const prop of [
+      'openRequestsCount={farmerReviewRequests',
+      'openRequestCount={farmerReviewRequests',
+      'openRequests={farmerReviewRequests}',
+      'requests={farmerReviewRequests}',
+    ]) {
+      expect(APP_SRC).toContain(prop)
+    }
+    // No farmer-facing prop may bind the raw array.
+    expect(APP_SRC).not.toMatch(/open[Rr]equests?(Count)?=\{reviewRequests/)
+    expect(APP_SRC).not.toContain('requests={reviewRequests}')
+  })
+
+  it('drops review-request state when the authenticated scope changes', () => {
+    // Keyed clear in the auth subscription: sign-out / admin↔farmer / new user.
+    expect(APP_SRC).toContain('reviewRequestScopeChanged')
+    expect(APP_SRC).toContain('reviewScopeKeyRef')
+    // Anchor on the call site (with args), not the import line.
+    const authBlock = APP_SRC.slice(APP_SRC.indexOf('reviewRequestScopeChanged(reviewScopeKeyRef.current'))
+    const guarded = authBlock.slice(0, authBlock.indexOf('}'))
+    expect(guarded).toContain('setReviewRequests([])')
+  })
+
+  it('replaces farmer review-request state unconditionally (no length guard)', () => {
+    // The farmer loader must overwrite even with [] so a zero-request farmer
+    // cannot retain a prior admin-wide list.
+    expect(APP_SRC).not.toContain('if (dbRequests.length > 0) setReviewRequests')
+    const farmerEffect = APP_SRC.slice(APP_SRC.indexOf('getFarmerScope(currentProfile.id)'))
+    const effect = farmerEffect.slice(0, farmerEffect.indexOf('}, [currentProfile])'))
+    expect(effect).toContain('setReviewRequests(dbRequests)')
+    // Fail closed on load failure.
+    expect(effect).toContain('setReviewRequests([])')
+  })
+})
+
 describe('Operations Desk — mobile layout containment', () => {
   // The wide matters table must scroll inside a bounded container so the page
   // root never scrolls sideways on narrow viewports. `.ops-desk-table-scroll`

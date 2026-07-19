@@ -34,6 +34,7 @@ import {
   type UserProfile,
 } from './services/auth'
 import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
+import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer } from './lib/reviewRequestScope'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
@@ -110,6 +111,12 @@ export default function App() {
   // duplicate init) never yank the operator off a page they navigated to.
   const didBootstrapRoute = useRef(false)
 
+  // Identity+role key of the scope the shared reviewRequests state was loaded
+  // for. When it changes (sign-out, admin↔farmer, a different user), the state
+  // is dropped so the next role cannot inherit it. A repeat auth event for the
+  // same user+role leaves it untouched (no clear/refetch loop on token refresh).
+  const reviewScopeKeyRef = useRef<string | null>(null)
+
   // Farmer data scope — null until loaded, empty Sets if farmer has no data
   const [farmerScope, setFarmerScope] = useState<FarmerScope | null>(null)
 
@@ -147,6 +154,18 @@ export default function App() {
       setAuthLoading(false)
       // Clear scope on sign-out or when a non-farmer profile appears
       if (!profile || profile.role !== 'farmer') setFarmerScope(null)
+      // Cross-role data isolation: drop review-request state loaded for a
+      // previous authenticated scope so the next role can never inherit it.
+      // Keyed on {userId, role}; a token refresh for the same user+role does
+      // not match, so it neither clears the farmer's own data nor loops. Runs
+      // only in Supabase mode (this effect early-returns in demo), so seeded
+      // demo review requests are never cleared.
+      const nextScopeKey = reviewRequestScopeKey(profile)
+      if (reviewRequestScopeChanged(reviewScopeKeyRef.current, nextScopeKey)) {
+        reviewScopeKeyRef.current = nextScopeKey
+        setReviewRequests([])
+        setReviewRequestsLoadState('idle')
+      }
       // Bootstrap routing: on the FIRST auth resolution after a (re)load, route a
       // restored session to its role page (a reload resets `page` to the public
       // landing). Guarded to run once so later events cannot override navigation.
@@ -186,11 +205,17 @@ export default function App() {
             return [...dbInventory, ...prev.filter(i => !sbIds.has(i.id))]
           })
         }
-        if (dbRequests.length > 0) setReviewRequests(dbRequests)
+        // Replace unconditionally — INCLUDING with []. A farmer with zero
+        // scoped requests must overwrite any prior state (e.g. an admin-wide
+        // list from earlier in the same SPA session), never retain it.
+        setReviewRequests(dbRequests)
       })
       .catch(err => {
         console.warn('getFarmerScope / data load failed:', err)
         setFarmerScope({ farmIds: new Set(), itemIds: new Set() })
+        // Fail closed: a failed farmer load must not leave prior (possibly
+        // admin-wide) requests visible.
+        setReviewRequests([])
       })
   }, [currentProfile])
 
@@ -299,6 +324,16 @@ export default function App() {
           (i.farmId != null && farmerScope.farmIds.has(i.farmId))
         )
       : []
+
+  // Review requests, scoped for farmer pages the same way. The shared
+  // reviewRequests array also feeds the admin Operations Desk (all requests),
+  // so farmer pages must consume this fail-closed projection — never the raw
+  // state — to guarantee no admin-wide request is shown to a farmer before,
+  // during, or after their own scope loads (scopeReviewRequestsToFarmer returns
+  // [] while farmerScope is null).
+  const farmerReviewRequests: ReviewRequest[] = isDemo || !isFarmerRole
+    ? reviewRequests
+    : scopeReviewRequestsToFarmer(reviewRequests, farmerScope)
 
   // ── Error handler ────────────────────────────────────────────────────────
   function onDbError(err: unknown) {
@@ -681,7 +716,7 @@ export default function App() {
               onMyActivity={() => goTo('farmer-status')}
               onAdvancedProfile={() => goTo('farmer-advanced-profile')}
               onRequests={() => goTo('farmer-requests')}
-              openRequestsCount={reviewRequests.filter(r => r.status === 'open').length}
+              openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
             />
           )}
 
@@ -691,7 +726,7 @@ export default function App() {
               inventory={farmerInventory}
               onAddNew={() => { setStockEditItemId(null); goTo('farmer-stock-form') }}
               onEdit={handleEditStock}
-              openRequestCount={reviewRequests.filter(r => r.status === 'open').length}
+              openRequestCount={farmerReviewRequests.filter(r => r.status === 'open').length}
               onGoRequests={() => goTo('farmer-requests')}
               onCoaUpload={isFarmerRole && isSupabaseConfigured ? handleCoaUpload : undefined}
             />
@@ -708,14 +743,14 @@ export default function App() {
               }}
               onBack={() => goTo('farmer-my-stock')}
               marketBenchmarks={marketBenchmarks}
-              openRequests={reviewRequests}
+              openRequests={farmerReviewRequests}
             />
           )}
 
           {page === 'farmer-requests' && (
             <FarmerRequests
               lang={lang}
-              requests={reviewRequests}
+              requests={farmerReviewRequests}
               inventory={farmerInventory}
               onResolve={handleResolveRequest}
               onEditStock={handleEditStock}
