@@ -37,6 +37,7 @@ import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginR
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
+import { resolveAdminDataLoad } from './lib/adminDataLoad'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
@@ -249,24 +250,28 @@ export default function App() {
   }, [currentProfile])
 
   // ── Load all farms + inventory from Supabase when admin signs in ────────────
-  // Loaded together: the Operations Desk source is complete only when BOTH
-  // succeed. Either loader throwing (partial failure included) marks the source
-  // failed via the guarded load's onError, so the desk reports the gap rather
-  // than a false all-clear. On failure the previous arrays are retained (not
-  // overwritten and not cleared) so other admin pages stay usable; the desk's
-  // failed state — not the arrays — is what suppresses the all-clear. The
-  // imminent 'loading' state is set during render (see the trigger below). The
-  // active guard drops a superseded or hung load after an account switch.
+  // Loaded with allSettled: the Operations Desk source is 'ready' only when BOTH
+  // succeed, and 'failed' if either loader throws (partial failure included), so
+  // the desk reports the gap rather than a false all-clear. Crucially, whichever
+  // dataset DID succeed is still applied — a transient/RLS failure in one table
+  // must not discard the good half and blank otherwise-usable admin pages; the
+  // desk's 'failed' state (not the arrays) suppresses the all-clear. The imminent
+  // 'loading' state is set during render (see the trigger below). The active
+  // guard drops a superseded or hung load after an account switch.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
     let active = true
-    runGuardedLoad(Promise.all([loadFarmsFromDB(), loadInventoryFromDB()]), () => active, {
-      onSuccess: ([dbFarms, dbInventory]) => {
-        setFarms(dbFarms)
-        setInventory(dbInventory)
-        setAdminDataLoadState('ready')
+    runGuardedLoad(Promise.allSettled([loadFarmsFromDB(), loadInventoryFromDB()]), () => active, {
+      onSuccess: ([farmsResult, inventoryResult]) => {
+        const outcome = resolveAdminDataLoad(farmsResult, inventoryResult)
+        if (outcome.farms !== undefined) setFarms(outcome.farms)
+        if (outcome.inventory !== undefined) setInventory(outcome.inventory)
+        if (farmsResult.status === 'rejected') console.warn('Admin farms load failed:', farmsResult.reason)
+        if (inventoryResult.status === 'rejected') console.warn('Admin inventory load failed:', inventoryResult.reason)
+        setAdminDataLoadState(outcome.state)
       },
       onError: err => {
+        // Promise.allSettled does not reject; defensive fallback only.
         console.warn('Admin Supabase data load failed:', err)
         setAdminDataLoadState('failed')
       },

@@ -80,9 +80,10 @@ describe('runGuardedLoad — active-scope load guard', () => {
     expect(applied).toEqual(['admin:all-requests'])
   })
 
-  it('a Promise.all where one load rejects routes to onError (partial failure = failed)', async () => {
-    // Models the admin farm/inventory load: if either loader throws, the source
-    // is marked failed — it must never become ready on a partial success.
+  it('a Promise.all where one load rejects routes to onError (whole-batch failure)', async () => {
+    // Generic runGuardedLoad contract: a rejecting inner promise reaches onError.
+    // (The admin farm/inventory load uses allSettled so it can keep the good half
+    // — see adminDataLoad.test.ts — but the guard's reject path is exercised here.)
     const onSuccess = vi.fn(); const onError = vi.fn()
     await runGuardedLoad(
       Promise.all([Promise.resolve(['farms']), Promise.reject(new Error('inventory failed'))]),

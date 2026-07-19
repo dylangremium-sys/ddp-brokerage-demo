@@ -493,21 +493,24 @@ describe('Operations Desk — admin farm/inventory source tracking (Codex P2)', 
     expect(PAGE_SRC).toContain('Farm and inventory data could not be loaded')
   })
 
-  it('App marks the admin source loading (during render) and drives it from the guarded load', () => {
+  it('App marks the admin source loading (during render) and drives it from the guarded allSettled load', () => {
     expect(APP_SRC).toContain('adminDataLoadState')
     // rendered pending/failed props to the desk
     expect(APP_SRC).toContain("farmInventoryLoading={!isDemo && (adminDataLoadState === 'idle' || adminDataLoadState === 'loading')}")
     expect(APP_SRC).toContain("farmInventoryFailed={!isDemo && adminDataLoadState === 'failed'}")
     // loading is set during render (adjust-state), not synchronously in the effect
     expect(APP_SRC).toContain("setAdminDataLoadState('loading')")
+    // allSettled + the pure outcome helper, so a partial failure keeps the good half
+    expect(APP_SRC).toContain('runGuardedLoad(Promise.allSettled([loadFarmsFromDB(), loadInventoryFromDB()])')
+    expect(APP_SRC).toContain('resolveAdminDataLoad(farmsResult, inventoryResult)')
     const effect = APP_SRC.slice(
-      APP_SRC.indexOf('runGuardedLoad(Promise.all([loadFarmsFromDB'),
-      APP_SRC.indexOf('}, [currentProfile])', APP_SRC.indexOf('runGuardedLoad(Promise.all([loadFarmsFromDB')),
+      APP_SRC.indexOf('runGuardedLoad(Promise.allSettled([loadFarmsFromDB'),
+      APP_SRC.indexOf('}, [currentProfile])', APP_SRC.indexOf('runGuardedLoad(Promise.allSettled([loadFarmsFromDB')),
     )
     expect(effect).not.toContain("setAdminDataLoadState('loading')")
-    // both success and failure settle the source state
-    expect(effect).toContain("setAdminDataLoadState('ready')")
-    expect(effect).toContain("setAdminDataLoadState('failed')")
+    // only whichever dataset succeeded is applied (the good half is kept)
+    expect(effect).toContain('if (outcome.farms !== undefined) setFarms(outcome.farms)')
+    expect(effect).toContain('if (outcome.inventory !== undefined) setInventory(outcome.inventory)')
     // guarded against a superseded/hung load
     expect(effect).toContain('() => active')
   })
