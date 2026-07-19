@@ -475,6 +475,50 @@ describe('Operations Desk — compliance refetch is marked loading (Codex P2)', 
   })
 })
 
+describe('Operations Desk — admin farm/inventory source tracking (Codex P2)', () => {
+  // The farm/inventory source feeds most desk queues but had no loading/failure
+  // state, so a pending or failed load could show a false all-clear. Loader
+  // failure semantics are tested in adminOperationalLoaders.test.ts; the guarded
+  // partial-failure in asyncLoadGuard.test.ts; the empty-state precedence in
+  // operationsDeskEmptyState.test.ts. These assert the wiring.
+
+  it('the desk folds farm/inventory loading and failure into pending/failure', () => {
+    expect(PAGE_SRC).toContain('farmInventoryLoading')
+    expect(PAGE_SRC).toContain('farmInventoryFailed')
+    // loading joins hasPendingSources; failure joins the failure count.
+    expect(PAGE_SRC).toContain('reviewRequestsLoading || complianceLoading || farmInventoryLoading')
+    expect(PAGE_SRC).toContain('result.failures.length + (farmInventoryFailed ? 1 : 0)')
+    // a restrained source-specific notice exists for each
+    expect(PAGE_SRC).toContain('Loading farm and inventory matters')
+    expect(PAGE_SRC).toContain('Farm and inventory data could not be loaded')
+  })
+
+  it('App marks the admin source loading (during render) and drives it from the guarded load', () => {
+    expect(APP_SRC).toContain('adminDataLoadState')
+    // rendered pending/failed props to the desk
+    expect(APP_SRC).toContain("farmInventoryLoading={!isDemo && (adminDataLoadState === 'idle' || adminDataLoadState === 'loading')}")
+    expect(APP_SRC).toContain("farmInventoryFailed={!isDemo && adminDataLoadState === 'failed'}")
+    // loading is set during render (adjust-state), not synchronously in the effect
+    expect(APP_SRC).toContain("setAdminDataLoadState('loading')")
+    const effect = APP_SRC.slice(
+      APP_SRC.indexOf('runGuardedLoad(Promise.all([loadFarmsFromDB'),
+      APP_SRC.indexOf('}, [currentProfile])', APP_SRC.indexOf('runGuardedLoad(Promise.all([loadFarmsFromDB')),
+    )
+    expect(effect).not.toContain("setAdminDataLoadState('loading')")
+    // both success and failure settle the source state
+    expect(effect).toContain("setAdminDataLoadState('ready')")
+    expect(effect).toContain("setAdminDataLoadState('failed')")
+    // guarded against a superseded/hung load
+    expect(effect).toContain('() => active')
+  })
+
+  it('the admin loaders throw on error (no silent [] that masks a failure)', () => {
+    const farms = DB_SRC.slice(DB_SRC.indexOf('export async function loadFarmsFromDB'), DB_SRC.indexOf('export async function loadInventoryFromDB'))
+    expect(farms).toContain('throw new Error(`loadFarmsFromDB')
+    expect(farms).not.toContain("console.warn('loadFarmsFromDB'")
+  })
+})
+
 describe('Operations Desk — mobile layout containment', () => {
   // The wide matters table must scroll inside a bounded container so the page
   // root never scrolls sideways on narrow viewports. `.ops-desk-table-scroll`

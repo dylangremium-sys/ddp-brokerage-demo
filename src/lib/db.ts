@@ -908,8 +908,9 @@ export async function loadFarmsFromDB(): Promise<FarmProfile[]> {
     `)
     .order('created_at', { ascending: false })
   if (error) {
-    console.warn('loadFarmsFromDB:', error.message)
-    return []
+    // Throw (not silent []) so a query failure is distinguishable from a
+    // legitimately empty farm table — the caller marks the source failed.
+    throw new Error(`loadFarmsFromDB: ${error.message}`)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((row: any) => farmRowToProfile(row))
@@ -923,8 +924,9 @@ export async function loadInventoryFromDB(): Promise<InventoryItem[]> {
     .select('*, farms(farm_name, trading_name)')
     .order('created_at', { ascending: false })
   if (error) {
-    console.warn('loadInventoryFromDB:', error.message)
-    return []
+    // Throw (not silent []) so a query failure is distinguishable from a
+    // legitimately empty inventory table — the caller marks the source failed.
+    throw new Error(`loadInventoryFromDB: ${error.message}`)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((row: any) => batchRowToInventoryItem(row))

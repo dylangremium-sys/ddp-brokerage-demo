@@ -80,6 +80,19 @@ describe('runGuardedLoad — active-scope load guard', () => {
     expect(applied).toEqual(['admin:all-requests'])
   })
 
+  it('a Promise.all where one load rejects routes to onError (partial failure = failed)', async () => {
+    // Models the admin farm/inventory load: if either loader throws, the source
+    // is marked failed — it must never become ready on a partial success.
+    const onSuccess = vi.fn(); const onError = vi.fn()
+    await runGuardedLoad(
+      Promise.all([Promise.resolve(['farms']), Promise.reject(new Error('inventory failed'))]),
+      () => true,
+      { onSuccess, onError },
+    )
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
+
   it('the still-active current load applies normally, including an empty result', async () => {
     const d = deferred<number[]>()
     const onSuccess = vi.fn()

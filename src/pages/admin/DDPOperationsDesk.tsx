@@ -39,6 +39,8 @@ export default function DDPOperationsDesk({
   reviewRequestsLoading,
   complianceAlerts,
   complianceLoading,
+  farmInventoryLoading,
+  farmInventoryFailed,
   onOpenFarm,
   onOpenItem,
   goTo,
@@ -51,6 +53,10 @@ export default function DDPOperationsDesk({
   /** null means the compliance source failed to load — not "no alerts". */
   complianceAlerts: ComplianceAlert[] | null
   complianceLoading: boolean
+  /** The farm/inventory source (feeds most queues) is still loading. */
+  farmInventoryLoading: boolean
+  /** The farm/inventory source failed — the desk must not show an all-clear. */
+  farmInventoryFailed: boolean
   onOpenFarm: (farmId: string) => void
   onOpenItem: (itemId: string) => void
   goTo: (page: Page) => void
@@ -75,12 +81,18 @@ export default function DDPOperationsDesk({
 
   // A source is still settling — App passes [] for a loading source to avoid
   // showing stale data, so an empty queue during loading is NOT a confirmed
-  // all-clear. This drives the empty-state message below.
-  const hasPendingSources = reviewRequestsLoading || complianceLoading
+  // all-clear. The farm/inventory source feeds most queues, so its loading and
+  // failure states join the pending/failure tally below.
+  const hasPendingSources = reviewRequestsLoading || complianceLoading || farmInventoryLoading
+
+  // Farm/inventory failure is an App-level source state (the arrays themselves
+  // are retained), counted alongside the queue-build failures so the desk never
+  // shows an all-clear when that source could not be loaded.
+  const failureCount = result.failures.length + (farmInventoryFailed ? 1 : 0)
 
   const emptyState = resolveOperationsDeskEmptyState({
     visibleCount: visible.length,
-    failureCount: result.failures.length,
+    failureCount,
     hasPendingSources,
     isFiltered,
   })
@@ -115,6 +127,21 @@ export default function DDPOperationsDesk({
             ))}
           </ul>
         </div>
+      )}
+
+      {/* Farm/inventory failure — most queues are built from this source, so a
+          failure is stated plainly and can never read as an all-clear. */}
+      {farmInventoryFailed && (
+        <div className="ops-desk-notice" role="status">
+          <strong>This view is incomplete.</strong>
+          <ul>
+            <li>Farm and inventory data could not be loaded — most matters are not represented below.</li>
+          </ul>
+        </div>
+      )}
+
+      {farmInventoryLoading && (
+        <p className="ops-desk-loading" role="status">Loading farm and inventory matters…</p>
       )}
 
       {reviewRequestsLoading && (

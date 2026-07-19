@@ -139,6 +139,16 @@ export default function App() {
   // set-state-in-effect. `profile` is compared by identity to mirror the effect's
   // currentProfile dependency (so a token refresh is treated as a fresh fetch).
   const [complianceFetchTrigger, setComplianceFetchTrigger] = useState<{ profile: unknown; page: string } | null>(null)
+  // Load outcome for the admin farm/inventory source, which feeds most desk
+  // queues (approvals, onboarding, documents, COA, inventory review, risk). The
+  // loaders now throw on error, so 'failed' is a real failure (not an empty DB).
+  // 'ready' only after BOTH settle successfully (including a legitimate empty
+  // result); the desk must not show an all-clear while this is idle/loading/failed.
+  const [adminDataLoadState, setAdminDataLoadState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  // The admin profile the farm/inventory load reflects — compared by identity
+  // during render to mark a fresh load as loading (mirrors the effect's
+  // currentProfile dependency) without a synchronous set-state-in-effect.
+  const [adminDataFetchProfile, setAdminDataFetchProfile] = useState<unknown>(null)
   // Load outcome for the admin review-request fetch. Same three-state contract
   // as compliance: 'idle' = not yet settled (the desk shows loading, never a
   // premature zero), 'ready' = loaded (possibly empty), 'failed' = the desk
@@ -239,14 +249,29 @@ export default function App() {
   }, [currentProfile])
 
   // ── Load all farms + inventory from Supabase when admin signs in ────────────
+  // Loaded together: the Operations Desk source is complete only when BOTH
+  // succeed. Either loader throwing (partial failure included) marks the source
+  // failed via the guarded load's onError, so the desk reports the gap rather
+  // than a false all-clear. On failure the previous arrays are retained (not
+  // overwritten and not cleared) so other admin pages stay usable; the desk's
+  // failed state — not the arrays — is what suppresses the all-clear. The
+  // imminent 'loading' state is set during render (see the trigger below). The
+  // active guard drops a superseded or hung load after an account switch.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
-    Promise.all([loadFarmsFromDB(), loadInventoryFromDB()])
-      .then(([dbFarms, dbInventory]) => {
+    let active = true
+    runGuardedLoad(Promise.all([loadFarmsFromDB(), loadInventoryFromDB()]), () => active, {
+      onSuccess: ([dbFarms, dbInventory]) => {
         setFarms(dbFarms)
         setInventory(dbInventory)
-      })
-      .catch(err => console.warn('Admin Supabase data load failed:', err))
+        setAdminDataLoadState('ready')
+      },
+      onError: err => {
+        console.warn('Admin Supabase data load failed:', err)
+        setAdminDataLoadState('failed')
+      },
+    })
+    return () => { active = false }
   }, [currentProfile])
 
   // ── Load all review requests from Supabase when admin signs in ──────────────
@@ -354,6 +379,22 @@ export default function App() {
     }
   } else if (complianceFetchTrigger !== null) {
     setComplianceFetchTrigger(null)
+  }
+
+  // Mark the admin farm/inventory source as loading the moment its load becomes
+  // imminent. The effect above keys on currentProfile, so the same render-time
+  // "adjust state" approach is used (a synchronous setState in that effect would
+  // trip set-state-in-effect). Keyed on the admin profile by identity, so a fresh
+  // admin login or a token refresh starts a new pending load; cleared on
+  // sign-out / farmer so a later admin re-login is detected as a fresh load.
+  const adminDataProfile = !isDemo && currentProfile?.role === 'ddp_admin' ? currentProfile : null
+  if (adminDataProfile !== null) {
+    if (adminDataFetchProfile !== adminDataProfile) {
+      setAdminDataFetchProfile(adminDataProfile)
+      if (adminDataLoadState !== 'loading') setAdminDataLoadState('loading')
+    }
+  } else if (adminDataFetchProfile !== null) {
+    setAdminDataFetchProfile(null)
   }
 
   // ── Scoped data for farmer pages ─────────────────────────────────────────
@@ -986,6 +1027,11 @@ export default function App() {
               // fetch passes null so the desk reports the gap.
               complianceAlerts={isDemo ? demoComplianceAlerts : (complianceLoadState !== 'failed' ? complianceAlerts : null)}
               complianceLoading={!isDemo && (complianceLoadState === 'idle' || complianceLoadState === 'loading')}
+              // The farm/inventory source feeds most queues. In Supabase admin it
+              // is pending until BOTH loaders settle, and failed if either throws;
+              // demo data is settled locally (never pending/failed).
+              farmInventoryLoading={!isDemo && (adminDataLoadState === 'idle' || adminDataLoadState === 'loading')}
+              farmInventoryFailed={!isDemo && adminDataLoadState === 'failed'}
               onOpenFarm={handleReviewFarm}
               onOpenItem={handleReviewItem}
               goTo={goTo}
