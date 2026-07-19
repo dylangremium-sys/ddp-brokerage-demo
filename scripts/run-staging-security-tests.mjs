@@ -463,9 +463,17 @@ async function main() {
       const p = await signedInClient(cfg, cfg.pending, 'pending')
       // Fail closed if the configured user is not actually pending — otherwise a
       // farmer/admin credential here would produce false "denied" via other rules.
+      // A missing/unreadable profile must NOT fall through into the probes: such an
+      // account is already denied by the ownership policies, so every assertion below
+      // would pass even if the migration 22 overlay were absent. Require a successful
+      // read whose role is exactly 'pending' before asserting anything.
       const roleRow = await p.client.from('profiles').select('role').eq('id', p.userId).maybeSingle()
-      if (roleRow?.data?.role && roleRow.data.role !== 'pending') {
-        skip('pending-user probes', `configured user role is "${roleRow.data.role}", not "pending" — refusing to assert`)
+      const observedRole = roleRow?.error ? null : roleRow?.data?.role ?? null
+      if (observedRole !== 'pending') {
+        const detail = roleRow?.error
+          ? `could not read the configured user's profile role (${roleRow.error.message}) — refusing to assert`
+          : `configured user role is "${observedRole ?? 'missing'}", not "pending" — refusing to assert`
+        skip('pending-user probes', detail)
       } else {
         const denRls = (res) => isDeniedByRls(res).denied
         record('pending cannot insert farm',

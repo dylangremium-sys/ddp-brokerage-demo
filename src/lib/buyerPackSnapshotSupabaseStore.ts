@@ -5,14 +5,21 @@
 // implementation can be added later purely by writing a new file that satisfies
 // this interface; no domain or call-site logic needs to change."
 //
-// This is the file that finally CALLS public.issue_buyer_pack_snapshot()
-// (10_BUYER_PACK_SNAPSHOTS_MVP.sql:236). Until now that RPC — with its
-// ddp_admin gate, its recorded-'progress'-decision gate, its named-approver
-// gate, its advisory-lock version serialisation, and its append-only
-// prevent_buyer_pack_mutation() trigger — has never been invoked by any code.
-// Every guarantee it encodes was inert.
+// This is the file that CALLS public.issue_buyer_pack_snapshot()
+// (10_BUYER_PACK_SNAPSHOTS_MVP.sql), with its ddp_admin gate, named-approver gate,
+// advisory-lock version serialisation, and append-only prevent_buyer_pack_mutation()
+// trigger.
 //
-// The RPC is used AS WRITTEN. Its signature and preconditions are not modified.
+// SERVER-AUTHORITATIVE RELEASE STATUS (migration 23). The release gate is the
+// DATABASE, not this client. 23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql makes
+// the RPC read the current decision for p_pack_id from procurement_decisions_current
+// and require it to be a human 'progress' decision; the client-supplied
+// p_procurement_decision is IGNORED server-side. This store therefore is NOT the
+// source of truth for release status: p_pack_id (the authoritative decision-trail
+// key) is what the server gate uses, and the stored decision is the server's.
+//
+// The RPC signature is unchanged, so this caller is unmodified in shape; only the
+// authority moved to the server.
 //
 // APPEND-ONLY: save() never overwrites. The RPC computes the next version under
 // an advisory lock, and UNIQUE (pack_id, version) is the backstop. A duplicate
@@ -152,10 +159,15 @@ export function createSupabaseBuyerPackSnapshotRepository(
     async save(snapshot: BuyerPackSnapshot): Promise<void> {
       const m = snapshot.manifest
       const { error } = await client.rpc(RPC, {
+        // p_pack_id is the AUTHORITATIVE key: the server gate (migration 23) looks
+        // up the current procurement decision for this pack. It must be sent.
         p_pack_id: m.packId,
         p_content_hash: m.contentHash,
         p_approval_id: m.approvalId,
         p_approval_timestamp: m.approvalTimestamp,
+        // Passed for signature compatibility only. The server IGNORES it and
+        // derives release status from procurement_decisions_current (migration 23);
+        // it is not the source of truth for whether a pack may issue.
         p_procurement_decision: m.procurementDecision,
         p_approved_by: m.approvedBy,
         p_generated_by: m.generatedBy,
