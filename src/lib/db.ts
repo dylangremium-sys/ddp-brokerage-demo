@@ -496,26 +496,44 @@ function mapReviewRequestRow(row: Record<string, unknown>): ReviewRequest {
 
 export async function loadReviewRequestsFromDB(
   userId: string,
-  _farmIds: Set<string>,
+  farmIds: Set<string>,
   itemIds: Set<string>,
 ): Promise<ReviewRequest[]> {
   if (!supabase || !isValidUUID(userId)) return []
 
   const batchIdList = [...itemIds].filter(isValidUUID)
-  if (batchIdList.length === 0) return []
+  const farmIdList = [...farmIds].filter(isValidUUID)
+  // Neither scope → nothing this farmer can own; skip the query entirely.
+  if (batchIdList.length === 0 && farmIdList.length === 0) return []
 
-  const { data, error } = await supabase
+  // A farmer owns a request by EITHER its inventory batch OR its farm. The
+  // previous batch-only filter dropped farm-level requests (inventory_batch_id
+  // null, farm_id set) and returned early whenever the farmer had no batches,
+  // so those messages never reached the farmer's inbox even though RLS
+  // ("farmer_review_requests: farmer select own") authorizes them. RLS remains
+  // the server-side authority; this OR only narrows to the farmer's own scope.
+  // Mirrors loadFarmerInventoryFromDB's batch-or-farm union. A row matching both
+  // conditions is still returned once (OR yields distinct rows — no dedup).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase as any)
     .from('farmer_review_requests')
     .select('*')
-    .in('inventory_batch_id', batchIdList)
-    .order('created_at', { ascending: false })
 
+  if (batchIdList.length > 0 && farmIdList.length > 0) {
+    query = query.or(`inventory_batch_id.in.(${batchIdList.join(',')}),farm_id.in.(${farmIdList.join(',')})`)
+  } else if (batchIdList.length > 0) {
+    query = query.in('inventory_batch_id', batchIdList)
+  } else {
+    query = query.in('farm_id', farmIdList)
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false })
   if (error) {
     console.warn('loadReviewRequestsFromDB:', error.message)
     return []
   }
-
-  return (data ?? []).map(mapReviewRequestRow)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((row: any) => mapReviewRequestRow(row))
 }
 
 // Read-only admin loader. Returns EVERY review request the caller may see; the

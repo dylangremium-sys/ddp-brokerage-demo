@@ -66,7 +66,10 @@ describe('Operations Desk — routing registration', () => {
   })
 
   it('fails closed: the page is never rendered without the admin conjunction', () => {
-    const renders = [...APP_SRC.matchAll(new RegExp(`page === '${PAGE_ID}'[^)\\n]*`, 'g'))].map(m => m[0])
+    // Match RENDER guards specifically — `page === '...' && …` — not a ternary
+    // data read like `isDemo && page === '...' ? …` (demo-only, where admin is
+    // already implied). Every render site must still carry isAdminRole.
+    const renders = [...APP_SRC.matchAll(new RegExp(`page === '${PAGE_ID}' &&[^)\\n]*`, 'g'))].map(m => m[0])
     expect(renders.length).toBeGreaterThan(0)
     for (const render of renders) expect(render).toContain('isAdminRole')
   })
@@ -364,6 +367,42 @@ describe('Operations Desk — cross-role review-request isolation (Codex P1)', (
     expect(effect).toContain('setReviewRequests(dbRequests)')
     // Fail closed on load failure.
     expect(effect).toContain('setReviewRequests([])')
+  })
+})
+
+describe('Operations Desk — demo compliance alert source (Codex P2)', () => {
+  // In demo mode the desk's compliance queue was always empty because the App's
+  // fetched complianceAlerts stays [] without Supabase, even though the Watchtower
+  // persists manual alerts locally. App now hydrates the desk from the same shared
+  // local store. Behavioural read semantics (empty/stored/malformed) live in
+  // complianceLocalAlerts.test.ts; same-tab refresh is confirmed in the browser.
+  const WATCHTOWER_SRC = raw(import.meta.glob('../pages/admin/DDPComplianceWatchtower.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+
+  it('reads the Watchtower’s shared local alert store in demo mode, re-read on entry', () => {
+    expect(APP_SRC).toContain('loadStoredComplianceAlerts')
+    // Gated on demo AND being on the desk page, so it re-reads on navigation
+    // (the `page` dependency) and never runs in Supabase mode.
+    expect(APP_SRC).toContain("isDemo && page === 'ddp-operations-desk' ? loadStoredComplianceAlerts()")
+    expect(APP_SRC).toContain('demoComplianceAlerts')
+  })
+
+  it('passes the demo store to the desk but leaves Supabase failure semantics intact', () => {
+    // demo → demoComplianceAlerts; Supabase → null on a failed fetch (unchanged).
+    expect(APP_SRC).toContain('isDemo ? demoComplianceAlerts : (complianceLoadState !== \'failed\' ? complianceAlerts : null)')
+  })
+
+  it('shares ONE alert-store key between App and Watchtower — no duplicate literal', () => {
+    // The Watchtower references the shared constant, not a second copy of the key.
+    expect(WATCHTOWER_SRC).toContain('COMPLIANCE_ALERTS_STORAGE_KEY')
+    expect(WATCHTOWER_SRC).toContain('loadStoredComplianceAlerts')
+    expect(WATCHTOWER_SRC).not.toContain("alerts: 'ddp_compliance_alerts'")
+  })
+
+  it('the shared reader performs no write (Operations Desk stays read-only)', () => {
+    const READER_SRC = raw(import.meta.glob('./complianceLocalAlerts.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+    for (const write of ['setItem', 'removeItem', '.clear(', 'saveStored']) {
+      expect(READER_SRC).not.toContain(write)
+    }
   })
 })
 

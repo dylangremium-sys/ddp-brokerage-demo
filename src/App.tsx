@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import './App.css'
 import {
   getFarmProfiles,
@@ -35,6 +35,7 @@ import {
 } from './services/auth'
 import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer } from './lib/reviewRequestScope'
+import { loadStoredComplianceAlerts } from './lib/complianceLocalAlerts'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
@@ -334,6 +335,17 @@ export default function App() {
   const farmerReviewRequests: ReviewRequest[] = isDemo || !isFarmerRole
     ? reviewRequests
     : scopeReviewRequestsToFarmer(reviewRequests, farmerScope)
+
+  // Demo-only compliance alerts for the Operations Desk. In demo mode the App's
+  // fetched `complianceAlerts` stays [] (the Supabase fetch effect early-returns),
+  // but the Compliance Watchtower persists manual alerts to a shared local store.
+  // Reading it here — recomputed on navigation (`page` dep) — lets a manual alert
+  // created in the Watchtower appear on the desk on entry without a full reload.
+  // Supabase mode is untouched: the desk keeps using the fetched `complianceAlerts`.
+  const demoComplianceAlerts = useMemo<ComplianceAlert[] | null>(
+    () => (isDemo && page === 'ddp-operations-desk' ? loadStoredComplianceAlerts() : null),
+    [isDemo, page],
+  )
 
   // ── Error handler ────────────────────────────────────────────────────────
   function onDbError(err: unknown) {
@@ -919,10 +931,10 @@ export default function App() {
                       : []
               }
               reviewRequestsLoading={!isDemo && reviewRequestsLoadState === 'idle'}
-              // In demo mode there is no compliance source to fetch, so [] is
-              // the honest value: loaded, and genuinely empty. In Supabase mode
-              // a failed fetch passes null so the desk reports the gap.
-              complianceAlerts={isDemo || complianceLoadState !== 'failed' ? complianceAlerts : null}
+              // In demo mode the desk reads the Watchtower's shared local alert
+              // store (empty [] when none stored). In Supabase mode a failed
+              // fetch passes null so the desk reports the gap.
+              complianceAlerts={isDemo ? demoComplianceAlerts : (complianceLoadState !== 'failed' ? complianceAlerts : null)}
               complianceLoading={!isDemo && complianceLoadState === 'idle'}
               onOpenFarm={handleReviewFarm}
               onOpenItem={handleReviewItem}
