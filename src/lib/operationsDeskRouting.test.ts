@@ -561,11 +561,29 @@ describe('Operations Desk — includes rule-derived compliance alerts (Codex P2)
     expect(APP_SRC).toContain('const deskComplianceAlerts = useMemo')
   })
 
-  it('uses demo baseline rules in demo mode and fetched rules in Supabase mode', () => {
-    expect(APP_SRC).toContain('createBaselineComplianceRules()')
-    expect(APP_SRC).toContain('isDemo ? baselineComplianceRules : complianceRules')
+  it('uses the shared demo rule store (re-read on desk entry) and fetched rules in Supabase', () => {
+    // demo rules come from the SAME mutable store the Watchtower uses, re-read on
+    // entry (page dep) so an approved/activated rule is honoured without reload.
+    expect(APP_SRC).toContain("isDemo && page === 'ddp-operations-desk' ? loadStoredComplianceRules()")
+    expect(APP_SRC).toContain('isDemo ? (demoComplianceRules ?? []) : complianceRules')
     // stored/persisted alerts source: demo local store vs fetched rows
     expect(APP_SRC).toContain('(isDemo ? demoComplianceAlerts : complianceAlerts) ?? []')
+    // App no longer freshly builds baseline rules — the reader owns the fallback.
+    expect(APP_SRC).not.toContain('createBaselineComplianceRules()')
+  })
+
+  it('the Watchtower and desk share ONE demo rule store key/reader (no divergence)', () => {
+    const WT_SRC = raw(import.meta.glob('../pages/admin/DDPComplianceWatchtower.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+    expect(WT_SRC).toContain('COMPLIANCE_RULES_STORAGE_KEY')
+    expect(WT_SRC).toContain('loadStoredComplianceRules()')
+    expect(WT_SRC).not.toContain("rules: 'ddp_compliance_rules'") // no duplicate literal
+  })
+
+  it('the shared rule reader performs no write (derivation stays read-only)', () => {
+    const READER_SRC = raw(import.meta.glob('./complianceLocalAlerts.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+    for (const write of ['setItem', 'removeItem', 'saveStored', '.clear(']) {
+      expect(READER_SRC).not.toContain(write)
+    }
   })
 
   it('preserves failure truthfulness (failed → null to the merge)', () => {

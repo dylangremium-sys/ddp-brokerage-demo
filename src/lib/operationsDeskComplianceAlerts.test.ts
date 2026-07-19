@@ -31,9 +31,18 @@ describe('resolveDeskComplianceAlerts — Watchtower-equivalent merge', () => {
     expect(out[0].id).toBe(AUTO_ID)
   })
 
-  it('inactive rules: a non-enforced (draft) rule yields no auto alert', () => {
-    const draft = makeRule({ ruleCode: 'FARM_LICENSE_REQUIRED', status: 'draft' })
-    expect(resolveDeskComplianceAlerts(false, [unlicensedFarm], [], [draft], [])).toEqual([])
+  it('an ACTIVE rule (also enforced) yields the auto alert', () => {
+    const active = makeRule({ ruleCode: 'FARM_LICENSE_REQUIRED', status: 'active' })
+    const out = resolveDeskComplianceAlerts(false, [unlicensedFarm], [], [active], [])!
+    expect(out).toHaveLength(1)
+    expect(out[0].id).toBe(AUTO_ID)
+  })
+
+  it('inactive rules (draft / suggested) yield no auto alert', () => {
+    for (const status of ['draft', 'suggested'] as const) {
+      const rule = makeRule({ ruleCode: 'FARM_LICENSE_REQUIRED', status })
+      expect(resolveDeskComplianceAlerts(false, [unlicensedFarm], [], [rule], [])).toEqual([])
+    }
   })
 
   it('persisted only: no enforced rules → just the stored alerts', () => {

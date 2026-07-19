@@ -35,11 +35,10 @@ import {
 } from './services/auth'
 import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer } from './lib/reviewRequestScope'
-import { loadStoredComplianceAlerts } from './lib/complianceLocalAlerts'
+import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
 import { resolveAdminDataLoad } from './lib/adminDataLoad'
 import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
-import { createBaselineComplianceRules } from './lib/complianceRules'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
@@ -445,23 +444,32 @@ export default function App() {
     [isDemo, page],
   )
 
+  // Demo rules for the desk's alert derivation: the SAME mutable store the
+  // Watchtower reads/writes (ddp_compliance_rules, baseline as fallback), read
+  // on desk entry (`page` dep) so a rule an operator approved/activated in the
+  // Watchtower is honoured in the same tab without a reload. Supabase mode uses
+  // the fetched rules instead.
+  const demoComplianceRules = useMemo<ComplianceRule[] | null>(
+    () => (isDemo && page === 'ddp-operations-desk' ? loadStoredComplianceRules() : null),
+    [isDemo, page],
+  )
+
   // The compliance alerts the Operations Desk sees must match the Watchtower:
   // rule-derived alerts (from ENFORCED rules) merged with the persisted/stored
   // alerts, deduplicated by id — otherwise an enforced rule generating an
   // unresolved auto alert (e.g. BATCH_COA_REQUIRED) is invisible and the queue
-  // shows a false all-clear. Rules: demo baseline in demo mode, the fetched
+  // shows a false all-clear. Rules: the demo store in demo mode, the fetched
   // rules in Supabase mode. Auto alerts are derived here for display, never
   // persisted. Failure still passes null so the desk reports the gap.
-  const baselineComplianceRules = useMemo(() => createBaselineComplianceRules(), [])
   const deskComplianceAlerts = useMemo<ComplianceAlert[] | null>(
     () => resolveDeskComplianceAlerts(
       !isDemo && complianceLoadState === 'failed',
       farms,
       inventory,
-      isDemo ? baselineComplianceRules : complianceRules,
+      isDemo ? (demoComplianceRules ?? []) : complianceRules,
       (isDemo ? demoComplianceAlerts : complianceAlerts) ?? [],
     ),
-    [isDemo, complianceLoadState, farms, inventory, baselineComplianceRules, complianceRules, demoComplianceAlerts, complianceAlerts],
+    [isDemo, complianceLoadState, farms, inventory, demoComplianceRules, complianceRules, demoComplianceAlerts, complianceAlerts],
   )
 
   // ── Error handler ────────────────────────────────────────────────────────

@@ -18,13 +18,12 @@ import {
   AFFECTED_AREA_OPTIONS,
   COMPLIANCE_SEVERITIES,
   RULE_ENTITY_TYPES,
-  createBaselineComplianceRules,
   formatComplianceLabel,
   isEnforcedRuleStatus,
   isRuleEnforced,
 } from '../../lib/complianceRules'
 import { deriveRuleBasedComplianceAlerts, mergeComplianceAlerts } from '../../lib/complianceAlerts'
-import { COMPLIANCE_ALERTS_STORAGE_KEY, loadStoredComplianceAlerts } from '../../lib/complianceLocalAlerts'
+import { COMPLIANCE_ALERTS_STORAGE_KEY, loadStoredComplianceAlerts, COMPLIANCE_RULES_STORAGE_KEY, loadStoredComplianceRules } from '../../lib/complianceLocalAlerts'
 import { deriveExportReadiness } from '../../lib/complianceScoring'
 import { guardAiDraftedFields } from '../../lib/aiComplianceGuard'
 import * as repo from '../../lib/complianceRepository'
@@ -90,7 +89,7 @@ type WatchtowerTab = 'monitor' | 'monitoring-queue' | 'sources' | 'queue' | 'rul
 const STORAGE = {
   legalUpdates: 'ddp_compliance_legal_updates',
   reviews: 'ddp_compliance_reviews',
-  rules: 'ddp_compliance_rules',
+  rules: COMPLIANCE_RULES_STORAGE_KEY,
   alerts: COMPLIANCE_ALERTS_STORAGE_KEY,
   audit: 'ddp_compliance_audit_log',
   sources: 'ddp_compliance_regulatory_sources',
@@ -218,7 +217,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const [tab, setTab] = useState<WatchtowerTab>('monitor')
   const [legalUpdates, setLegalUpdates] = useState<LegalUpdate[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.legalUpdates, [])))
   const [reviews, setReviews] = useState<ComplianceReview[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.reviews, [])))
-  const [rules, setRules] = useState<ComplianceRule[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.rules, createBaselineComplianceRules())))
+  const [rules, setRules] = useState<ComplianceRule[]>(() => (repo.isSupabaseConfigured ? [] : loadStoredComplianceRules()))
   const [storedAlerts, setStoredAlerts] = useState<ComplianceAlert[]>(() => (repo.isSupabaseConfigured ? [] : loadStoredComplianceAlerts()))
   const [auditLog, setAuditLog] = useState<ComplianceAuditLog[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.audit, [])))
   const [sources, setSources] = useState<RegulatorySource[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.sources, [])))

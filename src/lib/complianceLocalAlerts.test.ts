@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { COMPLIANCE_ALERTS_STORAGE_KEY, loadStoredComplianceAlerts } from './complianceLocalAlerts'
+import { COMPLIANCE_ALERTS_STORAGE_KEY, loadStoredComplianceAlerts, COMPLIANCE_RULES_STORAGE_KEY, loadStoredComplianceRules } from './complianceLocalAlerts'
+import { createBaselineComplianceRules } from './complianceRules'
+import { makeRule } from './testFixtures'
 import type { ComplianceAlert } from '../types'
 
 // Minimal localStorage stub — the vitest env is 'node' (no DOM).
@@ -60,5 +62,55 @@ describe('loadStoredComplianceAlerts', () => {
     loadStoredComplianceAlerts()
     expect(store.get(COMPLIANCE_ALERTS_STORAGE_KEY)).toBe(before)
     expect(store.size).toBe(1)
+  })
+})
+
+describe('loadStoredComplianceRules', () => {
+  let store: Map<string, string>
+  beforeEach(() => { store = installLocalStorage() })
+  afterEach(() => { delete (globalThis as unknown as { localStorage?: Storage }).localStorage })
+
+  it('falls back to the baseline rule set when nothing is stored', () => {
+    // Compare by shape (baseline rules carry live timestamps, so not by identity).
+    const out = loadStoredComplianceRules()
+    const baseline = createBaselineComplianceRules()
+    expect(out.length).toBe(baseline.length)
+    expect(out.length).toBeGreaterThan(0)
+    expect(out.map(r => r.ruleCode).sort()).toEqual(baseline.map(r => r.ruleCode).sort())
+  })
+
+  it('falls back to baseline on malformed stored data (never throws)', () => {
+    store.set(COMPLIANCE_RULES_STORAGE_KEY, '{ not valid json')
+    expect(loadStoredComplianceRules().length).toBe(createBaselineComplianceRules().length)
+  })
+
+  it('falls back to baseline on non-array stored data', () => {
+    store.set(COMPLIANCE_RULES_STORAGE_KEY, JSON.stringify({ not: 'an array' }))
+    expect(loadStoredComplianceRules().length).toBe(createBaselineComplianceRules().length)
+  })
+
+  it('returns the stored rule list as-is — it OVERRIDES baseline, not merges', () => {
+    const stored = [makeRule({ ruleCode: 'BATCH_COA_REQUIRED', status: 'approved' })]
+    store.set(COMPLIANCE_RULES_STORAGE_KEY, JSON.stringify(stored))
+    const out = loadStoredComplianceRules()
+    expect(out).toHaveLength(1) // exactly the stored list — no stale baseline rules mixed in
+    expect(out[0].ruleCode).toBe('BATCH_COA_REQUIRED')
+    expect(out[0].status).toBe('approved')
+  })
+
+  it('returns a genuinely empty stored list as [] (matches the Watchtower)', () => {
+    store.set(COMPLIANCE_RULES_STORAGE_KEY, '[]')
+    expect(loadStoredComplianceRules()).toEqual([])
+  })
+
+  it('reads the same key the Watchtower persists rules to', () => {
+    expect(COMPLIANCE_RULES_STORAGE_KEY).toBe('ddp_compliance_rules')
+  })
+
+  it('performs no write — it is a reader only', () => {
+    store.set(COMPLIANCE_RULES_STORAGE_KEY, JSON.stringify([makeRule({ status: 'draft' })]))
+    const before = store.get(COMPLIANCE_RULES_STORAGE_KEY)
+    loadStoredComplianceRules()
+    expect(store.get(COMPLIANCE_RULES_STORAGE_KEY)).toBe(before)
   })
 })
