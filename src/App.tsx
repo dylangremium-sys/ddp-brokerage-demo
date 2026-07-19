@@ -36,6 +36,7 @@ import {
 import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts } from './lib/complianceLocalAlerts'
+import { runGuardedLoad } from './lib/asyncLoadGuard'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
@@ -183,14 +184,22 @@ export default function App() {
   // ── Load farmer scope + actual inventory rows when a farmer signs in ────────
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'farmer') return
+    // Stale-load guard: flipped false in cleanup when the session changes. Every
+    // continuation below checks it before touching shared state, so a farmer load
+    // still in flight when the operator switches to admin (or signs out) can never
+    // overwrite the now-active scope's reviewRequests — the account-switch race.
+    let active = true
     getFarmerScope(currentProfile.id)
       .then(async scope => {
-        setFarmerScope(scope)
+        if (!active) return
         const [dbFarms, dbInventory, dbRequests] = await Promise.all([
           loadFarmerFarmsFromDB(scope.farmIds),
           loadFarmerInventoryFromDB(scope.itemIds, scope.farmIds),
           loadReviewRequestsFromDB(currentProfile.id, scope.farmIds, scope.itemIds),
         ])
+        // Superseded while loading → drop every result; do not touch state.
+        if (!active) return
+        setFarmerScope(scope)
         // Populate farmer's farm profiles so Add Stock can resolve selectedFarm
         // and write farm_id correctly on every new batch submission.
         if (dbFarms.length > 0) {
@@ -212,12 +221,14 @@ export default function App() {
         setReviewRequests(dbRequests)
       })
       .catch(err => {
+        if (!active) return
         console.warn('getFarmerScope / data load failed:', err)
         setFarmerScope({ farmIds: new Set(), itemIds: new Set() })
         // Fail closed: a failed farmer load must not leave prior (possibly
         // admin-wide) requests visible.
         setReviewRequests([])
       })
+    return () => { active = false }
   }, [currentProfile])
 
   // ── Load all farms + inventory from Supabase when admin signs in ────────────
@@ -247,15 +258,20 @@ export default function App() {
   // settles to 'ready'/'failed' in the async callbacks below.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
-    loadAllReviewRequestsFromDB()
-      .then(requests => {
+    // Symmetric stale-load guard: a stale admin load must not overwrite the new
+    // farmer-scoped state after a switch, nor repopulate anything after sign-out.
+    let active = true
+    runGuardedLoad(loadAllReviewRequestsFromDB(), () => active, {
+      onSuccess: requests => {
         setReviewRequests(requests)
         setReviewRequestsLoadState('ready')
-      })
-      .catch(err => {
+      },
+      onError: err => {
         console.warn('Admin review requests load failed:', err)
         setReviewRequestsLoadState('failed')
-      })
+      },
+    })
+    return () => { active = false }
   }, [currentProfile])
 
   // ── Load market benchmarks from Supabase once a farmer session exists ────

@@ -18,6 +18,7 @@ import {
   PRIORITY_LABEL,
   type OperationsDeskPriority,
 } from '../../lib/operationsDeskPriority'
+import { resolveOperationsDeskEmptyState } from '../../lib/operationsDeskEmptyState'
 
 /**
  * Operations Desk — an operational index over records that already exist.
@@ -71,6 +72,18 @@ export default function DDPOperationsDesk({
 
   const isFiltered =
     filters.search.trim() !== '' || filters.category !== 'all' || filters.priority !== 'all'
+
+  // A source is still settling — App passes [] for a loading source to avoid
+  // showing stale data, so an empty queue during loading is NOT a confirmed
+  // all-clear. This drives the empty-state message below.
+  const hasPendingSources = reviewRequestsLoading || complianceLoading
+
+  const emptyState = resolveOperationsDeskEmptyState({
+    visibleCount: visible.length,
+    failureCount: result.failures.length,
+    hasPendingSources,
+    isFiltered,
+  })
 
   function openItem(item: OperationsDeskItem) {
     const farmId = item.destinationParams?.farmId
@@ -190,11 +203,13 @@ export default function DDPOperationsDesk({
           {visible.length === 0 && (
             <tr>
               <td colSpan={7} className="ops-desk-empty">
-                {result.failures.length > 0
+                {emptyState === 'failed'
                   ? 'No matters could be listed. Some sources failed to load — see the notice above.'
-                  : isFiltered
-                    ? 'No matters match the current filters.'
-                    : 'Nothing is currently awaiting review, decision, or follow-up.'}
+                  : emptyState === 'loading'
+                    ? 'Loading matters — the queue is still being assembled…'
+                    : emptyState === 'filtered-empty'
+                      ? 'No matters match the current filters.'
+                      : 'Nothing is currently awaiting review, decision, or follow-up.'}
               </td>
             </tr>
           )}

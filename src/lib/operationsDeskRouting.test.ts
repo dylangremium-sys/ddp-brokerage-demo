@@ -406,6 +406,42 @@ describe('Operations Desk — demo compliance alert source (Codex P2)', () => {
   })
 })
 
+describe('Operations Desk — truthful loading + stale-load guard (Codex P2)', () => {
+  // Behavioural coverage lives in operationsDeskEmptyState.test.ts (empty-state
+  // decision) and asyncLoadGuard.test.ts (deferred-promise race). These assert
+  // the page and the effects are wired to those guards.
+
+  it('drives the empty state through the pure decision helper, not a bare visible check', () => {
+    expect(PAGE_SRC).toContain('resolveOperationsDeskEmptyState')
+    expect(PAGE_SRC).toContain('hasPendingSources')
+    // The all-clear copy is gated behind the resolved state, not shown whenever
+    // the derived list is empty.
+    expect(PAGE_SRC).toContain("emptyState === 'loading'")
+    expect(PAGE_SRC).toContain("emptyState === 'failed'")
+  })
+
+  it('guards the admin review-request load against a superseded session', () => {
+    const adminEffect = APP_SRC.slice(APP_SRC.indexOf('runGuardedLoad(loadAllReviewRequestsFromDB()'))
+    const effect = adminEffect.slice(0, adminEffect.indexOf('}, [currentProfile])'))
+    expect(effect).toContain('() => active')
+    expect(effect).toContain('return () => { active = false }')
+  })
+
+  it('guards the farmer load continuations symmetrically', () => {
+    // Anchor on the farmer-effect guard clause so `let active` (declared above
+    // getFarmerScope) is inside the slice.
+    const farmerEffect = APP_SRC.slice(APP_SRC.indexOf("currentProfile.role !== 'farmer') return"))
+    const effect = farmerEffect.slice(0, farmerEffect.indexOf('}, [currentProfile])'))
+    // active flag declared, cleared in cleanup, and checked before touching state
+    expect(effect).toContain('let active = true')
+    expect(effect).toContain('return () => { active = false }')
+    expect((effect.match(/if \(!active\) return/g) ?? []).length).toBeGreaterThanOrEqual(2)
+    // both the success continuation and the failure continuation are guarded
+    expect(effect).toContain('setReviewRequests(dbRequests)')
+    expect(effect).toContain('setReviewRequests([])')
+  })
+})
+
 describe('Operations Desk — mobile layout containment', () => {
   // The wide matters table must scroll inside a bounded container so the page
   // root never scrolls sideways on narrow viewports. `.ops-desk-table-scroll`
