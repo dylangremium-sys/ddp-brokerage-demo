@@ -50,6 +50,15 @@ describe('resolveDeskComplianceAlerts — Watchtower-equivalent merge', () => {
     expect(resolveDeskComplianceAlerts(false, [unlicensedFarm], [], [], [s])).toEqual([s])
   })
 
+  it('unavailable farm/inventory ([]) → no rule-derived alerts, but persisted alerts still appear', () => {
+    // Models the desk during an admin load: deskData farms/inventory are [] so a
+    // stale array can never derive alerts, while manual/persisted alerts stay.
+    const s = storedAlert({ id: 'manual-1' })
+    const out = resolveDeskComplianceAlerts(false, [], [], [enforcedLicenceRule], [s])!
+    expect(out).toEqual([s]) // stored appears; no auto alert from empty farms
+    expect(out.some(a => a.id === AUTO_ID)).toBe(false)
+  })
+
   it('union: rule-derived and persisted both appear with no duplicate rows', () => {
     const s = storedAlert({ id: 'stored-unique' })
     const out = resolveDeskComplianceAlerts(false, [unlicensedFarm], [], [enforcedLicenceRule], [s])!

@@ -591,6 +591,30 @@ describe('Operations Desk — includes rule-derived compliance alerts (Codex P2)
   })
 })
 
+describe('Operations Desk — only fresh admin data reaches the desk (Codex P2)', () => {
+  // Per-dataset freshness (deskAdminDataView) is tested behaviourally in
+  // adminDataLoad.test.ts; compliance behaviour in operationsDeskComplianceAlerts.
+  // Here we assert the wiring: the desk and its alert derivation consume the
+  // sanitized projection, and freshness is tracked from the allSettled result.
+  it('feeds the desk (and its alert derivation) the sanitized deskData projection', () => {
+    expect(APP_SRC).toContain('deskAdminDataView(isDemo, farms, inventory, adminDataAvailability.farms, adminDataAvailability.inventory)')
+    expect(APP_SRC).toContain('farms={deskData.farms}')
+    expect(APP_SRC).toContain('inventory={deskData.inventory}')
+    // rule-derived alerts use the sanitized farms/inventory, never the raw arrays
+    expect(APP_SRC).toContain('deskData.farms')
+    expect(APP_SRC).toContain('deskData.inventory')
+    expect(APP_SRC).not.toMatch(/resolveDeskComplianceAlerts\(\s*[^)]*\bfarms\b,\s*inventory,/)
+  })
+
+  it('tracks per-dataset freshness: reset on load start, set from allSettled result', () => {
+    // reset when a new admin load starts (render-time trigger)
+    expect(APP_SRC).toContain('setAdminDataAvailability({ farms: false, inventory: false })')
+    // set from the actual fulfilled/rejected status of each dataset
+    expect(APP_SRC).toContain("farms: farmsResult.status === 'fulfilled'")
+    expect(APP_SRC).toContain("inventory: inventoryResult.status === 'fulfilled'")
+  })
+})
+
 describe('Operations Desk — mobile layout containment', () => {
   // The wide matters table must scroll inside a bounded container so the page
   // root never scrolls sideways on narrow viewports. `.ops-desk-table-scroll`

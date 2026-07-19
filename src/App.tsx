@@ -37,7 +37,7 @@ import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginR
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
-import { resolveAdminDataLoad } from './lib/adminDataLoad'
+import { resolveAdminDataLoad, deskAdminDataView } from './lib/adminDataLoad'
 import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
@@ -147,6 +147,13 @@ export default function App() {
   // 'ready' only after BOTH settle successfully (including a legitimate empty
   // result); the desk must not show an all-clear while this is idle/loading/failed.
   const [adminDataLoadState, setAdminDataLoadState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  // Per-dataset freshness for the CURRENT admin load. Only data the current load
+  // fulfilled reaches the desk (see deskAdminDataView), so a stale farmer-scoped
+  // subset lingering in the shared farms/inventory (the farmer loader merges,
+  // never clears) cannot build desk rows/alerts while loading, and a rejected
+  // dataset never leaks its retained prior rows — while the fulfilled half of a
+  // partial failure still shows.
+  const [adminDataAvailability, setAdminDataAvailability] = useState<{ farms: boolean; inventory: boolean }>({ farms: false, inventory: false })
   // The admin profile the farm/inventory load reflects — compared by identity
   // during render to mark a fresh load as loading (mirrors the effect's
   // currentProfile dependency) without a synchronous set-state-in-effect.
@@ -270,6 +277,13 @@ export default function App() {
         if (farmsResult.status === 'rejected') console.warn('Admin farms load failed:', farmsResult.reason)
         if (inventoryResult.status === 'rejected') console.warn('Admin inventory load failed:', inventoryResult.reason)
         setAdminDataLoadState(outcome.state)
+        // Record which datasets THIS load actually fulfilled, so only fresh data
+        // reaches the desk (a rejected dataset stays [] there even though the
+        // shared array retains its prior rows for other admin pages).
+        setAdminDataAvailability({
+          farms: farmsResult.status === 'fulfilled',
+          inventory: inventoryResult.status === 'fulfilled',
+        })
       },
       onError: err => {
         // Promise.allSettled does not reject; defensive fallback only.
@@ -398,6 +412,11 @@ export default function App() {
     if (adminDataFetchProfile !== adminDataProfile) {
       setAdminDataFetchProfile(adminDataProfile)
       if (adminDataLoadState !== 'loading') setAdminDataLoadState('loading')
+      // A new admin load starts with neither dataset fresh, so no stale array
+      // reaches the desk until this load fulfils each one.
+      if (adminDataAvailability.farms || adminDataAvailability.inventory) {
+        setAdminDataAvailability({ farms: false, inventory: false })
+      }
     }
   } else if (adminDataFetchProfile !== null) {
     setAdminDataFetchProfile(null)
@@ -454,22 +473,35 @@ export default function App() {
     [isDemo, page],
   )
 
+  // Farm/inventory the Operations Desk may safely consume: only data the CURRENT
+  // admin load fulfilled (demo passes its settled seeded data through). So a
+  // stale farmer-scoped subset lingering in the shared arrays, or a rejected
+  // dataset's retained rows, never build desk queue rows or rule-derived alerts —
+  // while the fulfilled half of a partial failure still shows. The shared arrays
+  // are untouched, so other admin pages keep any retained rows.
+  const deskData = useMemo(
+    () => deskAdminDataView(isDemo, farms, inventory, adminDataAvailability.farms, adminDataAvailability.inventory),
+    [isDemo, farms, inventory, adminDataAvailability],
+  )
+
   // The compliance alerts the Operations Desk sees must match the Watchtower:
   // rule-derived alerts (from ENFORCED rules) merged with the persisted/stored
   // alerts, deduplicated by id — otherwise an enforced rule generating an
   // unresolved auto alert (e.g. BATCH_COA_REQUIRED) is invisible and the queue
   // shows a false all-clear. Rules: the demo store in demo mode, the fetched
-  // rules in Supabase mode. Auto alerts are derived here for display, never
-  // persisted. Failure still passes null so the desk reports the gap.
+  // rules in Supabase mode. Rule-derived alerts use only the fresh desk farms/
+  // inventory (never stale), while persisted/manual alerts stay visible even when
+  // farm/inventory data is unavailable. Auto alerts are derived here for display,
+  // never persisted. Failure still passes null so the desk reports the gap.
   const deskComplianceAlerts = useMemo<ComplianceAlert[] | null>(
     () => resolveDeskComplianceAlerts(
       !isDemo && complianceLoadState === 'failed',
-      farms,
-      inventory,
+      deskData.farms,
+      deskData.inventory,
       isDemo ? (demoComplianceRules ?? []) : complianceRules,
       (isDemo ? demoComplianceAlerts : complianceAlerts) ?? [],
     ),
-    [isDemo, complianceLoadState, farms, inventory, demoComplianceRules, complianceRules, demoComplianceAlerts, complianceAlerts],
+    [isDemo, complianceLoadState, deskData, demoComplianceRules, complianceRules, demoComplianceAlerts, complianceAlerts],
   )
 
   // ── Error handler ────────────────────────────────────────────────────────
@@ -1039,8 +1071,12 @@ export default function App() {
               other DDP page; the database's RLS remains the real boundary. */}
           {page === 'ddp-operations-desk' && isAdminRole && (
             <DDPOperationsDesk
-              farms={farms}
-              inventory={inventory}
+              // Only farm/inventory data confirmed fresh by the current admin
+              // load — never a stale farmer-scoped subset or a rejected dataset's
+              // retained rows (deskAdminDataView). Loading/failure notices below
+              // still hold; a partial failure keeps its fulfilled half actionable.
+              farms={deskData.farms}
+              inventory={deskData.inventory}
               // Demo: the in-memory review requests are the honest value. Supabase
               // admin: null on a failed fetch so the desk reports the gap; [] while
               // still loading so a stale localStorage/farmer-scoped array is never
