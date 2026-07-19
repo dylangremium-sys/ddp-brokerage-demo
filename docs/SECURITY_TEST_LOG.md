@@ -1222,3 +1222,68 @@ not proof of authorization denial.
 
 Until steps 1–2 are done, the matrix is expected to report BLOCK. That is the
 intended behaviour, not a failure of the harness.
+
+## §11 — Required private-storage infrastructure
+
+Both private buckets must exist **with their permissive policies** before any
+storage verification is meaningful. This is environment setup, not migration
+content: migration 22 supplies only the restrictive overlay.
+
+```text
+Bucket: farmer-photos
+Public: false
+File-size limit: 5 MB (5242880 bytes)
+MIME types:
+  image/jpeg
+  image/png
+  image/webp
+
+Required permissive policies (storage.objects):
+  farmer-photos: admin all               FOR ALL    — bucket_id + is_ddp_admin()
+  farmer-photos: farmer upload own       FOR INSERT — bucket_id + auth.uid() = path segment 1
+  farmer-photos: farmer or admin read    FOR SELECT — bucket_id + (is_ddp_admin() OR own prefix)
+
+Required restrictive overlay (from migration 22):
+  farmer buckets: operational farmer or admin   AS RESTRICTIVE FOR ALL
+```
+
+`farmer-documents` carries the equivalent three permissive policies and is
+covered by the same restrictive overlay.
+
+### Creation order
+
+1. Create the bucket (private, with the size limit and MIME allowlist above).
+2. Apply the three permissive policies.
+3. Apply migration 22 (or confirm its overlay is already present).
+4. Only then run the pending-user storage verification.
+
+**Migration 22 alone does not grant farmer access.** It is `AS RESTRICTIVE`, and
+PostgreSQL requires at least one *permissive* policy to grant an operation and
+every *restrictive* policy to pass. A bucket with the overlay but no permissive
+policy denies everyone — farmer, pending and anonymous alike.
+
+### Pending denial must be proven by differential
+
+A 403 for the pending user is **not** proof on its own. If no permissive policy
+exists, every actor is denied and the run would score that 403 as a security
+pass. This exact false positive was live: `farmer-photos` existed with the
+overlay and zero permissive policies, and an operational farmer was denied
+alongside the pending user.
+
+The harness now requires, per bucket, that an operational farmer's own-scope
+write is **ALLOWED** while the pending user's structurally identical write is
+**DENIED**. The payload matches each bucket's MIME allowlist so the request
+reaches the authorization layer rather than being rejected by content-type
+validation first. Missing bucket, denied control, pre-authorization rejection,
+successful pending write, cross-prefix write, or unverified cleanup all BLOCK or
+FAIL the matrix.
+
+No public URLs: both buckets are private and reads use short-lived signed URLs.
+
+**Production requires the same infrastructure** — bucket, MIME allowlist, size
+limit, and all three permissive policies — before rollout. It is not created by
+any migration in this repository.
+
+Note: the application does not currently expose a browser photo-upload flow;
+farm photos are still held as `FileReader` data URLs in React state. The bucket
+and policies are verified at the policy layer only.

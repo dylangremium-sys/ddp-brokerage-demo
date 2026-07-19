@@ -340,6 +340,66 @@ export function classifyStorageOutcome(res) {
   return { outcome: 'unavailable', reason: `unclassified storage error (${status ?? 'n/a'})` }
 }
 
+// The private buckets proven by differential, each with a payload that
+// satisfies its own MIME allowlist. farmer-photos accepts image/* only (see
+// FARMER_MVP_MIGRATION.sql), so a text blob would be rejected by content-type
+// validation BEFORE any policy ran and would prove nothing.
+const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9])
+const PDF_BYTES = new TextEncoder().encode('%PDF-1.4\n%%EOF\n')
+export const STORAGE_ATTRIBUTION_BUCKETS = Object.freeze([
+  { bucket: 'farmer-documents', ext: 'pdf', contentType: 'application/pdf', bytes: PDF_BYTES },
+  { bucket: 'farmer-photos', ext: 'jpg', contentType: 'image/jpeg', bytes: JPEG_BYTES },
+])
+
+// ── Storage policy attribution ──────────────────────────────────────────────
+//
+// A 403 for the pending user proves nothing on its own. If NO permissive policy
+// exists for a bucket, PostgreSQL denies everyone — pending, farmer and anon
+// alike — and the run would score that 403 as a security pass. That exact
+// false-positive was live on staging: the farmer-photos bucket had zero
+// permissive policies, so migration 22's overlay was never the deciding factor.
+//
+// The only sound proof is a differential: an operational farmer's own-scope
+// request must be ALLOWED while the pending user's structurally identical
+// request is DENIED. Then the restrictive overlay is the sole differing
+// condition. This is pure so it can be regression-tested offline.
+//
+// obs: { bucketExists, farmerControl, pendingSubject, crossPrefix, cleanupVerified }
+// where each outcome is a classifyStorageOutcome() result string.
+export function evaluateStorageAttribution(obs) {
+  const o = obs || {}
+  const blocked = (reason) => ({ status: 'BLOCK', attributable: false, reason })
+  const failed = (reason) => ({ status: 'FAIL', attributable: false, reason })
+
+  if (o.bucketExists === false) {
+    return blocked('bucket does not exist on the target project — denial would be absence, not policy')
+  }
+  // A pending write that SUCCEEDS is a security failure even if cleanup works.
+  if (o.pendingSubject === 'ALLOWED') {
+    return failed('SECURITY FAILURE: pending user completed an operational storage write')
+  }
+  if (o.crossPrefix === 'ALLOWED') {
+    return failed('SECURITY FAILURE: cross-prefix write succeeded — path ownership is not enforced')
+  }
+  // The control must genuinely succeed, or there is nothing to attribute to.
+  if (o.farmerControl !== 'ALLOWED') {
+    return blocked(`operational-farmer control was ${o.farmerControl ?? 'not run'} — with no permissive grant every actor is denied, so the pending denial cannot be attributed to the migration 22 overlay`)
+  }
+  // The subject's denial must come from the authorization layer, not from MIME
+  // validation, a malformed path, or a missing object.
+  if (o.pendingSubject !== 'DENIED-BY-POLICY' && o.pendingSubject !== 'denied') {
+    return blocked(`pending denial classified as "${o.pendingSubject ?? 'unknown'}" — only an authorization-layer denial proves the overlay`)
+  }
+  if (o.cleanupVerified === false) {
+    return failed('cleanup could not be verified — synthetic storage objects may remain')
+  }
+  return {
+    status: 'PASS',
+    attributable: true,
+    reason: 'operational farmer allowed, pending denied on an identical request — denial attributable to the migration 22 restrictive overlay',
+  }
+}
+
 // ── Matrix aggregation ──────────────────────────────────────────────────────
 //
 // The merge gate requires failed = skipped = blocked = cleanupFailures = 0.
@@ -795,23 +855,58 @@ async function main() {
 
         // Storage: an object-not-found result is NOT proof of denial, so the
         // outcome is classified rather than treated as a boolean error check.
-        for (const bucket of ['farmer-documents', 'farmer-photos']) {
-          const up = await p.client.storage.from(bucket).upload(`${p.userId}/${TAG}.txt`, new Blob(['x']))
-          const cls = classifyStorageOutcome(up)
-          if (cls.outcome === 'not-found') {
-            // The bucket itself is absent on this target, so denial cannot be
-            // proven here. That is a coverage gap to surface, not a pass and
-            // not a security failure — BLOCK names it explicitly.
-            block(`pending cannot upload to ${bucket}`,
-              `bucket "${bucket}" does not exist on the target project — pending denial cannot be proven; create it on staging or remove it from migration 22's bucket scope`)
-            continue
+        // Each private bucket is proven by DIFFERENTIAL, never by a bare 403.
+        // The payload is shaped to satisfy the bucket's MIME allowlist so the
+        // request reaches the authorization layer instead of being rejected by
+        // content-type validation first.
+        for (const spec of STORAGE_ATTRIBUTION_BUCKETS) {
+          const { bucket, ext, contentType, bytes } = spec
+          const body = () => new Blob([bytes], { type: contentType })
+          const opts = { contentType }
+          const cleanups = []
+
+          // CONTROL: an operational farmer's own-scope write must succeed.
+          const controlPath = `${a.userId}/${TAG}-attrib.${ext}`
+          const controlRes = await a.client.storage.from(bucket).upload(controlPath, body(), opts)
+          const control = classifyStorageOutcome(controlRes)
+          if (control.outcome === 'allowed') cleanups.push({ who: a, path: controlPath })
+
+          // SUBJECT: the pending user's structurally identical write.
+          const subjectPath = `${p.userId}/${TAG}-attrib.${ext}`
+          const subjectRes = await p.client.storage.from(bucket).upload(subjectPath, body(), opts)
+          const subject = classifyStorageOutcome(subjectRes)
+          if (subject.outcome === 'allowed') cleanups.push({ who: p, path: subjectPath })
+
+          // Cross-prefix: pending writing beneath another user's prefix.
+          const crossPath = `${b.userId}/${TAG}-attrib-x.${ext}`
+          const crossRes = await p.client.storage.from(bucket).upload(crossPath, body(), opts)
+          const cross = classifyStorageOutcome(crossRes)
+          if (cross.outcome === 'allowed') cleanups.push({ who: p, path: crossPath })
+
+          let cleanupVerified = true
+          for (const c of cleanups) {
+            const rm = await c.who.client.storage.from(bucket).remove([c.path])
+            if (rm?.error) cleanupVerified = false
           }
-          record(`pending cannot upload to ${bucket}`, cls.outcome === 'denied', redactSecrets(cls.reason))
-          if (cls.outcome === 'allowed') {
-            const rm = await p.client.storage.from(bucket).remove([`${p.userId}/${TAG}.txt`])
-            record(`cleanup: removed pending upload from ${bucket}`, !rm?.error,
-              rm?.error ? redactSecrets(String(rm.error.message)) : '')
-          }
+
+          const bucketExists = control.outcome !== 'not-found' || subject.outcome !== 'not-found'
+          const verdict = evaluateStorageAttribution({
+            bucketExists,
+            farmerControl: control.outcome === 'allowed' ? 'ALLOWED' : control.outcome,
+            pendingSubject: subject.outcome === 'denied' ? 'DENIED-BY-POLICY' : subject.outcome,
+            crossPrefix: cross.outcome === 'allowed' ? 'ALLOWED' : cross.outcome,
+            cleanupVerified,
+          })
+          const name = `pending denied on ${bucket} (attributable to migration 22)`
+          if (verdict.status === 'BLOCK') block(name, redactSecrets(verdict.reason))
+          else record(name, verdict.status === 'PASS', redactSecrets(verdict.reason))
+
+          record(`operational farmer retains own-scope write on ${bucket}`,
+            control.outcome === 'allowed', redactSecrets(control.reason))
+          record(`pending cannot write beneath another user prefix on ${bucket}`,
+            cross.outcome !== 'allowed', redactSecrets(cross.reason))
+          record(`cleanup verified on ${bucket}`, cleanupVerified,
+            cleanupVerified ? '' : 'a synthetic storage object could not be removed')
         }
         // Writing beneath another user's prefix must also be denied.
         const foreign = await p.client.storage.from('farmer-documents')

@@ -28,6 +28,8 @@ import {
   classifyStorageOutcome,
   summarisePendingMatrix,
   pendingFilterColumn,
+  evaluateStorageAttribution,
+  STORAGE_ATTRIBUTION_BUCKETS,
   redactSecrets,
 } from './run-staging-security-tests.mjs'
 
@@ -278,6 +280,87 @@ describe('storage outcomes distinguish denial from absence', () => {
   it('reports success and absence of a response distinctly', () => {
     expect(classifyStorageOutcome({ data: {} }).outcome).toBe('allowed')
     expect(classifyStorageOutcome(null).outcome).toBe('unavailable')
+  })
+})
+
+describe('storage denial must be attributable, not merely observed', () => {
+  const ok = {
+    bucketExists: true,
+    farmerControl: 'ALLOWED',
+    pendingSubject: 'DENIED-BY-POLICY',
+    crossPrefix: 'DENIED-BY-POLICY',
+    cleanupVerified: true,
+  }
+
+  it('passes when the farmer is allowed and pending is denied', () => {
+    const v = evaluateStorageAttribution(ok)
+    expect(v.status).toBe('PASS')
+    expect(v.attributable).toBe(true)
+  })
+
+  it('BLOCKS when no permissive policy exists, so every actor is denied', () => {
+    // The exact false-positive found on staging: farmer-photos had zero
+    // permissive policies, so a bare 403 for pending proved nothing.
+    const v = evaluateStorageAttribution({ ...ok, farmerControl: 'DENIED-BY-POLICY' })
+    expect(v.status).toBe('BLOCK')
+    expect(v.attributable).toBe(false)
+    expect(v.reason).toMatch(/cannot be attributed/)
+  })
+
+  it('BLOCKS when the bucket does not exist', () => {
+    const v = evaluateStorageAttribution({ ...ok, bucketExists: false })
+    expect(v.status).toBe('BLOCK')
+    expect(v.reason).toMatch(/does not exist/)
+  })
+
+  it('FAILS when the pending user is allowed to write', () => {
+    const v = evaluateStorageAttribution({ ...ok, pendingSubject: 'ALLOWED' })
+    expect(v.status).toBe('FAIL')
+    expect(v.reason).toMatch(/SECURITY FAILURE/)
+  })
+
+  it('FAILS when a cross-prefix write succeeds', () => {
+    const v = evaluateStorageAttribution({ ...ok, crossPrefix: 'ALLOWED' })
+    expect(v.status).toBe('FAIL')
+    expect(v.reason).toMatch(/cross-prefix/)
+  })
+
+  it('does not accept a pre-authorization rejection as proof', () => {
+    // Invalid MIME / malformed path / missing object never reach the policy.
+    for (const outcome of ['invalid', 'not-found', 'unavailable', undefined]) {
+      const v = evaluateStorageAttribution({ ...ok, pendingSubject: outcome })
+      expect(v.status, `pendingSubject=${outcome}`).toBe('BLOCK')
+    }
+  })
+
+  it('FAILS when cleanup cannot be verified', () => {
+    const v = evaluateStorageAttribution({ ...ok, cleanupVerified: false })
+    expect(v.status).toBe('FAIL')
+    expect(v.reason).toMatch(/cleanup/)
+  })
+
+  it('treats a pending write as a security failure even if cleanup succeeded', () => {
+    const v = evaluateStorageAttribution({ ...ok, pendingSubject: 'ALLOWED', cleanupVerified: true })
+    expect(v.status).toBe('FAIL')
+  })
+
+  it('BLOCK and FAIL are both non-passing in the matrix aggregate', () => {
+    expect(summarisePendingMatrix([{ status: 'BLOCK' }]).overallPassing).toBe(false)
+    expect(summarisePendingMatrix([{ status: 'FAIL' }]).overallPassing).toBe(false)
+  })
+
+  it('sends a MIME-valid payload to every attribution bucket', () => {
+    // A text blob into farmer-photos would be rejected by the image-only
+    // allowlist before any policy ran.
+    const byBucket = Object.fromEntries(STORAGE_ATTRIBUTION_BUCKETS.map((s) => [s.bucket, s]))
+    expect(byBucket['farmer-photos'].contentType).toMatch(/^image\//)
+    expect(byBucket['farmer-documents'].contentType).toBe('application/pdf')
+    for (const s of STORAGE_ATTRIBUTION_BUCKETS) expect(s.bytes.length).toBeGreaterThan(0)
+  })
+
+  it('covers both private buckets', () => {
+    expect(STORAGE_ATTRIBUTION_BUCKETS.map((s) => s.bucket).sort())
+      .toEqual(['farmer-documents', 'farmer-photos'])
   })
 })
 
