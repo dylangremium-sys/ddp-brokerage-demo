@@ -27,6 +27,7 @@ import {
   pendingUpdatePayload,
   classifyStorageOutcome,
   summarisePendingMatrix,
+  pendingFilterColumn,
   redactSecrets,
 } from './run-staging-security-tests.mjs'
 
@@ -183,6 +184,29 @@ describe('insert payloads reach RLS instead of tripping a pre-RLS constraint', (
       const values = JSON.stringify(pendingInsertPayload(table, ctx))
       expect(values, `${table} payload should carry the run tag`).toContain(ctx.tag)
     }
+  })
+})
+
+describe('UPDATE/DELETE probes filter on a column that actually exists', () => {
+  it('uses id for farms and entity_id for status_history', () => {
+    // Filtering farms/status_history on farm_id raises SQLSTATE 42703 before RLS
+    // runs, so the probe would test the schema instead of the policy. This was a
+    // real failure observed on staging.
+    expect(pendingFilterColumn('farms')).toBe('id')
+    expect(pendingFilterColumn('status_history')).toBe('entity_id')
+  })
+
+  it('uses farm_id for every other operational table', () => {
+    for (const table of MIGRATION_22_TABLES) {
+      if (table === 'farms' || table === 'status_history') continue
+      expect(pendingFilterColumn(table), `${table} filter column`).toBe('farm_id')
+    }
+  })
+
+  it('never filters a table on a column it does not have', () => {
+    // farms has no farm_id; status_history has neither farm_id nor id-as-farm.
+    expect(pendingFilterColumn('farms')).not.toBe('farm_id')
+    expect(pendingFilterColumn('status_history')).not.toBe('farm_id')
   })
 })
 

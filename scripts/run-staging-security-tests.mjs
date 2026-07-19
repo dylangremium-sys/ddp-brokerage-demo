@@ -286,6 +286,18 @@ export function pendingInsertPayload(table, ctx) {
   }
 }
 
+// The column an UPDATE/DELETE probe filters on to target the fixture farm.
+// Most operational tables carry farm_id, but two do not: `farms` IS the farm
+// (its key is `id`), and `status_history` is polymorphic (`entity_id`). Using
+// farm_id there raises SQLSTATE 42703 (undefined_column) BEFORE RLS runs, so
+// the probe would test the schema instead of the policy and is correctly
+// reported as an invalid probe rather than a security pass.
+export function pendingFilterColumn(table) {
+  if (table === 'farms') return 'id'
+  if (table === 'status_history') return 'entity_id'
+  return 'farm_id'
+}
+
 // A tag-scoped UPDATE payload, so a probe that wrongly succeeds is traceable
 // and removable rather than corrupting a shared fixture.
 export function pendingUpdatePayload(table, ctx) {
@@ -455,9 +467,11 @@ async function runPendingMatrix(ctx) {
         res = await client.from(table).insert(pendingInsertPayload(table, { tag, userId, farmId })).select('id')
         if (Array.isArray(res?.data)) for (const row of res.data) if (row?.id) createdIds.push({ table, id: row.id })
       } else if (operation === 'update') {
-        res = await client.from(table).update(pendingUpdatePayload(table, { tag })).eq('farm_id', farmId).select('id')
+        res = await client.from(table).update(pendingUpdatePayload(table, { tag }))
+          .eq(pendingFilterColumn(table), farmId).select('id')
       } else {
-        res = await client.from(table).delete().eq('farm_id', farmId).select('id')
+        res = await client.from(table).delete()
+          .eq(pendingFilterColumn(table), farmId).select('id')
       }
     } catch (e) {
       record(probe.probeName, false, redactSecrets(`probe threw: ${String(e?.message || e).slice(0, 80)}`))
@@ -784,6 +798,14 @@ async function main() {
         for (const bucket of ['farmer-documents', 'farmer-photos']) {
           const up = await p.client.storage.from(bucket).upload(`${p.userId}/${TAG}.txt`, new Blob(['x']))
           const cls = classifyStorageOutcome(up)
+          if (cls.outcome === 'not-found') {
+            // The bucket itself is absent on this target, so denial cannot be
+            // proven here. That is a coverage gap to surface, not a pass and
+            // not a security failure — BLOCK names it explicitly.
+            block(`pending cannot upload to ${bucket}`,
+              `bucket "${bucket}" does not exist on the target project — pending denial cannot be proven; create it on staging or remove it from migration 22's bucket scope`)
+            continue
+          }
           record(`pending cannot upload to ${bucket}`, cls.outcome === 'denied', redactSecrets(cls.reason))
           if (cls.outcome === 'allowed') {
             const rm = await p.client.storage.from(bucket).remove([`${p.userId}/${TAG}.txt`])
