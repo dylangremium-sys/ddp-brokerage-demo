@@ -19,6 +19,7 @@ import {
   type OperationsDeskPriority,
 } from '../../lib/operationsDeskPriority'
 import { resolveOperationsDeskEmptyState } from '../../lib/operationsDeskEmptyState'
+import { operationsDeskActionAvailable, resolveOperationsDeskRoute } from '../../lib/operationsDeskActions'
 
 /**
  * Operations Desk — an operational index over records that already exist.
@@ -76,6 +77,13 @@ export default function DDPOperationsDesk({
 
   const summary = useMemo(() => summariseOperationsDeskItems(result.items), [result.items])
 
+  // Ids actually present in the loaded arrays. A follow-up's detail action is
+  // only enabled when its target is here — otherwise (source loading/failed/
+  // partial/stale, or a malformed request) the review page would be an empty
+  // shell, so the action is disabled instead of navigating nowhere.
+  const loadedFarmIds = useMemo(() => new Set(farms.map(f => f.id)), [farms])
+  const loadedItemIds = useMemo(() => new Set(inventory.map(i => i.id)), [inventory])
+
   const isFiltered =
     filters.search.trim() !== '' || filters.category !== 'all' || filters.priority !== 'all'
 
@@ -98,11 +106,13 @@ export default function DDPOperationsDesk({
   })
 
   function openItem(item: OperationsDeskItem) {
-    const farmId = item.destinationParams?.farmId
-    const itemId = item.destinationParams?.itemId
-    if (item.destinationPage === 'ddp-farm-review' && farmId) { onOpenFarm(farmId); return }
-    if (item.destinationPage === 'ddp-inventory-review' && itemId) { onOpenItem(itemId); return }
-    goTo(item.destinationPage)
+    // Route via the pure resolver. A 'none' route (target not loaded) does
+    // nothing — so no click/keyboard/programmatic path can open an empty detail
+    // shell, in addition to the action being disabled below.
+    const route = resolveOperationsDeskRoute(item, loadedFarmIds, loadedItemIds)
+    if (route.kind === 'open-farm') onOpenFarm(route.farmId)
+    else if (route.kind === 'open-item') onOpenItem(route.itemId)
+    else if (route.kind === 'go') goTo(route.page)
   }
 
   return (
@@ -273,14 +283,29 @@ export default function DDPOperationsDesk({
                     : `${item.ageInDays} day${item.ageInDays === 1 ? '' : 's'}`}
                 </td>
                 <td>
-                  <button
-                    type="button"
-                    className="ops-desk-action"
-                    onClick={() => openItem(item)}
-                  >
-                    {item.actionLabel}
-                    <span className="sr-only"> — {item.title}, {item.entityLabel}</span>
-                  </button>
+                  {operationsDeskActionAvailable(item, loadedFarmIds, loadedItemIds) ? (
+                    <button
+                      type="button"
+                      className="ops-desk-action"
+                      onClick={() => openItem(item)}
+                    >
+                      {item.actionLabel}
+                      <span className="sr-only"> — {item.title}, {item.entityLabel}</span>
+                    </button>
+                  ) : (
+                    // Target record not loaded (source loading/failed/partial or a
+                    // malformed request) — disabled so neither click nor keyboard can
+                    // open an empty detail shell.
+                    <button
+                      type="button"
+                      className="ops-desk-action"
+                      disabled
+                      title="The authoritative record is not loaded yet."
+                    >
+                      Record unavailable
+                      <span className="sr-only"> — {item.title}, {item.entityLabel}; the record is not loaded</span>
+                    </button>
+                  )}
                 </td>
               </tr>,
               expanded ? (

@@ -4877,6 +4877,12 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   border: 1px solid var(--ddp-line-strong); border-radius: 0;
 }
 .ops-desk-action:hover { background: var(--ddp-green-900); color: #FFFFFF; border-color: var(--ddp-green-900); }
+/* Target record not loaded — action disabled, stated plainly and non-actionable. */
+.ops-desk-action:disabled {
+  cursor: not-allowed; opacity: 0.55; color: var(--ddp-ink-500);
+  background: var(--ddp-paper); border-color: var(--ddp-line);
+}
+.ops-desk-action:disabled:hover { background: var(--ddp-paper); color: var(--ddp-ink-500); border-color: var(--ddp-line); }
 
 .ops-desk :focus-visible { outline: 2px solid var(--ddp-gold-700); outline-offset: 2px; }
 

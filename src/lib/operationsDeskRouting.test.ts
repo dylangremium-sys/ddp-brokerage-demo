@@ -522,6 +522,31 @@ describe('Operations Desk — admin farm/inventory source tracking (Codex P2)', 
   })
 })
 
+describe('Operations Desk — no routing to missing detail records (Codex P2)', () => {
+  // The enable/route decision is tested behaviourally in operationsDeskActions.test.ts.
+  // Here we assert the page disables the action and cannot bypass it via the callback.
+  it('renders a disabled "Record unavailable" action when the target is not loaded', () => {
+    expect(PAGE_SRC).toContain('operationsDeskActionAvailable(item, loadedFarmIds, loadedItemIds)')
+    expect(PAGE_SRC).toContain('Record unavailable')
+    // the fallback branch is a genuinely disabled <button> (native click+keyboard block)
+    const disabledBranch = PAGE_SRC.slice(PAGE_SRC.indexOf('Record unavailable') - 400, PAGE_SRC.indexOf('Record unavailable'))
+    expect(disabledBranch).toContain('disabled')
+  })
+
+  it('routes only through the pure resolver, so a none-route makes no callback', () => {
+    expect(PAGE_SRC).toContain('resolveOperationsDeskRoute(item, loadedFarmIds, loadedItemIds)')
+    // openItem acts only on concrete routes — a 'none' does nothing.
+    expect(PAGE_SRC).toContain("route.kind === 'open-farm'")
+    expect(PAGE_SRC).toContain("route.kind === 'open-item'")
+    expect(PAGE_SRC).toContain("route.kind === 'go'")
+  })
+
+  it('scopes availability to the currently loaded farm/inventory ids', () => {
+    expect(PAGE_SRC).toContain('const loadedFarmIds = useMemo(() => new Set(farms.map(f => f.id))')
+    expect(PAGE_SRC).toContain('const loadedItemIds = useMemo(() => new Set(inventory.map(i => i.id))')
+  })
+})
+
 describe('Operations Desk — mobile layout containment', () => {
   // The wide matters table must scroll inside a bounded container so the page
   // root never scrolls sideways on narrow viewports. `.ops-desk-table-scroll`
