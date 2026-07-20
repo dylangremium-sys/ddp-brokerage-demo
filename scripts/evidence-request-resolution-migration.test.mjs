@@ -889,15 +889,20 @@ describe('migration 24 — Codex re-review F1 was a FALSE POSITIVE (guard alread
 describe('migration 24 — Codex F2: finalized objects cannot be deleted via storage', () => {
   const policy = () => (STO.match(/CREATE POLICY "evidence-request-files: farmer delete own draft"[\s\S]*?;/) || [''])[0]
 
-  it('the DELETE policy requires upload_state = pending_upload', () => {
-    expect(policy()).toMatch(/a\.upload_state = 'pending_upload'/)
+  it('the DELETE policy requires explicit removal authorization', () => {
+    // Superseded by the two-stage protocol: gating moved from
+    // upload_state = 'pending_upload' to removal_requested_at IS NOT NULL,
+    // which is strictly stronger — it covers ready AND pending objects.
+    expect(policy()).toMatch(/a\.removal_requested_at IS NOT NULL/)
   })
 
-  it('a pending upload on a draft response remains deletable', () => {
+  it('an unauthorized pending upload is no longer casually deletable either', () => {
     const p = policy()
     expect(p).toMatch(/r\.state = 'draft'/)
     expect(p).toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
-    expect(p).toMatch(/a\.upload_state = 'pending_upload'/)
+    // Being merely pending is not sufficient; removal must be authorized first.
+    expect(p).not.toMatch(/a\.upload_state = 'pending_upload'/)
+    expect(p).toMatch(/a\.removal_requested_at IS NOT NULL/)
   })
 
   it('a ready/finalized attachment is excluded from direct storage deletion', () => {
@@ -1028,6 +1033,208 @@ describe('migration 24 — Codex F4: draft attachments removable, history preser
     expect(g).toMatch(/history note became updatable/)
     expect(g).toMatch(/history event_type became updatable/)
     expect(g).toMatch(/history became deletable/)
+  })
+})
+
+// ── Codex exact-head review remediation (PR #37, head f7b0761) ──────────────
+
+describe('migration 24 — controlled two-stage removal (no SQL object deletion)', () => {
+  const fn = () => BODIES.get('remove_draft_evidence_attachment') ?? ''
+
+  it('never deletes from storage.objects in SQL', () => {
+    // Supabase requires the Storage API: a SQL DELETE removes only the metadata
+    // row and orphans the file.
+    for (const sql of [FWD, STO, RBK]) {
+      expect(sql).not.toMatch(/DELETE\s+FROM\s+storage\.objects/i)
+    }
+  })
+
+  it('adds removal_requested_at rather than a third upload_state', () => {
+    expect(FWD).toMatch(/removal_requested_at\s+timestamptz/)
+    const stateCheck = (FWD.match(/evidence_attachments_upload_state_check[\s\S]*?\)/) || [''])[0]
+    expect(stateCheck).toMatch(/'pending_upload','ready'/)
+    expect(stateCheck).not.toMatch(/removing|awaiting|deleting/i)
+  })
+
+  it('stage 0 — a linked existing document is removed immediately', () => {
+    const b = fn()
+    expect(b).toMatch(/IF att\.origin <> 'request_upload' THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments[\s\S]*?'REMOVED'/)
+  })
+
+  it('stage 1 — an upload with no stored object is removed immediately', () => {
+    const b = fn()
+    expect(b).toMatch(/SELECT EXISTS \([\s\S]*?FROM storage\.objects o[\s\S]*?\) INTO object_exists/)
+    expect(b).toMatch(/IF NOT object_exists THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments[\s\S]*?'REMOVED'/)
+  })
+
+  it('stage 2 — an upload with a stored object is authorized, not deleted', () => {
+    const b = fn()
+    const stage2 = b.slice(b.indexOf('IF att.removal_requested_at IS NULL THEN'))
+    expect(stage2).toMatch(/SET removal_requested_at = now\(\)/)
+    expect(stage2).toMatch(/'STORAGE_DELETE_REQUIRED'/)
+    // The row must NOT be deleted on this path.
+    expect(stage2).not.toMatch(/DELETE FROM public\.evidence_request_attachments/)
+  })
+
+  it('returns a stable result carrying id, bucket and exact path', () => {
+    const b = fn()
+    for (const key of ['result', 'attachment_id', 'storage_bucket', 'storage_object_path']) {
+      expect(b, `result is missing ${key}`).toContain(`'${key}'`)
+    }
+    expect(b).toMatch(/'STORAGE_DELETE_REQUIRED'/)
+    expect(b).toMatch(/'REMOVED'/)
+  })
+
+  it('is idempotent — re-authorizing an already-marked attachment is a no-op', () => {
+    expect(fn()).toMatch(/IF att\.removal_requested_at IS NULL THEN\s*UPDATE/)
+  })
+
+  it('completion after an interrupted Storage API delete lands on REMOVED', () => {
+    // Second call: object now absent -> stage 1 completes the removal.
+    const b = fn()
+    expect(b.indexOf('IF NOT object_exists THEN'))
+      .toBeLessThan(b.indexOf('IF att.removal_requested_at IS NULL THEN'))
+  })
+
+  it('removal is denied on a submitted response or a terminal request', () => {
+    const b = fn()
+    expect(b).toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
+    expect(b).toMatch(/resp\.state <> 'draft'/)
+  })
+
+  it('removal is denied for the wrong user, path or farm', () => {
+    const b = fn()
+    expect(b).toMatch(/att\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
+    expect(b).toMatch(/can_operationally_access_farm\(req\.farm_id\)/)
+    // The attachment must belong to this request AND response.
+    expect(b).toMatch(/WHERE id = p_attachment_id AND response_id = p_response_id AND request_id = p_request_id/)
+  })
+
+  it('submission fails closed while any attachment awaits removal', () => {
+    const b = BODIES.get('submit_evidence_response') ?? ''
+    expect(b).toMatch(/count\(\*\) FILTER \(WHERE removal_requested_at IS NOT NULL\)/)
+    expect(b).toMatch(/removing_count > 0/)
+    expect(b).toMatch(/awaiting controlled removal/)
+  })
+
+  it('finalization fails closed while the attachment awaits removal', () => {
+    const b = BODIES.get('finalize_evidence_attachment') ?? ''
+    expect(b).toMatch(/att\.removal_requested_at IS NOT NULL/)
+    expect(b).toMatch(/awaiting controlled removal/)
+  })
+
+  it('the storage DELETE policy requires explicit removal authorization', () => {
+    const p = (STO.match(/CREATE POLICY "evidence-request-files: farmer delete own draft"[\s\S]*?;/) || [''])[0]
+    expect(p).toMatch(/a\.removal_requested_at IS NOT NULL/)
+    // A ready object is no longer deletable merely because it is pending.
+    expect(p).not.toMatch(/a\.upload_state = 'pending_upload'/)
+    // Every other condition is retained.
+    expect(p).toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
+    expect(p).toMatch(/a\.storage_object_path = storage\.objects\.name/)
+    expect(p).toMatch(/r\.state = 'draft'/)
+    expect(p).toMatch(/er\.status IN \('open','clarification_requested'\)/)
+  })
+
+  it('rollback documents the new column and the Storage API requirement', () => {
+    expect(RBK_RAW).toMatch(/removal_requested_at/)
+    expect(RBK_RAW).toMatch(/Storage API/)
+  })
+
+  it('VERIFY proves the protocol and leaves no orphaned attachment row', () => {
+    const i = VERIFY_SECTIONS['I'] ?? ''
+    expect(i, 'VERIFY section I is missing').toBeTruthy()
+    expect(i).toMatch(/removal_requested_at column is missing/)
+    expect(i).toMatch(/did not persist/)                 // non-vacuity
+    expect(i).toMatch(/could not be deleted/)
+    expect(i).toMatch(/linked document carries a storage path/)
+  })
+})
+
+describe('migration 24 — stale revision beats status validation (CONFLICT ordering)', () => {
+  const ADMIN_RPCS = ['request_evidence_clarification', 'resolve_evidence_request',
+                      'reject_evidence_response', 'cancel_evidence_request']
+
+  it('every administrator RPC compares the revision immediately after the locking read', () => {
+    for (const rpc of ADMIN_RPCS) {
+      const b = BODIES.get(rpc) ?? ''
+      expect(b, `${rpc} lacks an early CONFLICT check`)
+        .toMatch(/evidence_lock_visible_request\(p_request_id, true\);[\s\S]{0,600}?req\.revision IS DISTINCT FROM p_expected_revision[\s\S]{0,120}?RAISE EXCEPTION 'CONFLICT'/)
+    }
+  })
+
+  it('CONFLICT precedes status validation, so a stale terminal request is not INVALID_TRANSITION', () => {
+    for (const rpc of ADMIN_RPCS) {
+      const b = BODIES.get(rpc) ?? ''
+      const conflict = b.indexOf("RAISE EXCEPTION 'CONFLICT'")
+      const invalid = b.indexOf("RAISE EXCEPTION 'INVALID_TRANSITION'")
+      expect(conflict, `${rpc} has no CONFLICT check`).toBeGreaterThan(-1)
+      expect(invalid, `${rpc} has no INVALID_TRANSITION check`).toBeGreaterThan(-1)
+      expect(conflict, `${rpc} validates status before revision`).toBeLessThan(invalid)
+    }
+  })
+
+  it('CONFLICT precedes reason validation and every write', () => {
+    for (const rpc of ADMIN_RPCS) {
+      const b = BODIES.get(rpc) ?? ''
+      const conflict = b.indexOf("RAISE EXCEPTION 'CONFLICT'")
+      expect(conflict, `${rpc}: reason validated before revision`)
+        .toBeLessThan(b.indexOf('NOT BETWEEN 10 AND 2000'))
+      expect(conflict, `${rpc}: transition applied before revision check`)
+        .toBeLessThan(b.indexOf('evidence_apply_transition'))
+    }
+  })
+
+  it('the transition helper retains its own revision check as defence in depth', () => {
+    const b = BODIES.get('evidence_apply_transition') ?? ''
+    expect(b).toMatch(/req\.revision IS DISTINCT FROM p_expected_rev/)
+    expect(b).toMatch(/RAISE EXCEPTION 'CONFLICT'/)
+  })
+
+  it('farmer transition RPCs keep their revision checks too', () => {
+    for (const rpc of ['get_or_create_evidence_response_draft', 'submit_evidence_response']) {
+      expect(BODIES.get(rpc) ?? '', `${rpc} lost its CONFLICT check`)
+        .toMatch(/RAISE EXCEPTION 'CONFLICT'/)
+    }
+  })
+})
+
+describe('migration 24 — FK cleanup is distinguishable from manual audit mutation', () => {
+  const fn = () => BODIES.get('fn_evidence_history_append_only') ?? ''
+
+  it('the exemption requires the referenced attachment to be GONE', () => {
+    expect(fn()).toMatch(/NOT EXISTS \(\s*SELECT 1 FROM public\.evidence_request_attachments\s*WHERE id = OLD\.attachment_id\s*\)/)
+  })
+
+  it('a manual null-out while the attachment exists cannot satisfy the exemption', () => {
+    const b = fn()
+    // The existence test is ANDed into the same condition as the shape tests.
+    const cond = b.slice(b.indexOf("TG_OP = 'UPDATE'"), b.indexOf('RETURN NEW'))
+    expect(cond).toMatch(/NOT EXISTS/)
+    expect(cond).toMatch(/OLD\.attachment_id IS NOT NULL/)
+    expect(cond).toMatch(/NEW\.attachment_id IS NULL/)
+  })
+
+  it('uses no caller-identity or session escape hatch', () => {
+    const b = fn()
+    for (const bad of ['current_user', 'session_user', 'current_setting', 'auth.role',
+                       'auth.uid', 'is_ddp_admin', 'service_role', 'pg_has_role']) {
+      expect(b.toLowerCase(), `trigger relies on ${bad}`).not.toContain(bad.toLowerCase())
+    }
+  })
+
+  it('remains a data-property test, so a privileged role is bound by it too', () => {
+    // Exactly one RETURN NEW, gated solely on row shape + attachment absence.
+    expect((fn().match(/RETURN NEW/g) || []).length).toBe(1)
+  })
+
+  it('VERIFY proves manual nulling fails and FK cleanup still succeeds', () => {
+    const h = VERIFY_SECTIONS['H'] ?? ''
+    expect(h, 'VERIFY section H is missing').toBeTruthy()
+    expect(h).toMatch(/fixture attachment missing/)              // non-vacuity
+    expect(h).toMatch(/hand-nulled while the attachment still existed/)
+    expect(h).toMatch(/attachment_id was re-pointed/)
+    expect(h).toMatch(/FK cleanup did not null attachment_id/)
+    expect(h).toMatch(/history row vanished during FK cleanup/)
   })
 })
 
@@ -1221,7 +1428,8 @@ describe('migration 24 — VERIFY cannot pass vacuously', () => {
     // failure and pass silently.
     const denialBlocks = (VER.match(/ok := false;[\s\S]*?END;/g) || [])
     expect(denialBlocks.length).toBeGreaterThanOrEqual(12)
-    const ifNotOk = (VER.match(/IF NOT ok THEN RAISE EXCEPTION/g) || [])
+    // Whitespace-tolerant: the guard may be written on one line or wrapped.
+    const ifNotOk = (VER.match(/IF NOT ok THEN\s*RAISE EXCEPTION/g) || [])
     expect(ifNotOk.length).toBe(denialBlocks.length)
   })
 })

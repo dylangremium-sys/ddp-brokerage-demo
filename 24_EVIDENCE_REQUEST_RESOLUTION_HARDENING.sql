@@ -317,6 +317,16 @@ CREATE TABLE IF NOT EXISTS public.evidence_request_attachments (
   created_by_user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
   created_at             timestamptz NOT NULL DEFAULT now(),
   finalized_at           timestamptz,
+  -- Two-stage controlled removal (contract §6.4 "Removal deletes the
+  -- request-specific storage object and database row through one controlled
+  -- operation"). A Supabase Storage object MUST be deleted through the Storage
+  -- API — deleting from storage.objects in SQL removes only the metadata row and
+  -- orphans the actual file. The database therefore cannot delete the object
+  -- itself; it authorizes the deletion, the client performs it through the
+  -- Storage API, and the same RPC then completes the removal once it can prove
+  -- the object is gone. This column marks that authorization window. It is NOT a
+  -- third upload_state: the contract allows only pending_upload and ready.
+  removal_requested_at   timestamptz,
 
   CONSTRAINT evidence_attachments_origin_check
     CHECK (origin IN ('request_upload','existing_farm_document','existing_inventory_document')),
@@ -695,10 +705,19 @@ CREATE TRIGGER trg_evidence_attachment_validate
 -- trigger, so it must be recognised explicitly — otherwise draft removal would
 -- fail with the append-only error instead of the old foreign-key error.
 --
--- The exemption is deliberately as narrow as SQL allows: attachment_id must move
--- from NOT NULL to NULL and EVERY other column must be byte-identical. A general
--- UPDATE, a re-pointing of attachment_id, or any edit to the event's meaning is
--- still refused. No client role holds UPDATE on this table in any case (§8.2).
+-- The exemption is deliberately as narrow as SQL allows:
+--   * attachment_id moves from NOT NULL to NULL,
+--   * EVERY other column is byte-identical, AND
+--   * the referenced attachment row NO LONGER EXISTS.
+--
+-- That last condition is what separates a genuine FK cleanup from a manual audit
+-- edit. Under ON DELETE SET NULL the parent row is deleted BEFORE the referential
+-- action updates the child, so during real cleanup the attachment is already
+-- gone. A hand-written `UPDATE evidence_request_history SET attachment_id = NULL`
+-- performed while the attachment still exists therefore fails — including from a
+-- privileged or service role, since the test is a property of the data, not of
+-- the caller. No current_user check, auth.role check, session variable, GUC,
+-- role allowlist or SECURITY DEFINER bypass flag is used or needed.
 CREATE OR REPLACE FUNCTION public.fn_evidence_history_append_only()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -720,6 +739,11 @@ BEGIN
      AND NEW.note            IS NOT DISTINCT FROM OLD.note
      AND NEW.event_data      IS NOT DISTINCT FROM OLD.event_data
      AND NEW.created_at      IS NOT DISTINCT FROM OLD.created_at
+     -- Proof this is FK cleanup and not a manual edit: the attachment is gone.
+     AND NOT EXISTS (
+       SELECT 1 FROM public.evidence_request_attachments
+       WHERE id = OLD.attachment_id
+     )
   THEN
     RETURN NEW;
   END IF;
@@ -1073,6 +1097,7 @@ DECLARE
   resp          public.evidence_request_responses%ROWTYPE;
   pending_count integer;
   ready_count   integer;
+  removing_count integer;
   latest_sub_id uuid;
 BEGIN
   req := public.evidence_lock_visible_request(p_request_id, false);
@@ -1101,12 +1126,21 @@ BEGIN
   END IF;
 
   SELECT count(*) FILTER (WHERE origin = 'request_upload' AND upload_state = 'pending_upload'),
-         count(*) FILTER (WHERE origin <> 'request_upload' OR upload_state = 'ready')
-    INTO pending_count, ready_count
+         count(*) FILTER (WHERE origin <> 'request_upload' OR upload_state = 'ready'),
+         count(*) FILTER (WHERE removal_requested_at IS NOT NULL)
+    INTO pending_count, ready_count, removing_count
   FROM public.evidence_request_attachments WHERE response_id = p_response_id;
 
   IF pending_count > 0 THEN
     RAISE EXCEPTION 'UPLOAD_NOT_READY' USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- Fail closed while any attachment is mid-removal: its object may already have
+  -- been deleted through the Storage API even though the row is still present.
+  -- Submitting now could produce evidence pointing at a missing object.
+  IF removing_count > 0 THEN
+    RAISE EXCEPTION 'UPLOAD_NOT_READY: an attachment is awaiting controlled removal'
+      USING ERRCODE = 'check_violation';
   END IF;
   IF COALESCE(btrim(resp.response_text), '') = '' AND ready_count = 0 THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: a response requires text or at least one ready attachment'
@@ -1151,6 +1185,16 @@ DECLARE
 BEGIN
   req := public.evidence_lock_visible_request(p_request_id, true);
 
+  -- CONFLICT ORDERING (contract §5.4): a stale caller must learn that the
+  -- request moved on, not that the transition it planned is invalid. Comparing
+  -- the revision immediately after the locking read means a request that has
+  -- since become terminal returns CONFLICT rather than INVALID_TRANSITION, so
+  -- the UI reloads the authoritative state instead of reporting a bad action.
+  -- evidence_apply_transition() re-checks the revision as defence in depth.
+  IF req.revision IS DISTINCT FROM p_expected_revision THEN
+    RAISE EXCEPTION 'CONFLICT' USING ERRCODE = 'serialization_failure';
+  END IF;
+
   IF char_length(btrim(COALESCE(p_reason,''))) NOT BETWEEN 10 AND 2000 THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: clarification reason must be 10-2000 characters'
       USING ERRCODE = 'check_violation';
@@ -1191,6 +1235,16 @@ DECLARE
 BEGIN
   req := public.evidence_lock_visible_request(p_request_id, true);
 
+  -- CONFLICT ORDERING (contract §5.4): a stale caller must learn that the
+  -- request moved on, not that the transition it planned is invalid. Comparing
+  -- the revision immediately after the locking read means a request that has
+  -- since become terminal returns CONFLICT rather than INVALID_TRANSITION, so
+  -- the UI reloads the authoritative state instead of reporting a bad action.
+  -- evidence_apply_transition() re-checks the revision as defence in depth.
+  IF req.revision IS DISTINCT FROM p_expected_revision THEN
+    RAISE EXCEPTION 'CONFLICT' USING ERRCODE = 'serialization_failure';
+  END IF;
+
   IF char_length(btrim(COALESCE(p_resolution_note,''))) NOT BETWEEN 10 AND 2000 THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: resolution note must be 10-2000 characters'
       USING ERRCODE = 'check_violation';
@@ -1230,6 +1284,16 @@ DECLARE
 BEGIN
   req := public.evidence_lock_visible_request(p_request_id, true);
 
+  -- CONFLICT ORDERING (contract §5.4): a stale caller must learn that the
+  -- request moved on, not that the transition it planned is invalid. Comparing
+  -- the revision immediately after the locking read means a request that has
+  -- since become terminal returns CONFLICT rather than INVALID_TRANSITION, so
+  -- the UI reloads the authoritative state instead of reporting a bad action.
+  -- evidence_apply_transition() re-checks the revision as defence in depth.
+  IF req.revision IS DISTINCT FROM p_expected_revision THEN
+    RAISE EXCEPTION 'CONFLICT' USING ERRCODE = 'serialization_failure';
+  END IF;
+
   IF char_length(btrim(COALESCE(p_rejection_reason,''))) NOT BETWEEN 10 AND 2000 THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: rejection reason must be 10-2000 characters'
       USING ERRCODE = 'check_violation';
@@ -1267,6 +1331,16 @@ DECLARE
   req public.evidence_requests%ROWTYPE;
 BEGIN
   req := public.evidence_lock_visible_request(p_request_id, true);
+
+  -- CONFLICT ORDERING (contract §5.4): a stale caller must learn that the
+  -- request moved on, not that the transition it planned is invalid. Comparing
+  -- the revision immediately after the locking read means a request that has
+  -- since become terminal returns CONFLICT rather than INVALID_TRANSITION, so
+  -- the UI reloads the authoritative state instead of reporting a bad action.
+  -- evidence_apply_transition() re-checks the revision as defence in depth.
+  IF req.revision IS DISTINCT FROM p_expected_revision THEN
+    RAISE EXCEPTION 'CONFLICT' USING ERRCODE = 'serialization_failure';
+  END IF;
 
   IF char_length(btrim(COALESCE(p_cancellation_reason,''))) NOT BETWEEN 10 AND 2000 THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: cancellation reason must be 10-2000 characters'
@@ -1405,6 +1479,12 @@ BEGIN
   IF att.origin <> 'request_upload' OR att.upload_state <> 'pending_upload' THEN
     RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
   END IF;
+  -- Fail closed once controlled removal has been authorized: the object may
+  -- already have been deleted through the Storage API.
+  IF att.removal_requested_at IS NOT NULL THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION: attachment is awaiting controlled removal'
+      USING ERRCODE = 'check_violation';
+  END IF;
 
   IF p_sha256_hex IS NULL OR p_sha256_hex !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: sha256_hex' USING ERRCODE = 'check_violation';
@@ -1498,12 +1578,18 @@ DECLARE
   req  public.evidence_requests%ROWTYPE;
   resp public.evidence_request_responses%ROWTYPE;
   att  public.evidence_request_attachments%ROWTYPE;
+  object_exists boolean;
 BEGIN
   req := public.evidence_lock_visible_request(p_request_id, false);
 
   IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
      OR NOT public.can_operationally_access_farm(req.farm_id) THEN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  -- Removal is only ever possible while the request is still actionable.
+  IF req.status NOT IN ('open','clarification_requested') THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
   END IF;
 
   SELECT * INTO resp FROM public.evidence_request_responses
@@ -1522,11 +1608,64 @@ BEGIN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
   END IF;
 
-  DELETE FROM public.evidence_request_attachments WHERE id = p_attachment_id;
+  -- Stage 0 — linked existing documents own no request-specific object. Nothing
+  -- is stored for this workflow, so the row goes immediately. The source
+  -- document is untouched: it was linked, never copied (contract §7.5).
+  IF att.origin <> 'request_upload' THEN
+    DELETE FROM public.evidence_request_attachments WHERE id = p_attachment_id;
+    RETURN jsonb_build_object(
+      'result', 'REMOVED',
+      'attachment_id', p_attachment_id,
+      'storage_bucket', NULL,
+      'storage_object_path', NULL
+    );
+  END IF;
 
-  RETURN jsonb_build_object('removed', true, 'attachment_id', p_attachment_id,
-                            'storage_bucket', att.storage_bucket,
-                            'storage_object_path', att.storage_object_path);
+  -- Does the storage object actually exist?
+  IF to_regclass('storage.objects') IS NULL THEN
+    RAISE EXCEPTION 'STORAGE_ERROR: storage.objects is unavailable'
+      USING ERRCODE = 'undefined_table';
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM storage.objects o
+    WHERE o.bucket_id = att.storage_bucket
+      AND o.name      = att.storage_object_path
+  ) INTO object_exists;
+
+  -- Stage 1 — no object was ever uploaded (a reservation the farmer abandoned),
+  -- or the client has already deleted it through the Storage API. Either way
+  -- there is nothing left to orphan, so complete the removal now. This is the
+  -- idempotent completion path: calling the RPC again after a successful
+  -- Storage API delete lands here and returns REMOVED.
+  IF NOT object_exists THEN
+    DELETE FROM public.evidence_request_attachments WHERE id = p_attachment_id;
+    RETURN jsonb_build_object(
+      'result', 'REMOVED',
+      'attachment_id', p_attachment_id,
+      'storage_bucket', att.storage_bucket,
+      'storage_object_path', att.storage_object_path
+    );
+  END IF;
+
+  -- Stage 2 — the object still exists. Do NOT delete the row: dropping it here
+  -- would leave the file orphaned and still readable by farm members, because
+  -- the storage DELETE policy matches on the attachment row. Instead authorize
+  -- exactly this one object for deletion and hand the path back. Re-authorizing
+  -- an already-authorized attachment is a no-op, so repeated calls are safe and
+  -- deterministic.
+  IF att.removal_requested_at IS NULL THEN
+    UPDATE public.evidence_request_attachments
+    SET removal_requested_at = now()
+    WHERE id = p_attachment_id;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'result', 'STORAGE_DELETE_REQUIRED',
+    'attachment_id', p_attachment_id,
+    'storage_bucket', att.storage_bucket,
+    'storage_object_path', att.storage_object_path
+  );
 END
 $$;
 

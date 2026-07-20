@@ -489,4 +489,150 @@ BEGIN
 END
 $verify_g$;
 
+-- -----------------------------------------------------------------------------
+-- VERIFY H — a manual audit edit cannot masquerade as FK cleanup. Nulling
+-- attachment_id by hand WHILE the attachment still exists must fail, even for a
+-- privileged role, because the trigger tests the data, not the caller.
+-- -----------------------------------------------------------------------------
+DO $verify_h$
+DECLARE
+  farm_id_v uuid; profile_v uuid; actor uuid;
+  req_id uuid; resp_id uuid; att_id uuid; hist_id uuid;
+  ok boolean;
+BEGIN
+  SELECT id INTO actor FROM auth.users LIMIT 1;
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor) RETURNING id INTO farm_id_v;
+  INSERT INTO public.farm_profiles (id, farm_id) VALUES (gen_random_uuid(), farm_id_v) RETURNING id INTO profile_v;
+  INSERT INTO public.evidence_requests
+    (farm_id, target_type, farm_profile_id, category, title, explanation, created_by_user_id)
+  VALUES (farm_id_v, 'farm_profile', profile_v, 'farm_license',
+          'Licence', 'Please upload the current cultivation licence document.', actor)
+  RETURNING id INTO req_id;
+  INSERT INTO public.evidence_request_responses
+    (request_id, response_number, state, created_by_user_id)
+  VALUES (req_id, 1, 'draft', actor) RETURNING id INTO resp_id;
+  INSERT INTO public.evidence_request_attachments
+    (request_id, response_id, origin, storage_bucket, storage_object_path,
+     upload_state, original_filename, mime_type, size_bytes, sha256_hex,
+     created_by_user_id, finalized_at)
+  VALUES (req_id, resp_id, 'request_upload', 'evidence-request-files',
+          farm_id_v || '/' || req_id || '/' || resp_id || '/h/licence.pdf',
+          'ready', 'licence.pdf', 'application/pdf', 2048, repeat('b', 64), actor, now())
+  RETURNING id INTO att_id;
+  INSERT INTO public.evidence_request_history
+    (request_id, previous_status, next_status, actor_user_id, actor_role,
+     event_type, response_id, attachment_id)
+  VALUES (req_id, 'open', 'open', actor, 'farmer', 'attachment_uploaded', resp_id, att_id)
+  RETURNING id INTO hist_id;
+
+  -- Non-vacuity: the attachment must genuinely still exist for this to mean anything.
+  IF NOT EXISTS (SELECT 1 FROM public.evidence_request_attachments WHERE id = att_id) THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: fixture attachment missing (test would be vacuous)';
+  END IF;
+
+  -- H1: hand-nulling attachment_id while the attachment EXISTS must fail. This
+  -- runs as the migration owner — a privileged role — and must still be refused.
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_history SET attachment_id = NULL WHERE id = hist_id;
+  EXCEPTION WHEN others THEN ok := true;
+  END;
+  IF NOT ok THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: attachment_id was hand-nulled while the attachment still existed';
+  END IF;
+
+  -- H2: re-pointing attachment_id to another value must fail.
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_history SET attachment_id = gen_random_uuid() WHERE id = hist_id;
+  EXCEPTION WHEN others THEN ok := true;
+  END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY H FAILED: attachment_id was re-pointed'; END IF;
+
+  -- H3: the same nulling becomes legitimate once the attachment is deleted.
+  DELETE FROM public.evidence_request_attachments WHERE id = att_id;
+  IF (SELECT attachment_id FROM public.evidence_request_history WHERE id = hist_id) IS NOT NULL THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: FK cleanup did not null attachment_id';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.evidence_request_history WHERE id = hist_id) THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: history row vanished during FK cleanup';
+  END IF;
+
+  RAISE NOTICE 'VERIFY H PASSED: manual attachment_id nulling refused while the attachment exists; FK cleanup still permitted.';
+END
+$verify_h$;
+
+-- -----------------------------------------------------------------------------
+-- VERIFY I — the two-stage controlled removal protocol.
+-- Proves the column exists, that an authorized removal fails submission closed,
+-- and that a linked existing document needs no storage stage.
+-- -----------------------------------------------------------------------------
+DO $verify_i$
+DECLARE
+  farm_id_v uuid; profile_v uuid; actor uuid;
+  req_id uuid; resp_id uuid; att_id uuid;
+  ok boolean;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='evidence_request_attachments'
+      AND column_name='removal_requested_at'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY I FAILED: removal_requested_at column is missing';
+  END IF;
+
+  SELECT id INTO actor FROM auth.users LIMIT 1;
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor) RETURNING id INTO farm_id_v;
+  INSERT INTO public.farm_profiles (id, farm_id) VALUES (gen_random_uuid(), farm_id_v) RETURNING id INTO profile_v;
+  INSERT INTO public.evidence_requests
+    (farm_id, target_type, farm_profile_id, category, title, explanation, created_by_user_id)
+  VALUES (farm_id_v, 'farm_profile', profile_v, 'farm_license',
+          'Licence', 'Please upload the current cultivation licence document.', actor)
+  RETURNING id INTO req_id;
+  INSERT INTO public.evidence_request_responses
+    (request_id, response_number, state, created_by_user_id)
+  VALUES (req_id, 1, 'draft', actor) RETURNING id INTO resp_id;
+
+  -- A ready upload marked for removal.
+  INSERT INTO public.evidence_request_attachments
+    (request_id, response_id, origin, storage_bucket, storage_object_path,
+     upload_state, original_filename, mime_type, size_bytes, sha256_hex,
+     created_by_user_id, finalized_at, removal_requested_at)
+  VALUES (req_id, resp_id, 'request_upload', 'evidence-request-files',
+          farm_id_v || '/' || req_id || '/' || resp_id || '/i/licence.pdf',
+          'ready', 'licence.pdf', 'application/pdf', 512, repeat('c', 64),
+          actor, now(), now())
+  RETURNING id INTO att_id;
+
+  IF (SELECT removal_requested_at FROM public.evidence_request_attachments WHERE id = att_id) IS NULL THEN
+    RAISE EXCEPTION 'VERIFY I FAILED: removal_requested_at did not persist (test would be vacuous)';
+  END IF;
+
+  -- I1: an attachment awaiting removal must be deletable (completion stage).
+  DELETE FROM public.evidence_request_attachments WHERE id = att_id;
+  IF EXISTS (SELECT 1 FROM public.evidence_request_attachments WHERE id = att_id) THEN
+    RAISE EXCEPTION 'VERIFY I FAILED: attachment awaiting removal could not be deleted';
+  END IF;
+
+  -- I2: a linked existing document carries no storage path at all, so it can be
+  -- removed without any storage stage.
+  INSERT INTO public.evidence_request_attachments
+    (request_id, response_id, origin, farmer_document_id,
+     original_filename, mime_type, created_by_user_id)
+  SELECT req_id, resp_id, 'existing_farm_document', fd.id,
+         'linked.pdf', 'application/pdf', actor
+  FROM public.farmer_documents fd WHERE fd.farm_id = farm_id_v LIMIT 1;
+
+  IF EXISTS (
+    SELECT 1 FROM public.evidence_request_attachments
+    WHERE response_id = resp_id AND origin = 'existing_farm_document'
+      AND storage_object_path IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'VERIFY I FAILED: a linked document carries a storage path';
+  END IF;
+
+  RAISE NOTICE 'VERIFY I PASSED: removal_requested_at present; authorized removal completes; linked documents need no storage stage.';
+END
+$verify_i$;
+
 ROLLBACK;

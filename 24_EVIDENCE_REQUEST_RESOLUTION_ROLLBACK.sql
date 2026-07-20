@@ -113,9 +113,21 @@ DROP FUNCTION IF EXISTS public.fn_evidence_attachment_validate();
 DROP FUNCTION IF EXISTS public.fn_evidence_history_append_only();
 
 -- -----------------------------------------------------------------------------
--- 4. Tables (child-first; every FK uses ON DELETE RESTRICT).
+-- 4. Tables (child-first).
 --    The append-only and no-delete triggers are already dropped above, so DROP
 --    TABLE is not blocked by them.
+--
+--    Migration 24 introduces no column on any pre-existing table, so there is no
+--    ALTER TABLE ... DROP COLUMN to perform here. Every column it adds — including
+--    evidence_request_attachments.removal_requested_at, which drives the
+--    two-stage controlled removal protocol — belongs to a table created by
+--    migration 24 and is removed with that table below.
+--
+--    STORAGE OBJECTS: dropping these tables removes only the attachment
+--    metadata. Any object still present in the evidence-request-files bucket
+--    must be deleted through the Supabase Storage API before or after this
+--    rollback — a SQL DELETE against storage.objects would orphan the files.
+--    The bucket itself is removed by the storage companion's rollback block.
 -- -----------------------------------------------------------------------------
 DROP TABLE IF EXISTS public.evidence_request_history;
 DROP TABLE IF EXISTS public.evidence_request_attachments;
