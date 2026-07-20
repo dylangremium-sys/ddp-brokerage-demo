@@ -618,11 +618,14 @@ describe('migration 24 — atomic transition RPCs', () => {
   })
 
   it('an unauthorized request id is reported as NOT_FOUND, never as FORBIDDEN', () => {
-    // Contract §8.4 non-disclosure: existence must not leak across farms.
+    // Contract §8.4 non-disclosure: existence must not leak across farms, and
+    // (post-Codex-remediation) not across the admin path either. The helper now
+    // has a single refusal code on every unauthorized path.
     const fn = BODIES.get('evidence_lock_visible_request') ?? ''
-    const farmerBranch = fn.slice(fn.indexOf('ELSE'))
+    const farmerBranch = fn.slice(fn.indexOf('IF NOT p_require_admin'))
     expect(farmerBranch).toMatch(/NOT_FOUND/)
     expect(farmerBranch).not.toMatch(/FORBIDDEN/)
+    expect(fn).not.toMatch(/FORBIDDEN/)
   })
 
   it('uploads validate MIME and size server-side at reservation and finalization', () => {
@@ -674,6 +677,168 @@ describe('migration 24 — atomic transition RPCs', () => {
   })
 })
 
+// ── Codex review remediation (PR #37, head 1b4808a5) ────────────────────────
+// Each block below pins a defect Codex found so it cannot silently regress.
+
+describe('migration 24 — Codex P1: COA batch coupling covers BOTH linked origins', () => {
+  const fn = () => BODIES.get('fn_evidence_attachment_validate') ?? ''
+
+  it('resolves farm AND batch for a linked farmer document, not farm alone', () => {
+    // The original defect: the farmer-document branch selected only fd.farm_id,
+    // so the COA batch rule never applied to it.
+    expect(fn()).toMatch(/SELECT fd\.farm_id, fd\.inventory_batch_id INTO doc_farm_id, doc_batch_id/)
+    expect(fn()).toMatch(/SELECT d\.farm_id, d\.inventory_batch_id INTO doc_farm_id, doc_batch_id/)
+  })
+
+  it('applies the farm and COA-batch checks once, to both linked origins', () => {
+    const body = fn()
+    expect(body).toMatch(/NEW\.origin IN \('existing_farm_document','existing_inventory_document'\)/)
+    // Exactly one COA batch check exists, inside the shared branch.
+    expect((body.match(/req\.category = 'coa'/g) || []).length).toBe(1)
+    expect(body).toMatch(/doc_batch_id IS DISTINCT FROM req\.inventory_batch_id/)
+  })
+
+  it('the COA check is not nested inside an inventory-document-only branch', () => {
+    const body = fn()
+    const shared = body.indexOf("NEW.origin IN ('existing_farm_document'")
+    const coa = body.indexOf("req.category = 'coa'")
+    expect(shared).toBeGreaterThan(-1)
+    expect(coa).toBeGreaterThan(shared)
+    // No ELSIF split that could reintroduce per-origin divergence.
+    expect(body).not.toMatch(/ELSIF NEW\.origin = 'existing_inventory_document'/)
+  })
+
+  it('a null document batch cannot satisfy a batch-targeted COA request', () => {
+    // IS DISTINCT FROM is null-safe: NULL vs a real batch id is a mismatch.
+    // A plain <> would evaluate to NULL and let the row through.
+    expect(fn()).not.toMatch(/doc_batch_id\s*<>\s*req\.inventory_batch_id/)
+    expect(fn()).toMatch(/doc_batch_id IS DISTINCT FROM req\.inventory_batch_id/)
+  })
+})
+
+describe('migration 24 — Codex P1: finalization proves the object exists', () => {
+  const fn = () => BODIES.get('finalize_evidence_attachment') ?? ''
+
+  it('reads the real storage.objects row at the reserved bucket and path', () => {
+    const body = fn()
+    expect(body).toMatch(/FROM storage\.objects o/)
+    expect(body).toMatch(/o\.bucket_id = att\.storage_bucket/)
+    expect(body).toMatch(/o\.name\s*= att\.storage_object_path/)
+  })
+
+  it('fails closed when no object was uploaded', () => {
+    const body = fn()
+    expect(body).toMatch(/no uploaded object at the reserved path/)
+    expect(body).toMatch(/STORAGE_ERROR/)
+    // The existence check must precede the row being marked ready.
+    expect(body.indexOf('no uploaded object at the reserved path'))
+      .toBeLessThan(body.indexOf("SET upload_state = 'ready'"))
+  })
+
+  it('fails closed when storage.objects is unavailable rather than assuming success', () => {
+    expect(fn()).toMatch(/to_regclass\('storage\.objects'\) IS NULL/)
+  })
+
+  it('treats stored metadata as authoritative and rejects a mismatched claim', () => {
+    const body = fn()
+    expect(body).toMatch(/p_actual_size_bytes IS DISTINCT FROM stored_size/)
+    expect(body).toMatch(/p_actual_mime_type IS DISTINCT FROM stored_mime/)
+    expect(body).toMatch(/does not match the stored object size/)
+    expect(body).toMatch(/does not match the stored object type/)
+  })
+
+  it('persists the storage-derived size and MIME, never the caller-supplied claim', () => {
+    const body = fn()
+    expect(body).toMatch(/effective_size := COALESCE\(stored_size, p_actual_size_bytes\)/)
+    expect(body).toMatch(/effective_mime := COALESCE\(stored_mime, p_actual_mime_type\)/)
+    expect(body).toMatch(/size_bytes\s*= effective_size/)
+    expect(body).toMatch(/mime_type\s*= effective_mime/)
+    // The pre-fix behaviour wrote the caller's values straight through.
+    expect(body).not.toMatch(/size_bytes\s*= p_actual_size_bytes/)
+    expect(body).not.toMatch(/mime_type\s*= p_actual_mime_type/)
+  })
+
+  it('validates the allow-list and ceiling against the effective, not claimed, values', () => {
+    const body = fn()
+    expect(body).toMatch(/evidence_mime_allowed\(req\.category, effective_mime\)/)
+    expect(body).toMatch(/evidence_max_size_bytes\(req\.category, effective_mime\)/)
+  })
+
+  it('a submitted response therefore cannot contain a never-uploaded attachment', () => {
+    // submit refuses pending_upload; finalize is now the only path to 'ready',
+    // and it cannot succeed without a real object.
+    expect(BODIES.get('submit_evidence_response') ?? '').toMatch(/pending_count > 0/)
+    expect(fn()).toMatch(/STORAGE_ERROR/)
+  })
+})
+
+describe('migration 24 — Codex P2: no request-existence oracle', () => {
+  const fn = () => BODIES.get('evidence_lock_visible_request') ?? ''
+
+  it('refuses a non-admin on the admin path with NOT_FOUND, never FORBIDDEN', () => {
+    const body = fn()
+    expect(body).toMatch(/IF p_require_admin AND NOT is_admin THEN\s*RAISE EXCEPTION 'NOT_FOUND'/)
+    expect(body).not.toMatch(/FORBIDDEN/)
+  })
+
+  it('refuses before the row is read, so lock contention cannot leak existence either', () => {
+    const body = fn()
+    expect(body.indexOf('IF p_require_admin AND NOT is_admin'))
+      .toBeLessThan(body.indexOf('FROM public.evidence_requests'))
+  })
+
+  it('real and fabricated ids are indistinguishable to an unauthorized caller', () => {
+    // Every refusal path in this helper yields the same code.
+    const raises = fn().match(/RAISE EXCEPTION '([A-Z_]+)'/g) || []
+    const codes = new Set(raises.map((r) => r.match(/'([A-Z_]+)'/)[1]))
+    expect(codes.has('FORBIDDEN')).toBe(false)
+    expect(codes).toContain('NOT_FOUND')
+  })
+
+  it('legitimate administrator authorization still passes through', () => {
+    expect(fn()).toMatch(/is_admin boolean := public\.is_ddp_admin\(\)/)
+    // All four admin RPCs still route through the admin path.
+    for (const rpc of ['request_evidence_clarification', 'resolve_evidence_request',
+                       'reject_evidence_response', 'cancel_evidence_request']) {
+      expect(BODIES.get(rpc) ?? '').toMatch(/evidence_lock_visible_request\(p_request_id, true\)/)
+    }
+  })
+
+  it('the farmer path still refuses an unauthorized farm with NOT_FOUND', () => {
+    expect(fn()).toMatch(/NOT public\.can_operationally_access_farm\(req\.farm_id\)[\s\S]*?NOT_FOUND/)
+  })
+})
+
+describe('migration 24 — Codex P2: finalization requires an actionable request', () => {
+  it('guards on open/clarification_requested like every other farmer RPC', () => {
+    expect(BODIES.get('finalize_evidence_attachment') ?? '')
+      .toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
+  })
+
+  it('checks the status before touching the response, attachment or history', () => {
+    const body = BODIES.get('finalize_evidence_attachment') ?? ''
+    const guard = body.indexOf("req.status NOT IN ('open','clarification_requested')")
+    expect(guard).toBeGreaterThan(-1)
+    expect(guard).toBeLessThan(body.indexOf('FROM public.evidence_request_responses'))
+    expect(guard).toBeLessThan(body.indexOf('INSERT INTO public.evidence_request_history'))
+  })
+
+  it('cannot append attachment_uploaded history to a cancelled or terminal request', () => {
+    const body = BODIES.get('finalize_evidence_attachment') ?? ''
+    expect(body.indexOf("req.status NOT IN ('open','clarification_requested')"))
+      .toBeLessThan(body.indexOf("'attachment_uploaded'"))
+  })
+
+  it('every farmer-facing RPC now carries the actionable-status guard', () => {
+    for (const rpc of ['get_or_create_evidence_response_draft', 'save_evidence_response_draft',
+                       'submit_evidence_response', 'reserve_evidence_attachment',
+                       'link_existing_evidence_document', 'finalize_evidence_attachment']) {
+      expect(BODIES.get(rpc) ?? '', `${rpc} lacks the actionable-status guard`)
+        .toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
+    }
+  })
+})
+
 // ── Storage companion (contract §7) ─────────────────────────────────────────
 
 describe('migration 24 — storage companion', () => {
@@ -689,9 +854,19 @@ describe('migration 24 — storage companion', () => {
     expect(STO).toMatch(/precondition failed/i)
   })
 
-  it('is kept out of the forward migration so a storage failure cannot roll it back', () => {
-    expect(FWD).not.toMatch(/storage\.objects/)
+  it('storage DDL is kept out of the forward migration so a storage failure cannot roll it back', () => {
+    // The forward migration MAY read storage.objects (finalization proves the
+    // uploaded object exists — a plain SELECT needs no table ownership). What it
+    // must never do is create/alter policies or buckets, because THAT is what
+    // requires supabase_storage_admin and would roll the whole migration back.
+    expect(FWD).not.toMatch(/CREATE POLICY[^;]*storage\.objects/i)
+    expect(FWD).not.toMatch(/DROP POLICY[^;]*storage\.objects/i)
+    expect(FWD).not.toMatch(/ALTER TABLE\s+storage\./i)
     expect(FWD).not.toMatch(/storage\.buckets/)
+    // The only permitted contact is a read inside finalization.
+    const reads = FWD.match(/storage\.objects/g) || []
+    expect(reads.length).toBeGreaterThan(0)
+    expect(BODIES.get('finalize_evidence_attachment') ?? '').toMatch(/FROM storage\.objects/)
   })
 
   it('farmer read access is farm-scoped, not user-prefixed', () => {
