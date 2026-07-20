@@ -263,6 +263,52 @@ export function buildPendingProbeRegistry() {
   return rows.map((r) => ({ ...r, probeName: `pending cannot ${r.operation} ${r.table}` }))
 }
 
+// ── Pending-matrix fail-closed gate ─────────────────────────────────────────
+//
+// Classify the configured pending account's profile-role read. The pending
+// matrix is only meaningful when the account is PROVEN to be 'pending': a
+// farmer/admin credential would be denied by ownership rules, and a missing or
+// unreadable profile is denied by them too, so in every such case the probes
+// would "pass" even if the migration 22 overlay were absent.
+//   proven === false  =>  the whole probe registry is BLOCKed and no
+//                         pending-user database operation is attempted.
+export function resolvePendingRoleGate(roleRow) {
+  const observedRole = roleRow?.error ? null : roleRow?.data?.role ?? null
+  if (observedRole === 'pending') return { proven: true, observedRole, detail: null }
+  return {
+    proven: false,
+    observedRole,
+    detail: roleRow?.error
+      ? `could not read the configured user's profile role (${roleRow.error.message}) — refusing to assert`
+      : `configured user role is "${observedRole ?? 'missing'}", not "pending" — refusing to assert`,
+  }
+}
+
+// The gate ACTION used by group H. Kept here (rather than inline in main) so the
+// real production branch — not a copy of it — is exercised by the regression
+// test. An unproven account records EVERY registry probe as BLOCK, which the
+// exit rule counts as a non-pass; it must never record a SKIP, because SKIP is
+// counted by neither `failed` nor `blocked` and would leave the suite green
+// while migration 22's central guarantee went untested.
+//   block:     (name, reason) => void   — records one BLOCK row
+//   runMatrix: () => Promise|any        — the pending-user probes; only invoked
+//                                         when the account is proven pending
+export async function applyPendingGate(roleRow, { block, runMatrix }) {
+  const gate = resolvePendingRoleGate(roleRow)
+  if (!gate.proven) {
+    for (const probe of buildPendingProbeRegistry()) block(probe.probeName, gate.detail)
+    return { ran: false, gate }
+  }
+  return { ran: true, gate, result: await runMatrix() }
+}
+
+// The suite's exit rule. A BLOCK is never a pass — it must fail the process just
+// as a FAIL does, otherwise an unconfigured or unprovable pending matrix would
+// leave the suite green. Pure and exported so that rule is directly testable.
+export function computeExitCode({ failed = 0, blocked = 0, cleanupFailures = 0 } = {}) {
+  return failed > 0 || blocked > 0 || cleanupFailures > 0 ? 1 : 0
+}
+
 // Minimal INSERT payloads. Every column here was confirmed against the staging
 // catalog: only farmer_photos.file_url, farmer_review_requests.request_type and
 // .message are NOT NULL without a default. Payloads must satisfy CHECK
@@ -841,16 +887,11 @@ async function main() {
       // would pass even if the migration 22 overlay were absent. Require a successful
       // read whose role is exactly 'pending' before asserting anything.
       const roleRow = await p.client.from('profiles').select('role').eq('id', p.userId).maybeSingle()
-      const observedRole = roleRow?.error ? null : roleRow?.data?.role ?? null
-      if (observedRole !== 'pending') {
-        const detail = roleRow?.error
-          ? `could not read the configured user's profile role (${roleRow.error.message}) — refusing to assert`
-          : `configured user role is "${observedRole ?? 'missing'}", not "pending" — refusing to assert`
-        blockAll(
-          buildPendingProbeRegistry().map((probe) => probe.probeName),
-          detail,
-        )
-      } else {
+      // applyPendingGate records the FULL probe registry as BLOCK and skips the
+      // runMatrix body entirely unless the account is proven pending.
+      await applyPendingGate(roleRow, {
+        block,
+        runMatrix: async () => {
         await runPendingMatrix({ client: p.client, userId: p.userId, tag: TAG, farmId: farmA })
 
         record('pending cannot read market_price_benchmarks (migration 22)',
@@ -929,7 +970,8 @@ async function main() {
           isAllowed(await a.client.from('market_price_benchmarks').select('id').limit(1)))
         record('ddp_admin retains farms access (post-21)',
           isAllowed(await admin.client.from('farms').select('id').limit(1)))
-      }
+        },
+      })
     }
   } finally {
     // ── Cleanup (reverse dependency order; run-id scoped only) ────────────────
@@ -974,8 +1016,8 @@ async function main() {
   printMatrix()
   const failed = results.filter((r) => r.status === 'FAIL').length
   // A BLOCK means a probe could not run under meaningful conditions. It is
-  // never a pass, so it must fail the process just as a FAIL does — otherwise
-  // an unconfigured pending matrix would leave the suite green.
+  // never a pass, so it must fail the process just as a FAIL does (computeExitCode)
+  // — otherwise an unconfigured pending matrix would leave the suite green.
   const blocked = results.filter((r) => r.status === 'BLOCK').length
   const cleanupFailures = results.filter((r) => r.cleanupVerified === false).length
   if (blocked > 0) {
@@ -984,7 +1026,7 @@ async function main() {
   if (cleanupFailures > 0) {
     console.log(`\n${cleanupFailures} cleanup failure(s) — synthetic rows may remain.`)
   }
-  process.exit(failed > 0 || blocked > 0 || cleanupFailures > 0 ? 1 : 0)
+  process.exit(computeExitCode({ failed, blocked, cleanupFailures }))
 }
 
 // Catalog checks run the committed SELECT-only VERIFY files against staging and
