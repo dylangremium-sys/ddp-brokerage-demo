@@ -576,6 +576,7 @@ DECLARE
   resp           public.evidence_request_responses%ROWTYPE;
   doc_farm_id    uuid;
   doc_batch_id   uuid;
+  doc_label      text;
   ready_count    integer;
   ready_bytes    bigint;
 BEGIN
@@ -612,29 +613,38 @@ BEGIN
       USING ERRCODE = 'foreign_key_violation';
   END IF;
 
-  -- Linked existing documents must belong to the SAME farm as the request.
-  IF NEW.origin = 'existing_farm_document' THEN
-    SELECT fd.farm_id INTO doc_farm_id
-    FROM public.farmer_documents fd WHERE fd.id = NEW.farmer_document_id;
+  -- Linked existing documents must belong to the SAME farm as the request, and
+  -- a COA must come from the TARGETED batch. Both source tables carry
+  -- inventory_batch_id (farmer_documents ON DELETE SET NULL, documents ON DELETE
+  -- CASCADE), so the batch check applies to BOTH linked origins — resolving the
+  -- ownership pair once and validating it once prevents the batch rule from
+  -- silently applying to only one of them.
+  IF NEW.origin IN ('existing_farm_document','existing_inventory_document') THEN
+    IF NEW.origin = 'existing_farm_document' THEN
+      SELECT fd.farm_id, fd.inventory_batch_id INTO doc_farm_id, doc_batch_id
+      FROM public.farmer_documents fd WHERE fd.id = NEW.farmer_document_id;
+      doc_label := 'farmer document ' || COALESCE(NEW.farmer_document_id::text, 'null');
+    ELSE
+      SELECT d.farm_id, d.inventory_batch_id INTO doc_farm_id, doc_batch_id
+      FROM public.documents d WHERE d.id = NEW.inventory_document_id;
+      doc_label := 'document ' || COALESCE(NEW.inventory_document_id::text, 'null');
+    END IF;
+
     IF doc_farm_id IS DISTINCT FROM req.farm_id THEN
       RAISE EXCEPTION
-        'evidence attachment: farmer document % does not belong to farm %',
-        NEW.farmer_document_id, req.farm_id USING ERRCODE = 'check_violation';
+        'evidence attachment: % does not belong to farm %',
+        doc_label, req.farm_id USING ERRCODE = 'check_violation';
     END IF;
-  ELSIF NEW.origin = 'existing_inventory_document' THEN
-    SELECT d.farm_id, d.inventory_batch_id INTO doc_farm_id, doc_batch_id
-    FROM public.documents d WHERE d.id = NEW.inventory_document_id;
-    IF doc_farm_id IS DISTINCT FROM req.farm_id THEN
-      RAISE EXCEPTION
-        'evidence attachment: document % does not belong to farm %',
-        NEW.inventory_document_id, req.farm_id USING ERRCODE = 'check_violation';
-    END IF;
-    -- A COA must come from the targeted batch (contract §6.4).
+
+    -- A COA must come from the targeted batch (contract §6.4). IS DISTINCT FROM
+    -- also rejects a NULL doc_batch_id against a non-null target, so an
+    -- unbatched document can never satisfy a batch-targeted COA request.
     IF req.category = 'coa'
        AND doc_batch_id IS DISTINCT FROM req.inventory_batch_id THEN
       RAISE EXCEPTION
-        'evidence attachment: COA document % does not belong to the targeted batch %',
-        NEW.inventory_document_id, req.inventory_batch_id USING ERRCODE = 'check_violation';
+        'evidence attachment: COA % does not belong to the targeted batch %',
+        doc_label, COALESCE(req.inventory_batch_id::text, 'null')
+        USING ERRCODE = 'check_violation';
     END IF;
   END IF;
 
@@ -757,6 +767,15 @@ BEGIN
     RAISE EXCEPTION 'UNAUTHENTICATED' USING ERRCODE = 'insufficient_privilege';
   END IF;
 
+  -- NON-DISCLOSURE (contract §8.4): an unauthorized caller must not be able to
+  -- distinguish a real request id from a fabricated one. A non-admin calling an
+  -- admin-only RPC is therefore refused with NOT_FOUND *before* the row is read,
+  -- so neither the error code nor row-lock contention can act as an existence
+  -- oracle. Legitimate administrator authorization is unaffected.
+  IF p_require_admin AND NOT is_admin THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+
   SELECT * INTO req FROM public.evidence_requests
   WHERE id = p_request_id FOR UPDATE;
 
@@ -764,11 +783,7 @@ BEGIN
     RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
   END IF;
 
-  IF p_require_admin THEN
-    IF NOT is_admin THEN
-      RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
-    END IF;
-  ELSE
+  IF NOT p_require_admin THEN
     -- Non-admin path: must be an operational farmer for the owning farm.
     IF NOT is_admin AND NOT public.can_operationally_access_farm(req.farm_id) THEN
       RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
@@ -1311,15 +1326,28 @@ SECURITY DEFINER
 SET search_path = public, auth, pg_temp
 AS $$
 DECLARE
-  req  public.evidence_requests%ROWTYPE;
-  resp public.evidence_request_responses%ROWTYPE;
-  att  public.evidence_request_attachments%ROWTYPE;
+  req          public.evidence_requests%ROWTYPE;
+  resp         public.evidence_request_responses%ROWTYPE;
+  att          public.evidence_request_attachments%ROWTYPE;
+  obj_meta     jsonb;
+  stored_size  bigint;
+  stored_mime  text;
+  effective_size bigint;
+  effective_mime text;
 BEGIN
   req := public.evidence_lock_visible_request(p_request_id, false);
 
   IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
      OR NOT public.can_operationally_access_farm(req.farm_id) THEN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  -- The request must still be actionable. Without this, an attachment reserved
+  -- before an administrator cancelled or closed the request could still be
+  -- flipped to ready and append attachment_uploaded history to a terminal
+  -- request. Mirrors the guard in reserve/link/save/submit and the storage policy.
+  IF req.status NOT IN ('open','clarification_requested') THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
   END IF;
 
   SELECT * INTO resp FROM public.evidence_request_responses
@@ -1344,19 +1372,62 @@ BEGIN
   IF p_sha256_hex IS NULL OR p_sha256_hex !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: sha256_hex' USING ERRCODE = 'check_violation';
   END IF;
-  IF NOT public.evidence_mime_allowed(req.category, p_actual_mime_type) THEN
+
+  -- OBJECT EXISTENCE (contract §7.4 step 6). The caller-supplied size, MIME and
+  -- digest are CLAIMS, never proof that an upload happened. Read the actual
+  -- storage.objects row at the reserved bucket/path; if it is absent the upload
+  -- did not occur and finalization must fail closed, so a submitted response can
+  -- never point at a missing object.
+  IF to_regclass('storage.objects') IS NULL THEN
+    RAISE EXCEPTION 'STORAGE_ERROR: storage.objects is unavailable'
+      USING ERRCODE = 'undefined_table';
+  END IF;
+
+  SELECT o.metadata INTO obj_meta
+  FROM storage.objects o
+  WHERE o.bucket_id = att.storage_bucket
+    AND o.name      = att.storage_object_path;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'STORAGE_ERROR: no uploaded object at the reserved path for attachment %',
+      p_attachment_id USING ERRCODE = 'no_data_found';
+  END IF;
+
+  -- Storage-recorded metadata is authoritative where present; the caller's
+  -- values must agree with it.
+  stored_size := NULLIF(obj_meta ->> 'size', '')::bigint;
+  stored_mime := NULLIF(obj_meta ->> 'mimetype', '');
+
+  IF stored_size IS NOT NULL
+     AND p_actual_size_bytes IS DISTINCT FROM stored_size THEN
+    RAISE EXCEPTION
+      'STORAGE_ERROR: declared size % does not match the stored object size %',
+      p_actual_size_bytes, stored_size USING ERRCODE = 'check_violation';
+  END IF;
+  IF stored_mime IS NOT NULL
+     AND p_actual_mime_type IS DISTINCT FROM stored_mime THEN
+    RAISE EXCEPTION
+      'STORAGE_ERROR: declared MIME type % does not match the stored object type %',
+      p_actual_mime_type, stored_mime USING ERRCODE = 'check_violation';
+  END IF;
+
+  effective_size := COALESCE(stored_size, p_actual_size_bytes);
+  effective_mime := COALESCE(stored_mime, p_actual_mime_type);
+
+  IF NOT public.evidence_mime_allowed(req.category, effective_mime) THEN
     RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED' USING ERRCODE = 'check_violation';
   END IF;
-  IF p_actual_size_bytes IS NULL OR p_actual_size_bytes <= 0
-     OR p_actual_size_bytes > public.evidence_max_size_bytes(req.category, p_actual_mime_type) THEN
+  IF effective_size IS NULL OR effective_size <= 0
+     OR effective_size > public.evidence_max_size_bytes(req.category, effective_mime) THEN
     RAISE EXCEPTION 'FILE_TOO_LARGE' USING ERRCODE = 'check_violation';
   END IF;
 
   UPDATE public.evidence_request_attachments
   SET upload_state = 'ready',
       sha256_hex   = p_sha256_hex,
-      size_bytes   = p_actual_size_bytes,
-      mime_type    = p_actual_mime_type,
+      size_bytes   = effective_size,
+      mime_type    = effective_mime,
       finalized_at = now()
   WHERE id = p_attachment_id;
 
