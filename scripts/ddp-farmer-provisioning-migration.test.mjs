@@ -20,6 +20,9 @@ const stripComments = (sql) =>
 const HARDENING = stripComments(read('21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql'))
 const VERIFY = stripComments(read('21_DDP_CONTROLLED_FARMER_PROVISIONING_VERIFY.sql'))
 const ROLLBACK = stripComments(read('21_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql'))
+// Raw text retained: the rollback's ORDERING REQUIREMENT is documentation, and
+// documentation is the entire mitigation for a hazard SQL cannot enforce.
+const ROLLBACK_RAW = read('21_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql')
 const AUTH_TS = read('src/services/auth.ts')
 
 // Extract the body of the recreated handle_new_user() function from a script.
@@ -87,6 +90,17 @@ describe('migration 21 — rollback is a true inverse', () => {
     expect(norm(ROLLBACK)).toMatch(/role IN \('ddp_admin', 'farmer'\)/)
     expect(norm(ROLLBACK)).toMatch(/ALTER COLUMN role SET DEFAULT 'farmer'/)
     expect(norm(ROLLBACK)).not.toMatch(/'pending'/)
+  })
+
+  it('states that migration 22 must be rolled back FIRST', () => {
+    // Restoring the 'farmer' default makes has_operational_farmer_access() true
+    // for every self-signed-up account, which reduces migration 22's overlay to
+    // a no-op while its policies remain in the catalog looking applied. Nothing
+    // in SQL can prevent running these out of order, so the warning is the
+    // control — and an untested warning is one edit away from disappearing.
+    expect(ROLLBACK_RAW).toMatch(/ORDERING REQUIREMENT/)
+    expect(ROLLBACK_RAW).toMatch(/roll back migration 22 BEFORE this file/i)
+    expect(ROLLBACK_RAW).toMatch(/no-op/i)
   })
 })
 

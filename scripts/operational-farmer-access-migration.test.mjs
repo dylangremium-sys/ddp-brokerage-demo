@@ -63,7 +63,27 @@ describe('migration 22 restrictive overlay', () => {
 
   it('scopes the storage policy to only the two farmer buckets', () => {
     expect(HARD).toMatch(/ON storage\.objects/)
-    expect(HARD).toMatch(/bucket_id NOT IN \('farmer-documents', 'farmer-photos'\)/)
+    expect(HARD).toMatch(/bucket_id IS DISTINCT FROM 'farmer-documents'/)
+    expect(HARD).toMatch(/bucket_id IS DISTINCT FROM 'farmer-photos'/)
+  })
+
+  it('tests bucket_id NULL-safely, so unrelated buckets are never denied', () => {
+    // bucket_id is nullable. Under a RESTRICTIVE policy `NULL NOT IN (...)`
+    // evaluates to NULL, which denies — making any NULL-bucket row inaccessible
+    // to every non-farmer, non-admin caller. That is an availability regression
+    // on precisely the buckets this policy promises to leave alone.
+    expect(HARD).not.toMatch(/bucket_id NOT IN/)
+  })
+
+  it('guards storage.objects DDL with an ownership precondition', () => {
+    // CREATE POLICY on storage.objects requires ownership of it (Supabase:
+    // supabase_storage_admin). This file is ONE transaction, so failing that
+    // check at the storage statement would roll back the 11-table overlay too.
+    // The precondition must therefore run BEFORE any DDL in this file, and the
+    // owner must be read from the catalog rather than hardcoded.
+    expect(HARD).toMatch(/pg_has_role\(current_user/)
+    expect(HARD).toMatch(/pg_get_userbyid\(c\.relowner\)/)
+    expect(HARD.indexOf('pg_has_role')).toBeLessThan(HARD.indexOf('ON storage.objects'))
   })
 
   it('gates market_price_benchmarks with a restrictive FOR SELECT policy (narrowest command)', () => {
@@ -84,6 +104,33 @@ describe('migration 22 verify proves the enforcement', () => {
     expect(VERIFY).toMatch(/pending identity/i)
     expect(VERIFY).toMatch(/farmer insert own/) // proves pre-existing policy still present
     expect(VERIFY).toMatch(/ROLLBACK\s*;?\s*$/m)
+  })
+
+  it('asserts the EFFECTIVE PREDICATE, not just the policy shape', () => {
+    // Without these, a policy created `AS RESTRICTIVE FOR ALL USING (true)
+    // WITH CHECK (true)` — a complete no-op — passes every other assertion.
+    expect(VERIFY).toMatch(/SELECT permissive, cmd, qual, with_check/)
+    expect(VERIFY).toMatch(/v_qual NOT LIKE '%has_operational_farmer_access%'/)
+    expect(VERIFY).toMatch(/v_check NOT LIKE '%has_operational_farmer_access%'/)
+  })
+
+  it('checks the storage policy WITH CHECK, which governs uploads', () => {
+    // A correct USING with a missing WITH CHECK leaves pending WRITES unguarded
+    // while passing every read-side assertion.
+    expect(VERIFY).toMatch(/storage policy WITH CHECK is missing or does not match/)
+  })
+
+  it('performs a real denied write, with a control that makes it attributable', () => {
+    // The catalog sections cannot prove a policy denies anything. Section G
+    // must (a) run as a non-owner role, since RLS is bypassed for the owner,
+    // (b) admit the farmer first, so the pending denial is attributable to the
+    // overlay rather than to a missing grant or a CHECK constraint.
+    expect(VERIFY).toMatch(/SET LOCAL ROLE authenticated/)
+    expect(VERIFY).toMatch(/VERIFY G FAILED: the farmer identity could not insert/)
+    expect(VERIFY).toMatch(/WHEN insufficient_privilege THEN/)
+    expect(VERIFY).toMatch(/VERIFY G FAILED: a pending identity successfully INSERTed/)
+    // A non-RLS failure must be reported as inconclusive, never as a denial.
+    expect(VERIFY).toMatch(/VERIFY G INCONCLUSIVE/)
   })
 })
 

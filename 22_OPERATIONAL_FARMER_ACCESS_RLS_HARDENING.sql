@@ -103,26 +103,75 @@ BEGIN
 END
 $overlay$;
 
--- 3. Storage: a single bucket-scoped restrictive policy. It constrains ONLY the
+-- 3. PRECONDITION for the storage section below.
+--
+--    CREATE/DROP POLICY on storage.objects requires ownership of that table. In
+--    a Supabase project storage.objects is owned by supabase_storage_admin, NOT
+--    by the role that normally applies migrations. Without this guard, a role
+--    lacking that membership fails at the CREATE POLICY below with
+--    "must be owner of table objects" — and because this file is a single
+--    transaction, that failure ALSO rolls back the 11-table overlay and the
+--    helper created above. The operator would see a storage-shaped error and
+--    could easily miss that the public-schema overlay never landed.
+--
+--    Failing here instead makes the actual precondition explicit and keeps the
+--    diagnosis honest. The owner is read from the catalog rather than hardcoded,
+--    so this stays correct if the owning role differs. pg_has_role() is true for
+--    superusers and for any role holding membership in the owner.
+DO $storage_precondition$
+DECLARE
+  v_owner text;
+BEGIN
+  SELECT pg_get_userbyid(c.relowner) INTO v_owner
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'storage' AND c.relname = 'objects';
+
+  IF v_owner IS NULL THEN
+    RAISE EXCEPTION
+      'migration 22 precondition failed: storage.objects does not exist. '
+      'Apply the storage extension/buckets first, or run this migration without section 3.';
+  END IF;
+
+  IF NOT pg_has_role(current_user, v_owner, 'USAGE') THEN
+    RAISE EXCEPTION
+      'migration 22 precondition failed: current_user "%" is not a member of "%", which owns '
+      'storage.objects. CREATE POLICY on that table would fail and roll back the ENTIRE '
+      'migration, including the 11-table overlay. Re-run as a role holding that membership, '
+      'or split section 3 into a separately applied migration.',
+      current_user, v_owner;
+  END IF;
+END
+$storage_precondition$;
+
+-- 4. Storage: a single bucket-scoped restrictive policy. It constrains ONLY the
 --    two farmer buckets; every other bucket short-circuits to true and is
 --    unaffected. Blocks pending/non-farmer SELECT/INSERT/UPDATE/DELETE there.
+--
+--    The bucket test uses IS DISTINCT FROM rather than NOT IN: bucket_id is
+--    nullable, and `NULL NOT IN (...)` evaluates to NULL, which a RESTRICTIVE
+--    policy treats as a denial. That would make any row with a NULL bucket_id
+--    inaccessible to every non-farmer, non-admin caller — an availability
+--    regression on buckets this policy is explicitly meant to leave alone.
 DROP POLICY IF EXISTS "farmer buckets: operational farmer or admin" ON storage.objects;
 CREATE POLICY "farmer buckets: operational farmer or admin"
   ON storage.objects
   AS RESTRICTIVE
   FOR ALL
   USING (
-    bucket_id NOT IN ('farmer-documents', 'farmer-photos')
+    (bucket_id IS DISTINCT FROM 'farmer-documents'
+     AND bucket_id IS DISTINCT FROM 'farmer-photos')
     OR public.has_operational_farmer_access()
     OR public.is_ddp_admin()
   )
   WITH CHECK (
-    bucket_id NOT IN ('farmer-documents', 'farmer-photos')
+    (bucket_id IS DISTINCT FROM 'farmer-documents'
+     AND bucket_id IS DISTINCT FROM 'farmer-photos')
     OR public.has_operational_farmer_access()
     OR public.is_ddp_admin()
   );
 
--- 4. market_price_benchmarks — the ONLY pending exposure here is the SELECT
+-- 5. market_price_benchmarks — the ONLY pending exposure here is the SELECT
 --    policy "market_price_benchmarks: farmer select visible"
 --    (USING visible_to_farmers = true AND auth.uid() IS NOT NULL), which lets any
 --    authenticated pending session read DDP price hints. There is NO farmer
