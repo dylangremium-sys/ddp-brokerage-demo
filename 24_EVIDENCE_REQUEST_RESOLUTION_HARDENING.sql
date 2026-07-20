@@ -1,0 +1,1678 @@
+-- =============================================================================
+-- Migration 24 — Evidence Request & Resolution Workflow (database phase)
+--
+-- Implements the binding contract "DDP EVIDENCE REQUEST & RESOLUTION WORKFLOW —
+-- BINDING IMPLEMENTATION CONTRACT v1.0" sections 4, 5, 6, 8 and 12.
+--
+-- Scope of THIS file (public schema only):
+--   1. Canonical value helpers (statuses, priorities, categories, target matrix)
+--   2. Tables: evidence_requests, evidence_request_responses,
+--              evidence_request_attachments, evidence_request_history
+--   3. Constraints, indexes and integrity triggers
+--   4. Authorization helper can_operationally_access_farm(uuid)
+--   5. Atomic SECURITY DEFINER transition RPCs
+--   6. Direct-DML denial + RLS
+--
+-- Storage bucket and storage.objects policies are DELIBERATELY NOT in this file.
+-- They live in 24_EVIDENCE_REQUEST_RESOLUTION_STORAGE.sql because CREATE POLICY
+-- on storage.objects requires ownership of that table (supabase_storage_admin),
+-- which the role that applies public-schema migrations does not hold. Keeping
+-- them separate means a storage-privilege problem cannot roll back this entire
+-- migration. Both files are part of the migration source; apply the storage
+-- companion with a role holding that membership.
+--
+-- Verify:   24_EVIDENCE_REQUEST_RESOLUTION_VERIFY.sql
+-- Rollback: 24_EVIDENCE_REQUEST_RESOLUTION_ROLLBACK.sql
+-- Storage:  24_EVIDENCE_REQUEST_RESOLUTION_STORAGE.sql
+--
+-- Preconditions:
+--   * public.is_ddp_admin()                  (migration 3 / AUTH_RLS_SCHEMA)
+--   * public.has_farm_membership(uuid)       (migration 3 / AUTH_RLS_SCHEMA)
+--   * public.has_operational_farmer_access() (migration 22)
+--   * public.profiles, farms, farm_profiles, farm_memberships,
+--     inventory_batches, farmer_documents, documents
+--
+-- Contract note (§8.1 + owner decision): "active membership" for the MVP means
+-- an applicable row currently exists in farm_memberships. Revocation is row
+-- deletion. No inactive-membership state is introduced by this migration.
+-- =============================================================================
+
+BEGIN;
+
+-- -----------------------------------------------------------------------------
+-- 0. Preconditions — fail loudly and atomically before creating anything.
+-- -----------------------------------------------------------------------------
+DO $precondition$
+DECLARE
+  missing text[] := ARRAY[]::text[];
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'is_ddp_admin'
+  ) THEN missing := missing || 'public.is_ddp_admin()'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'has_farm_membership'
+  ) THEN missing := missing || 'public.has_farm_membership(uuid)'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'has_operational_farmer_access'
+  ) THEN missing := missing || 'public.has_operational_farmer_access()'; END IF;
+
+  IF array_length(missing, 1) IS NOT NULL THEN
+    RAISE EXCEPTION
+      'migration 24 precondition failed: missing required object(s): %. '
+      'Apply the migrations that create them before migration 24.',
+      array_to_string(missing, ', ');
+  END IF;
+END
+$precondition$;
+
+-- -----------------------------------------------------------------------------
+-- 1. Canonical value helpers (contract §4).
+--    IMMUTABLE so they can be used inside CHECK constraints.
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.evidence_request_statuses()
+RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = public, pg_temp
+AS $$ SELECT ARRAY[
+  'open','farmer_submitted','clarification_requested','resolved','rejected','cancelled'
+]::text[] $$;
+
+CREATE OR REPLACE FUNCTION public.evidence_request_terminal_statuses()
+RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = public, pg_temp
+AS $$ SELECT ARRAY['resolved','rejected','cancelled']::text[] $$;
+
+CREATE OR REPLACE FUNCTION public.evidence_request_priorities()
+RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = public, pg_temp
+AS $$ SELECT ARRAY['low','normal','high','urgent']::text[] $$;
+
+CREATE OR REPLACE FUNCTION public.evidence_request_categories()
+RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = public, pg_temp
+AS $$ SELECT ARRAY[
+  'farm_identity','farm_license','gacp_evidence','gmp_evidence',
+  'export_supporting_document','responsible_contact','coa','batch_identity',
+  'inventory_quantity_evidence','inventory_photo','inventory_video',
+  'storage_evidence','chain_of_custody','other'
+]::text[] $$;
+
+-- Category-to-target matrix (contract §4.5). Authoritative in the database;
+-- the client may duplicate it for usability but is never authoritative.
+CREATE OR REPLACE FUNCTION public.evidence_category_allows_target(
+  p_category text, p_target_type text
+)
+RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = public, pg_temp
+AS $$
+  SELECT CASE
+    WHEN p_category IN ('farm_identity','farm_license','gacp_evidence',
+                        'gmp_evidence','responsible_contact')
+      THEN p_target_type = 'farm_profile'
+    WHEN p_category IN ('coa','batch_identity','inventory_quantity_evidence',
+                        'inventory_photo','inventory_video')
+      THEN p_target_type = 'inventory_batch'
+    WHEN p_category IN ('export_supporting_document','storage_evidence',
+                        'chain_of_custody','other')
+      THEN p_target_type IN ('farm_profile','inventory_batch')
+    ELSE false
+  END
+$$;
+
+-- Allowed MIME types per category (contract §7.3). Both MIME and extension are
+-- validated; MIME is never inferred from the filename extension alone.
+CREATE OR REPLACE FUNCTION public.evidence_mime_allowed(p_category text, p_mime text)
+RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = public, pg_temp
+AS $$
+  SELECT CASE
+    WHEN p_mime IS NULL THEN false
+    WHEN p_category = 'coa'             THEN p_mime = 'application/pdf'
+    WHEN p_category = 'inventory_photo' THEN p_mime IN ('image/jpeg','image/png','image/webp')
+    WHEN p_category = 'inventory_video' THEN p_mime = 'video/mp4'
+    ELSE p_mime IN ('application/pdf','image/jpeg','image/png','image/webp')
+  END
+$$;
+
+-- Maximum individual size per category (contract §7.3).
+CREATE OR REPLACE FUNCTION public.evidence_max_size_bytes(p_category text, p_mime text)
+RETURNS bigint LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = public, pg_temp
+AS $$
+  SELECT CASE
+    WHEN p_category = 'inventory_video' AND p_mime = 'video/mp4' THEN 104857600::bigint  -- 100 MB
+    ELSE 20971520::bigint                                                                -- 20 MB
+  END
+$$;
+
+-- Existing farmer/inventory document rows carry `document_type` but no MIME
+-- column. This is an explicit classification of the source document type, not a
+-- measurement — see the size_bytes note on evidence_request_attachments.
+CREATE OR REPLACE FUNCTION public.evidence_document_mime(p_document_type text)
+RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = public, pg_temp
+AS $$
+  SELECT CASE WHEN p_document_type = 'photo' THEN 'image/jpeg' ELSE 'application/pdf' END
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 2. Canonical authorization helper (contract §8.1).
+--    True ONLY when: profile role is 'farmer' AND has_operational_farmer_access()
+--    AND the caller holds an active membership for the target farm.
+--    No policy may grant access merely because the caller is `authenticated`.
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_operationally_access_farm(target_farm_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public, auth, pg_temp
+AS $$
+  SELECT
+    target_farm_id IS NOT NULL
+    AND auth.uid() IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'farmer'
+    )
+    AND public.has_operational_farmer_access()
+    AND EXISTS (
+      SELECT 1 FROM public.farm_memberships
+      WHERE farm_id = target_farm_id AND user_id = auth.uid()
+    );
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.can_operationally_access_farm(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.can_operationally_access_farm(uuid) FROM anon;
+GRANT  EXECUTE ON FUNCTION public.can_operationally_access_farm(uuid) TO authenticated;
+GRANT  EXECUTE ON FUNCTION public.can_operationally_access_farm(uuid) TO service_role;
+
+-- -----------------------------------------------------------------------------
+-- 3. Tables (contract §6.2 – §6.5).
+-- -----------------------------------------------------------------------------
+
+-- 3.1 evidence_requests
+CREATE TABLE IF NOT EXISTS public.evidence_requests (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  farm_id             uuid NOT NULL REFERENCES public.farms(id) ON DELETE RESTRICT,
+  target_type         text NOT NULL,
+  farm_profile_id     uuid REFERENCES public.farm_profiles(id) ON DELETE RESTRICT,
+  inventory_batch_id  uuid REFERENCES public.inventory_batches(id) ON DELETE RESTRICT,
+  category            text NOT NULL,
+  title               varchar(140) NOT NULL,
+  explanation         text NOT NULL,
+  priority            text NOT NULL DEFAULT 'normal',
+  due_date            date,
+  status              text NOT NULL DEFAULT 'open',
+  revision            integer NOT NULL DEFAULT 1,
+  created_by_user_id  uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  closed_by_user_id   uuid REFERENCES auth.users(id) ON DELETE RESTRICT,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  status_changed_at   timestamptz NOT NULL DEFAULT now(),
+  closed_at           timestamptz,
+
+  CONSTRAINT evidence_requests_target_type_check
+    CHECK (target_type IN ('farm_profile','inventory_batch')),
+  CONSTRAINT evidence_requests_status_check
+    CHECK (status = ANY (public.evidence_request_statuses())),
+  CONSTRAINT evidence_requests_priority_check
+    CHECK (priority = ANY (public.evidence_request_priorities())),
+  CONSTRAINT evidence_requests_category_check
+    CHECK (category = ANY (public.evidence_request_categories())),
+  CONSTRAINT evidence_requests_revision_positive_check
+    CHECK (revision > 0),
+  -- Exactly one target (contract §6.2 "Target constraint").
+  CONSTRAINT evidence_requests_exactly_one_target_check CHECK (
+    (target_type = 'farm_profile'
+       AND farm_profile_id IS NOT NULL AND inventory_batch_id IS NULL)
+    OR
+    (target_type = 'inventory_batch'
+       AND inventory_batch_id IS NOT NULL AND farm_profile_id IS NULL)
+  ),
+  CONSTRAINT evidence_requests_category_target_check
+    CHECK (public.evidence_category_allows_target(category, target_type)),
+  CONSTRAINT evidence_requests_title_length_check
+    CHECK (char_length(btrim(title)) BETWEEN 3 AND 140),
+  CONSTRAINT evidence_requests_explanation_length_check
+    CHECK (char_length(btrim(explanation)) BETWEEN 20 AND 4000),
+  -- due_date is a calendar date and must not precede the creation date.
+  CONSTRAINT evidence_requests_due_date_not_before_creation_check
+    CHECK (due_date IS NULL OR due_date >= (created_at AT TIME ZONE 'UTC')::date),
+  -- closed_at/closed_by are set if and only if the status is terminal.
+  CONSTRAINT evidence_requests_terminal_closure_check CHECK (
+    (status = ANY (public.evidence_request_terminal_statuses())
+       AND closed_at IS NOT NULL AND closed_by_user_id IS NOT NULL)
+    OR
+    (NOT (status = ANY (public.evidence_request_terminal_statuses()))
+       AND closed_at IS NULL AND closed_by_user_id IS NULL)
+  )
+);
+
+-- 3.2 evidence_request_responses
+CREATE TABLE IF NOT EXISTS public.evidence_request_responses (
+  id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id              uuid NOT NULL
+                            REFERENCES public.evidence_requests(id) ON DELETE RESTRICT,
+  response_number         integer NOT NULL,
+  state                   text NOT NULL,
+  response_text           text,
+  supersedes_response_id  uuid
+                            REFERENCES public.evidence_request_responses(id) ON DELETE RESTRICT,
+  created_by_user_id      uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  created_at              timestamptz NOT NULL DEFAULT now(),
+  updated_at              timestamptz NOT NULL DEFAULT now(),
+  submitted_at            timestamptz,
+
+  CONSTRAINT evidence_responses_state_check
+    CHECK (state IN ('draft','submitted')),
+  CONSTRAINT evidence_responses_number_positive_check
+    CHECK (response_number > 0),
+  CONSTRAINT evidence_responses_text_length_check
+    CHECK (response_text IS NULL OR char_length(response_text) <= 4000),
+  -- submitted_at is null for draft and non-null for submitted (contract §6.3).
+  CONSTRAINT evidence_responses_submitted_at_state_check CHECK (
+    (state = 'draft'     AND submitted_at IS NULL)
+    OR
+    (state = 'submitted' AND submitted_at IS NOT NULL)
+  ),
+  CONSTRAINT evidence_responses_no_self_supersede_check
+    CHECK (supersedes_response_id IS NULL OR supersedes_response_id <> id),
+  CONSTRAINT evidence_responses_unique_number
+    UNIQUE (request_id, response_number)
+);
+
+-- Only one draft may exist per request (contract §6.3).
+CREATE UNIQUE INDEX IF NOT EXISTS evidence_responses_one_draft_per_request_idx
+  ON public.evidence_request_responses (request_id)
+  WHERE state = 'draft';
+
+-- 3.3 evidence_request_attachments
+CREATE TABLE IF NOT EXISTS public.evidence_request_attachments (
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id             uuid NOT NULL
+                           REFERENCES public.evidence_requests(id) ON DELETE RESTRICT,
+  response_id            uuid NOT NULL
+                           REFERENCES public.evidence_request_responses(id) ON DELETE RESTRICT,
+  origin                 text NOT NULL,
+  farmer_document_id     uuid REFERENCES public.farmer_documents(id) ON DELETE RESTRICT,
+  inventory_document_id  uuid REFERENCES public.documents(id) ON DELETE RESTRICT,
+  storage_bucket         text,
+  storage_object_path    text,
+  upload_state           text,
+  original_filename      text NOT NULL,
+  mime_type              text NOT NULL,
+  -- CONTRACT DEVIATION (documented, deliberate): contract §6.4 specifies
+  -- size_bytes NOT NULL. It is NOT NULL for 'request_upload', where the size is
+  -- measured at finalization. For linked EXISTING documents it is nullable,
+  -- because public.farmer_documents and public.documents carry no size column —
+  -- inventing a byte count for a row we never measured would be fabricated data.
+  -- The 150 MB aggregate limit therefore counts uploaded bytes only.
+  size_bytes             bigint,
+  sha256_hex             char(64),
+  created_by_user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  finalized_at           timestamptz,
+
+  CONSTRAINT evidence_attachments_origin_check
+    CHECK (origin IN ('request_upload','existing_farm_document','existing_inventory_document')),
+  CONSTRAINT evidence_attachments_upload_state_check
+    CHECK (upload_state IS NULL OR upload_state IN ('pending_upload','ready')),
+  CONSTRAINT evidence_attachments_size_positive_check
+    CHECK (size_bytes IS NULL OR size_bytes > 0),
+  -- An uploaded attachment must always carry a measured, positive size.
+  CONSTRAINT evidence_attachments_upload_size_required_check
+    CHECK (origin <> 'request_upload' OR size_bytes IS NOT NULL),
+  CONSTRAINT evidence_attachments_sha256_hex_format_check
+    CHECK (sha256_hex IS NULL OR sha256_hex ~ '^[0-9a-f]{64}$'),
+  -- Origin discriminator (contract §6.4 "Required origin constraint").
+  CONSTRAINT evidence_attachments_origin_shape_check CHECK (
+    (origin = 'request_upload'
+       AND storage_bucket IS NOT NULL AND storage_object_path IS NOT NULL
+       AND upload_state IS NOT NULL
+       AND farmer_document_id IS NULL AND inventory_document_id IS NULL)
+    OR
+    (origin = 'existing_farm_document'
+       AND farmer_document_id IS NOT NULL
+       AND inventory_document_id IS NULL
+       AND storage_bucket IS NULL AND storage_object_path IS NULL
+       AND upload_state IS NULL)
+    OR
+    (origin = 'existing_inventory_document'
+       AND inventory_document_id IS NOT NULL
+       AND farmer_document_id IS NULL
+       AND storage_bucket IS NULL AND storage_object_path IS NULL
+       AND upload_state IS NULL)
+  ),
+  -- A ready upload must carry its digest and finalization timestamp.
+  CONSTRAINT evidence_attachments_ready_requires_digest_check CHECK (
+    origin <> 'request_upload'
+    OR upload_state <> 'ready'
+    OR (sha256_hex IS NOT NULL AND finalized_at IS NOT NULL)
+  ),
+  CONSTRAINT evidence_attachments_pending_has_no_finalization_check CHECK (
+    origin <> 'request_upload'
+    OR upload_state <> 'pending_upload'
+    OR (sha256_hex IS NULL AND finalized_at IS NULL)
+  ),
+  CONSTRAINT evidence_attachments_storage_path_unique
+    UNIQUE (storage_bucket, storage_object_path)
+);
+
+-- 3.4 evidence_request_history (append-only)
+CREATE TABLE IF NOT EXISTS public.evidence_request_history (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id       uuid NOT NULL
+                     REFERENCES public.evidence_requests(id) ON DELETE RESTRICT,
+  previous_status  text,
+  next_status      text NOT NULL,
+  actor_user_id    uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  actor_role       text NOT NULL,
+  event_type       text NOT NULL,
+  response_id      uuid REFERENCES public.evidence_request_responses(id) ON DELETE RESTRICT,
+  attachment_id    uuid REFERENCES public.evidence_request_attachments(id) ON DELETE RESTRICT,
+  note             text,
+  event_data       jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+
+  CONSTRAINT evidence_history_actor_role_check
+    CHECK (actor_role IN ('ddp_admin','farmer')),
+  CONSTRAINT evidence_history_event_type_check
+    CHECK (event_type IN (
+      'request_created','response_submitted','clarification_requested',
+      'request_resolved','response_rejected','request_cancelled',
+      'attachment_uploaded','existing_document_linked')),
+  CONSTRAINT evidence_history_next_status_check
+    CHECK (next_status = ANY (public.evidence_request_statuses())),
+  CONSTRAINT evidence_history_previous_status_check
+    CHECK (previous_status IS NULL OR previous_status = ANY (public.evidence_request_statuses())),
+  -- previous_status may be null ONLY for the creation event (contract §6.5).
+  CONSTRAINT evidence_history_previous_status_only_null_on_create_check CHECK (
+    (event_type = 'request_created' AND previous_status IS NULL)
+    OR (event_type <> 'request_created' AND previous_status IS NOT NULL)
+  ),
+  -- Terminal and clarification events require a note (contract §6.5 / §12.2).
+  CONSTRAINT evidence_history_note_required_check CHECK (
+    event_type NOT IN ('clarification_requested','request_resolved',
+                       'response_rejected','request_cancelled')
+    OR (note IS NOT NULL AND char_length(btrim(note)) BETWEEN 10 AND 2000)
+  )
+);
+
+-- -----------------------------------------------------------------------------
+-- 4. Indexes (contract §6.2 "Required indexes").
+-- -----------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS evidence_requests_farm_status_created_idx
+  ON public.evidence_requests (farm_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS evidence_requests_status_priority_due_created_idx
+  ON public.evidence_requests (status, priority, due_date, created_at DESC);
+CREATE INDEX IF NOT EXISTS evidence_requests_active_idx
+  ON public.evidence_requests (status, created_at DESC)
+  WHERE status IN ('open','farmer_submitted','clarification_requested');
+CREATE INDEX IF NOT EXISTS evidence_requests_farm_profile_idx
+  ON public.evidence_requests (farm_profile_id)
+  WHERE farm_profile_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS evidence_requests_inventory_batch_idx
+  ON public.evidence_requests (inventory_batch_id)
+  WHERE inventory_batch_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS evidence_requests_creator_created_idx
+  ON public.evidence_requests (created_by_user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS evidence_responses_request_number_idx
+  ON public.evidence_request_responses (request_id, response_number DESC);
+CREATE INDEX IF NOT EXISTS evidence_attachments_request_idx
+  ON public.evidence_request_attachments (request_id);
+CREATE INDEX IF NOT EXISTS evidence_attachments_response_idx
+  ON public.evidence_request_attachments (response_id);
+-- Deterministic history ordering (contract §12 "deterministic ordering").
+CREATE INDEX IF NOT EXISTS evidence_history_request_created_id_idx
+  ON public.evidence_request_history (request_id, created_at, id);
+
+-- -----------------------------------------------------------------------------
+-- 5. Integrity triggers.
+-- -----------------------------------------------------------------------------
+
+-- 5.1 Target scope validation: farm_id must be DERIVED from the target, never
+--     caller-chosen (contract §6.2 "Scope validation", §19.7).
+CREATE OR REPLACE FUNCTION public.fn_evidence_request_validate_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  resolved_farm_id uuid;
+BEGIN
+  IF NEW.target_type = 'farm_profile' THEN
+    SELECT fp.farm_id INTO resolved_farm_id
+    FROM public.farm_profiles fp WHERE fp.id = NEW.farm_profile_id;
+    IF resolved_farm_id IS NULL THEN
+      RAISE EXCEPTION 'evidence request scope: farm profile % does not resolve to a farm',
+        NEW.farm_profile_id USING ERRCODE = 'foreign_key_violation';
+    END IF;
+  ELSE
+    SELECT ib.farm_id INTO resolved_farm_id
+    FROM public.inventory_batches ib WHERE ib.id = NEW.inventory_batch_id;
+    IF resolved_farm_id IS NULL THEN
+      -- inventory_batches.farm_id is ON DELETE SET NULL, so an orphaned batch is
+      -- possible. An orphan can never be scoped safely: reject it at creation.
+      RAISE EXCEPTION 'evidence request scope: inventory batch % does not resolve to a farm',
+        NEW.inventory_batch_id USING ERRCODE = 'foreign_key_violation';
+    END IF;
+  END IF;
+
+  IF NEW.farm_id IS DISTINCT FROM resolved_farm_id THEN
+    RAISE EXCEPTION
+      'evidence request scope: farm_id % does not own the selected target (expected %)',
+      NEW.farm_id, resolved_farm_id USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS trg_evidence_request_validate_scope ON public.evidence_requests;
+CREATE TRIGGER trg_evidence_request_validate_scope
+  BEFORE INSERT ON public.evidence_requests
+  FOR EACH ROW EXECUTE FUNCTION public.fn_evidence_request_validate_scope();
+
+-- 5.2 Immutability of request core fields (contract §6.2 "Mutability").
+CREATE OR REPLACE FUNCTION public.fn_evidence_request_protect_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.farm_id IS DISTINCT FROM OLD.farm_id
+     OR NEW.target_type IS DISTINCT FROM OLD.target_type
+     OR NEW.farm_profile_id IS DISTINCT FROM OLD.farm_profile_id
+     OR NEW.inventory_batch_id IS DISTINCT FROM OLD.inventory_batch_id
+     OR NEW.category IS DISTINCT FROM OLD.category
+     OR NEW.title IS DISTINCT FROM OLD.title
+     OR NEW.explanation IS DISTINCT FROM OLD.explanation
+     OR NEW.priority IS DISTINCT FROM OLD.priority
+     OR NEW.due_date IS DISTINCT FROM OLD.due_date
+     OR NEW.created_by_user_id IS DISTINCT FROM OLD.created_by_user_id
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+  THEN
+    RAISE EXCEPTION
+      'evidence request %: target, category, title, explanation, priority, due date '
+      'and creator are immutable after creation', OLD.id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS trg_evidence_request_protect_immutable ON public.evidence_requests;
+CREATE TRIGGER trg_evidence_request_protect_immutable
+  BEFORE UPDATE ON public.evidence_requests
+  FOR EACH ROW EXECUTE FUNCTION public.fn_evidence_request_protect_immutable();
+
+-- 5.3 Submitted responses are fully immutable and undeletable (contract §6.3).
+CREATE OR REPLACE FUNCTION public.fn_evidence_response_protect_submitted()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.state = 'submitted' THEN
+      RAISE EXCEPTION 'evidence response %: a submitted response cannot be deleted', OLD.id
+        USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF OLD.state = 'submitted' THEN
+    RAISE EXCEPTION 'evidence response %: a submitted response is immutable', OLD.id
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  IF NEW.request_id IS DISTINCT FROM OLD.request_id
+     OR NEW.response_number IS DISTINCT FROM OLD.response_number
+     OR NEW.created_by_user_id IS DISTINCT FROM OLD.created_by_user_id
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+  THEN
+    RAISE EXCEPTION 'evidence response %: request, number, author and creation time are immutable',
+      OLD.id USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- A draft may only ever move forward to submitted.
+  IF NEW.state = 'draft' AND OLD.state = 'draft' THEN
+    RETURN NEW;
+  ELSIF NEW.state = 'submitted' AND OLD.state = 'draft' THEN
+    RETURN NEW;
+  ELSE
+    RAISE EXCEPTION 'evidence response %: invalid state change % -> %',
+      OLD.id, OLD.state, NEW.state USING ERRCODE = 'check_violation';
+  END IF;
+END
+$$;
+
+DROP TRIGGER IF EXISTS trg_evidence_response_protect_submitted ON public.evidence_request_responses;
+CREATE TRIGGER trg_evidence_response_protect_submitted
+  BEFORE UPDATE OR DELETE ON public.evidence_request_responses
+  FOR EACH ROW EXECUTE FUNCTION public.fn_evidence_response_protect_submitted();
+
+-- 5.4 Attachment integrity: same-request coupling, same-farm ownership,
+--     batch coupling for COA, and immutability once the response is submitted
+--     (contract §6.4 "Required integrity rules" / "Mutability and deletion").
+CREATE OR REPLACE FUNCTION public.fn_evidence_attachment_validate()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  req            public.evidence_requests%ROWTYPE;
+  resp           public.evidence_request_responses%ROWTYPE;
+  doc_farm_id    uuid;
+  doc_batch_id   uuid;
+  ready_count    integer;
+  ready_bytes    bigint;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    SELECT * INTO resp FROM public.evidence_request_responses WHERE id = OLD.response_id;
+    IF resp.state = 'submitted' THEN
+      RAISE EXCEPTION 'evidence attachment %: a submitted attachment cannot be deleted', OLD.id
+        USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  SELECT * INTO resp FROM public.evidence_request_responses WHERE id = NEW.response_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'evidence attachment: response % not found', NEW.response_id
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND resp.state = 'submitted' THEN
+    RAISE EXCEPTION 'evidence attachment %: attachments of a submitted response are immutable',
+      OLD.id USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- The attachment's request must equal the response's request.
+  IF NEW.request_id IS DISTINCT FROM resp.request_id THEN
+    RAISE EXCEPTION
+      'evidence attachment: request_id % does not match the response request %',
+      NEW.request_id, resp.request_id USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT * INTO req FROM public.evidence_requests WHERE id = NEW.request_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'evidence attachment: request % not found', NEW.request_id
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+
+  -- Linked existing documents must belong to the SAME farm as the request.
+  IF NEW.origin = 'existing_farm_document' THEN
+    SELECT fd.farm_id INTO doc_farm_id
+    FROM public.farmer_documents fd WHERE fd.id = NEW.farmer_document_id;
+    IF doc_farm_id IS DISTINCT FROM req.farm_id THEN
+      RAISE EXCEPTION
+        'evidence attachment: farmer document % does not belong to farm %',
+        NEW.farmer_document_id, req.farm_id USING ERRCODE = 'check_violation';
+    END IF;
+  ELSIF NEW.origin = 'existing_inventory_document' THEN
+    SELECT d.farm_id, d.inventory_batch_id INTO doc_farm_id, doc_batch_id
+    FROM public.documents d WHERE d.id = NEW.inventory_document_id;
+    IF doc_farm_id IS DISTINCT FROM req.farm_id THEN
+      RAISE EXCEPTION
+        'evidence attachment: document % does not belong to farm %',
+        NEW.inventory_document_id, req.farm_id USING ERRCODE = 'check_violation';
+    END IF;
+    -- A COA must come from the targeted batch (contract §6.4).
+    IF req.category = 'coa'
+       AND doc_batch_id IS DISTINCT FROM req.inventory_batch_id THEN
+      RAISE EXCEPTION
+        'evidence attachment: COA document % does not belong to the targeted batch %',
+        NEW.inventory_document_id, req.inventory_batch_id USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+
+  -- Per-response ready limits: max 10 attachments, max 150 MB aggregate.
+  SELECT count(*), COALESCE(sum(a.size_bytes), 0)
+    INTO ready_count, ready_bytes
+  FROM public.evidence_request_attachments a
+  WHERE a.response_id = NEW.response_id
+    AND a.id <> NEW.id
+    AND (a.origin <> 'request_upload' OR a.upload_state = 'ready');
+
+  IF NEW.origin <> 'request_upload' OR NEW.upload_state = 'ready' THEN
+    ready_count := ready_count + 1;
+    -- Linked existing documents contribute no measured bytes (see size_bytes note).
+    ready_bytes := ready_bytes + COALESCE(NEW.size_bytes, 0);
+  END IF;
+
+  IF ready_count > 10 THEN
+    RAISE EXCEPTION 'evidence attachment: response % exceeds the 10 ready attachment limit',
+      NEW.response_id USING ERRCODE = 'check_violation';
+  END IF;
+  IF ready_bytes > 157286400 THEN  -- 150 MB
+    RAISE EXCEPTION
+      'evidence attachment: response % exceeds the 150 MB aggregate attachment limit',
+      NEW.response_id USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS trg_evidence_attachment_validate ON public.evidence_request_attachments;
+CREATE TRIGGER trg_evidence_attachment_validate
+  BEFORE INSERT OR UPDATE OR DELETE ON public.evidence_request_attachments
+  FOR EACH ROW EXECUTE FUNCTION public.fn_evidence_attachment_validate();
+
+-- 5.5 History is append-only for EVERY role (contract §6.5, §12.4).
+CREATE OR REPLACE FUNCTION public.fn_evidence_history_append_only()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION
+    'evidence_request_history is append-only: % is not permitted', TG_OP
+    USING ERRCODE = 'check_violation';
+END
+$$;
+
+DROP TRIGGER IF EXISTS trg_evidence_history_append_only ON public.evidence_request_history;
+CREATE TRIGGER trg_evidence_history_append_only
+  BEFORE UPDATE OR DELETE ON public.evidence_request_history
+  FOR EACH ROW EXECUTE FUNCTION public.fn_evidence_history_append_only();
+
+-- 5.6 Blanket deletion prohibition for requests (contract §6.6).
+CREATE OR REPLACE FUNCTION public.fn_evidence_request_no_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION 'evidence requests cannot be deleted (contract §6.6)'
+    USING ERRCODE = 'check_violation';
+END
+$$;
+
+DROP TRIGGER IF EXISTS trg_evidence_request_no_delete ON public.evidence_requests;
+CREATE TRIGGER trg_evidence_request_no_delete
+  BEFORE DELETE ON public.evidence_requests
+  FOR EACH ROW EXECUTE FUNCTION public.fn_evidence_request_no_delete();
+
+-- -----------------------------------------------------------------------------
+-- 6. Internal helpers used by the RPCs.
+-- -----------------------------------------------------------------------------
+
+-- Caller's role, read from the database (never from JWT metadata).
+CREATE OR REPLACE FUNCTION public.evidence_actor_role()
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public, auth, pg_temp
+AS $$ SELECT role FROM public.profiles WHERE id = auth.uid() $$;
+
+-- Stable JSON representation returned by every transition RPC.
+CREATE OR REPLACE FUNCTION public.evidence_request_as_json(p_request_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT to_jsonb(r) FROM (
+    SELECT
+      er.id, er.farm_id, er.target_type, er.farm_profile_id, er.inventory_batch_id,
+      er.category, er.title, er.explanation, er.priority, er.due_date,
+      er.status, er.revision, er.created_by_user_id, er.closed_by_user_id,
+      er.created_at, er.updated_at, er.status_changed_at, er.closed_at
+    FROM public.evidence_requests er WHERE er.id = p_request_id
+  ) r
+$$;
+
+-- Locks the request, enforces visibility, and returns the row.
+-- Contract §8.4: an unauthorized id must be indistinguishable from a missing id.
+CREATE OR REPLACE FUNCTION public.evidence_lock_visible_request(
+  p_request_id uuid, p_require_admin boolean
+)
+RETURNS public.evidence_requests
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req  public.evidence_requests%ROWTYPE;
+  is_admin boolean := public.is_ddp_admin();
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHENTICATED' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  SELECT * INTO req FROM public.evidence_requests
+  WHERE id = p_request_id FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  IF p_require_admin THEN
+    IF NOT is_admin THEN
+      RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  ELSE
+    -- Non-admin path: must be an operational farmer for the owning farm.
+    IF NOT is_admin AND NOT public.can_operationally_access_farm(req.farm_id) THEN
+      RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+    END IF;
+  END IF;
+
+  RETURN req;
+END
+$$;
+
+-- Applies a status transition and writes its history event atomically.
+CREATE OR REPLACE FUNCTION public.evidence_apply_transition(
+  p_request_id     uuid,
+  p_expected_rev   integer,
+  p_next_status    text,
+  p_event_type     text,
+  p_actor_role     text,
+  p_note           text,
+  p_response_id    uuid,
+  p_attachment_id  uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req        public.evidence_requests%ROWTYPE;
+  is_terminal boolean;
+BEGIN
+  SELECT * INTO req FROM public.evidence_requests WHERE id = p_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  IF req.revision IS DISTINCT FROM p_expected_rev THEN
+    RAISE EXCEPTION 'CONFLICT' USING ERRCODE = 'serialization_failure';
+  END IF;
+
+  is_terminal := p_next_status = ANY (public.evidence_request_terminal_statuses());
+
+  UPDATE public.evidence_requests
+  SET status            = p_next_status,
+      revision          = revision + 1,
+      updated_at        = now(),
+      status_changed_at = now(),
+      closed_at         = CASE WHEN is_terminal THEN now() ELSE NULL END,
+      closed_by_user_id = CASE WHEN is_terminal THEN auth.uid() ELSE NULL END
+  WHERE id = p_request_id;
+
+  INSERT INTO public.evidence_request_history (
+    request_id, previous_status, next_status, actor_user_id, actor_role,
+    event_type, response_id, attachment_id, note
+  ) VALUES (
+    p_request_id, req.status, p_next_status, auth.uid(), p_actor_role,
+    p_event_type, p_response_id, p_attachment_id, p_note
+  );
+
+  RETURN public.evidence_request_as_json(p_request_id);
+END
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 7. Atomic transition RPCs (contract §6.7). All SECURITY DEFINER, all with an
+--    explicit search_path, all locking the request row, all revision-checked,
+--    all writing history in the same transaction.
+-- -----------------------------------------------------------------------------
+
+-- 7.1 create_evidence_request — administrator only.
+CREATE OR REPLACE FUNCTION public.create_evidence_request(
+  p_target_type  text,
+  p_target_id    uuid,
+  p_category     text,
+  p_title        text,
+  p_explanation  text,
+  p_priority     text DEFAULT 'normal',
+  p_due_date     date DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  resolved_farm_id uuid;
+  new_id           uuid;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHENTICATED' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NOT public.is_ddp_admin() THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF p_target_type NOT IN ('farm_profile','inventory_batch') THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: target_type' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT public.evidence_category_allows_target(p_category, p_target_type) THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: category is not valid for this target type'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- farm_id is DERIVED from the target; it is never caller-supplied.
+  IF p_target_type = 'farm_profile' THEN
+    SELECT farm_id INTO resolved_farm_id FROM public.farm_profiles WHERE id = p_target_id;
+  ELSE
+    SELECT farm_id INTO resolved_farm_id FROM public.inventory_batches WHERE id = p_target_id;
+  END IF;
+
+  IF resolved_farm_id IS NULL THEN
+    RAISE EXCEPTION 'TARGET_UNAVAILABLE' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  INSERT INTO public.evidence_requests (
+    farm_id, target_type,
+    farm_profile_id, inventory_batch_id,
+    category, title, explanation, priority, due_date,
+    created_by_user_id
+  ) VALUES (
+    resolved_farm_id, p_target_type,
+    CASE WHEN p_target_type = 'farm_profile'    THEN p_target_id END,
+    CASE WHEN p_target_type = 'inventory_batch' THEN p_target_id END,
+    p_category, p_title, p_explanation, COALESCE(p_priority,'normal'), p_due_date,
+    auth.uid()
+  ) RETURNING id INTO new_id;
+
+  INSERT INTO public.evidence_request_history (
+    request_id, previous_status, next_status, actor_user_id, actor_role, event_type
+  ) VALUES (
+    new_id, NULL, 'open', auth.uid(), 'ddp_admin', 'request_created'
+  );
+
+  RETURN public.evidence_request_as_json(new_id);
+END
+$$;
+
+-- 7.2 get_or_create_evidence_response_draft — authorized farmer only.
+CREATE OR REPLACE FUNCTION public.get_or_create_evidence_response_draft(
+  p_request_id uuid, p_expected_revision integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req         public.evidence_requests%ROWTYPE;
+  draft_id    uuid;
+  next_number integer;
+  prior_id    uuid;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, false);
+
+  IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
+     OR NOT public.can_operationally_access_farm(req.farm_id) THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF req.revision IS DISTINCT FROM p_expected_revision THEN
+    RAISE EXCEPTION 'CONFLICT' USING ERRCODE = 'serialization_failure';
+  END IF;
+  IF req.status NOT IN ('open','clarification_requested') THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT id INTO draft_id FROM public.evidence_request_responses
+  WHERE request_id = p_request_id AND state = 'draft';
+
+  IF draft_id IS NULL THEN
+    SELECT COALESCE(max(response_number), 0) + 1 INTO next_number
+    FROM public.evidence_request_responses WHERE request_id = p_request_id;
+
+    SELECT id INTO prior_id FROM public.evidence_request_responses
+    WHERE request_id = p_request_id AND state = 'submitted'
+    ORDER BY response_number DESC LIMIT 1;
+
+    INSERT INTO public.evidence_request_responses (
+      request_id, response_number, state, supersedes_response_id, created_by_user_id
+    ) VALUES (
+      p_request_id, next_number, 'draft', prior_id, auth.uid()
+    ) RETURNING id INTO draft_id;
+  END IF;
+
+  RETURN (SELECT to_jsonb(r) FROM (
+    SELECT id, request_id, response_number, state, response_text,
+           supersedes_response_id, created_by_user_id, created_at, updated_at, submitted_at
+    FROM public.evidence_request_responses WHERE id = draft_id
+  ) r);
+END
+$$;
+
+-- 7.3 save_evidence_response_draft — draft author only.
+CREATE OR REPLACE FUNCTION public.save_evidence_response_draft(
+  p_request_id uuid, p_response_id uuid, p_response_text text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req  public.evidence_requests%ROWTYPE;
+  resp public.evidence_request_responses%ROWTYPE;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, false);
+
+  IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
+     OR NOT public.can_operationally_access_farm(req.farm_id) THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF req.status NOT IN ('open','clarification_requested') THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT * INTO resp FROM public.evidence_request_responses
+  WHERE id = p_response_id AND request_id = p_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF resp.state <> 'draft' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+  -- Authorship cannot be forged: only the draft's author may edit it.
+  IF resp.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  UPDATE public.evidence_request_responses
+  SET response_text = p_response_text, updated_at = now()
+  WHERE id = p_response_id;
+
+  RETURN (SELECT to_jsonb(r) FROM (
+    SELECT id, request_id, response_number, state, response_text,
+           supersedes_response_id, created_by_user_id, created_at, updated_at, submitted_at
+    FROM public.evidence_request_responses WHERE id = p_response_id
+  ) r);
+END
+$$;
+
+-- 7.4 submit_evidence_response — authorized farmer; open|clarification_requested
+--     -> farmer_submitted. Refuses pending uploads and empty submissions.
+CREATE OR REPLACE FUNCTION public.submit_evidence_response(
+  p_request_id uuid, p_response_id uuid, p_expected_revision integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req           public.evidence_requests%ROWTYPE;
+  resp          public.evidence_request_responses%ROWTYPE;
+  pending_count integer;
+  ready_count   integer;
+  latest_sub_id uuid;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, false);
+
+  IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
+     OR NOT public.can_operationally_access_farm(req.farm_id) THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF req.revision IS DISTINCT FROM p_expected_revision THEN
+    RAISE EXCEPTION 'CONFLICT' USING ERRCODE = 'serialization_failure';
+  END IF;
+  IF req.status NOT IN ('open','clarification_requested') THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT * INTO resp FROM public.evidence_request_responses
+  WHERE id = p_response_id AND request_id = p_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF resp.state <> 'draft' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+  IF resp.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  SELECT count(*) FILTER (WHERE origin = 'request_upload' AND upload_state = 'pending_upload'),
+         count(*) FILTER (WHERE origin <> 'request_upload' OR upload_state = 'ready')
+    INTO pending_count, ready_count
+  FROM public.evidence_request_attachments WHERE response_id = p_response_id;
+
+  IF pending_count > 0 THEN
+    RAISE EXCEPTION 'UPLOAD_NOT_READY' USING ERRCODE = 'check_violation';
+  END IF;
+  IF COALESCE(btrim(resp.response_text), '') = '' AND ready_count = 0 THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: a response requires text or at least one ready attachment'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- A resubmission must supersede the immediately preceding submitted response.
+  SELECT id INTO latest_sub_id FROM public.evidence_request_responses
+  WHERE request_id = p_request_id AND state = 'submitted'
+  ORDER BY response_number DESC LIMIT 1;
+
+  IF latest_sub_id IS NOT NULL
+     AND resp.supersedes_response_id IS DISTINCT FROM latest_sub_id THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: response must supersede the latest submitted response'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  UPDATE public.evidence_request_responses
+  SET state = 'submitted', submitted_at = now(), updated_at = now()
+  WHERE id = p_response_id;
+
+  RETURN public.evidence_apply_transition(
+    p_request_id, p_expected_revision, 'farmer_submitted', 'response_submitted',
+    'farmer', NULL, p_response_id, NULL
+  );
+END
+$$;
+
+-- 7.5 request_evidence_clarification — administrator; farmer_submitted ->
+--     clarification_requested.
+CREATE OR REPLACE FUNCTION public.request_evidence_clarification(
+  p_request_id uuid, p_reviewed_response_id uuid, p_reason text, p_expected_revision integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req           public.evidence_requests%ROWTYPE;
+  latest_sub_id uuid;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, true);
+
+  IF char_length(btrim(COALESCE(p_reason,''))) NOT BETWEEN 10 AND 2000 THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: clarification reason must be 10-2000 characters'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF req.status <> 'farmer_submitted' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT id INTO latest_sub_id FROM public.evidence_request_responses
+  WHERE request_id = p_request_id AND state = 'submitted'
+  ORDER BY response_number DESC LIMIT 1;
+
+  -- An action may only reference the CURRENT submitted response.
+  IF latest_sub_id IS NULL OR p_reviewed_response_id IS DISTINCT FROM latest_sub_id THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: reviewed response must be the current submitted response'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN public.evidence_apply_transition(
+    p_request_id, p_expected_revision, 'clarification_requested',
+    'clarification_requested', 'ddp_admin', p_reason, p_reviewed_response_id, NULL
+  );
+END
+$$;
+
+-- 7.6 resolve_evidence_request — administrator; farmer_submitted -> resolved.
+CREATE OR REPLACE FUNCTION public.resolve_evidence_request(
+  p_request_id uuid, p_reviewed_response_id uuid, p_resolution_note text, p_expected_revision integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req           public.evidence_requests%ROWTYPE;
+  latest_sub_id uuid;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, true);
+
+  IF char_length(btrim(COALESCE(p_resolution_note,''))) NOT BETWEEN 10 AND 2000 THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: resolution note must be 10-2000 characters'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF req.status <> 'farmer_submitted' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT id INTO latest_sub_id FROM public.evidence_request_responses
+  WHERE request_id = p_request_id AND state = 'submitted'
+  ORDER BY response_number DESC LIMIT 1;
+
+  IF latest_sub_id IS NULL OR p_reviewed_response_id IS DISTINCT FROM latest_sub_id THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: reviewed response must be the current submitted response'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN public.evidence_apply_transition(
+    p_request_id, p_expected_revision, 'resolved', 'request_resolved',
+    'ddp_admin', p_resolution_note, p_reviewed_response_id, NULL
+  );
+END
+$$;
+
+-- 7.7 reject_evidence_response — administrator; farmer_submitted -> rejected.
+CREATE OR REPLACE FUNCTION public.reject_evidence_response(
+  p_request_id uuid, p_reviewed_response_id uuid, p_rejection_reason text, p_expected_revision integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req           public.evidence_requests%ROWTYPE;
+  latest_sub_id uuid;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, true);
+
+  IF char_length(btrim(COALESCE(p_rejection_reason,''))) NOT BETWEEN 10 AND 2000 THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: rejection reason must be 10-2000 characters'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF req.status <> 'farmer_submitted' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT id INTO latest_sub_id FROM public.evidence_request_responses
+  WHERE request_id = p_request_id AND state = 'submitted'
+  ORDER BY response_number DESC LIMIT 1;
+
+  IF latest_sub_id IS NULL OR p_reviewed_response_id IS DISTINCT FROM latest_sub_id THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: reviewed response must be the current submitted response'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN public.evidence_apply_transition(
+    p_request_id, p_expected_revision, 'rejected', 'response_rejected',
+    'ddp_admin', p_rejection_reason, p_reviewed_response_id, NULL
+  );
+END
+$$;
+
+-- 7.8 cancel_evidence_request — administrator; any non-terminal -> cancelled.
+CREATE OR REPLACE FUNCTION public.cancel_evidence_request(
+  p_request_id uuid, p_cancellation_reason text, p_expected_revision integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req public.evidence_requests%ROWTYPE;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, true);
+
+  IF char_length(btrim(COALESCE(p_cancellation_reason,''))) NOT BETWEEN 10 AND 2000 THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: cancellation reason must be 10-2000 characters'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF req.status = ANY (public.evidence_request_terminal_statuses()) THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN public.evidence_apply_transition(
+    p_request_id, p_expected_revision, 'cancelled', 'request_cancelled',
+    'ddp_admin', p_cancellation_reason, NULL, NULL
+  );
+END
+$$;
+
+-- 7.9 reserve_evidence_attachment — creates the pending_upload row with the
+--     canonical, server-computed storage path (contract §7.2).
+CREATE OR REPLACE FUNCTION public.reserve_evidence_attachment(
+  p_request_id uuid, p_response_id uuid,
+  p_original_filename text, p_mime_type text, p_size_bytes bigint
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req            public.evidence_requests%ROWTYPE;
+  resp           public.evidence_request_responses%ROWTYPE;
+  new_id         uuid := gen_random_uuid();
+  sanitized      text;
+  object_path    text;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, false);
+
+  IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
+     OR NOT public.can_operationally_access_farm(req.farm_id) THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF req.status NOT IN ('open','clarification_requested') THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT * INTO resp FROM public.evidence_request_responses
+  WHERE id = p_response_id AND request_id = p_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF resp.state <> 'draft' OR resp.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  IF NOT public.evidence_mime_allowed(req.category, p_mime_type) THEN
+    RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED' USING ERRCODE = 'check_violation';
+  END IF;
+  IF p_size_bytes IS NULL OR p_size_bytes <= 0
+     OR p_size_bytes > public.evidence_max_size_bytes(req.category, p_mime_type) THEN
+    RAISE EXCEPTION 'FILE_TOO_LARGE' USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- The path filename is sanitized and is never trusted as metadata; the
+  -- original filename is stored separately (contract §7.2).
+  sanitized := regexp_replace(COALESCE(p_original_filename,'file'), '[^A-Za-z0-9._-]', '_', 'g');
+  IF char_length(sanitized) = 0 THEN sanitized := 'file'; END IF;
+  object_path := req.farm_id || '/' || p_request_id || '/' || p_response_id || '/' || new_id || '/' || sanitized;
+
+  INSERT INTO public.evidence_request_attachments (
+    id, request_id, response_id, origin,
+    storage_bucket, storage_object_path, upload_state,
+    original_filename, mime_type, size_bytes, created_by_user_id
+  ) VALUES (
+    new_id, p_request_id, p_response_id, 'request_upload',
+    'evidence-request-files', object_path, 'pending_upload',
+    p_original_filename, p_mime_type, p_size_bytes, auth.uid()
+  );
+
+  RETURN (SELECT to_jsonb(a) FROM (
+    SELECT id, request_id, response_id, origin, storage_bucket, storage_object_path,
+           upload_state, original_filename, mime_type, size_bytes, created_by_user_id, created_at
+    FROM public.evidence_request_attachments WHERE id = new_id
+  ) a);
+END
+$$;
+
+-- 7.10 finalize_evidence_attachment — pending_upload -> ready.
+CREATE OR REPLACE FUNCTION public.finalize_evidence_attachment(
+  p_request_id uuid, p_response_id uuid, p_attachment_id uuid,
+  p_sha256_hex text, p_actual_size_bytes bigint, p_actual_mime_type text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req  public.evidence_requests%ROWTYPE;
+  resp public.evidence_request_responses%ROWTYPE;
+  att  public.evidence_request_attachments%ROWTYPE;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, false);
+
+  IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
+     OR NOT public.can_operationally_access_farm(req.farm_id) THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  SELECT * INTO resp FROM public.evidence_request_responses
+  WHERE id = p_response_id AND request_id = p_request_id FOR UPDATE;
+  IF NOT FOUND OR resp.state <> 'draft' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT * INTO att FROM public.evidence_request_attachments
+  WHERE id = p_attachment_id AND response_id = p_response_id AND request_id = p_request_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF att.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF att.origin <> 'request_upload' OR att.upload_state <> 'pending_upload' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  IF p_sha256_hex IS NULL OR p_sha256_hex !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: sha256_hex' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT public.evidence_mime_allowed(req.category, p_actual_mime_type) THEN
+    RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED' USING ERRCODE = 'check_violation';
+  END IF;
+  IF p_actual_size_bytes IS NULL OR p_actual_size_bytes <= 0
+     OR p_actual_size_bytes > public.evidence_max_size_bytes(req.category, p_actual_mime_type) THEN
+    RAISE EXCEPTION 'FILE_TOO_LARGE' USING ERRCODE = 'check_violation';
+  END IF;
+
+  UPDATE public.evidence_request_attachments
+  SET upload_state = 'ready',
+      sha256_hex   = p_sha256_hex,
+      size_bytes   = p_actual_size_bytes,
+      mime_type    = p_actual_mime_type,
+      finalized_at = now()
+  WHERE id = p_attachment_id;
+
+  INSERT INTO public.evidence_request_history (
+    request_id, previous_status, next_status, actor_user_id, actor_role,
+    event_type, response_id, attachment_id
+  ) VALUES (
+    p_request_id, req.status, req.status, auth.uid(), 'farmer',
+    'attachment_uploaded', p_response_id, p_attachment_id
+  );
+
+  RETURN (SELECT to_jsonb(a) FROM (
+    SELECT id, request_id, response_id, origin, storage_bucket, storage_object_path,
+           upload_state, original_filename, mime_type, size_bytes, sha256_hex,
+           created_by_user_id, created_at, finalized_at
+    FROM public.evidence_request_attachments WHERE id = p_attachment_id
+  ) a);
+END
+$$;
+
+-- 7.11 remove_draft_evidence_attachment — draft-only removal.
+CREATE OR REPLACE FUNCTION public.remove_draft_evidence_attachment(
+  p_request_id uuid, p_response_id uuid, p_attachment_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req  public.evidence_requests%ROWTYPE;
+  resp public.evidence_request_responses%ROWTYPE;
+  att  public.evidence_request_attachments%ROWTYPE;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, false);
+
+  IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
+     OR NOT public.can_operationally_access_farm(req.farm_id) THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  SELECT * INTO resp FROM public.evidence_request_responses
+  WHERE id = p_response_id AND request_id = p_request_id FOR UPDATE;
+  IF NOT FOUND OR resp.state <> 'draft' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT * INTO att FROM public.evidence_request_attachments
+  WHERE id = p_attachment_id AND response_id = p_response_id AND request_id = p_request_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF att.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  DELETE FROM public.evidence_request_attachments WHERE id = p_attachment_id;
+
+  RETURN jsonb_build_object('removed', true, 'attachment_id', p_attachment_id,
+                            'storage_bucket', att.storage_bucket,
+                            'storage_object_path', att.storage_object_path);
+END
+$$;
+
+-- 7.12 link_existing_evidence_document — links, never copies (contract §7.5).
+CREATE OR REPLACE FUNCTION public.link_existing_evidence_document(
+  p_request_id uuid, p_response_id uuid, p_origin text,
+  p_farmer_document_id uuid DEFAULT NULL, p_inventory_document_id uuid DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req      public.evidence_requests%ROWTYPE;
+  resp     public.evidence_request_responses%ROWTYPE;
+  new_id   uuid;
+  fname    text;
+  fdoctype text;
+BEGIN
+  req := public.evidence_lock_visible_request(p_request_id, false);
+
+  IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
+     OR NOT public.can_operationally_access_farm(req.farm_id) THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF req.status NOT IN ('open','clarification_requested') THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+  IF p_origin NOT IN ('existing_farm_document','existing_inventory_document') THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: origin' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT * INTO resp FROM public.evidence_request_responses
+  WHERE id = p_response_id AND request_id = p_request_id FOR UPDATE;
+  IF NOT FOUND OR resp.state <> 'draft' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+  IF resp.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  -- Metadata is read from the source row; cross-farm linkage is additionally
+  -- rejected by fn_evidence_attachment_validate(). Neither source table carries
+  -- a MIME or size column, so mime_type is classified from document_type and
+  -- size_bytes is left NULL rather than fabricated.
+  IF p_origin = 'existing_farm_document' THEN
+    SELECT COALESCE(fd.file_name, 'document'), fd.document_type
+      INTO fname, fdoctype
+    FROM public.farmer_documents fd WHERE fd.id = p_farmer_document_id;
+  ELSE
+    SELECT COALESCE(d.file_name, 'document'), d.document_type
+      INTO fname, fdoctype
+    FROM public.documents d WHERE d.id = p_inventory_document_id;
+  END IF;
+
+  IF fname IS NULL THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  -- The linked document type must be compatible with the request category.
+  IF NOT public.evidence_mime_allowed(req.category, public.evidence_document_mime(fdoctype)) THEN
+    RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED' USING ERRCODE = 'check_violation';
+  END IF;
+
+  INSERT INTO public.evidence_request_attachments (
+    request_id, response_id, origin, farmer_document_id, inventory_document_id,
+    original_filename, mime_type, size_bytes, created_by_user_id
+  ) VALUES (
+    p_request_id, p_response_id, p_origin, p_farmer_document_id, p_inventory_document_id,
+    fname, public.evidence_document_mime(fdoctype), NULL, auth.uid()
+  ) RETURNING id INTO new_id;
+
+  INSERT INTO public.evidence_request_history (
+    request_id, previous_status, next_status, actor_user_id, actor_role,
+    event_type, response_id, attachment_id
+  ) VALUES (
+    p_request_id, req.status, req.status, auth.uid(), 'farmer',
+    'existing_document_linked', p_response_id, new_id
+  );
+
+  RETURN (SELECT to_jsonb(a) FROM (
+    SELECT id, request_id, response_id, origin, farmer_document_id, inventory_document_id,
+           original_filename, mime_type, size_bytes, created_by_user_id, created_at
+    FROM public.evidence_request_attachments WHERE id = new_id
+  ) a);
+END
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 8. Direct-DML denial (contract §6.7, §8.2, §8.5).
+--    Clients get SELECT only; every mutation must go through the RPCs above.
+--    There are deliberately NO INSERT/UPDATE/DELETE policies on these tables, so
+--    even a future accidental GRANT cannot open a direct write path.
+-- -----------------------------------------------------------------------------
+REVOKE ALL ON public.evidence_requests             FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.evidence_request_responses    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.evidence_request_attachments  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.evidence_request_history      FROM PUBLIC, anon, authenticated;
+
+GRANT SELECT ON public.evidence_requests            TO authenticated;
+GRANT SELECT ON public.evidence_request_responses   TO authenticated;
+GRANT SELECT ON public.evidence_request_attachments TO authenticated;
+GRANT SELECT ON public.evidence_request_history     TO authenticated;
+
+-- -----------------------------------------------------------------------------
+-- 9. RLS (contract §8.2). SELECT-only policies; admin sees all, an operational
+--    farmer sees only farms they currently hold membership for. Removing the
+--    membership row removes access immediately.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.evidence_requests            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.evidence_request_responses   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.evidence_request_attachments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.evidence_request_history     ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "evidence_requests: admin select all" ON public.evidence_requests;
+CREATE POLICY "evidence_requests: admin select all"
+  ON public.evidence_requests FOR SELECT
+  USING (public.is_ddp_admin());
+
+DROP POLICY IF EXISTS "evidence_requests: operational farmer select own farm" ON public.evidence_requests;
+CREATE POLICY "evidence_requests: operational farmer select own farm"
+  ON public.evidence_requests FOR SELECT
+  USING (public.can_operationally_access_farm(farm_id));
+
+DROP POLICY IF EXISTS "evidence_responses: admin select all" ON public.evidence_request_responses;
+CREATE POLICY "evidence_responses: admin select all"
+  ON public.evidence_request_responses FOR SELECT
+  USING (public.is_ddp_admin());
+
+DROP POLICY IF EXISTS "evidence_responses: operational farmer select own farm" ON public.evidence_request_responses;
+CREATE POLICY "evidence_responses: operational farmer select own farm"
+  ON public.evidence_request_responses FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM public.evidence_requests er
+    WHERE er.id = evidence_request_responses.request_id
+      AND public.can_operationally_access_farm(er.farm_id)
+  ));
+
+DROP POLICY IF EXISTS "evidence_attachments: admin select all" ON public.evidence_request_attachments;
+CREATE POLICY "evidence_attachments: admin select all"
+  ON public.evidence_request_attachments FOR SELECT
+  USING (public.is_ddp_admin());
+
+DROP POLICY IF EXISTS "evidence_attachments: operational farmer select own farm" ON public.evidence_request_attachments;
+CREATE POLICY "evidence_attachments: operational farmer select own farm"
+  ON public.evidence_request_attachments FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM public.evidence_requests er
+    WHERE er.id = evidence_request_attachments.request_id
+      AND public.can_operationally_access_farm(er.farm_id)
+  ));
+
+DROP POLICY IF EXISTS "evidence_history: admin select all" ON public.evidence_request_history;
+CREATE POLICY "evidence_history: admin select all"
+  ON public.evidence_request_history FOR SELECT
+  USING (public.is_ddp_admin());
+
+DROP POLICY IF EXISTS "evidence_history: operational farmer select own farm" ON public.evidence_request_history;
+CREATE POLICY "evidence_history: operational farmer select own farm"
+  ON public.evidence_request_history FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM public.evidence_requests er
+    WHERE er.id = evidence_request_history.request_id
+      AND public.can_operationally_access_farm(er.farm_id)
+  ));
+
+-- -----------------------------------------------------------------------------
+-- 10. RPC EXECUTE grants — least privilege. anon never executes anything.
+-- -----------------------------------------------------------------------------
+-- 10.1 The twelve client-callable RPCs. Written as literal statements (not a
+--      format() loop) so the repository's corpus ACL audit can verify each one
+--      statically. anon never executes any of them.
+REVOKE EXECUTE ON FUNCTION public.create_evidence_request(text,uuid,text,text,text,text,date) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.create_evidence_request(text,uuid,text,text,text,text,date) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.get_or_create_evidence_response_draft(uuid,integer) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.get_or_create_evidence_response_draft(uuid,integer) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.save_evidence_response_draft(uuid,uuid,text) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.save_evidence_response_draft(uuid,uuid,text) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.submit_evidence_response(uuid,uuid,integer) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.submit_evidence_response(uuid,uuid,integer) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.request_evidence_clarification(uuid,uuid,text,integer) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.request_evidence_clarification(uuid,uuid,text,integer) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.resolve_evidence_request(uuid,uuid,text,integer) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.resolve_evidence_request(uuid,uuid,text,integer) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.reject_evidence_response(uuid,uuid,text,integer) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.reject_evidence_response(uuid,uuid,text,integer) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.cancel_evidence_request(uuid,text,integer) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.cancel_evidence_request(uuid,text,integer) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.reserve_evidence_attachment(uuid,uuid,text,text,bigint) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.reserve_evidence_attachment(uuid,uuid,text,text,bigint) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.finalize_evidence_attachment(uuid,uuid,uuid,text,bigint,text) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.finalize_evidence_attachment(uuid,uuid,uuid,text,bigint,text) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.remove_draft_evidence_attachment(uuid,uuid,uuid) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.remove_draft_evidence_attachment(uuid,uuid,uuid) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.link_existing_evidence_document(uuid,uuid,text,uuid,uuid) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.link_existing_evidence_document(uuid,uuid,text,uuid,uuid) TO authenticated, service_role;
+
+-- 10.2 Internal helpers. Never client-callable: they run inside the SECURITY
+--      DEFINER RPCs above, in the definer's privilege context, so no client role
+--      needs EXECUTE. Deliberate no-grant decisions:
+--        acl-no-grant: evidence_apply_transition
+--        acl-no-grant: evidence_lock_visible_request
+--        acl-no-grant: evidence_request_as_json
+--        acl-no-grant: evidence_actor_role
+REVOKE EXECUTE ON FUNCTION public.evidence_apply_transition(uuid,integer,text,text,text,text,uuid,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.evidence_lock_visible_request(uuid,boolean) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.evidence_request_as_json(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.evidence_actor_role() FROM PUBLIC, anon, authenticated;
+
+-- 10.3 Canonical value helpers. Evaluated inside CHECK constraints and inside
+--      the SECURITY DEFINER RPCs, both of which run as the definer, so no
+--      client grant is required. Deliberate no-grant decisions:
+--        acl-no-grant: evidence_request_statuses
+--        acl-no-grant: evidence_request_terminal_statuses
+--        acl-no-grant: evidence_request_priorities
+--        acl-no-grant: evidence_request_categories
+--        acl-no-grant: evidence_category_allows_target
+--        acl-no-grant: evidence_mime_allowed
+--        acl-no-grant: evidence_max_size_bytes
+--        acl-no-grant: evidence_document_mime
+REVOKE EXECUTE ON FUNCTION public.evidence_request_statuses() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_request_terminal_statuses() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_request_priorities() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_request_categories() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_category_allows_target(text,text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_mime_allowed(text,text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_max_size_bytes(text,text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_document_mime(text) FROM PUBLIC, anon;
+
+-- 10.4 Trigger functions. Invoked only by the trigger machinery, never called
+--      directly. Deliberate no-grant decisions:
+--        acl-no-grant: fn_evidence_request_validate_scope
+--        acl-no-grant: fn_evidence_request_protect_immutable
+--        acl-no-grant: fn_evidence_request_no_delete
+--        acl-no-grant: fn_evidence_response_protect_submitted
+--        acl-no-grant: fn_evidence_attachment_validate
+--        acl-no-grant: fn_evidence_history_append_only
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_request_validate_scope() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_request_protect_immutable() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_request_no_delete() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_response_protect_submitted() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_attachment_validate() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_history_append_only() FROM PUBLIC, anon, authenticated;
+
+COMMIT;
