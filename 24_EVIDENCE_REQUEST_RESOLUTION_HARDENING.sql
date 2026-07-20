@@ -374,7 +374,13 @@ CREATE TABLE IF NOT EXISTS public.evidence_request_history (
   actor_role       text NOT NULL,
   event_type       text NOT NULL,
   response_id      uuid REFERENCES public.evidence_request_responses(id) ON DELETE RESTRICT,
-  attachment_id    uuid REFERENCES public.evidence_request_attachments(id) ON DELETE RESTRICT,
+  -- ON DELETE SET NULL (approved contract interpretation, contract §6.4 vs §12.4):
+  -- a draft attachment must remain removable before submission, but its history
+  -- event must survive permanently. Deleting the attachment therefore nulls only
+  -- this pointer; event_type, actor, timestamp, request/response linkage,
+  -- ordering and metadata are all preserved. The append-only trigger below
+  -- permits exactly this one transition and nothing else.
+  attachment_id    uuid REFERENCES public.evidence_request_attachments(id) ON DELETE SET NULL,
   note             text,
   event_data       jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at       timestamptz NOT NULL DEFAULT now(),
@@ -682,6 +688,17 @@ CREATE TRIGGER trg_evidence_attachment_validate
   FOR EACH ROW EXECUTE FUNCTION public.fn_evidence_attachment_validate();
 
 -- 5.5 History is append-only for EVERY role (contract §6.5, §12.4).
+-- History is append-only. The ONE permitted mutation is the referential action
+-- from evidence_request_attachments ON DELETE SET NULL, which clears
+-- attachment_id when a controlled draft removal deletes the referenced row.
+-- A referential action runs as an internal UPDATE and therefore fires this
+-- trigger, so it must be recognised explicitly — otherwise draft removal would
+-- fail with the append-only error instead of the old foreign-key error.
+--
+-- The exemption is deliberately as narrow as SQL allows: attachment_id must move
+-- from NOT NULL to NULL and EVERY other column must be byte-identical. A general
+-- UPDATE, a re-pointing of attachment_id, or any edit to the event's meaning is
+-- still refused. No client role holds UPDATE on this table in any case (§8.2).
 CREATE OR REPLACE FUNCTION public.fn_evidence_history_append_only()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -689,6 +706,24 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
+  IF TG_OP = 'UPDATE'
+     AND OLD.attachment_id IS NOT NULL
+     AND NEW.attachment_id IS NULL
+     AND NEW.id              IS NOT DISTINCT FROM OLD.id
+     AND NEW.request_id      IS NOT DISTINCT FROM OLD.request_id
+     AND NEW.previous_status IS NOT DISTINCT FROM OLD.previous_status
+     AND NEW.next_status     IS NOT DISTINCT FROM OLD.next_status
+     AND NEW.actor_user_id   IS NOT DISTINCT FROM OLD.actor_user_id
+     AND NEW.actor_role      IS NOT DISTINCT FROM OLD.actor_role
+     AND NEW.event_type      IS NOT DISTINCT FROM OLD.event_type
+     AND NEW.response_id     IS NOT DISTINCT FROM OLD.response_id
+     AND NEW.note            IS NOT DISTINCT FROM OLD.note
+     AND NEW.event_data      IS NOT DISTINCT FROM OLD.event_data
+     AND NEW.created_at      IS NOT DISTINCT FROM OLD.created_at
+  THEN
+    RETURN NEW;
+  END IF;
+
   RAISE EXCEPTION
     'evidence_request_history is append-only: % is not permitted', TG_OP
     USING ERRCODE = 'check_violation';
@@ -776,18 +811,20 @@ BEGIN
     RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
   END IF;
 
+  -- The visibility predicate is part of the LOCKING SELECT, not a check applied
+  -- afterwards. A row the caller may not see never matches, so it is never
+  -- locked: an unauthorized farmer cannot block on, or contend with, another
+  -- farm's row. Without this, a real-but-unauthorized id and a fabricated id
+  -- were distinguishable by lock contention even though both raise NOT_FOUND.
   SELECT * INTO req FROM public.evidence_requests
-  WHERE id = p_request_id FOR UPDATE;
+  WHERE id = p_request_id
+    AND (is_admin OR public.can_operationally_access_farm(farm_id))
+  FOR UPDATE;
 
+  -- Identical outcome for: nonexistent id, real id on another farm, and a
+  -- fabricated id. Nothing distinguishes them (contract §8.4).
   IF NOT FOUND THEN
     RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
-  END IF;
-
-  IF NOT p_require_admin THEN
-    -- Non-admin path: must be an operational farmer for the owning farm.
-    IF NOT is_admin AND NOT public.can_operationally_access_farm(req.farm_id) THEN
-      RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
-    END IF;
   END IF;
 
   RETURN req;

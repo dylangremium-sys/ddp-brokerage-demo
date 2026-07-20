@@ -212,15 +212,25 @@ describe('migration 24 — schema constraints', () => {
     expect(FWD).toMatch(/evidence_requests_category_target_check\s+CHECK \(public\.evidence_category_allows_target\(category, target_type\)\)/)
   })
 
-  it('every foreign key into a target or actor uses ON DELETE RESTRICT', () => {
-    // No workflow FK may cascade away audit-relevant rows.
+  it('every foreign key uses ON DELETE RESTRICT, except the one approved SET NULL', () => {
+    // No workflow FK may cascade away audit-relevant rows. The single documented
+    // exception is history.attachment_id, which is SET NULL so a draft
+    // attachment stays removable while its history event survives (contract
+    // §6.4 vs §12.4, approved interpretation).
     const tableBlocks = FWD.match(/CREATE TABLE IF NOT EXISTS public\.evidence_[\s\S]*?\n\);/g) || []
     expect(tableBlocks.length).toBe(4)
+    const setNulls = []
     for (const block of tableBlocks) {
       for (const [ref] of block.matchAll(/REFERENCES[^,\n]*/g)) {
+        if (/ON DELETE SET NULL/.test(ref)) { setNulls.push(ref); continue }
         expect(ref, `non-RESTRICT FK: ${ref}`).toMatch(/ON DELETE RESTRICT/)
       }
     }
+    // Exactly one SET NULL exists, and it is the approved one.
+    expect(setNulls.length).toBe(1)
+    expect(setNulls[0]).toMatch(/REFERENCES public\.evidence_request_attachments\(id\) ON DELETE SET NULL/)
+    // No CASCADE anywhere — that would destroy audit rows.
+    for (const block of tableBlocks) expect(block).not.toMatch(/ON DELETE CASCADE/)
   })
 
   it('enforces contract text lengths for title, explanation and response text', () => {
@@ -317,11 +327,15 @@ describe('migration 24 — integrity triggers', () => {
     }
   })
 
-  it('makes history append-only for every role, unconditionally', () => {
+  it('makes history append-only for every role, with one narrow FK exemption', () => {
     const fn = BODIES.get('fn_evidence_history_append_only') ?? ''
     expect(fn).toMatch(/RAISE EXCEPTION/)
-    // The guard must not be conditional — no role or flag may bypass it.
-    expect(fn).not.toMatch(/\bIF\b/i)
+    // The only conditional path is the ON DELETE SET NULL referential action.
+    // No role, flag or session setting may bypass the guard — assert that the
+    // sole RETURN NEW is gated on the attachment_id nulling shape.
+    expect((fn.match(/RETURN NEW/g) || []).length).toBe(1)
+    expect(fn).toMatch(/OLD\.attachment_id IS NOT NULL[\s\S]*NEW\.attachment_id IS NULL[\s\S]*RETURN NEW/)
+    expect(fn).not.toMatch(/current_setting|session_user|current_user|is_ddp_admin|auth\./i)
     expect(FWD).toMatch(/CREATE TRIGGER trg_evidence_history_append_only[\s\S]*?BEFORE UPDATE OR DELETE ON public\.evidence_request_history/)
   })
 
@@ -618,14 +632,13 @@ describe('migration 24 — atomic transition RPCs', () => {
   })
 
   it('an unauthorized request id is reported as NOT_FOUND, never as FORBIDDEN', () => {
-    // Contract §8.4 non-disclosure: existence must not leak across farms, and
-    // (post-Codex-remediation) not across the admin path either. The helper now
-    // has a single refusal code on every unauthorized path.
+    // Contract §8.4 non-disclosure: existence must not leak across farms, across
+    // the admin path, or via row-lock contention. The helper now has a single
+    // refusal code, and visibility is enforced inside the locking SELECT.
     const fn = BODIES.get('evidence_lock_visible_request') ?? ''
-    const farmerBranch = fn.slice(fn.indexOf('IF NOT p_require_admin'))
-    expect(farmerBranch).toMatch(/NOT_FOUND/)
-    expect(farmerBranch).not.toMatch(/FORBIDDEN/)
+    expect(fn).toMatch(/NOT_FOUND/)
     expect(fn).not.toMatch(/FORBIDDEN/)
+    expect(fn).toMatch(/AND \(is_admin OR public\.can_operationally_access_farm\(farm_id\)\)/)
   })
 
   it('uploads validate MIME and size server-side at reservation and finalization', () => {
@@ -805,7 +818,9 @@ describe('migration 24 — Codex P2: no request-existence oracle', () => {
   })
 
   it('the farmer path still refuses an unauthorized farm with NOT_FOUND', () => {
-    expect(fn()).toMatch(/NOT public\.can_operationally_access_farm\(req\.farm_id\)[\s\S]*?NOT_FOUND/)
+    // Post-F3 this is enforced by the locking SELECT itself: an unauthorized row
+    // never matches, so control falls through to the single NOT_FOUND branch.
+    expect(fn()).toMatch(/AND \(is_admin OR public\.can_operationally_access_farm\(farm_id\)\)[\s\S]*?IF NOT FOUND THEN[\s\S]*?NOT_FOUND/)
   })
 })
 
@@ -836,6 +851,183 @@ describe('migration 24 — Codex P2: finalization requires an actionable request
       expect(BODIES.get(rpc) ?? '', `${rpc} lacks the actionable-status guard`)
         .toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
     }
+  })
+})
+
+// ── Codex re-review remediation (PR #37, head 57b4e449) ─────────────────────
+
+describe('migration 24 — Codex re-review F1 was a FALSE POSITIVE (guard already present)', () => {
+  // Codex re-emitted its earlier "recheck request status" finding against
+  // 57b4e449, but the guard was already added in that very commit. No code
+  // change was made in response. These assertions pin the ordering so the
+  // false positive is documented and the guard cannot regress.
+  const fn = () => BODIES.get('finalize_evidence_attachment') ?? ''
+
+  it('the actionable-status guard exists in finalize_evidence_attachment', () => {
+    expect(fn()).toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
+  })
+
+  it('the guard precedes the response lookup, attachment lookup AND history insert', () => {
+    const b = fn()
+    const guard = b.indexOf("req.status NOT IN ('open','clarification_requested')")
+    const resp = b.indexOf('FROM public.evidence_request_responses')
+    const att = b.indexOf('FROM public.evidence_request_attachments')
+    const hist = b.indexOf('INSERT INTO public.evidence_request_history')
+    for (const [label, at] of [['response lookup', resp], ['attachment lookup', att], ['history insert', hist]]) {
+      expect(at, `${label} not found`).toBeGreaterThan(-1)
+      expect(guard, `guard does not precede ${label}`).toBeLessThan(at)
+    }
+  })
+
+  it('the guard is the first check after authorization, not buried mid-function', () => {
+    const b = fn()
+    expect(b.indexOf("req.status NOT IN ('open','clarification_requested')"))
+      .toBeLessThan(b.indexOf('SELECT * INTO resp'))
+  })
+})
+
+describe('migration 24 — Codex F2: finalized objects cannot be deleted via storage', () => {
+  const policy = () => (STO.match(/CREATE POLICY "evidence-request-files: farmer delete own draft"[\s\S]*?;/) || [''])[0]
+
+  it('the DELETE policy requires upload_state = pending_upload', () => {
+    expect(policy()).toMatch(/a\.upload_state = 'pending_upload'/)
+  })
+
+  it('a pending upload on a draft response remains deletable', () => {
+    const p = policy()
+    expect(p).toMatch(/r\.state = 'draft'/)
+    expect(p).toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
+    expect(p).toMatch(/a\.upload_state = 'pending_upload'/)
+  })
+
+  it('a ready/finalized attachment is excluded from direct storage deletion', () => {
+    // The policy admits only pending_upload, so 'ready' can never match.
+    const p = policy()
+    expect(p).not.toMatch(/upload_state\s*(=|IN)\s*'?\(?\s*'ready'/)
+    expect(p).not.toMatch(/upload_state IS NOT NULL/)
+  })
+
+  it('submitted responses and non-actionable requests are excluded', () => {
+    const p = policy()
+    expect(p).toMatch(/r\.state = 'draft'/)
+    expect(p).toMatch(/er\.status IN \('open','clarification_requested'\)/)
+  })
+
+  it('the policy is scoped to uploads, not linked existing documents', () => {
+    expect(policy()).toMatch(/a\.origin = 'request_upload'/)
+  })
+
+  it('removal of a ready attachment is therefore only possible via the RPC', () => {
+    expect(BODIES.get('remove_draft_evidence_attachment') ?? '')
+      .toMatch(/DELETE FROM public\.evidence_request_attachments/)
+  })
+})
+
+describe('migration 24 — Codex F3: no row-lock existence oracle on the farmer path', () => {
+  const fn = () => BODIES.get('evidence_lock_visible_request') ?? ''
+
+  it('the visibility predicate is inside the locking SELECT, not applied after it', () => {
+    const b = fn()
+    expect(b).toMatch(/WHERE id = p_request_id\s*AND \(is_admin OR public\.can_operationally_access_farm\(farm_id\)\)\s*FOR UPDATE/)
+  })
+
+  it('no post-lock visibility re-check remains', () => {
+    // The old shape locked the row first and only then evaluated access.
+    const b = fn()
+    expect(b).not.toMatch(/FOR UPDATE;[\s\S]*NOT public\.can_operationally_access_farm\(req\.farm_id\)/)
+  })
+
+  it('an unauthorized real id and a fabricated id take the identical path', () => {
+    const b = fn()
+    // Both simply fail to match the SELECT, so both hit the same NOT FOUND branch.
+    const notFoundBranches = b.match(/IF NOT FOUND THEN\s*RAISE EXCEPTION 'NOT_FOUND'/g) || []
+    expect(notFoundBranches.length).toBe(1)
+    expect(b).not.toMatch(/FORBIDDEN/)
+  })
+
+  it('an authorized farmer still locks the row normally', () => {
+    expect(fn()).toMatch(/FOR UPDATE/)
+    expect(fn()).toMatch(/RETURN req/)
+  })
+
+  it('administrator behaviour is unchanged', () => {
+    const b = fn()
+    expect(b).toMatch(/is_admin boolean := public\.is_ddp_admin\(\)/)
+    expect(b).toMatch(/IF p_require_admin AND NOT is_admin THEN\s*RAISE EXCEPTION 'NOT_FOUND'/)
+    expect(b).toMatch(/is_admin OR public\.can_operationally_access_farm\(farm_id\)/)
+  })
+})
+
+describe('migration 24 — Codex F4: draft attachments removable, history preserved', () => {
+  it('history.attachment_id uses ON DELETE SET NULL', () => {
+    expect(FWD).toMatch(/attachment_id\s+uuid REFERENCES public\.evidence_request_attachments\(id\) ON DELETE SET NULL/)
+    expect(FWD).not.toMatch(/attachment_id\s+uuid REFERENCES public\.evidence_request_attachments\(id\) ON DELETE RESTRICT/)
+  })
+
+  it('every other history foreign key stays RESTRICT', () => {
+    const block = (FWD.match(/CREATE TABLE IF NOT EXISTS public\.evidence_request_history[\s\S]*?\n\);/) || [''])[0]
+    // Column definitions may wrap across lines, so match from the column name up
+    // to the terminating comma rather than assuming a single line.
+    for (const col of ['request_id', 'actor_user_id', 'response_id']) {
+      const m = block.match(new RegExp(`\\n\\s+${col}\\s+uuid[^,]*,`))
+      expect(m, `${col} definition not found`).toBeTruthy()
+      expect(m[0], `${col} should remain RESTRICT`).toMatch(/ON DELETE RESTRICT/)
+    }
+    // attachment_id is the only one that is not.
+    const att = block.match(/\n\s+attachment_id\s+uuid[^,]*,/)
+    expect(att[0]).toMatch(/ON DELETE SET NULL/)
+  })
+
+  it('the append-only trigger recognises the referential action', () => {
+    // ON DELETE SET NULL runs as an internal UPDATE and fires the trigger; without
+    // an explicit exemption the removal would fail with the append-only error.
+    const fn = BODIES.get('fn_evidence_history_append_only') ?? ''
+    expect(fn).toMatch(/OLD\.attachment_id IS NOT NULL/)
+    expect(fn).toMatch(/NEW\.attachment_id IS NULL/)
+    expect(fn).toMatch(/RETURN NEW/)
+  })
+
+  it('the exemption requires every other column to be unchanged', () => {
+    const fn = BODIES.get('fn_evidence_history_append_only') ?? ''
+    for (const col of ['id', 'request_id', 'previous_status', 'next_status',
+                       'actor_user_id', 'actor_role', 'event_type', 'response_id',
+                       'note', 'event_data', 'created_at']) {
+      expect(fn, `exemption does not pin ${col}`)
+        .toMatch(new RegExp(`NEW\\.${col}\\s+IS NOT DISTINCT FROM OLD\\.${col}`))
+    }
+  })
+
+  it('any other UPDATE and every DELETE still raise', () => {
+    const fn = BODIES.get('fn_evidence_history_append_only') ?? ''
+    expect(fn).toMatch(/RAISE EXCEPTION\s*\n?\s*'evidence_request_history is append-only/)
+    // The exemption must not cover DELETE.
+    expect(fn).not.toMatch(/TG_OP = 'DELETE'[\s\S]*RETURN OLD/)
+    // Re-pointing attachment_id to another row is not an exemption.
+    expect(fn).toMatch(/NEW\.attachment_id IS NULL/)
+  })
+
+  it('the trigger still fires for both UPDATE and DELETE', () => {
+    expect(FWD).toMatch(/CREATE TRIGGER trg_evidence_history_append_only[\s\S]*?BEFORE UPDATE OR DELETE ON public\.evidence_request_history/)
+  })
+
+  it('the removal RPC is still draft-and-actionable scoped', () => {
+    const fn = BODIES.get('remove_draft_evidence_attachment') ?? ''
+    expect(fn).toMatch(/resp\.state <> 'draft'/)
+    expect(fn).toMatch(/att\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
+  })
+
+  it('VERIFY proves removal of a READY draft attachment and history survival', () => {
+    const g = VERIFY_SECTIONS['G'] ?? ''
+    expect(g, 'VERIFY section G is missing').toBeTruthy()
+    expect(g).toMatch(/'ready'/)
+    expect(g).toMatch(/fixture history event has no attachment_id/)   // non-vacuity
+    expect(g).toMatch(/ready draft attachment was not deleted/)
+    expect(g).toMatch(/history event disappeared/)
+    expect(g).toMatch(/attachment_id was not nulled/)
+    expect(g).toMatch(/altered beyond nulling attachment_id/)
+    expect(g).toMatch(/history note became updatable/)
+    expect(g).toMatch(/history event_type became updatable/)
+    expect(g).toMatch(/history became deletable/)
   })
 })
 
