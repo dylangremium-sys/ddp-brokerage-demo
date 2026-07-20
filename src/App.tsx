@@ -45,7 +45,6 @@ import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlert
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
 import LoginPage from './pages/public/LoginPage'
-import SignupPage from './pages/public/SignupPage'
 import FarmerRegister from './pages/farmer/FarmerRegister'
 import FarmerDashboard from './pages/farmer/FarmerDashboard'
 import FarmerOnboarding from './pages/farmer/FarmerOnboarding'
@@ -75,13 +74,13 @@ import AdminShell from './components/admin/AdminShell'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 
 const FARMER_PAGES: Page[] = [
-  'landing', 'login', 'signup', 'farmer-register',
+  'landing', 'login', 'farmer-register',
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
-const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
+const PUBLIC_PAGES: Page[] = ['landing', 'login']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -827,7 +826,7 @@ export default function App() {
     <div className="app">
 
       {/* ── Navbar (all non-landing pages; the editorial shell draws its own) ── */}
-      {!useEditorialShell && page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
+      {!useEditorialShell && page !== 'landing' && page !== 'login' && page !== 'farmer-register' && (
         <nav className="navbar">
           <div
             className="navbar-brand"
@@ -887,17 +886,6 @@ export default function App() {
           <LoginPage
             lang={lang}
             onSuccess={handleLoginSuccess}
-            onGoSignup={() => goTo('signup')}
-          />
-        </main>
-      )}
-
-      {page === 'signup' && (
-        <main className="main-content">
-          <SignupPage
-            lang={lang}
-            onSuccess={() => goTo('farmer-dashboard')}
-            onGoLogin={() => goTo('login')}
           />
         </main>
       )}
@@ -913,7 +901,7 @@ export default function App() {
       )}
 
       {/* ── App pages ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (() => {
+      {page !== 'landing' && page !== 'login' && page !== 'farmer-register' && (() => {
         const appPages = (
           <>
 
@@ -1161,7 +1149,7 @@ export default function App() {
         ) : (
           // eo-farmer applies the editorial appearance to the farmer screens.
           // Class only — isFarmerPage is the app's existing value, and the
-          // public login/signup screens render through their own <main>.
+          // public login screen renders through its own <main>.
           <main className={`main-content${isFarmerPage ? ' eo-farmer' : ''}`}>{appPages}</main>
         )
       })()}

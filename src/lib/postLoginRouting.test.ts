@@ -3,7 +3,7 @@ import { resolvePostLoginDecision, resolveBootstrap, nextBootstrapRouting } from
 import type { UserProfile } from '../services/auth'
 import type { Page } from '../types'
 
-const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
+const PUBLIC_PAGES: Page[] = ['landing', 'login']
 
 const baseProfile: UserProfile = {
   id: 'user-1',
@@ -24,6 +24,13 @@ describe('resolvePostLoginDecision', () => {
     expect(resolvePostLoginDecision({ ...baseProfile, role: 'farmer' })).toEqual({
       kind: 'route',
       page: 'farmer-dashboard',
+    })
+  })
+
+  it('denies a pending account (self-registered, not yet DDP-provisioned)', () => {
+    expect(resolvePostLoginDecision({ ...baseProfile, role: 'pending' })).toEqual({
+      kind: 'denied',
+      reason: 'pending-approval',
     })
   })
 

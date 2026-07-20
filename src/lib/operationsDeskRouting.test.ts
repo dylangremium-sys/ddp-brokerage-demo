@@ -109,8 +109,10 @@ describe('Operations Desk — routing registration', () => {
     expect(resolvePostLoginDecision({ role: 'farmer' } as UserProfile))
       .toEqual({ kind: 'route', page: 'farmer-dashboard' })
     expect(resolvePostLoginDecision(null)).toEqual({ kind: 'denied', reason: 'unresolved-role' })
+    // A 'pending' account is denied with its own reason (controlled farmer
+    // provisioning); the desk does not alter that policy, it only reads it.
     expect(resolvePostLoginDecision({ role: 'pending' } as unknown as UserProfile))
-      .toEqual({ kind: 'denied', reason: 'unresolved-role' })
+      .toEqual({ kind: 'denied', reason: 'pending-approval' })
   })
 
   it('never routes the operator to the desk automatically — it is opt-in navigation', () => {
