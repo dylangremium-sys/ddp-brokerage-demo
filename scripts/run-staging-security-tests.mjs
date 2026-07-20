@@ -336,7 +336,9 @@ export function pendingInsertPayload(table, ctx) {
   const { tag, userId, farmId } = ctx
   switch (table) {
     case 'farms': return { farm_name: `${tag}-P`, created_by: userId }
-    case 'farm_profiles': return { farm_id: farmId }
+    // business_info carries the run tag so an ambiguous INSERT can be located
+    // by admin readback: farm_id alone also matches the seeded fixture row.
+    case 'farm_profiles': return { farm_id: farmId, business_info: { probe: `${tag}-P` } }
     case 'farm_memberships': return { farm_id: farmId, user_id: userId, role: 'operator' }
     case 'inventory_batches': return { created_by: userId, farm_id: farmId, notes: `${tag}-P` }
     case 'farmer_documents': return { farm_id: farmId, document_type: 'coa', file_name: `${tag}.pdf` }
@@ -596,6 +598,281 @@ function isDeniedByRls(res) {
   return { denied: false, reason: 'inconclusive (no error, no row count)' }
 }
 
+// ── SELECT-specific outcome classification ──────────────────────────────────
+//
+// SELECT is NOT a write. isDenied()/isDeniedByRls() were designed for writes,
+// where an error is normally the policy talking. For SELECT that reasoning is
+// unsound in BOTH directions:
+//
+//   * isAllowed(res) === !res.error accepts an EMPTY result as proof of access.
+//     An RLS-denied SELECT returns `{ data: [], error: null }` — no error at
+//     all — so an affirmative "farmer retains access" control passes at the
+//     exact moment access is lost. It also passes against an empty table.
+//   * isDenied(res) treats ANY error as denial. An expired JWT, a dropped
+//     connection, a 500, or a typo in a column name would all be scored as
+//     "RLS denied it" — a green probe that never reached the policy.
+//
+// The only sound reading of a SELECT is against a KNOWN EXISTING SUBJECT ROW
+// whose id the admin has confirmed:
+//   no error + subject returned  → visible
+//   no error + subject absent    → denied by RLS/visibility
+//   any error                    → the probe did not run; never a pass.
+//
+// SQLSTATEs/status codes that mean "this query never reached row-level
+// security", so neither branch may score them.
+const SELECT_SCHEMA_SQLSTATES = new Set(['42703', '42P01', '42601', '22P02', 'PGRST100', 'PGRST102'])
+const SELECT_AUTH_SQLSTATES = new Set(['PGRST301', 'PGRST302', '42501'])
+
+/**
+ * Classify why a SELECT errored. Returns a `kind` that is NEVER 'policy':
+ * an error is by definition not the empty-result signature of RLS denial.
+ */
+export function classifySelectError(error) {
+  if (!error) return null
+  const code = String(error.code ?? '')
+  const status = String(error.status ?? error.statusCode ?? '')
+  const msg = String(error.message || '').toLowerCase()
+  if (SELECT_SCHEMA_SQLSTATES.has(code) || msg.includes('does not exist') || msg.includes('syntax error')) {
+    return { kind: 'schema', reason: `malformed/pre-RLS query error (${code || status || 'n/a'}) — the probe is invalid, not denied` }
+  }
+  if (SELECT_AUTH_SQLSTATES.has(code) || status === '401' || status === '403'
+      || msg.includes('jwt') || msg.includes('expired') || msg.includes('unauthor')) {
+    return { kind: 'auth', reason: `authentication/authorization transport error (${code || status || 'n/a'}) — session invalid, policy never evaluated` }
+  }
+  if (/^5\d\d$/.test(status) || msg.includes('internal server error')) {
+    return { kind: 'server', reason: `server error (${status || code || 'n/a'}) — the probe did not complete` }
+  }
+  if (msg.includes('fetch') || msg.includes('network') || msg.includes('econn') || msg.includes('timeout')) {
+    return { kind: 'transport', reason: `network/transport error (${code || status || 'n/a'}) — the probe did not reach the database` }
+  }
+  return { kind: 'unknown', reason: `unclassified SELECT error (${code || status || 'n/a'}) — never counted as denial` }
+}
+
+// Normalise a Supabase SELECT response into a plain row array, or null when the
+// response carried no row set at all (which is itself inconclusive).
+function selectRows(res) {
+  if (!res || res.error) return null
+  const d = res.data
+  if (Array.isArray(d)) return d
+  if (d && typeof d === 'object') return [d]
+  if (d === null) return []
+  return null
+}
+
+/**
+ * AFFIRMATIVE control: `subjectId` MUST come back.
+ * Passing requires no error AND the exact expected row present. An empty result
+ * is a FAIL (access lost), and a different row is a FAIL (wrong subject).
+ */
+export function classifyAffirmativeSelect(res, subjectId) {
+  if (!subjectId) {
+    return { status: 'BLOCK', ok: false, reason: 'no confirmed subject row id — an unfiltered SELECT cannot evidence retained access' }
+  }
+  const err = classifySelectError(res?.error)
+  if (err) return { status: 'BLOCK', ok: false, reason: err.reason }
+  const rows = selectRows(res)
+  if (rows === null) return { status: 'BLOCK', ok: false, reason: 'SELECT returned no row set — inconclusive' }
+  if (rows.length === 0) {
+    return { status: 'FAIL', ok: false, reason: `ACCESS LOST: subject row ${subjectId} was not returned (RLS denies by returning an empty set, with no error)` }
+  }
+  if (!rows.some((r) => r?.id === subjectId)) {
+    return { status: 'FAIL', ok: false, reason: `wrong row returned — expected subject ${subjectId}, got ${rows.map((r) => r?.id).slice(0, 3).join(', ')}` }
+  }
+  return { status: 'PASS', ok: true, reason: `subject row ${subjectId} returned — access retained` }
+}
+
+/**
+ * DENIAL probe: `subjectId` is a row the ADMIN has confirmed exists and which
+ * the identity under test must NOT be able to read.
+ */
+export function classifySelectDenial(res, subjectId) {
+  if (!subjectId) {
+    return { status: 'BLOCK', ok: false, reason: 'no confirmed subject row id — an empty result would mean "nothing was there", not "RLS denied it"' }
+  }
+  const err = classifySelectError(res?.error)
+  if (err) return { status: 'BLOCK', ok: false, reason: err.reason }
+  const rows = selectRows(res)
+  if (rows === null) return { status: 'BLOCK', ok: false, reason: 'SELECT returned no row set — inconclusive' }
+  if (rows.some((r) => r?.id === subjectId)) {
+    return { status: 'FAIL', ok: false, reason: `SECURITY FAILURE: the protected subject row ${subjectId} was returned to an unauthorized identity` }
+  }
+  if (rows.length > 0) {
+    return { status: 'FAIL', ok: false, reason: `SECURITY FAILURE: ${rows.length} protected row(s) were readable under a restrictive policy` }
+  }
+  return { status: 'PASS', ok: true, reason: `denied — the confirmed subject row ${subjectId} is not visible (empty result, no error)` }
+}
+
+// Record a classifier verdict, mapping BLOCK onto the block() channel so it is
+// never counted as a pass.
+function recordSelectVerdict(name, verdict) {
+  if (verdict.status === 'BLOCK') block(name, redactSecrets(verdict.reason))
+  else record(name, verdict.ok, redactSecrets(verdict.reason))
+}
+
+// ── market_price_benchmarks fixture (SELECT-only protected table) ────────────
+//
+// Migration 22 protects this table with a RESTRICTIVE **FOR SELECT** policy —
+// deliberately NOT the FOR ALL overlay the other 11 tables get, because the
+// table has no farmer write path (22_..._HARDENING.sql:174-189). It therefore
+// gets a SELECT subject fixture and NO insert/update/delete probes; adding them
+// would test the admin-only write policy, not the migration 22 control.
+//
+// Both benchmark probes previously ran unfiltered (`select('id').limit(1)`), so
+// on an empty table the pending denial AND the farmer control passed
+// simultaneously while proving nothing at all.
+export const BENCHMARK_TABLE = 'market_price_benchmarks'
+
+// The permissive farmer policy is USING (visible_to_farmers = true AND
+// auth.uid() IS NOT NULL). A fixture with visible_to_farmers = false would be
+// invisible to the farmer for reasons unrelated to migration 22, so the control
+// would fail for the wrong reason. It MUST be visible.
+export function benchmarkFixturePayload(tag) {
+  return {
+    product_type: `${tag}-bench`,
+    thc_range: null,
+    price_min: 1,
+    price_max: 2,
+    unit: 'kg',
+    visible_to_farmers: true,
+  }
+}
+
+/**
+ * Create a tag-scoped, farmer-visible benchmark row as admin and CONFIRM it by
+ * reading it back by its exact id. Returns { id, created, note }.
+ * `id` null ⇒ no confirmed subject ⇒ callers must BLOCK, never pass.
+ */
+export async function seedBenchmarkFixture(adminClient, tag) {
+  if (!adminClient) return { id: null, created: false, note: 'no admin client — benchmark fixture unavailable' }
+  try {
+    const ins = await adminClient.from(BENCHMARK_TABLE).insert(benchmarkFixturePayload(tag)).select('id')
+    const id = ins?.data?.[0]?.id
+    if (ins?.error || !id) {
+      return { id: null, created: false, note: `admin could not create a benchmark fixture (${ins?.error?.code || ins?.error?.message || 'no id returned'})` }
+    }
+    // Confirm through the SAME shape the probes use: exact id, and visible.
+    const back = await adminClient.from(BENCHMARK_TABLE)
+      .select('id, visible_to_farmers').eq('id', id).maybeSingle()
+    if (back?.error || back?.data?.id !== id) {
+      return { id: null, created: true, createdId: id, note: `benchmark fixture ${id} could not be read back (${back?.error?.code || 'not returned'}) — unconfirmed` }
+    }
+    if (back.data.visible_to_farmers !== true) {
+      return { id: null, created: true, createdId: id, note: `benchmark fixture ${id} is not visible_to_farmers — the farmer control would fail for the wrong reason` }
+    }
+    return { id, created: true, createdId: id, note: null }
+  } catch (e) {
+    return { id: null, created: false, note: `benchmark fixture seeding threw (${String(e?.message || e).slice(0, 60)})` }
+  }
+}
+
+// ── Ambiguous-INSERT resolution ─────────────────────────────────────────────
+//
+// `insert(...).select('id')` returns an EMPTY array in two completely different
+// situations:
+//   (a) the INSERT was rejected — nothing was written; or
+//   (b) the INSERT SUCCEEDED and the RETURNING clause could not read the new
+//       row back, because the SELECT policy hides it from the inserting user.
+// (b) is a silent security failure that the write classifier scores as "denied
+// (0 rows affected)" — a green probe over a row that is actually in the table.
+//
+// So an empty non-error INSERT result is AMBIGUOUS and must be resolved by an
+// ADMIN readback against deterministic, tag-scoped criteria.
+
+/**
+ * Deterministic lookup criteria locating the row a pending INSERT probe would
+ * have written. farmId alone is NOT sufficient — the fixture seeder already put
+ * a row with that farm_id in most of these tables, so a farm-only lookup would
+ * report a leak that is really the fixture. Each entry is a list of eq filters
+ * chosen to match the probe's own payload.
+ */
+export function pendingInsertLookup(table, ctx) {
+  const { tag, userId, farmId } = ctx
+  switch (table) {
+    case 'farms': return [['farm_name', `${tag}-P`]]
+    case 'farm_profiles': return [['farm_id', farmId], ['business_info->>probe', `${tag}-P`]]
+    case 'farm_memberships': return [['farm_id', farmId], ['user_id', userId]]
+    case 'inventory_batches': return [['notes', `${tag}-P`]]
+    case 'farmer_documents': return [['farm_id', farmId], ['file_name', `${tag}.pdf`]]
+    case 'farmer_photos': return [['farm_id', farmId], ['file_url', `${tag}.jpg`]]
+    case 'farmer_review_requests': return [['farm_id', farmId], ['message', `${tag}-P`]]
+    case 'documents': return [['farm_id', farmId], ['file_name', `${tag}.pdf`]]
+    case 'ddp_scores': return [['farm_id', farmId], ['total_score', 1]]
+    case 'risk_flags': return [['farm_id', farmId], ['label', `${tag}-P`]]
+    case 'status_history': return [['entity_id', farmId], ['new_status', `${tag}-P`]]
+    default: throw new Error(`no pending insert lookup defined for ${table}`)
+  }
+}
+
+// Apply the criteria to a client and return matching ids (or an error marker).
+export async function findInsertedRowIds(client, table, criteria) {
+  let q = client.from(table).select('id')
+  for (const [column, value] of criteria) q = q.eq(column, value)
+  const res = await q
+  if (res?.error) return { ok: false, ids: [], error: res.error }
+  return { ok: true, ids: (res.data ?? []).map((r) => r?.id).filter(Boolean), error: null }
+}
+
+/**
+ * Resolve an ambiguous (no-error, empty) pending INSERT via admin readback.
+ * `knownIds` are rows that already matched the criteria BEFORE the probe ran,
+ * so only genuinely new rows count as a leak.
+ *
+ *   leak      → FAIL, and the id must be registered for cleanup
+ *   absent    → the denial stands (PASS)
+ *   readback failed → BLOCK; an unverifiable insert must never pass
+ */
+export function classifyAmbiguousInsert(readback, knownIds = []) {
+  if (!readback || readback.ok !== true) {
+    return {
+      status: 'BLOCK', ok: false, leakedIds: [],
+      reason: `admin readback failed (${readback?.error?.code || readback?.error?.message || 'no response'}) — cannot distinguish "denied" from "written but hidden"`,
+    }
+  }
+  const known = new Set(knownIds)
+  const leaked = readback.ids.filter((id) => !known.has(id))
+  if (leaked.length > 0) {
+    return {
+      status: 'FAIL', ok: false, leakedIds: leaked,
+      reason: `SECURITY FAILURE: the INSERT SUCCEEDED but was hidden from the inserting user — admin found row(s) ${leaked.join(', ')}`,
+    }
+  }
+  return {
+    status: 'PASS', ok: true, leakedIds: [],
+    reason: 'denied — admin readback confirms no row was written',
+  }
+}
+
+// ── Pending storage-list differential ───────────────────────────────────────
+//
+// Listing another user's prefix and finding it empty proves NOTHING when no
+// object exists there: "empty by policy" and "empty because the prefix is bare"
+// are the same response. The probe must run against a prefix that provably
+// CONTAINS an object the owner can see.
+export function evaluatePendingListProbe(obs) {
+  const o = obs || {}
+  if (!o.controlObjectName) {
+    return { status: 'BLOCK', ok: false, reason: 'no control object was created under the owner prefix — an empty pending listing would be vacuous' }
+  }
+  if (o.ownerCanSeeControl !== true) {
+    return { status: 'BLOCK', ok: false, reason: `the owner could not list its own control object ${o.controlObjectName} — the prefix is not proven non-empty` }
+  }
+  const err = classifySelectError(o.pendingError)
+  if (err && err.kind !== 'unknown') {
+    return { status: 'BLOCK', ok: false, reason: err.reason }
+  }
+  const names = Array.isArray(o.pendingNames) ? o.pendingNames : []
+  if (names.includes(o.controlObjectName)) {
+    return { status: 'FAIL', ok: false, reason: `SECURITY FAILURE: the pending identity listed another user's object ${o.controlObjectName}` }
+  }
+  if (o.cleanupVerified === false) {
+    return { status: 'FAIL', ok: false, reason: 'the control object could not be removed — synthetic storage residue remains' }
+  }
+  return {
+    status: 'PASS', ok: true,
+    reason: `denied by policy — the owner sees ${o.controlObjectName} at this prefix while the pending identity sees ${names.length} object(s), none of them the control`,
+  }
+}
+
 // ── Supabase client helpers ─────────────────────────────────────────────────
 function makeClient(cfg) {
   return createClient(cfg.url, cfg.anonKey, {
@@ -638,7 +915,7 @@ function runPendingPreflight(databaseUrl) {
 // Execute the 11-table × 4-operation pending matrix. Every probe is recorded
 // with its table and operation named, so a failure is never ambiguous.
 async function runPendingMatrix(ctx) {
-  const { client, userId, tag, farmId, fixtures = {} } = ctx
+  const { client, adminClient, userId, tag, farmId, fixtures = {} } = ctx
   const createdIds = []
 
   for (const probe of buildPendingProbeRegistry()) {
@@ -654,17 +931,42 @@ async function runPendingMatrix(ctx) {
     let res
     try {
       if (operation === 'select') {
-        res = await client.from(table).select('id').limit(1)
-        // A restrictive overlay yields zero readable rows. Recorded via isDenied
-        // because SELECT denial surfaces as an empty set, not an error. This is
-        // only conclusive because the probe's fixture guarantees the table holds
-        // a row the admin can see — so "empty" means invisible, not absent.
-        record(probe.probeName, isDenied(res), redactSecrets(res?.error?.message || 'no rows readable'))
+        // Probe the EXACT fixture row the admin confirmed exists. A restrictive
+        // overlay yields an empty set with NO error, so denial is proven only by
+        // "this specific, known-present row did not come back". classifySelectDenial
+        // refuses to score any error as denial — an expired JWT, a 500 or a bad
+        // column would otherwise read as a security pass.
+        const subjectId = fixtures[tableFixtureKey(table)]
+        res = await client.from(table).select('id').eq('id', subjectId)
+        recordSelectVerdict(probe.probeName, classifySelectDenial(res, subjectId))
         continue
       }
       if (operation === 'insert') {
+        const criteria = pendingInsertLookup(table, { tag, userId, farmId })
+        // Snapshot matching rows BEFORE the probe so only genuinely new rows can
+        // be attributed to it.
+        const before = adminClient ? await findInsertedRowIds(adminClient, table, criteria) : null
         res = await client.from(table).insert(pendingInsertPayload(table, { tag, userId, farmId })).select('id')
-        if (Array.isArray(res?.data)) for (const row of res.data) if (row?.id) createdIds.push({ table, id: row.id })
+        const returned = Array.isArray(res?.data) ? res.data.filter((r) => r?.id) : []
+        for (const row of returned) createdIds.push({ table, id: row.id })
+
+        // A no-error EMPTY result is AMBIGUOUS: the row may have been written and
+        // merely hidden by the SELECT policy. Resolve it by admin readback rather
+        // than scoring it as denied.
+        if (!res?.error && returned.length === 0) {
+          if (!adminClient) {
+            block(probe.probeName, 'no admin client available to resolve an ambiguous empty INSERT result')
+            continue
+          }
+          const after = await findInsertedRowIds(adminClient, table, criteria)
+          const verdict = classifyAmbiguousInsert(after, before?.ok ? before.ids : [])
+          // A leaked row is a security failure AND residue — register it so
+          // cleanup removes it from whichever table it landed in.
+          for (const id of verdict.leakedIds) createdIds.push({ table, id })
+          if (verdict.status === 'BLOCK') block(probe.probeName, redactSecrets(verdict.reason))
+          else record(probe.probeName, verdict.ok, redactSecrets(verdict.reason))
+          continue
+        }
       } else if (operation === 'update') {
         res = await client.from(table).update(pendingUpdatePayload(table, { tag }))
           .eq(pendingFilterColumn(table), farmId).select('id')
@@ -684,12 +986,18 @@ async function runPendingMatrix(ctx) {
 
   // Cleanup: anything a probe managed to create is a security failure AND must
   // be removed. Cleanup runs regardless of earlier failures and is verified.
+  // Removal runs as ADMIN, not as the pending user. A row that leaked through an
+  // ambiguous INSERT is by definition one the pending identity cannot see, so a
+  // pending-scoped delete would match nothing and the read-back would then be
+  // empty for the wrong reason — reporting "removed" over a row still in the
+  // table. The admin can see and delete rows in every tested table.
+  const cleaner = adminClient || client
   for (const { table, id } of createdIds) {
     let removed = false
     try {
-      await client.from(table).delete().eq('id', id)
-      const check = await client.from(table).select('id').eq('id', id)
-      removed = (check?.data?.length ?? 0) === 0
+      await cleaner.from(table).delete().eq('id', id)
+      const check = await cleaner.from(table).select('id').eq('id', id)
+      removed = !check?.error && (check?.data?.length ?? 0) === 0
     } catch { removed = false }
     results.push({
       group: currentGroup,
@@ -713,7 +1021,7 @@ async function main() {
 
   const anon = makeClient(cfg)
   let a, b, admin
-  const created = { batches: [], farms: [], pendingFixtures: [] } // tracked synthetic IDs for cleanup
+  const created = { batches: [], farms: [], pendingFixtures: [], benchmarks: [] } // tracked synthetic IDs for cleanup
 
   try {
     a = await signedInClient(cfg, cfg.farmerA, 'farmer A')
@@ -748,8 +1056,11 @@ async function main() {
     if (farmA) created.farms.push(farmA)
     record('farmer A can create own farm', !!farmA, farmA ? '' : (farmIns?.error?.code || 'no id returned'))
 
-    record('farmer A can read own farm',
-      isAllowed(await a.client.from('farms').select('id').eq('id', farmA ?? '00000000-0000-0000-0000-000000000000')))
+    // Affirmative control: the farm just created must actually come back. A bare
+    // "no error" check passes on an empty result, i.e. at the moment access is lost.
+    recordSelectVerdict('farmer A can read own farm',
+      classifyAffirmativeSelect(
+        await a.client.from('farms').select('id').eq('id', farmA ?? ''), farmA))
 
     // ── B2. SELF-CERTIFICATION (privileged columns on the farmer's OWN farm) ──
     //
@@ -1002,11 +1313,29 @@ async function main() {
           seeded.notes.length ? `${seeded.notes.length} table(s) without a confirmed fixture` : '')
 
         await runPendingMatrix({
-          client: p.client, userId: p.userId, tag: TAG, farmId: farmA, fixtures: seeded.fixtures,
+          client: p.client, adminClient: admin.client, userId: p.userId,
+          tag: TAG, farmId: farmA, fixtures: seeded.fixtures,
         })
 
-        record('pending cannot read market_price_benchmarks (migration 22)',
-          isDenied(await p.client.from('market_price_benchmarks').select('id').limit(1)))
+        // market_price_benchmarks is protected by a RESTRICTIVE **FOR SELECT**
+        // policy (not the FOR ALL overlay), so it needs its own confirmed subject
+        // row and gets SELECT probes only — no insert/update/delete, which would
+        // exercise the admin-only write policy instead of migration 22.
+        const bench = await seedBenchmarkFixture(admin.client, TAG)
+        if (bench.createdId) created.benchmarks.push(bench.createdId)
+        if (!bench.id) {
+          // No confirmed subject ⇒ BOTH the denial and the farmer control would
+          // pass against an empty table. Block rather than assert.
+          block('pending cannot read market_price_benchmarks (migration 22)', redactSecrets(bench.note))
+          block('operational farmer retains market_price_benchmarks read (migration 22)', redactSecrets(bench.note))
+        } else {
+          recordSelectVerdict('pending cannot read market_price_benchmarks (migration 22)',
+            classifySelectDenial(
+              await p.client.from(BENCHMARK_TABLE).select('id').eq('id', bench.id), bench.id))
+          recordSelectVerdict('operational farmer retains market_price_benchmarks read (migration 22)',
+            classifyAffirmativeSelect(
+              await a.client.from(BENCHMARK_TABLE).select('id').eq('id', bench.id), bench.id))
+        }
 
         // Storage: an object-not-found result is NOT proof of denial, so the
         // outcome is classified rather than treated as a boolean error check.
@@ -1069,18 +1398,59 @@ async function main() {
         const foreignCls = classifyStorageOutcome(foreign)
         record('pending cannot upload beneath another user prefix',
           foreignCls.outcome === 'denied', redactSecrets(foreignCls.reason))
-        const listRes = await p.client.storage.from('farmer-documents').list(`${b.userId}`)
-        record('pending cannot list another user private objects',
-          !listRes?.data || listRes.data.length === 0,
-          redactSecrets(classifyStorageOutcome(listRes).reason))
+        // DIFFERENTIAL list probe. Listing B's prefix and finding it empty proves
+        // nothing unless an object provably EXISTS there: "empty by policy" and
+        // "empty because the prefix is bare" are byte-identical responses. So
+        // farmer B first creates a tag-scoped object under its OWN prefix and
+        // confirms it can see it; only then is the pending identity's identical
+        // listing evidence of anything.
+        const listControlName = `${TAG}-listctl.txt`
+        const listControlPath = `${b.userId}/${listControlName}`
+        const listCtlUp = await b.client.storage.from('farmer-documents')
+          .upload(listControlPath, new Blob(['list-control']), { contentType: 'text/plain' })
+        const listControlCreated = !listCtlUp?.error
 
-        // Affirmative: operational farmer and admin retain access under the overlay.
-        record('operational farmer retains own-farm access (post-21)',
-          !!farmA, farmA ? '' : 'farmer A farm was not created earlier')
-        record('operational farmer retains market_price_benchmarks read (migration 22)',
-          isAllowed(await a.client.from('market_price_benchmarks').select('id').limit(1)))
-        record('ddp_admin retains farms access (post-21)',
-          isAllowed(await admin.client.from('farms').select('id').limit(1)))
+        let ownerCanSeeControl = false
+        if (listControlCreated) {
+          const ownerList = await b.client.storage.from('farmer-documents').list(`${b.userId}`)
+          ownerCanSeeControl = !ownerList?.error
+            && (ownerList?.data ?? []).some((o) => o?.name === listControlName)
+        }
+
+        const listRes = await p.client.storage.from('farmer-documents').list(`${b.userId}`)
+
+        let listCleanupVerified = true
+        if (listControlCreated) {
+          const rm = await b.client.storage.from('farmer-documents').remove([listControlPath])
+          if (rm?.error) listCleanupVerified = false
+          else {
+            const after = await b.client.storage.from('farmer-documents').list(`${b.userId}`)
+            listCleanupVerified = !after?.error
+              && !(after?.data ?? []).some((o) => o?.name === listControlName)
+          }
+        }
+
+        recordSelectVerdict('pending cannot list another user private objects',
+          evaluatePendingListProbe({
+            controlObjectName: listControlCreated ? listControlName : null,
+            ownerCanSeeControl,
+            pendingError: listRes?.error ?? null,
+            pendingNames: (listRes?.data ?? []).map((o) => o?.name),
+            cleanupVerified: listCleanupVerified,
+          }))
+        record('cleanup verified for storage list-control object', listCleanupVerified,
+          listCleanupVerified ? '' : 'the farmer B list-control object could not be removed')
+
+        // Affirmative: operational farmer and admin retain access under the
+        // overlay. Each queries a KNOWN fixture by its exact id and requires that
+        // row back — absence of an error is not access (an RLS-denied SELECT
+        // returns an empty set with no error at all).
+        recordSelectVerdict('operational farmer retains own-farm access (post-21)',
+          classifyAffirmativeSelect(
+            await a.client.from('farms').select('id').eq('id', farmA ?? ''), farmA))
+        recordSelectVerdict('ddp_admin retains farms access (post-21)',
+          classifyAffirmativeSelect(
+            await admin.client.from('farms').select('id').eq('id', farmA ?? ''), farmA))
         },
       })
     }
@@ -1124,6 +1494,27 @@ async function main() {
           name: 'cleanup: pending-matrix fixture rows removed',
           status: allGone ? 'PASS' : 'FAIL',
           detail: allGone ? '' : `${created.pendingFixtures.length - removed} fixture row(s) remain`,
+          cleanupVerified: allGone,
+        })
+      }
+      // Benchmark fixtures live in a table with no farm_id, so nothing cascades
+      // to them from the farm delete — they are removed explicitly, by id, and
+      // each removal is verified by read-back.
+      if (created.benchmarks?.length && admin?.client) {
+        let removed = 0
+        for (const id of created.benchmarks) {
+          try {
+            await admin.client.from(BENCHMARK_TABLE).delete().eq('id', id)
+            const check = await admin.client.from(BENCHMARK_TABLE).select('id').eq('id', id)
+            if (!check?.error && (check?.data?.length ?? 0) === 0) removed += 1
+          } catch { /* left counted as not removed */ }
+        }
+        const allGone = removed === created.benchmarks.length
+        results.push({
+          group: currentGroup,
+          name: 'cleanup: market_price_benchmarks fixture rows removed',
+          status: allGone ? 'PASS' : 'FAIL',
+          detail: allGone ? '' : `${created.benchmarks.length - removed} benchmark fixture row(s) remain`,
           cleanupVerified: allGone,
         })
       }
