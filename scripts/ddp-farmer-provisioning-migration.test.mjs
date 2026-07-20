@@ -33,6 +33,15 @@ function triggerBody(sql) {
 
 const norm = (s) => s.replace(/\s+/g, ' ')
 
+// Extract the first executable anonymous DO block from a script, matching its
+// dollar-quote tag so the tag itself is not what the assertions depend on.
+function firstDoBlock(sql) {
+  const m = sql.match(/\bDO\s+(\$[A-Za-z_]*\$)[\s\S]*?\1/i)
+  return m ? m[0] : ''
+}
+
+const ORDERING_GUARD = firstDoBlock(ROLLBACK)
+
 describe('migration 21 — hardening blocks self-provisioning at the DB', () => {
   it('recreates handle_new_user to stamp new users as pending, not farmer', () => {
     const body = triggerBody(HARDENING)
@@ -95,12 +104,55 @@ describe('migration 21 — rollback is a true inverse', () => {
   it('states that migration 22 must be rolled back FIRST', () => {
     // Restoring the 'farmer' default makes has_operational_farmer_access() true
     // for every self-signed-up account, which reduces migration 22's overlay to
-    // a no-op while its policies remain in the catalog looking applied. Nothing
-    // in SQL can prevent running these out of order, so the warning is the
-    // control — and an untested warning is one edit away from disappearing.
+    // a no-op while its policies remain in the catalog looking applied. The
+    // documented warning is the operator-facing half of the control; the
+    // executable guard asserted below is the enforcing half.
     expect(ROLLBACK_RAW).toMatch(/ORDERING REQUIREMENT/)
     expect(ROLLBACK_RAW).toMatch(/roll back migration 22 BEFORE this file/i)
     expect(ROLLBACK_RAW).toMatch(/no-op/i)
+  })
+
+  it('REFUSES to run while migration 22 is still applied — in executable SQL', () => {
+    // A comment cannot abort a transaction. These assertions run against the
+    // comment-STRIPPED text, so prose restating the ordering requirement can
+    // never satisfy them: only a real DO block can.
+    const guard = ORDERING_GUARD
+    expect(guard).not.toBe('')
+    expect(guard).toMatch(/RAISE\s+EXCEPTION/i)
+    expect(guard).toMatch(/rollback 21 refused/)
+    expect(guard).toMatch(/migration 22 must be rolled back first/)
+    // Detects the helper function, at minimum.
+    expect(guard).toMatch(/has_operational_farmer_access/)
+    expect(guard).toMatch(/pg_proc/)
+    // And migration 22's restrictive overlay policies, so a partially applied
+    // or partially rolled-back state is diagnosed rather than waved through.
+    expect(guard).toMatch(/pg_policies/)
+    expect(guard).toMatch(/operational farmer or admin/)
+  })
+
+  it('runs the guard inside the transaction and before any destructive step', () => {
+    // If the guard ran after handle_new_user() were replaced, or outside the
+    // transaction, a wrong-order rollback could still leave the database
+    // partially reverted. Order is the property that makes it fail-closed.
+    const at = (re) => norm(ROLLBACK).search(re)
+    const begin = at(/\bBEGIN\s*;/)
+    const guardAt = at(/rollback 21 refused/)
+    expect(begin).toBeGreaterThanOrEqual(0)
+    expect(guardAt).toBeGreaterThan(begin)
+    for (const step of [
+      /CREATE OR REPLACE FUNCTION public\.handle_new_user\(\)/,
+      /ALTER COLUMN role SET DEFAULT 'farmer'/,
+      /ADD CONSTRAINT\s+profiles_role_check/,
+    ]) {
+      expect(at(step)).toBeGreaterThan(guardAt)
+    }
+  })
+
+  it('still fails closed on pending profile rows (the narrowed CHECK is re-applied)', () => {
+    // The ordering guard is additive: the pre-existing fail-closed behaviour —
+    // re-adding the two-value CHECK, which errors while pending rows exist —
+    // must survive it.
+    expect(norm(ROLLBACK)).toMatch(/ADD CONSTRAINT\s+profiles_role_check\s+CHECK \(role IN \('ddp_admin', 'farmer'\)\)/)
   })
 })
 

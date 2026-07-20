@@ -7,7 +7,9 @@
 -- re-enable "Allow new users to sign up" in the Supabase dashboard if it was
 -- disabled as part of migration 21's companion configuration.
 --
--- ORDERING REQUIREMENT: roll back migration 22 BEFORE this file.
+-- ORDERING REQUIREMENT: roll back migration 22 BEFORE this file. This is
+-- ENFORCED below by an executable guard at the top of the transaction, not left
+-- to the operator to remember.
 -- Migration 22's restrictive overlay authorizes via has_operational_farmer_access(),
 -- which tests `profiles.role = 'farmer'`. Restoring the 'farmer' default below
 -- means a self-signed-up account is created AS a farmer, so the helper returns
@@ -27,6 +29,42 @@
 -- =============================================================================
 
 BEGIN;
+
+-- 0. ORDERING GUARD. Must run BEFORE handle_new_user() is replaced and before
+--    the role default / CHECK are changed, so a wrong-order rollback aborts the
+--    whole transaction having changed nothing. Restoring the 'farmer' default
+--    while migration 22 is still applied silently reduces 22's entire overlay to
+--    a no-op, so this refuses rather than warns.
+DO $ordering_guard$
+DECLARE
+  v_helper_present boolean;
+  v_overlay_policies integer;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'has_operational_farmer_access'
+  ) INTO v_helper_present;
+
+  -- Also count 22's restrictive overlay policies, so a PARTIALLY applied or
+  -- partially rolled-back migration 22 gets an explicit diagnosis instead of
+  -- passing because only one of the two artefacts happened to be removed.
+  SELECT count(*) INTO v_overlay_policies
+  FROM pg_policies
+  WHERE (schemaname = 'public'  AND policyname LIKE '%: operational farmer or admin')
+     OR (schemaname = 'storage' AND policyname = 'farmer buckets: operational farmer or admin');
+
+  IF v_helper_present OR v_overlay_policies > 0 THEN
+    RAISE EXCEPTION
+      'rollback 21 refused: migration 22 must be rolled back first '
+      '(public.has_operational_farmer_access() present: %, migration-22 restrictive policies still in the catalog: %). '
+      'Run 22_OPERATIONAL_FARMER_ACCESS_RLS_ROLLBACK.sql to completion, then re-run this file.',
+      v_helper_present, v_overlay_policies;
+  END IF;
+END
+$ordering_guard$;
 
 -- 1. Restore handle_new_user() to auto-assign the operational 'farmer' role.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
