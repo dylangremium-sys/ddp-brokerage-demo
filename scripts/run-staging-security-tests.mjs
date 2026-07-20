@@ -246,19 +246,37 @@ export function evaluatePendingPreflight(facts) {
 // Data-driven so all 11 tables are covered uniformly and the table/operation
 // that failed is always named explicitly in the probe name.
 //
-// `requires` names a fixture the probe needs to be MEANINGFUL. UPDATE/DELETE
-// against a table with no matching row returns "0 rows affected", which is
-// indistinguishable from an RLS denial — so those probes target a real fixture
-// row and are BLOCKED (never silently skipped or passed) when it is absent.
+// `requires` names a fixture the probe needs to be MEANINGFUL.
+//
+// SELECT/UPDATE/DELETE against a table with NO MATCHING ROW returns an empty
+// result — "0 rows" — which is indistinguishable from an RLS denial. Such a
+// probe reports PASS while proving nothing.
+//
+// A farm id alone does NOT establish that: the suite creates rows only in
+// `farms` and `farm_memberships`, so for the other nine tables a probe filtered
+// on farm_id = <fixture farm> matched nothing and passed vacuously. Each of
+// those probes therefore requires a fixture ROW IN ITS OWN TABLE, seeded by the
+// admin client and read back before the matrix runs. When that row is absent the
+// probe is BLOCKED (never silently skipped or passed).
+//
+// INSERT is the exception: it is self-evidencing. It either succeeds (a security
+// failure) or is rejected, with no empty-result ambiguity — so it needs only the
+// parent farm to satisfy foreign keys.
 const FIXTURE_FARM = 'farmFixture'
+
+/** Fixture key for "a row exists in <table> matching this table's probe filter". */
+export function tableFixtureKey(table) {
+  return `row:${table}`
+}
 
 export function buildPendingProbeRegistry() {
   const rows = []
   for (const table of MIGRATION_22_TABLES) {
-    rows.push({ table, operation: 'select', requires: [] })
+    const row = tableFixtureKey(table)
+    rows.push({ table, operation: 'select', requires: [row] })
     rows.push({ table, operation: 'insert', requires: table === 'farms' ? [] : [FIXTURE_FARM] })
-    rows.push({ table, operation: 'update', requires: [FIXTURE_FARM] })
-    rows.push({ table, operation: 'delete', requires: [FIXTURE_FARM] })
+    rows.push({ table, operation: 'update', requires: [row] })
+    rows.push({ table, operation: 'delete', requires: [row] })
   }
   return rows.map((r) => ({ ...r, probeName: `pending cannot ${r.operation} ${r.table}` }))
 }
@@ -361,6 +379,79 @@ export function pendingUpdatePayload(table, ctx) {
     case 'farm_profiles': return { business_info: { probe: `${tag}-PU` } }
     default: throw new Error(`no pending update payload defined for ${table}`)
   }
+}
+
+// ── Pending-matrix fixture seeding ──────────────────────────────────────────
+//
+// Guarantees that every table a SELECT/UPDATE/DELETE probe targets actually
+// CONTAINS a row matching that probe's filter. Without this, "0 rows" means
+// "nothing was there" and the probe passes without exercising any policy.
+//
+// Seeded with the ADMIN client. An admin satisfies both the pre-existing
+// permissive admin policies and the migration 22 restrictive overlay (via
+// is_ddp_admin()), so seeding succeeds on every table without depending on the
+// farmer's narrower write policies — and, importantly, a row the ADMIN can
+// create but the PENDING user cannot see or modify is exactly the subject the
+// probes need.
+//
+// Uniform adopt-or-seed per table:
+//   1. adopt an existing row matching the probe's filter (groups B/B2 already
+//      create the fixture farm and the farmer's own membership);
+//   2. otherwise insert one and READ IT BACK THROUGH THE PROBE'S OWN FILTER —
+//      confirming the row is matched by what the probe will actually query,
+//      not merely that an insert returned an id;
+//   3. `farms` is never seeded: its probe filter is the fixture farm's own id,
+//      so either that farm exists or the whole matrix has no subject.
+//
+// A fixture that cannot be confirmed is reported ABSENT, which BLOCKS its probes.
+// Blocking is a non-pass at the exit rule, so an unseedable table fails the run
+// instead of silently reporting a vacuous PASS.
+export async function seedPendingFixtureRows(adminClient, ctx) {
+  const { tag, farmId, farmerUserId } = ctx
+  const fixtures = {}
+  const created = []
+  const notes = []
+
+  if (!farmId) {
+    return { fixtures, created, notes: ['no fixture farm was created — every pending probe is blocked'] }
+  }
+  fixtures[FIXTURE_FARM] = farmId
+
+  for (const table of MIGRATION_22_TABLES) {
+    const column = pendingFilterColumn(table)
+    try {
+      const existing = await adminClient.from(table).select('id').eq(column, farmId).limit(1)
+      if (!existing?.error && (existing?.data?.length ?? 0) > 0) {
+        fixtures[tableFixtureKey(table)] = existing.data[0].id
+        continue
+      }
+      if (table === 'farms') {
+        notes.push(`farms: the fixture farm ${farmId} is not readable by the admin — probes blocked`)
+        continue
+      }
+
+      const ins = await adminClient
+        .from(table)
+        .insert(pendingInsertPayload(table, { tag: `${tag}-FX`, userId: farmerUserId, farmId }))
+        .select('id')
+      const id = ins?.data?.[0]?.id
+      if (ins?.error || !id) {
+        notes.push(`${table}: admin could not seed a fixture row (${ins?.error?.code || ins?.error?.message || 'no id returned'})`)
+        continue
+      }
+      created.push({ table, id })
+
+      const back = await adminClient.from(table).select('id').eq(column, farmId).limit(1)
+      if (back?.error || (back?.data?.length ?? 0) === 0) {
+        notes.push(`${table}: seeded row is not matched by ${column} = fixture farm — fixture unconfirmed`)
+        continue
+      }
+      fixtures[tableFixtureKey(table)] = id
+    } catch (e) {
+      notes.push(`${table}: fixture seeding threw (${String(e?.message || e).slice(0, 60)})`)
+    }
+  }
+  return { fixtures, created, notes }
 }
 
 // ── Storage outcome classification ──────────────────────────────────────────
@@ -547,8 +638,7 @@ function runPendingPreflight(databaseUrl) {
 // Execute the 11-table × 4-operation pending matrix. Every probe is recorded
 // with its table and operation named, so a failure is never ambiguous.
 async function runPendingMatrix(ctx) {
-  const { client, userId, tag, farmId } = ctx
-  const fixtures = { farmFixture: farmId || null }
+  const { client, userId, tag, farmId, fixtures = {} } = ctx
   const createdIds = []
 
   for (const probe of buildPendingProbeRegistry()) {
@@ -556,7 +646,8 @@ async function runPendingMatrix(ctx) {
     if (missing.length > 0) {
       // Precise fixture requirement, never a silent skip (§7).
       block(probe.probeName,
-        `requires fixture(s) ${missing.join(', ')} — an operational farmer fixture row is needed for this probe to distinguish RLS denial from "no matching row"`)
+        `requires fixture(s) ${missing.join(', ')} — without a row that this probe's filter actually matches, `
+        + `an empty result means "nothing was there", not "RLS denied it", and the probe would pass vacuously`)
       continue
     }
     const { table, operation } = probe
@@ -565,7 +656,9 @@ async function runPendingMatrix(ctx) {
       if (operation === 'select') {
         res = await client.from(table).select('id').limit(1)
         // A restrictive overlay yields zero readable rows. Recorded via isDenied
-        // because SELECT denial surfaces as an empty set, not an error.
+        // because SELECT denial surfaces as an empty set, not an error. This is
+        // only conclusive because the probe's fixture guarantees the table holds
+        // a row the admin can see — so "empty" means invisible, not absent.
         record(probe.probeName, isDenied(res), redactSecrets(res?.error?.message || 'no rows readable'))
         continue
       }
@@ -620,7 +713,7 @@ async function main() {
 
   const anon = makeClient(cfg)
   let a, b, admin
-  const created = { batches: [], farms: [] } // tracked synthetic IDs for cleanup
+  const created = { batches: [], farms: [], pendingFixtures: [] } // tracked synthetic IDs for cleanup
 
   try {
     a = await signedInClient(cfg, cfg.farmerA, 'farmer A')
@@ -892,7 +985,25 @@ async function main() {
       await applyPendingGate(roleRow, {
         block,
         runMatrix: async () => {
-        await runPendingMatrix({ client: p.client, userId: p.userId, tag: TAG, farmId: farmA })
+        // Seed one row per migration-22 table BEFORE probing. A SELECT/UPDATE/
+        // DELETE probe against an empty table returns "0 rows", which is
+        // indistinguishable from an RLS denial — so without a real subject the
+        // probe passes vacuously. Fixtures that cannot be established block their
+        // probes rather than allowing that false pass.
+        const seeded = await seedPendingFixtureRows(admin.client, {
+          tag: TAG, farmId: farmA, farmerUserId: a.userId,
+        })
+        created.pendingFixtures = seeded.created
+        for (const note of seeded.notes) {
+          record(`pending-matrix fixture unavailable: ${note}`, false, 'probes for this table are blocked below')
+        }
+        record('pending matrix has a real subject row in every migration-22 table',
+          MIGRATION_22_TABLES.every((t) => seeded.fixtures[tableFixtureKey(t)]),
+          seeded.notes.length ? `${seeded.notes.length} table(s) without a confirmed fixture` : '')
+
+        await runPendingMatrix({
+          client: p.client, userId: p.userId, tag: TAG, farmId: farmA, fixtures: seeded.fixtures,
+        })
 
         record('pending cannot read market_price_benchmarks (migration 22)',
           isDenied(await p.client.from('market_price_benchmarks').select('id').limit(1)))
@@ -993,6 +1104,29 @@ async function main() {
       // cascades to farm_memberships. Security assertions about what a FARMER may
       // delete are covered separately in groups B and C, so using admin here does
       // not weaken any test — it is teardown, not an assertion.
+      // Fixture rows seeded for the pending matrix, removed as the admin that
+      // created them. Deleted EXPLICITLY rather than relying on a cascade from
+      // the farm delete below: not every farm_id foreign key is declared
+      // ON DELETE CASCADE, and each removal is verified by read-back, because an
+      // unverified teardown is how residue accumulates in the first place.
+      if (created.pendingFixtures?.length && admin?.client) {
+        let removed = 0
+        for (const { table, id } of created.pendingFixtures) {
+          try {
+            await admin.client.from(table).delete().eq('id', id)
+            const check = await admin.client.from(table).select('id').eq('id', id)
+            if ((check?.data?.length ?? 0) === 0) removed += 1
+          } catch { /* left counted as not removed */ }
+        }
+        const allGone = removed === created.pendingFixtures.length
+        results.push({
+          group: currentGroup,
+          name: 'cleanup: pending-matrix fixture rows removed',
+          status: allGone ? 'PASS' : 'FAIL',
+          detail: allGone ? '' : `${created.pendingFixtures.length - removed} fixture row(s) remain`,
+          cleanupVerified: allGone,
+        })
+      }
       if (admin?.client) {
         await deleteSyntheticFarms(admin.client, TAG)
       }

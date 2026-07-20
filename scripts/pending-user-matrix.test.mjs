@@ -31,6 +31,8 @@ import {
   evaluateStorageAttribution,
   STORAGE_ATTRIBUTION_BUCKETS,
   redactSecrets,
+  tableFixtureKey,
+  seedPendingFixtureRows,
 } from './run-staging-security-tests.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -213,19 +215,132 @@ describe('UPDATE/DELETE probes filter on a column that actually exists', () => {
 })
 
 describe('probes requiring a fixture are BLOCKED, never silently skipped', () => {
-  it('marks UPDATE and DELETE probes as fixture-dependent', () => {
-    // Without a real row, "0 rows affected" is indistinguishable from denial.
+  // A farm id alone is NOT enough. The suite creates rows only in `farms` and
+  // `farm_memberships`, so a probe filtered on farm_id = <fixture farm> matched
+  // nothing in the other nine tables and passed vacuously. Every probe whose
+  // result can be an EMPTY SET must therefore require a row in its OWN table.
+  it('requires a per-table fixture row for every empty-set-ambiguous probe', () => {
     for (const p of buildPendingProbeRegistry()) {
-      if (p.operation === 'update' || p.operation === 'delete') {
-        expect(p.requires, `${p.probeName} must declare its fixture`).toContain('farmFixture')
+      if (['select', 'update', 'delete'].includes(p.operation)) {
+        expect(p.requires, `${p.probeName} must require a row in ${p.table}`)
+          .toContain(tableFixtureKey(p.table))
       }
     }
   })
 
-  it('does not require a fixture to attempt a farm insert or any select', () => {
+  it('does not accept a bare farm fixture as proof for another table', () => {
+    // The exact regression: farmFixture alone must not satisfy a probe against a
+    // table that may hold no matching row.
+    for (const p of buildPendingProbeRegistry()) {
+      if (['select', 'update', 'delete'].includes(p.operation) && p.table !== 'farms') {
+        expect(p.requires).not.toEqual(['farmFixture'])
+      }
+    }
+  })
+
+  it('requires only the parent farm to attempt an insert', () => {
+    // INSERT is self-evidencing: it either succeeds (a security failure) or is
+    // rejected. There is no empty-result ambiguity, so it needs no row fixture.
     const registry = buildPendingProbeRegistry()
     expect(registry.find((p) => p.table === 'farms' && p.operation === 'insert').requires).toHaveLength(0)
-    for (const p of registry.filter((p) => p.operation === 'select')) expect(p.requires).toHaveLength(0)
+    for (const p of registry.filter((p) => p.operation === 'insert' && p.table !== 'farms')) {
+      expect(p.requires).toEqual(['farmFixture'])
+    }
+  })
+
+  it('gives every table a distinct fixture key', () => {
+    const keys = MIGRATION_22_TABLES.map(tableFixtureKey)
+    expect(new Set(keys).size).toBe(MIGRATION_22_TABLES.length)
+  })
+})
+
+describe('fixture seeding establishes a real subject before probing', () => {
+  // A minimal in-memory stand-in for the admin PostgREST client. `rows` decides
+  // what already exists; `insertable` decides which tables accept a seed.
+  function fakeAdmin({ rows = {}, insertable = null, failReadBack = new Set() } = {}) {
+    const inserted = []
+    const client = {
+      from(table) {
+        return {
+          select: () => ({
+            eq: (_col, _val) => ({
+              limit: () => Promise.resolve({
+                data: failReadBack.has(table)
+                  ? []
+                  : (rows[table] ?? []).concat(inserted.filter(r => r.table === table).map(r => ({ id: r.id }))),
+                error: null,
+              }),
+            }),
+          }),
+          insert: () => ({
+            select: () => {
+              if (insertable && !insertable.has(table)) {
+                return Promise.resolve({ data: null, error: { code: '42501' } })
+              }
+              const id = `seeded-${table}`
+              inserted.push({ table, id })
+              return Promise.resolve({ data: [{ id }], error: null })
+            },
+          }),
+        }
+      },
+    }
+    return { client, inserted }
+  }
+
+  const CTX = { tag: 'T', farmId: 'farm-1', farmerUserId: 'user-a' }
+
+  it('produces a confirmed fixture for every migration 22 table', async () => {
+    const { client } = fakeAdmin({ rows: { farms: [{ id: 'farm-1' }] } })
+    const { fixtures, created } = await seedPendingFixtureRows(client, CTX)
+
+    for (const t of MIGRATION_22_TABLES) {
+      expect(fixtures[tableFixtureKey(t)], `${t} must have a confirmed fixture`).toBeTruthy()
+    }
+    // `farms` is adopted, never seeded — its probe filter is the farm's own id.
+    expect(created.some(c => c.table === 'farms')).toBe(false)
+  })
+
+  it('adopts an existing row instead of inserting a duplicate', async () => {
+    // farm_memberships already holds the farmer's own membership; seeding a
+    // second row for the same (farm_id, user_id) would violate uniqueness.
+    const { client, inserted } = fakeAdmin({
+      rows: { farms: [{ id: 'farm-1' }], farm_memberships: [{ id: 'existing-mem' }] },
+    })
+    const { fixtures } = await seedPendingFixtureRows(client, CTX)
+
+    expect(fixtures[tableFixtureKey('farm_memberships')]).toBe('existing-mem')
+    expect(inserted.some(r => r.table === 'farm_memberships')).toBe(false)
+  })
+
+  it('reports a table as UNAVAILABLE when it cannot be seeded — never silently present', async () => {
+    const only = new Set(MIGRATION_22_TABLES.filter(t => t !== 'ddp_scores'))
+    const { client } = fakeAdmin({ rows: { farms: [{ id: 'farm-1' }] }, insertable: only })
+    const { fixtures, notes } = await seedPendingFixtureRows(client, CTX)
+
+    expect(fixtures[tableFixtureKey('ddp_scores')]).toBeFalsy()
+    expect(notes.join(' ')).toMatch(/ddp_scores/)
+  })
+
+  it('rejects a seeded row the probe filter would not match', async () => {
+    // An insert that returns an id but is not matched by the probe's own filter
+    // must NOT count as a fixture — that is the false confidence being removed.
+    const { client } = fakeAdmin({
+      rows: { farms: [{ id: 'farm-1' }] },
+      failReadBack: new Set(['risk_flags']),
+    })
+    const { fixtures, notes } = await seedPendingFixtureRows(client, CTX)
+
+    expect(fixtures[tableFixtureKey('risk_flags')]).toBeFalsy()
+    expect(notes.join(' ')).toMatch(/risk_flags/)
+  })
+
+  it('blocks the entire matrix when there is no fixture farm at all', async () => {
+    const { client } = fakeAdmin()
+    const { fixtures, notes } = await seedPendingFixtureRows(client, { ...CTX, farmId: null })
+
+    expect(Object.keys(fixtures)).toHaveLength(0)
+    expect(notes.join(' ')).toMatch(/no fixture farm/)
   })
 })
 
