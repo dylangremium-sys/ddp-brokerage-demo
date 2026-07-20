@@ -380,4 +380,113 @@ BEGIN
 END
 $verify_f$;
 
+-- -----------------------------------------------------------------------------
+-- VERIFY G — a draft attachment can be removed, and its history event survives
+-- with attachment_id nulled. Proves the ON DELETE SET NULL interpretation:
+-- history is preserved, only the pointer is cleared, and no other history
+-- mutation is possible.
+-- -----------------------------------------------------------------------------
+DO $verify_g$
+DECLARE
+  farm_id_v uuid;
+  profile_v uuid;
+  actor     uuid;
+  req_id    uuid;
+  resp_id   uuid;
+  att_id    uuid;
+  hist_id   uuid;
+  h         public.evidence_request_history%ROWTYPE;
+  before_h  public.evidence_request_history%ROWTYPE;
+  ok        boolean;
+BEGIN
+  SELECT id INTO actor FROM auth.users LIMIT 1;
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor) RETURNING id INTO farm_id_v;
+  INSERT INTO public.farm_profiles (id, farm_id) VALUES (gen_random_uuid(), farm_id_v) RETURNING id INTO profile_v;
+  INSERT INTO public.evidence_requests
+    (farm_id, target_type, farm_profile_id, category, title, explanation, created_by_user_id)
+  VALUES (farm_id_v, 'farm_profile', profile_v, 'farm_license',
+          'Licence', 'Please upload the current cultivation licence document.', actor)
+  RETURNING id INTO req_id;
+
+  INSERT INTO public.evidence_request_responses
+    (request_id, response_number, state, created_by_user_id)
+  VALUES (req_id, 1, 'draft', actor) RETURNING id INTO resp_id;
+
+  -- A READY upload: exactly the case the old ON DELETE RESTRICT made unremovable.
+  INSERT INTO public.evidence_request_attachments
+    (request_id, response_id, origin, storage_bucket, storage_object_path,
+     upload_state, original_filename, mime_type, size_bytes, sha256_hex,
+     created_by_user_id, finalized_at)
+  VALUES (req_id, resp_id, 'request_upload', 'evidence-request-files',
+          farm_id_v || '/' || req_id || '/' || resp_id || '/x/licence.pdf',
+          'ready', 'licence.pdf', 'application/pdf', 1024,
+          repeat('a', 64), actor, now())
+  RETURNING id INTO att_id;
+
+  INSERT INTO public.evidence_request_history
+    (request_id, previous_status, next_status, actor_user_id, actor_role,
+     event_type, response_id, attachment_id)
+  VALUES (req_id, 'open', 'open', actor, 'farmer',
+          'attachment_uploaded', resp_id, att_id)
+  RETURNING id INTO hist_id;
+
+  SELECT * INTO before_h FROM public.evidence_request_history WHERE id = hist_id;
+  IF before_h.attachment_id IS NULL THEN
+    RAISE EXCEPTION 'VERIFY G FAILED: fixture history event has no attachment_id (test would be vacuous)';
+  END IF;
+
+  -- G1: a ready draft attachment must now be deletable (ON DELETE SET NULL).
+  DELETE FROM public.evidence_request_attachments WHERE id = att_id;
+  IF EXISTS (SELECT 1 FROM public.evidence_request_attachments WHERE id = att_id) THEN
+    RAISE EXCEPTION 'VERIFY G FAILED: ready draft attachment was not deleted';
+  END IF;
+
+  -- G2: the history event must still exist, with ONLY attachment_id cleared.
+  SELECT * INTO h FROM public.evidence_request_history WHERE id = hist_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'VERIFY G FAILED: history event disappeared when its attachment was removed';
+  END IF;
+  IF h.attachment_id IS NOT NULL THEN
+    RAISE EXCEPTION 'VERIFY G FAILED: attachment_id was not nulled by the referential action';
+  END IF;
+  IF h.event_type      IS DISTINCT FROM before_h.event_type
+     OR h.actor_user_id IS DISTINCT FROM before_h.actor_user_id
+     OR h.actor_role    IS DISTINCT FROM before_h.actor_role
+     OR h.created_at    IS DISTINCT FROM before_h.created_at
+     OR h.request_id    IS DISTINCT FROM before_h.request_id
+     OR h.response_id   IS DISTINCT FROM before_h.response_id
+     OR h.previous_status IS DISTINCT FROM before_h.previous_status
+     OR h.next_status   IS DISTINCT FROM before_h.next_status
+     OR h.event_data    IS DISTINCT FROM before_h.event_data
+  THEN
+    RAISE EXCEPTION 'VERIFY G FAILED: the history event was altered beyond nulling attachment_id';
+  END IF;
+
+  -- G3: no OTHER history mutation is permitted — the narrow exemption must not
+  -- have opened general UPDATE access.
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_history SET note = 'tampered' WHERE id = hist_id;
+  EXCEPTION WHEN others THEN ok := true;
+  END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY G FAILED: history note became updatable'; END IF;
+
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_history SET event_type = 'request_resolved' WHERE id = hist_id;
+  EXCEPTION WHEN others THEN ok := true;
+  END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY G FAILED: history event_type became updatable'; END IF;
+
+  ok := false;
+  BEGIN
+    DELETE FROM public.evidence_request_history WHERE id = hist_id;
+  EXCEPTION WHEN others THEN ok := true;
+  END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY G FAILED: history became deletable'; END IF;
+
+  RAISE NOTICE 'VERIFY G PASSED: ready draft attachment removable; history preserved with attachment_id nulled; no other history mutation permitted.';
+END
+$verify_g$;
+
 ROLLBACK;

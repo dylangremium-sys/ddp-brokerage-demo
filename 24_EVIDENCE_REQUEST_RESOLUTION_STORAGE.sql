@@ -117,7 +117,20 @@ CREATE POLICY "evidence-request-files: farmer insert reserved path"
   );
 
 -- 2.4 Farmers may DELETE only their own object while its response is still a
---     draft. After submission the object is immutable (contract §7.7).
+--     draft AND the attachment has not been finalized. After submission the
+--     object is immutable (contract §7.7).
+--
+--     The `upload_state = 'pending_upload'` clause is essential. Without it a
+--     farmer could delete the storage object of an already-finalized ('ready')
+--     attachment while the response was still a draft. The database row would
+--     continue to read 'ready', and submit_evidence_response — which only
+--     refuses 'pending_upload' — would accept a response whose evidence points
+--     at a now-missing object, defeating the object-existence check performed in
+--     finalize_evidence_attachment.
+--
+--     Removing a READY draft attachment is therefore possible only through the
+--     controlled remove_draft_evidence_attachment RPC, which deletes the
+--     database row and the object together.
 DROP POLICY IF EXISTS "evidence-request-files: farmer delete own draft" ON storage.objects;
 CREATE POLICY "evidence-request-files: farmer delete own draft"
   ON storage.objects FOR DELETE
@@ -131,6 +144,8 @@ CREATE POLICY "evidence-request-files: farmer delete own draft"
       WHERE a.storage_bucket = 'evidence-request-files'
         AND a.storage_object_path = storage.objects.name
         AND a.created_by_user_id = auth.uid()
+        AND a.origin = 'request_upload'
+        AND a.upload_state = 'pending_upload'
         AND r.state = 'draft'
         AND er.status IN ('open','clarification_requested')
         AND public.can_operationally_access_farm(er.farm_id)
