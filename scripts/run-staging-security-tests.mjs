@@ -846,7 +846,10 @@ async function main() {
         const detail = roleRow?.error
           ? `could not read the configured user's profile role (${roleRow.error.message}) — refusing to assert`
           : `configured user role is "${observedRole ?? 'missing'}", not "pending" — refusing to assert`
-        skip('pending-user probes', detail)
+        blockAll(
+          buildPendingProbeRegistry().map((probe) => probe.probeName),
+          detail,
+        )
       } else {
         await runPendingMatrix({ client: p.client, userId: p.userId, tag: TAG, farmId: farmA })
 
