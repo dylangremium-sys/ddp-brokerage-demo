@@ -116,21 +116,27 @@ CREATE POLICY "evidence-request-files: farmer insert reserved path"
     )
   );
 
--- 2.4 Farmers may DELETE only their own object while its response is still a
---     draft AND the attachment has not been finalized. After submission the
---     object is immutable (contract §7.7).
+-- 2.4 Farmers may DELETE an object ONLY when remove_draft_evidence_attachment
+--     has explicitly authorized that exact object for removal.
 --
---     The `upload_state = 'pending_upload'` clause is essential. Without it a
---     farmer could delete the storage object of an already-finalized ('ready')
---     attachment while the response was still a draft. The database row would
---     continue to read 'ready', and submit_evidence_response — which only
---     refuses 'pending_upload' — would accept a response whose evidence points
---     at a now-missing object, defeating the object-existence check performed in
---     finalize_evidence_attachment.
+--     A Supabase Storage object must be deleted through the Storage API; a SQL
+--     DELETE against storage.objects removes only the metadata row and orphans
+--     the file. The database therefore cannot delete the object itself. Instead
+--     the removal RPC sets removal_requested_at on the attachment, opening a
+--     narrow window in which the client may delete that one object through the
+--     Storage API; the RPC is then called again and completes the removal once
+--     it can prove the object is gone.
 --
---     Removing a READY draft attachment is therefore possible only through the
---     controlled remove_draft_evidence_attachment RPC, which deletes the
---     database row and the object together.
+--     Gating on removal_requested_at (rather than on upload_state) is what makes
+--     the protocol safe in both directions:
+--       * a READY object cannot be deleted before the RPC authorizes it, so a
+--         submitted response can never point at a missing object; and
+--       * a PENDING object cannot be deleted casually either — it too must be
+--         authorized, so the database always knows an object is in the process
+--         of going away and can fail submission/finalization closed meanwhile.
+--
+--     Every other condition still applies: exact reserved path, the attachment's
+--     creator, a draft response, and an actionable request.
 DROP POLICY IF EXISTS "evidence-request-files: farmer delete own draft" ON storage.objects;
 CREATE POLICY "evidence-request-files: farmer delete own draft"
   ON storage.objects FOR DELETE
@@ -145,7 +151,7 @@ CREATE POLICY "evidence-request-files: farmer delete own draft"
         AND a.storage_object_path = storage.objects.name
         AND a.created_by_user_id = auth.uid()
         AND a.origin = 'request_upload'
-        AND a.upload_state = 'pending_upload'
+        AND a.removal_requested_at IS NOT NULL
         AND r.state = 'draft'
         AND er.status IN ('open','clarification_requested')
         AND public.can_operationally_access_farm(er.farm_id)
