@@ -96,7 +96,7 @@ describe('auth service no longer self-assigns the farmer role', () => {
   })
 
   it('exposes an admin-only provisioning path instead', () => {
-    expect(AUTH_TS).toMatch(/export async function provisionFarmer/)
-    expect(AUTH_TS).toMatch(/export async function listPendingProfiles/)
+    expect(AUTH_TS).toMatch(/export (async )?function provisionFarmer/)
+    expect(AUTH_TS).toMatch(/export (async )?function listPendingProfiles/)
   })
 })

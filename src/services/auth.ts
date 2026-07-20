@@ -156,12 +156,21 @@ export function subscribeToAuthChanges(
 // role") permits them only for a ddp_admin, so no service-role key is needed
 // or used on the client.
 
-export async function provisionFarmer(userId: string): Promise<ProvisionResult> {
-  if (!supabase) return { ok: false, error: 'Supabase not configured' }
-  return provisionFarmerImpl(supabase as unknown as ProvisioningClientLike, userId)
+export function provisionFarmer(userId: string): Promise<ProvisionResult> {
+  if (!supabase) {
+    return Promise.resolve({ ok: false, error: 'Supabase not configured' })
+  }
+
+  return provisionFarmerImpl(
+    supabase as unknown as ProvisioningClientLike,
+    userId,
+  )
 }
 
-export async function listPendingProfiles(): Promise<PendingProfile[]> {
-  if (!supabase) return []
-  return listPendingProfilesImpl(supabase as unknown as ProvisioningClientLike)
+export function listPendingProfiles(): Promise<PendingProfile[]> {
+  if (!supabase) return Promise.resolve([])
+
+  return listPendingProfilesImpl(
+    supabase as unknown as ProvisioningClientLike,
+  )
 }
