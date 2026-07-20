@@ -16,6 +16,35 @@ const VERIFY = strip(read('22_OPERATIONAL_FARMER_ACCESS_RLS_VERIFY.sql'))
 const ROLLBACK = strip(read('22_OPERATIONAL_FARMER_ACCESS_RLS_ROLLBACK.sql'))
 const ROUTING = read('src/lib/postLoginRouting.ts')
 
+// Every anonymous DO block in a script, matched on its own dollar-quote tag.
+function doBlocks(sql) {
+  return sql.match(/\bDO\s+(\$[A-Za-z_]*\$)[\s\S]*?\1/gi) || []
+}
+// Section C is the 11-table overlay check. Isolating it matters: sections C and
+// D assert on similarly named locals with similar predicate text, so a generic
+// substring search over the whole VERIFY file stays green even if section C is
+// deleted outright. Every section-C assertion below runs against THIS slice.
+const VERIFY_SECTION_C = doBlocks(VERIFY).find((b) => b.includes('VERIFY C FAILED')) ?? ''
+
+// PL/pgSQL RAISE format strings interpolate with a bare `%`; `%s` is C/printf
+// syntax and is silently WRONG here — it emits a literal "s" after the
+// substituted value, or, when it is the last placeholder, shifts every argument
+// by one. Scan RAISE statements only: `%` is also a LIKE wildcard, and the
+// VERIFY file legitimately contains patterns such as '%search_path%' whose text
+// includes the characters "%s".
+function malformedRaisePlaceholders(sql) {
+  const found = []
+  for (const stmt of sql.match(/\bRAISE\s+(?:EXCEPTION|NOTICE|WARNING|INFO|LOG|DEBUG)\b[\s\S]*?;/gi) || []) {
+    for (const [literal] of stmt.matchAll(/'(?:[^']|'')*'/g)) {
+      // A literal both starting and ending with % is a LIKE pattern, not a
+      // format string — those are the valid `%` uses we must not flag.
+      if (/^'%[\s\S]*%'$/.test(literal)) continue
+      if (/%s/.test(literal)) found.push(literal)
+    }
+  }
+  return found
+}
+
 // The exact audited farmer-operated tables (must all be covered).
 const AUDITED_TABLES = [
   'farms', 'farm_profiles', 'farm_memberships', 'inventory_batches',
@@ -106,12 +135,58 @@ describe('migration 22 verify proves the enforcement', () => {
     expect(VERIFY).toMatch(/ROLLBACK\s*;?\s*$/m)
   })
 
-  it('asserts the EFFECTIVE PREDICATE, not just the policy shape', () => {
+  it('asserts the EFFECTIVE PREDICATE in SECTION C itself, not just somewhere in the file', () => {
     // Without these, a policy created `AS RESTRICTIVE FOR ALL USING (true)
     // WITH CHECK (true)` — a complete no-op — passes every other assertion.
-    expect(VERIFY).toMatch(/SELECT permissive, cmd, qual, with_check/)
-    expect(VERIFY).toMatch(/v_qual NOT LIKE '%has_operational_farmer_access%'/)
-    expect(VERIFY).toMatch(/v_check NOT LIKE '%has_operational_farmer_access%'/)
+    // Scoped to the section-C DO block: section D asserts on identically named
+    // locals with near-identical predicate text, so a file-wide substring match
+    // would stay green with section C deleted entirely.
+    expect(VERIFY_SECTION_C).not.toBe('')
+    expect(VERIFY_SECTION_C).toMatch(/SELECT permissive, cmd, qual, with_check/)
+
+    // The two failure messages unique to section C's predicate enforcement.
+    expect(VERIFY_SECTION_C).toMatch(/VERIFY C FAILED: % policy USING does not gate on/)
+    expect(VERIFY_SECTION_C).toMatch(/VERIFY C FAILED: % policy WITH CHECK does not gate on/)
+
+    // USING (qual) is checked against BOTH authorization helpers, and a NULL
+    // qual — an unconditional policy — is rejected rather than read as absent.
+    expect(VERIFY_SECTION_C).toMatch(/v_qual IS NULL/)
+    expect(VERIFY_SECTION_C).toMatch(/v_qual NOT LIKE '%has_operational_farmer_access%'/)
+    expect(VERIFY_SECTION_C).toMatch(/v_qual NOT LIKE '%is_ddp_admin%'/)
+
+    // WITH CHECK (with_check) governs writes and must be held to the same bar.
+    expect(VERIFY_SECTION_C).toMatch(/v_check IS NULL/)
+    expect(VERIFY_SECTION_C).toMatch(/v_check NOT LIKE '%has_operational_farmer_access%'/)
+    expect(VERIFY_SECTION_C).toMatch(/v_check NOT LIKE '%is_ddp_admin%'/)
+  })
+
+  it('applies section C to all eleven public tables', () => {
+    // The predicate enforcement above is only worth as much as its coverage:
+    // the loop it runs inside must iterate every audited table.
+    for (const t of AUDITED_TABLES) expect(VERIFY_SECTION_C).toContain(`'${t}'`)
+    expect(VERIFY_SECTION_C).toMatch(/FOREACH t IN ARRAY tables LOOP/)
+  })
+
+  it('has no malformed %s RAISE placeholders in the migration 22 SQL', () => {
+    // `%s` in a PL/pgSQL RAISE either appends a stray "s" or shifts every
+    // subsequent argument — the diagnostic lies at exactly the moment it is
+    // needed. See malformedRaisePlaceholders() for why this is scoped to RAISE.
+    expect(malformedRaisePlaceholders(HARD)).toEqual([])
+    expect(malformedRaisePlaceholders(VERIFY)).toEqual([])
+    expect(malformedRaisePlaceholders(ROLLBACK)).toEqual([])
+  })
+
+  it('distinguishes a malformed %s placeholder from a valid % placeholder', () => {
+    // Guards the detector itself: if it flagged everything, or nothing, the
+    // assertion above would be worthless.
+    expect(malformedRaisePlaceholders(`RAISE EXCEPTION 'boom %s', t;`))
+      .toEqual([`'boom %s'`])
+    // Valid PL/pgSQL substitution — a bare %.
+    expect(malformedRaisePlaceholders(`RAISE EXCEPTION 'boom %', t;`)).toEqual([])
+    // A LIKE pattern that happens to contain the characters "%s".
+    expect(malformedRaisePlaceholders(`RAISE EXCEPTION 'nope' WHEN x LIKE '%search_path%';`)).toEqual([])
+    // %s outside any RAISE is a LIKE wildcard, not a format-string defect.
+    expect(malformedRaisePlaceholders(`IF x NOT LIKE '%search_path%' THEN NULL; END IF;`)).toEqual([])
   })
 
   it('checks the storage policy WITH CHECK, which governs uploads', () => {
