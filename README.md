@@ -306,4 +306,4 @@ If you ever do need to apply the `AUTH_RLS_SCHEMA.sql` Part 3 draft directly (e.
 
 - The app uses in-app navigation (no URL routing), so all routes resolve to `index.html`. Vercel serves this as a static Vite build from `index.html` by default — no rewrite rules needed.
 - Demo data resets via the **Reset Demo** button in the app; this clears localStorage only and does not affect the Supabase database.
-- Base schema: `SUPABASE_SCHEMA.sql`. Auth + RLS schema: `AUTH_RLS_SCHEMA.sql`. See [SQL prerequisites](#sql-prerequisites) above for the full, chronologically-ordered migration list.
+- Base schema: `SUPABASE_SCHEMA.sql`. Auth + RLS schema: `AUTH_RLS_SCHEMA.sql`. See [Database setup and migration safety](#database-setup-and-migration-safety) above for the full migration register, the files that must never be replayed, and the rules for applying anything to a live database.
