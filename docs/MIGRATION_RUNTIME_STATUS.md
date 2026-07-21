@@ -37,7 +37,7 @@ against the production ref, and refuses any ref that is not the approved staging
 | Value | Meaning |
 |---|---|
 | `APPLIED_AND_VERIFIED` | Objects observed present in the live catalog **and** behaviour confirmed at runtime. |
-| `APPLIED_NOT_VERIFIED` | Objects observed present in the live catalog; behavioural enforcement not exercised. |
+| `APPLIED_NOT_VERIFIED` | Objects observed present in the live catalog; behavioural enforcement not exercised, or exercised only in part. Where coverage is partial, the evidence column names exactly what was and was not exercised. |
 | `PARTIALLY_APPLIED` | Some objects present, others absent. |
 | `NOT_APPLIED` | Positively observed absent, or stated absent by an operator record. |
 | `BLOCKED` | Cannot proceed until a prerequisite is resolved. |
@@ -52,7 +52,7 @@ presence of a `.sql` file in the repository is **not** evidence of application.
 
 | Migration | Repository | Staging | Production | Evidence (staging) | Unresolved |
 |---|---|---|---|---|---|
-| **19** Farm admin-field guard | On `main` | **`APPLIED_AND_VERIFIED`** | **`UNKNOWN`** | Catalog: `fn_protect_farm_admin_fields` present; body references `is_ddp_admin`; **no `= 'admin'` role literal**; non-internal trigger present on `public.farms`. Behavioural: harness group B2 — farmer A could not set `status`, `compliance_status`, `risk_level` or `partner_tier` on its own farm (write accepted, values reverted; `status` still `Submitted to DDP`) | Production status uncorroborated — see Conflicting evidence |
+| **19** Farm admin-field guard | On `main` | **`APPLIED_NOT_VERIFIED`** | **`UNKNOWN`** | Catalog (installed): `fn_protect_farm_admin_fields` present; body references `is_ddp_admin`; **no `= 'admin'` role literal**; non-internal trigger present on `public.farms`. Behavioural (**partial — UPDATE only, 4 of 7 protected columns**): harness group B2 — farmer A could not set `status`, `compliance_status`, `risk_level` or `partner_tier` on its own farm (write accepted, values reverted; `status` still `Submitted to DDP`) | **Behavioural coverage is incomplete.** The migration installs a `BEFORE INSERT OR UPDATE` trigger over seven admin-controlled columns (`19_..._HARDENING.sql:20-25`, `:187-190`): the four exercised above plus `export_readiness`, `reviewed_by` and `created_by`. The **INSERT** vector — which the migration's own header records as a second vector on the same authorization boundary, including `created_by` spoofing — and those three columns were **not** exercised. Production status also uncorroborated — see Conflicting evidence |
 | **20** Guard EXECUTE ACL fix | On `main` | **`APPLIED_AND_VERIFIED`** | **`UNKNOWN`** | Catalog: `authenticated` does **not** hold `EXECUTE` on `fn_protect_farm_admin_fields`. This ACL state is the migration's entire content, and is exactly what `19_..._VERIFY.sql` Section A asserts | No rollback script exists for this migration |
 | **21** DDP-controlled farmer provisioning | On `main` | **`APPLIED_AND_VERIFIED`** | **`UNKNOWN`** | Catalog: `profiles.role` CHECK admits `pending`; column default is `pending`; `handle_new_user` body assigns `pending`. Harness preflight: **"migrations 21 and 22 present"** (PASS). Behavioural: farmers A and B each denied self-elevation to `ddp_admin` by RLS (`SQLSTATE 42501`), role unchanged afterwards | Supabase Auth "allow new users to sign up" is a dashboard setting, not expressible in SQL, and was **not** inspected |
 | **22** Operational-farmer RLS overlay | On `main` | **`APPLIED_AND_VERIFIED`** | **`UNKNOWN`** | Catalog: `has_operational_farmer_access()` present; 12 RESTRICTIVE policies in `public`. Behavioural: 59 of 61 pending-matrix probes passed — a `pending` identity was denied SELECT/INSERT/UPDATE/DELETE across all 11 overlay tables, denied `market_price_benchmarks` read, and denied both storage buckets, while an operational farmer retained access on identical requests | 2 storage probes failed on cleanup, not on enforcement — see Harness result |
@@ -61,13 +61,16 @@ presence of a `.sql` file in the repository is **not** evidence of application.
 ### What changed relative to the previous revision
 
 The previous revision of this document covered **only migrations 10 and 17** and said
-nothing about 19–23; `README.md` and `docs/MASTER_DEVELOPMENT_ROADMAP.md` both
-consequently recorded 19–23 as "unable to verify".
+nothing about 19–23. `README.md` and `docs/MASTER_DEVELOPMENT_ROADMAP.md` recorded
+19–22 as "unable to verify" — but for migration 23 they went further and made a
+**categorical not-applied claim**, which the staging evidence contradicts. That is a
+conflict, not a verification gap, and it is recorded as one below: see *Conflicting
+evidence — migration 23 in staging*.
 
 **That gap is now closed for staging.** Direct catalog inspection shows migrations 19,
 20, 21, 22 and 23 are all present in the staging database, and the security harness
-confirms 19, 21 and 22 are enforcing at runtime. This corrects a documentation state
-that had understated staging's actual position.
+confirms 21 and 22 are enforcing at runtime and 19 partially (UPDATE path only). This
+corrects a documentation state that had understated staging's actual position.
 
 **It is not closed for production**, and nothing here should be read as saying so.
 
@@ -94,6 +97,34 @@ The claims are therefore recorded but **not** accepted as runtime evidence. Prod
 status for 19 and 20 remains **`UNKNOWN`**. Resolving it requires running
 `19_..._VERIFY.sql` **Section A only** (read-only, safe anywhere) against production and
 recording the output here. Section B writes and must not be run against production.
+
+### Conflicting evidence — migration 23 in staging
+
+The merged baseline on `main` does not merely record migration 23 as unverified; it
+states categorically that it was never applied:
+
+- `README.md` — migration 23 is "Not applied anywhere", citing a runbook stating that it
+  "runs no SQL against any database".
+- `docs/MASTER_DEVELOPMENT_ROADMAP.md` — "the migration has never been executed", and
+  separately that it has "never been executed against any database".
+
+The staging catalog contradicts those claims. `issue_buyer_pack_snapshot` is present and
+its body reads `procurement_decisions_current` — the migration-23 definition, not
+migration 10's client-trusting version. Migration 23 **is** installed in staging.
+
+What this does and does not establish:
+
+- Staging status is **`APPLIED_NOT_VERIFIED`** — installed, but `23_..._VERIFY.sql`
+  Section B (PK-HOLD / PK-REJECT / PK-NONE / stale-decision) was **not** run, so issuance
+  behaviour is unproven.
+- Production remains **`UNKNOWN`**. Production was not contacted; nothing in this section
+  bears on it.
+- **No authoritative application record exists.** Nothing in this audit establishes who
+  applied migration 23 to staging, when it was applied, or through which operational
+  process. Origin, timing and execution record are all unknown.
+- The categorical baseline documentation was **wrong for staging**. It is corrected here
+  rather than silently superseded; `README.md` and `docs/MASTER_DEVELOPMENT_ROADMAP.md`
+  are **not** amended by this PR.
 
 ---
 
