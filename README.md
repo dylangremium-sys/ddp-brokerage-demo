@@ -10,7 +10,7 @@ By default all data is stored in **browser localStorage**. When Supabase environ
 
 | | |
 |---|---|
-| **Deployed via** | Vercel (Git integration — auto-deploys `main` on push) |
+| **Deployed via** | GitHub Actions (`.github/workflows/security-ci.yml`) — a push to `main` deploys to Production only after the verification job succeeds. Vercel Git-triggered Production deploys for `main` are disabled. |
 | **Deployed branch** | `main` |
 | **Status** | Demo-ready |
 
@@ -23,11 +23,18 @@ By default all data is stored in **browser localStorage**. When Supabase environ
 This is a front-end application built with **Vite + React + TypeScript**, backed by Supabase when configured. It demonstrates:
 
 - Farmer portal — onboarding and inventory submission (EN/Thai)
-- DDP operator dashboard — farm approval, inventory review, fulfilment packing queue
-- Master inventory and buyer preview views
-- Compliance Watchtower — regulatory update tracking, human-approved compliance rules, and rule-impact alerts on farms/batches (AI detects and summarises; a human reviews and approves; only approved rules are enforced)
+- DDP operator dashboard — farm review, inventory review, master inventory, Missing Documents, COA Intelligence, Risk Register, and a read-only Operations Desk
+- Buyer Pack preview — an admin-only curated view of an approved batch, gated on recorded human approval
+- Compliance Watchtower — regulatory update tracking, human-approved compliance rules, and rule-impact alerts on farms/batches
 
-In localStorage-only mode there is no server-side component, and resetting the demo clears localStorage and restores seed data. In Supabase mode, the "Reset Demo" button still only clears local state.
+Fulfilment and chain-of-custody tracking are **planned, not implemented** — see `docs/MASTER_DEVELOPMENT_ROADMAP.md`.
+
+On the Watchtower and AI: intake and detection of legal/regulatory updates are currently **manual** (a paste form) — there is no automated source monitoring. **AI-assisted draft summarisation** of a single update exists and runs server-side. Every summary is transient, is stamped as requiring human review, and is never persisted. **AI does not approve rules, certify compliance, or enforce anything automatically.** A human reviews each update and explicitly approves a rule, and only human-approved rules affect alerts.
+
+Application data in local demo mode lives entirely in browser `localStorage`; resetting the demo clears it and restores seed data. In Supabase mode the "Reset Demo" button still only clears local state. There is **no traditional dedicated backend server** — no long-running Express/Fastify/Nest process. The repository does, however, contain two serverless API routes, used only when the relevant hosted configuration is present:
+
+- `api/admin/provision-farmer.ts` — controlled farmer provisioning
+- `api/compliance/ai-summary.ts` — compliance AI draft summarisation
 
 ---
 
@@ -102,53 +109,112 @@ If `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` are missing (empty or undefin
 
 ## Deploy to Vercel
 
-This project deploys through Vercel's Git integration — pushing to `main` triggers an automatic build and deploy, with no manual deploy step. Vercel auto-detects the Vite framework preset.
+**Vercel Git-triggered Production deployment for `main` is disabled** — `vercel.json` sets `git.deploymentEnabled.main` to `false`. Pushing to `main` does **not** cause Vercel to build and deploy Production on its own.
 
-1. Push this repo to GitHub (or import it directly in Vercel).
-2. In [Vercel](https://vercel.com), click **Add New → Project** and import the repository.
-3. Vercel auto-fills the build settings for a Vite project:
+Routine Production deployment runs through GitHub Actions (`.github/workflows/security-ci.yml`), and verification must succeed before any deployment begins:
+
+1. A push to `main` first runs the `verify` job: `npm ci` → `npm run security:sql` → `npm test` → `npx tsc -b` → `npm run lint` → `npm run build`. This job connects to no database and uses no secrets.
+2. The `deploy-production` job `needs: verify`, so it cannot start unless verification succeeded, and it runs only for a push to `refs/heads/main`.
+3. It pulls the Production Vercel configuration, builds with the pinned Vercel CLI, and deploys the **prebuilt** verified artifact.
+4. After deploying, it polls the live site's `/version.json` and fails the job unless the served `commitSha` equals `GITHUB_SHA` — so a stale alias or a half-finished promotion fails rather than passing silently.
+
+**Preview deployments for pull requests remain available** and are separate from the Production path.
+
+Manual deployment or promotion by the project owner from the Vercel dashboard or CLI is an **emergency override, not the routine path** — it bypasses the verification gate and the post-deploy commit check.
+
+For first-time project setup, import the repository in [Vercel](https://vercel.com) (**Add New → Project**). Vercel auto-detects the Vite preset:
 
 | Setting | Value |
 |---|---|
 | **Build Command** | `npm run build` |
 | **Output Directory** | `dist` |
 
-4. Optionally add Supabase env vars in **Project Settings → Environment Variables** (see above).
-5. Click **Deploy**. Subsequent pushes to `main` redeploy automatically.
+Add Supabase env vars in **Project Settings → Environment Variables** (see above). Production releases thereafter go through the workflow described above.
 
 ---
 
 ## Auth setup (Stage 3)
 
-The app has two roles: **DDP Admin** and **Farmer**. Role-based navigation is enforced in Supabase mode; in localStorage demo mode everything is unrestricted.
+The app has three roles, stored on `public.profiles.role`:
 
-### SQL prerequisites
+| Role | Meaning |
+|---|---|
+| `ddp_admin` | DDP staff. Full operator access. |
+| `farmer` | An operational farmer account, provisioned by DDP. |
+| `pending` | **Fail-closed default.** A new Auth user starts here. |
 
-Run these files in order in the Supabase SQL Editor (chronological order they were introduced in this repo's history):
+`pending` is a non-operational state: a pending user receives **neither farmer nor administrator access**. Post-login routing denies the account and signs it back out, and a restrictive RLS overlay (`has_operational_farmer_access()`, migration 22) additionally blocks pending accounts from the operational tables and storage buckets even via a direct API call. **Only controlled DDP provisioning promotes an account to `farmer`** — a user cannot change their own role (migration 21 RLS: `profiles: update own no role change`).
 
-1. `SUPABASE_SCHEMA.sql` — base tables
-2. `AUTH_RLS_SCHEMA.sql` — `profiles`, `farm_memberships`, helper functions, draft RLS policies
-3. `RLS_ENABLE_STAGED.sql` — staged RLS rollout (see [RLS policies](#rls-policies) below); `RLS_ROLLBACK.sql` reverts it if needed
-4. `FARMER_MVP_MIGRATION.sql` and `FARMER_MVP_SECURITY_PATCH.sql` — farmer-submission tables and their security patch
-5. `INVENTORY_BATCHES_RLS_PATCH.sql` — RLS patch for `inventory_batches`
-6. `3_SECURITY_HARDENING_SEARCH_PATH_AND_GRANTS.sql` — hardens `SECURITY DEFINER` functions (`search_path`, revoked `PUBLIC EXECUTE`)
-7. `4_RLS_ENABLE_REMAINING_TABLES.sql` — enables RLS on `ddp_scores`, `risk_flags`, `status_history`, `documents`
-8. `FARM_RESAVE_PERSISTENCE_MIGRATION.sql` — farm re-save persistence fix
-9. `8_COA_UPLOAD_STORAGE_MIGRATION.sql` — COA PDF upload storage bucket/policies
-10. `9_COMPLIANCE_WATCHTOWER_MVP.sql` — Compliance Watchtower tables (`legal_updates`, `compliance_rules`, `compliance_alerts`, `compliance_reviews`, `compliance_audit_log`)
-11. `INVENTORY_BATCHES_INSERT_GUARDRAIL_FIX.sql` — insert guardrail fix for `inventory_batches`
+Role-based navigation is enforced in Supabase mode; in localStorage demo mode everything is unrestricted.
 
-Confirm against the live Supabase project's migration history before re-running any of these against a database that may already have them applied.
+### Database setup and migration safety
 
-### Create the first DDP Admin user
+> **This section is a register, not a recipe.** There is no migration runner in this repository — SQL files sit in the repository root and are applied by hand. Read the rules below before executing anything.
 
-Supabase Auth does not expose a role field — you must set it manually after account creation.
+**Rules**
 
-**Step 1 — Create the account via Supabase dashboard:**
+1. **Do not blindly execute every `.sql` file in the repository.** They are not all forward migrations, and several must never be run.
+2. **Do not infer the current state of any database from these files.** The repository records what was *authored*, not what was *applied*. The repository already documents one confirmed divergence, where a validation document recorded a trigger as applied and the live database reported it absent (`FARM_ADMIN_ROLE_CHECK_FIX.sql`).
+3. **Inspect the target project first.** Before applying anything, examine the actual schema, functions, RLS policies, function/table ACLs and whatever migration history exists for that project. `16_PRODUCTION_SAFETY_VERIFY.sql` is strictly read-only (catalog `SELECT`s only, no DDL or DML) and is the safe way to inspect Production.
+4. **`*_VERIFY.sql` and `*_ROLLBACK.sql` files are not forward migrations.** VERIFY files check that a migration took effect; ROLLBACK files reverse one. Neither installs anything.
+5. **Historical, superseded and draft files must never be replayed.** See the exclusion list below.
+6. **An existing database needs a state-aware corrective plan**, not a replay of the sequence. Determine the delta between the live state and the intended state, then apply only what is missing, in dependency order.
+7. **A fresh environment needs the complete reviewed migration chain**, worked out from the register below — not the truncated list this README previously carried, which stopped at migration 11 and omitted every security migration from 12 onward.
+8. **Production and non-production verification differ.** Read-only catalog verification is safe anywhere. Behavioural verification writes synthetic rows and must not be run casually against Production — `18_SYNTHETIC_RUNTIME_VERIFY.sql` exercises behaviour rather than structure and requires migrations 10 and 17 to be applied and verified first.
 
-Go to **Authentication → Users → Invite user** (or create via the signup form and confirm the email).
+**Migration register (current `main`)**
 
-**Step 2 — Set the role to `ddp_admin` in SQL Editor:**
+Numbered migrations run 3 → 23. Numbers 1, 2, 5, 6, 7 do not exist; the numbering convention was introduced partway through the project's history.
+
+| Group | Forward migration(s) | VERIFY / ROLLBACK | Repository status | Runtime application |
+|---|---|---|---|---|
+| Base schema | `SUPABASE_SCHEMA.sql`, `AUTH_RLS_SCHEMA.sql` | — | Implemented | Assumed present in any working environment; not independently verified here |
+| Early RLS rollout | `RLS_ENABLE_STAGED.sql` | `RLS_ROLLBACK.sql` (rollback) | Implemented, staged by design | Partly evidenced by `docs/SECURITY_TEST_LOG.md` (2026-07-07 → 07-11) |
+| Farmer MVP | `FARMER_MVP_MIGRATION.sql`, `FARMER_MVP_SECURITY_PATCH.sql` | — | Implemented | Not independently verified here |
+| `inventory_batches` corrections | `INVENTORY_BATCHES_RLS_PATCH.sql`, `INVENTORY_BATCHES_INSERT_GUARDRAIL_FIX.sql` | — | Implemented; both record live drift found and corrected | Applied manually per their own headers |
+| Function hardening | `3_SECURITY_HARDENING_SEARCH_PATH_AND_GRANTS.sql` | — | Implemented | Not independently verified here |
+| Remaining RLS | `4_RLS_ENABLE_REMAINING_TABLES.sql` | — | Implemented | Not independently verified here |
+| COA / private storage | `8_COA_UPLOAD_STORAGE_MIGRATION.sql` | — | Implemented | Storage isolation tested live (`docs/SECURITY_TEST_LOG.md`) |
+| Compliance Watchtower | `9_COMPLIANCE_WATCHTOWER_MVP.sql` | — | Implemented | End-to-end pipeline verified live 2026-07-08 (`docs/PROFESSIONALIZATION_ROADMAP.md`) |
+| Buyer Pack snapshots | `10_BUYER_PACK_SNAPSHOTS_MVP.sql` | `10_..._VERIFY.sql`, `10_..._ROLLBACK.sql` | Implemented | **Staging: applied + verified 2026-07-14. Production: NOT applied** (`docs/MIGRATION_RUNTIME_STATUS.md`) |
+| Audit-log TRUNCATE guard | `11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql` | `11_..._VERIFY.sql`, `11_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
+| Function EXECUTE ACL | `12_PUBLIC_FUNCTION_EXECUTE_HARDENING.sql` | `12_..._VERIFY.sql`, `12_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
+| Function ACL drift check | — | `13_PUBLIC_FUNCTION_EXECUTE_DRIFT_CHECK.sql` (SELECT-only) | Verification only | Safe to run read-only anywhere |
+| Default privileges | `14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_HARDENING.sql` | `14_..._VERIFY.sql`, `14_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
+| Existing-table + audit-log hardening | `15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql` | `15_..._VERIFY.sql`, `15_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
+| Production safety inspection | — | `16_PRODUCTION_SAFETY_VERIFY.sql` (read-only) | Verification only | **Production-safe.** Run this first when assessing a live project |
+| Procurement decisions | `17_PROCUREMENT_DECISIONS_MVP.sql` | `17_..._VERIFY.sql`, `17_..._ROLLBACK.sql` | Implemented | **Staging: applied + verified 2026-07-14. Production: NOT applied.** Requires migration 10 first (FK dependency) |
+| Behavioural runtime proof | — | `18_SYNTHETIC_RUNTIME_VERIFY.sql` | Verification only | **Non-production.** Writes synthetic rows; requires 10 and 17 applied and verified first |
+| Farm admin-field guard | `19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql` | `19_..._VERIFY.sql`, `19_..._ROLLBACK.sql` | Implemented; supersedes the earlier draft guard | Its companion runbook and `20_...` header both state Production was corrected manually, but this is undated self-reported prose — treat as **unable to verify** from the repository |
+| Guard ACL correction | `20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql` | **no rollback script exists** | Implemented | Makes the manual Production `REVOKE` durable for fresh environments |
+| Controlled farmer provisioning | `21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql` | `21_..._VERIFY.sql`, `21_..._ROLLBACK.sql` | Implemented | **Unable to verify** — no entry in `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Operational-farmer access overlay | `22_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql` | `22_..._VERIFY.sql`, `22_..._ROLLBACK.sql` | Implemented | **Unable to verify** — no entry in `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Server-authoritative Buyer Pack issuance | `23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql` | `23_..._VERIFY.sql`, `23_..._ROLLBACK.sql` | Implemented | **Not applied anywhere.** Its runbook states it "runs no SQL against any database" (`docs/BUYER_PACK_AUTHORITATIVE_ISSUANCE_APPLICATION.md`) |
+
+**Do not run — historical, draft or superseded**
+
+| File | Why |
+|---|---|
+| `FARM_RESAVE_PERSISTENCE_MIGRATION.sql` | **Draft, never approved for automatic application.** Its own header says "Do not run this file automatically" and marks it `ACL-TEST-EXEMPT: INTENTIONAL-DRAFT`. Its `fn_protect_farm_admin_fields()` checks `p.role = 'admin'`, a value the `profiles.role` constraint never permits, so the guard could never recognise an admin. **Superseded by migration 19**, which delegates to the canonical `is_ddp_admin()` predicate and carries no role literal at all |
+| `FARM_ADMIN_ROLE_CHECK_FIX.sql` | **Draft — "NOT APPLIED. NOT RUN. NOT DEPLOYED."** A proposed hotfix for the above, also superseded by migration 19. Retained as the record of a read-only Production check that found the trigger absent |
+| `RLS_ROLLBACK.sql`, and every `*_ROLLBACK.sql` | Rollback scripts. They reverse a migration; they never install one |
+| Every `*_VERIFY.sql`, plus `13_...DRIFT_CHECK.sql`, `16_...SAFETY_VERIFY.sql`, `18_...RUNTIME_VERIFY.sql` | Verification scripts, not forward migrations |
+
+Migration 24 (Evidence Request & Resolution) is **not part of `main`** — it exists only on draft PR #37 and has not been applied to any environment. It is not a prerequisite for anything.
+
+For the authoritative per-environment position, read `docs/MIGRATION_RUNTIME_STATUS.md` and `docs/MASTER_DEVELOPMENT_ROADMAP.md`. Note that the runtime ledger currently covers only migrations 10 and 17.
+
+### Bootstrap the first DDP Admin user
+
+This is the **initial administrator bootstrap** — a one-off, dashboard-driven operation that is distinct from normal farmer provisioning (below). There is **no public signup form**; public self-registration was deliberately removed, so an account cannot be created from within the application.
+
+Supabase Auth does not expose a role field, so the role must be set manually after account creation.
+
+**Step 1 — Create the account via the Supabase dashboard:**
+
+Go to **Authentication → Users → Invite user**. The `handle_new_user()` trigger creates the matching `profiles` row with `role = 'pending'`.
+
+**Step 2 — Promote to `ddp_admin` in the SQL Editor.** RLS permits a role change only for an existing `ddp_admin`, so the very first admin must be set from the SQL Editor, which runs as a privileged role and is not subject to RLS:
 
 ```sql
 -- Replace with the actual user UUID from Authentication → Users
@@ -163,16 +229,27 @@ WHERE id = 'paste-user-uuid-here';
 SELECT id, email, display_name, role FROM public.profiles;
 ```
 
-### Create a farmer test user
+### Provision a farmer
 
-Use the in-app **Create farmer account** form (Sign in → Create a farmer account). The `handle_new_user()` trigger auto-creates a `profiles` row with `role = 'farmer'`.
+Farmers are provisioned by DDP. There is **no in-app "Create farmer account" form and no public signup** — both were deliberately removed, and a standing test (`scripts/client-provisioning-boundary.test.mjs`) fails the build if a public signup path reappears in `src/`. Creating a Supabase Auth user by any route does **not** produce an operational farmer.
 
-If the trigger is not yet installed, run `AUTH_RLS_SCHEMA.sql` first, then the profile row will be created automatically on next signup. Alternatively, insert it manually:
+The controlled flow:
 
-```sql
-INSERT INTO public.profiles (id, email, display_name, role)
-VALUES ('paste-farmer-uuid', 'farmer@example.com', 'Test Farmer', 'farmer');
-```
+1. A verified `ddp_admin` calls the controlled provisioning API. The client wrapper is `src/services/adminProvisioning.ts` (`inviteFarmer`), which sends the admin's **own** session access token — never a service-role key.
+2. The server-side endpoint `api/admin/provision-farmer.ts` verifies the bearer token, re-reads the caller's role from `profiles` (never trusting the client), and issues the invitation using Supabase **Admin Auth**.
+3. The new profile begins as `pending`.
+4. Controlled promotion changes the role to `farmer` — a constrained `UPDATE … WHERE id = ? AND role = 'pending'` that must affect exactly one row.
+5. Operational access additionally depends on farm membership and the migration-22 access controls: `has_operational_farmer_access()` requires the role to be exactly `farmer`, and farm-scoped policies require an active `farm_memberships` row. A promoted account with no membership still sees no farm data.
+
+> **Note:** provisioning is currently exposed through the service and API layer only. No admin provisioning screen is wired into the UI on `main` — no component imports `inviteFarmer`, `provisionFarmer`, or `listPendingProfiles`. The supporting functions `provisionFarmer()` and `listPendingProfiles()` are exported from `src/services/auth.ts` and run under the caller's own session, relying on the `profiles: admin update role` RLS policy rather than any elevated key.
+
+Never place a service-role key in client code or in any `VITE_`-prefixed environment variable. It is read server-side from `process.env` only.
+
+### The `handle_new_user()` trigger
+
+`handle_new_user()` fires when a new `auth.users` row is created and inserts the matching `public.profiles` row. Since migration 21 (`21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql`) it assigns **`role = 'pending'`, never `'farmer'`**, and `profiles.role` defaults to `'pending'` as a second layer.
+
+Creating a profile row therefore **does not grant operational farmer access**. The trigger is part of the fail-closed provisioning model: however an Auth user comes into existence — dashboard invite, direct Auth API call, or the provisioning endpoint — the resulting account lands in the non-operational `pending` state and stays there until a `ddp_admin` explicitly promotes it. The function is trigger-only: `EXECUTE` is revoked from `PUBLIC`, `anon`, and `authenticated`, and granted to `service_role` alone.
 
 ### Test role-based navigation
 
