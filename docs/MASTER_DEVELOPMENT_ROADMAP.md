@@ -1,408 +1,684 @@
 # DDP Brokerage — Master Development Roadmap
 
-**Status of this document:** Documentation only. No application code, SQL, environment files, or infrastructure were changed to produce this document. Nothing here was deployed, migrated, or pushed as part of writing it.
+**Single source of truth for the full DDP Brokerage product plan.**
 
-**Method:** Every claim below was checked directly against the files in this repository (`/Users/mac/ddp-inventory-demo`), against `git log`, and — where noted — against prior validation documents already in the repo. Claims that could not be confirmed from the repository are explicitly labeled **Unable to verify**. No feature is described as complete, certified, or compliant unless the code itself demonstrates it.
+**Status of this document:** Documentation only. No application code, SQL, migration, test, environment file, branch, commit, deployment, or external setting was created or changed to produce it. Nothing here was applied, migrated, pushed, or deployed.
 
-**Status legend used throughout this document:**
+**Audited baseline:** `origin/main` @ **`afbe59e1ba19cf2c2799f83c90add134ae0923d0`** — *"Add DDP-controlled farmer provisioning (#22)"*, merged 2026-07-20. Reconciliation performed 2026-07-21.
+
+> **Local-checkout warning at time of audit.** The local `main` branch was at `e4175c7` — **16 commits behind `origin/main`**. Every statement in this document was verified against an exact extract of `origin/main` @ `afbe59e`, not against the stale local branch. Anyone re-running this audit should `git fetch` and verify against `origin/main` first.
+
+**Method:** Every substantive statement below is grounded in at least one of: a source file, a migration file, a test, a `package.json` script, a CI workflow, a merged pull request, or an explicitly identified open pull request. Claims that depend on live infrastructure, credentials, or external evidence not obtainable from the repository are labelled **UNABLE TO VERIFY** and are not asserted. Open pull-request code is never described as implemented.
+
+**This document does not claim** legal compliance, export approval, pharmaceutical or GxP certification, audit readiness, regulatory approval, complete security, or production verification where only static tests exist.
+
+---
+
+## 1. Status Vocabulary
+
+These labels are used consistently throughout. Nothing outside this list is a status.
 
 | Label | Meaning |
 |---|---|
-| **Implemented** | Working code exists, was read directly, and does what is described. |
-| **Partially implemented** | Some real code exists, but with a material gap, a hardcoded stub, or a piece that is unwired/unreachable from the actual product surface. |
-| **Planned** | An interface, type, comment, or roadmap entry describes the intent, but no functioning implementation exists yet. |
-| **Unable to verify** | The claim depends on live infrastructure state (e.g. production Supabase), or on files/behavior outside what could be directly confirmed from this repository. |
+| **IMPLEMENTED** | Merged into `main` and directly verified in repository code. |
+| **IMPLEMENTED — RUNTIME VERIFICATION REQUIRED** | Merged code exists, but a required production or database runtime check remains unresolved. |
+| **ACTIVE IMPLEMENTATION** | Work exists on an open branch or pull request but is **not** merged. Not shipped. |
+| **PARTIALLY IMPLEMENTED** | Some functional implementation exists, but a material product phase is missing. |
+| **PLANNED** | Approved roadmap scope without functioning implementation. |
+| **DEFERRED** | Deliberately parked; not part of the immediate execution sequence. |
+| **SUPERSEDED** | Replaced by later work and no longer authoritative. |
+| **UNABLE TO VERIFY** | Requires infrastructure, credentials, or external evidence not available from the repository. |
 
 ---
 
-## 1. Executive Summary
+## 2. Executive Summary
 
-DDP Brokerage is a React/TypeScript web application built around a cannabis-industry agricultural supply-chain compliance workflow between farmers and a broker ("DDP"), with a simulated view of what a prospective buyer would see. (Domain confirmed directly in code — `strainName`, `thcPct`/`cbdPct`, and a `'Thai cannabis control'` document-requirement type in `src/types.ts`; the project's own `README.md` frames this more generally as "agricultural commodities.") It runs in one of two modes: a **demo mode** backed entirely by browser `localStorage`, and a **live mode** backed by Supabase (Postgres, Auth, Storage), selected automatically based on whether Supabase environment variables are configured.
+DDP Brokerage is a **complete brokerage operations platform** for agricultural commodity supply between farmers and buyers, with DDP acting as the reviewing and transacting intermediary. The full product plan spans farmer onboarding and evidence collection, inventory and COA review, compliance monitoring, buyer relationship management, deal execution, fulfilment, and the **commercial and financial layer** — pricing, purchase and sale values, brokerage commission, invoicing, payment milestones, amounts due and received, commercial reporting, financial exports, and margin analysis. That commercial scope is retained in full (Section 3 and Section 8) and has **not** been reduced.
 
-The system currently implements: farmer registration and a 9-step onboarding wizard, farmer inventory/COA submission with real PDF upload to Supabase Storage, an admin review workflow (farm review, inventory review, master inventory), a document-completeness matrix, a mechanical risk-flagging register, a Compliance Watchtower for tracking regulatory updates through a human-approval pipeline, and an admin-only "Buyer Pack" preview. Database access control is designed to be enforced by Postgres Row-Level Security (RLS), with a detailed manual test log documenting live verification of many — but not all — of those policies (Section 19).
+**What the repository actually contains today (verified at `afbe59e`):** a React 19 / TypeScript 6 / Vite 8 front end; two Vercel serverless API routes (`api/admin/provision-farmer.ts`, `api/compliance/ai-summary.ts`); 23 numbered SQL migrations plus a body of pre-numbering schema files; a GitHub Actions CI pipeline that gates lint, typecheck, unit tests, static SQL security checks, and production build, and which is the **only** authorised automated path to production; and **1,169 passing automated tests across 72 test files**.
 
-The system does **not** currently have: a real buyer account/role, a real chain-of-custody ledger, working file uploads for most licence/certification fields, or any automated CI pipeline. Several pieces of infrastructure exist as tested library code but are not wired into the product a user actually sees (most notably the "immutable buyer pack" snapshot system). One live SQL trigger was found with a likely logic defect that has not been confirmed against production behavior.
+**Material advances since the previous revision of this document.** The prior revision described a system with two roles, no CI, 103 tests, ungated Buyer Pack output, no server-side code, and no AI. All six of those statements are now false. The platform now has a three-role model with a non-operational `pending` state, DDP-controlled farmer provisioning replacing public self-registration, a read-only admin Operations Desk, server-authoritative Buyer Pack issuance logic, a fail-closed browser-output gate on the Buyer Pack, production browser-persistence suppression, privacy-safe observability, and a live, production-verified server-side AI draft-summarisation path for legal updates. Section 5 is the full correction register.
 
-On AI specifically: **AI summarisation of legal updates is now implemented server-side and verified in production** (see the "AI summarises" row in Section 3) — a DDP admin can generate a transient, human-review-only draft summary of a single legal/regulatory update. **AI detection / source monitoring remains manual or planned** (intake is still a manual paste form). In all cases the AI does not approve, certify, create rules, enforce, or replace human legal review.
+**The dominant risk is no longer missing code — it is unverified database state.** The repository's own runtime ledger (`docs/MIGRATION_RUNTIME_STATUS.md`, last verified 2026-07-14) covers only migrations 10 and 17, records both as **applied to staging and not applied to production**, and states plainly that no production SQL verification has occurred. Migrations 19–23 — which carry the farm admin-field guard, controlled farmer provisioning, the operational-farmer RLS overlay, and server-authoritative Buyer Pack issuance — have **no entry in that ledger at all**. Migration 23's own application runbook states it "runs no SQL against any database." Consequently a large and growing share of the platform's security posture is *authored and statically tested* rather than *confirmed live*. This is the single most important gap in the programme and is reflected in the status of every affected feature below.
 
-This document exists to separate what is genuinely built from what is aspirational, and to lay out what remains before the platform could reasonably be described — by an external auditor, regulator, or enterprise buyer, not by this document — as meeting professional, security, compliance, or audit-readiness standards.
-
----
-
-## 2. Product Vision
-
-DDP Brokerage is designed for a workflow where:
-
-- Farmers register, complete a profile, and submit inventory batches with supporting documentation (including lab Certificates of Analysis).
-- DDP staff (the sole "admin" role) review farm profiles and inventory submissions, track missing documentation, flag risk, and monitor regulatory/compliance developments.
-- A prospective buyer is intended to eventually see a curated, evidence-backed "Buyer Pack" for an approved batch, with DDP acting as the reviewing intermediary rather than the buyer having direct platform access.
-
-The product vision, as expressed in the codebase's own comments and prior roadmap documents, is explicitly **not** to claim that the platform itself certifies legal compliance, export readiness, or pharmaceutical-grade quality. It is designed to organize, evidence, and route documentation and decisions to qualified humans — DDP staff, and ultimately legal/regulatory professionals — for real judgment calls.
+**Active work.** The Evidence Request & Resolution workflow — the next feature in the original sequence — exists only as the database phase on **draft PR #37**, which carries **83 unresolved review threads** and whose own description states migration 24 "has not been applied to any environment." It is **ACTIVE IMPLEMENTATION** and is not shipped (Section 7).
 
 ---
 
-## 3. Core Compliance Principle
+## 3. Product Vision and Scope
 
-The intended governing principle for any compliance-relevant automation in this system, confirmed against actual code and comments (`src/lib/aiComplianceProvider.ts`, `src/lib/complianceRules.ts`, `src/pages/admin/DDPComplianceWatchtower.tsx`):
+DDP Brokerage is a compliance-first B2B procurement and brokerage platform, not a retail marketplace. The intended end-to-end workflow is:
 
-1. **AI detects** — an automated process identifies a candidate regulatory/legal change or data gap.
-2. **AI summarises** — an automated process produces a plain-language summary and classification of the finding.
-3. **Human reviews** — a DDP staff member reads the finding and makes a judgment call.
-4. **Approved rule** — the human's judgment is codified as an explicitly approved/active rule, not left as an inference.
-5. **System enforces** — only rules that reached the "approved/active" state are used to flag real data going forward.
+1. DDP provisions and onboards farmers under its own control; farmers build farm profiles and submit inventory batches with supporting evidence, including laboratory Certificates of Analysis.
+2. DDP staff review farms and batches, chase missing evidence, flag risk, monitor regulatory developments, and make recorded procurement decisions.
+3. DDP curates an evidence-backed Buyer Pack for an approved batch and issues it under an explicit, server-enforced human-approval gate.
+4. DDP manages buyer relationships, matches buyer requirements to available inventory, and runs the deal through samples, contracts, fulfilment, and chain of custody.
+5. **DDP records the commercial reality of each deal** — purchase price, sale price, brokerage commission, invoices, payment milestones, amounts due and received — and reports on margin and profitability.
 
-**Current implementation status of each stage:**
+**The commercial and financial layer is in scope and remains in scope.** It is currently **PLANNED** (Section 8, feature 9) rather than built: the repository contains farmer asking price (`pricePerKg`, `src/types.ts:382`), DDP market price benchmarks (`market_price_benchmarks`, `src/lib/db.ts:573-589`), and price-related review request types (`src/types.ts:346`), but a repository-wide search finds **no** occurrence of commission, invoice, payment, or margin logic anywhere in `src/`, `api/`, or the SQL corpus. Recording that honestly is not a reduction of scope — the scope is retained and sequenced.
+
+**What the platform is explicitly not designed to assert.** It does not certify legal compliance, export readiness, or pharmaceutical-grade quality. It organises, evidences, and routes documentation and decisions to qualified humans — DDP staff, and ultimately legal and regulatory professionals — who make the actual judgements. Every automation touching compliance is designed so a human makes the final call and the system can prove a human did.
+
+---
+
+## 4. Verified Baseline (as at `afbe59e`)
+
+### 4.1 Build, test, and quality tooling
+
+| Fact | Evidence |
+|---|---|
+| React 19.2, TypeScript ~6.0, Vite 8.0, Vitest 4.1, ESLint 10 | `package.json` dependencies / devDependencies |
+| Scripts: `dev`, `prebuild`, `build`, `lint`, `preview`, `test`, `security:sql`, `security:staging`, `ci:verify` | `package.json` scripts |
+| `ci:verify` = `security:sql && test && tsc -b && lint && build` | `package.json` |
+| **1,169 tests across 72 files, all passing** | `npx vitest run` executed against an exact `git archive` extract of `origin/main` @ `afbe59e` |
+| Test split: 60 × `src/**/*.test.ts`, 12 × `scripts/**/*.test.mjs` | `vite.config.ts:11` include patterns |
+| API project included in the root TypeScript build | `tsconfig.api.json`, merged PR #11 |
+
+### 4.2 CI and deployment control
+
+`.github/workflows/security-ci.yml` defines two jobs:
+
+- **`verify`** — runs on pull requests to `main`, pushes to `main`, and `workflow_dispatch`. Steps: `npm ci` → `npm run security:sql` → `npm test` → `npx tsc -b` → `npm run lint` → `npm run build`. Permissions are `contents: read`. The job never connects to a database and uses no secrets.
+- **`deploy-production`** — `needs: verify` (mechanically cannot start unless verification succeeded), `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`, `environment: Production`, concurrency group `production-deploy` with `cancel-in-progress: false`. Installs a **pinned** `vercel@56.2.0`, runs `vercel pull/build/deploy --prebuilt --prod`, then **verifies the live site serves the exact deployed commit** by polling `https://www.ddpbrokerage.com/version.json` for `commitSha == GITHUB_SHA` (30 attempts, 10s apart) and fails the job otherwise.
+
+`vercel.json` sets `git.deploymentEnabled.main = false`, so Vercel's own Git integration cannot deploy `main` — the CI workflow is the only automated production path. `scripts/deploy-workflow.test.mjs` is a regression test asserting this gate cannot be silently weakened (`needs`, `if`, `continue-on-error`).
+
+**Status: IMPLEMENTED.** This directly supersedes the previous revision's claims that no CI pipeline existed and that production deployment was not CI-controlled.
+
+### 4.3 Roles and authentication
+
+`export type UserRole = 'ddp_admin' | 'farmer' | 'pending'` — `src/services/auth.ts:16`. **Three roles, not two.**
+
+`pending` is documented in the same file (`:13-15`) as a **non-operational** role: a user who exists in Supabase Auth but has not been provisioned by DDP. `resolvePostLoginDecision` (`src/lib/postLoginRouting.ts:22-33`) returns `{ kind: 'denied', reason: 'pending-approval' }` for that role, and `App.tsx:584-602` signs the account out and returns it to the login screen.
+
+Public self-registration is **removed**: `src/services/auth.ts:50-57` records that there is deliberately no client wrapper around the Supabase public sign-up endpoint, and `scripts/client-provisioning-boundary.test.mjs` is a standing test that `src/` contains no public signup path and no service-role key reference.
+
+Authentication remains Supabase Auth, email + password. MFA, SSO/OAuth, and magic-link sign-in are **PLANNED** (absent from the auth code).
+
+### 4.4 Server-side API surface
+
+The previous revision stated "There is no `/api` directory." That is now false.
+
+| Route | Enforcement | Evidence |
+|---|---|---|
+| `api/admin/provision-farmer.ts` | POST-only (405 otherwise); Bearer token required; caller resolved with a **service-role** client; role read from `profiles`, never from the client; requires `ddp_admin`; request body allowlist forbids caller-supplied `role`/`id`/`userId`/`profileId`; invites via Admin Auth then promotes `role='pending' → 'farmer'` with a constrained single-row UPDATE | `api/admin/provision-farmer.ts:33-105`; `src/lib/serverFarmerProvisioning.ts:59-137` |
+| `api/compliance/ai-summary.ts` | POST + `application/json` only (405/415); Bearer token mandatory; authorization by `profiles.role === 'ddp_admin'` via an **RLS-scoped session client bound to the caller's own token** (no service-role key); strict field allowlist, 60,000-char cap, capability locked to `draft_summarisation`; outer catch never logs the exception object | `src/lib/serverAiSummary.ts:183-405`; `api/compliance/ai-summary.ts:37-112` |
+
+Both routes are backed by pure, dependency-injected cores (`serverFarmerProvisioning.ts`, `serverAiSummary.ts`) that hold no secret and read no `process.env`, which is what makes them unit-testable.
+
+**One residual finding:** `serverFarmerProvisioning.ts:105-106` forwards the raw Supabase Admin Auth `error.message` to the client on invite failure. This is narrower than a stack trace but is still vendor text crossing a trust boundary. Carried to Section 11.
+
+### 4.5 SQL migration inventory
+
+Numbered migrations present on `main`: **3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23.** Numbers **1, 2, 5, 6, 7 do not exist** — the ledger is not contiguous, predating the numbering convention.
+
+| # | Purpose | VERIFY | ROLLBACK |
+|---|---|---|---|
+| 3 | search_path + grants hardening on SECURITY DEFINER functions | — | — |
+| 4 | Enable RLS on `ddp_scores`, `risk_flags`, `status_history` | — | — |
+| 8 | COA upload column + storage bucket + storage RLS | — | — |
+| 9 | Compliance Watchtower tables (admin-only) | — | — |
+| 10 | Buyer Pack snapshot tables + `issue_buyer_pack_snapshot()` RPC | ✅ | ✅ |
+| 11 | Block TRUNCATE on `compliance_audit_log` | ✅ | ✅ |
+| 12 | Function EXECUTE ACL hardening | ✅ | ✅ |
+| 13 | Read-only drift check for public/anon-executable functions | self | — |
+| 14 | Default privileges for future public tables | ✅ | ✅ |
+| 15 | Revoke stray privileges on 20 tables + audit-log `ENABLE ALWAYS` triggers | ✅ | ✅ |
+| 16 | Read-only production safety catalog check | self | — |
+| 17 | Append-only procurement decision trail + `procurement_decisions_current` view | ✅ | ✅ |
+| 18 | Behavioural (not catalog-only) proof for migrations 10 & 17 | self | — |
+| 19 | Farm admin-field guard (INSERT + UPDATE trigger, `is_ddp_admin()`-based) | ✅ | ✅ |
+| 20 | Corrective EXECUTE-ACL revoke on the migration-19 guard function | — | **none** |
+| 21 | `pending` role + DDP-only role-change RLS | ✅ | ✅ |
+| 22 | Restrictive operational-farmer overlay on 11 tables + storage + price benchmarks | ✅ | ✅ |
+| 23 | Server-authoritative Buyer Pack release gate | ✅ | ✅ |
+
+**Ordering and process hazards (real, and unresolved):**
+
+- Migration 17 has a hard FK dependency on migration 10; the ordering is enforced only by documentation convention, not by a migration runner (`docs/MIGRATION_RUNTIME_STATUS.md:33-37`).
+- Migration 20 has **no rollback script**. Reversing it — re-granting EXECUTE to `authenticated` — is not scripted anywhere.
+- Migration 23's header records that its number was assigned around an already-reserved 21/22 held by a then-open PR. No actual collision resulted, but migration numbers are being allocated optimistically across parallel branches. Migration 24 is currently reserved the same way, on draft PR #37. This is a process hazard worth closing before the next parallel feature branch.
+
+### 4.6 Static and live security tooling
+
+- `scripts/check-security-migrations.mjs` (`npm run security:sql`, and a CI gate) — dependency-free, **database-free** static checker over the SQL corpus: companion-file completeness, confinement of the `ACL-TEST-EXEMPT` token to exactly three known draft files, VERIFY scripts proven non-mutating, per-migration content locks for 11/12/14/15/19/23, and a corpus-wide check that no present or future migration re-grants direct client-role EXECUTE on the farm guard.
+- `scripts/run-staging-security-tests.mjs` (`npm run security:staging`) — a **live** suite against the staging Supabase project using real anon, farmer, and admin sessions. It **requires live credentials** (`STAGING_SUPABASE_URL`, anon key, admin and two farmer accounts, optional pending account and `STAGING_DATABASE_URL`), refuses to run against the production ref or any unrecognised ref before any network call, applies no DDL, tags and cleans up synthetic data, and **BLOCKs rather than skips** if migrations 21/22 are not actually present. It is deliberately **not** part of CI or `npm test`.
+
+The 12 `scripts/*.test.mjs` files guard, respectively: migration 23's authoritative gate, the client provisioning boundary, migration 21, the CI deploy gate, migration 19, the migration-17 decision-set/TS-union parity, migration 22, pending-probe fail-closed behaviour, the pending-user probe matrix, the staging suite's cleanup helpers, the sign-out sensitive-storage allowlist, and the staging harness's non-vacuity.
+
+---
+
+## 5. Correction Register — Outdated Claims Now Rebutted
+
+Each claim below appeared in, or was implied by, the previous revision of this document. Each was re-verified individually against `afbe59e`.
+
+| # | Previous claim | Verdict | Current state and evidence |
+|---|---|---|---|
+| 1 | Only two roles exist | **FALSE** | Three: `ddp_admin`, `farmer`, `pending` — `src/services/auth.ts:16`; `pending` denied at login by `src/lib/postLoginRouting.ts:22-33` |
+| 2 | No CI pipeline exists | **FALSE** | `.github/workflows/security-ci.yml`; `verify` job gates SQL checks, tests, typecheck, lint, build |
+| 3 | Only 103 tests exist | **FALSE** | **1,169 tests / 72 files**, all passing; measured on an exact `afbe59e` extract |
+| 4 | Controlled farmer provisioning is absent | **FALSE** | Migrations 21 + 22, `api/admin/provision-farmer.ts`, `src/lib/farmerProvisioning.ts`, `src/services/adminProvisioning.ts` — *but see Section 6.3, runtime unverified* |
+| 5 | Public self-registration remains available | **FALSE** | Removed; `src/services/auth.ts:50-57`; enforced by `scripts/client-provisioning-boundary.test.mjs`. `FarmerRegister.tsx` still exists but is unreachable — see Section 11 |
+| 6 | Operations Desk is not implemented | **FALSE** | `src/pages/admin/DDPOperationsDesk.tsx` + 6 `src/lib/operationsDesk*.ts` modules; merged PR #34 |
+| 7 | Admin and farmer editorial redesign is not implemented | **FALSE** | Merged PRs #29, #30; `src/components/admin/AdminShell.tsx:47-80`, `src/App.tsx:1153`, 277 `.eo-*` rules in `src/App.css`. *Partial* — see Section 6.10 |
+| 8 | Buyer Pack server-authoritative issuance is absent | **PARTLY FALSE** | Migration 23 authored and client wired (`src/lib/buyerPackSnapshotSupabaseStore.ts:167-171`), **but the migration has not been run against any database** — `docs/BUYER_PACK_AUTHORITATIVE_ISSUANCE_APPLICATION.md:9-10` |
+| 9 | Buyer Pack browser output remains ungated | **FALSE** | `src/lib/buyerPackOutputGate.ts:19-29`; enforced in-page at `src/pages/admin/DDPBuyerPreview.tsx:315, 380-400, 429-456`, plus a print-only blocking overlay outside `.no-print` (`:405-419`) so raw browser print fails closed; merged PR #32 |
+| 10 | Production browser persistence controls are absent | **FALSE** | `src/lib/browserPersistence.ts:25-27, 39-63, 87-100`; sign-out sweep at `src/services/auth.ts:74`; allowlist enforced by `scripts/sensitive-storage-registry.test.mjs`. *One inconsistency* — Section 11 |
+| 11 | API TypeScript is outside the root build | **FALSE** | `tsconfig.api.json` referenced by the root build; merged PR #11; CI runs `npx tsc -b` |
+| 12 | Production deployment is not CI-controlled | **FALSE** | `deploy-production` job with `needs: verify`; `vercel.json` disables Git deploys for `main`; post-deploy commit-SHA verification against the live site |
+| 13 | Privacy-safe observability is absent | **FALSE** | `src/lib/observability.ts` — closed `SafeLogEvent` field set (`:20-33`), `[a-z0-9_]{1,40}` machine-code regex with `unknown_error` fallback (`:39-43`), field-by-field construction that never spreads input (`:69-80`); wired at `src/components/shared/ErrorBoundary.tsx:33-42` and in the AI-summary endpoint |
+| 14 | AI summary functionality is absent | **FALSE** | Server-side draft summariser live: `src/lib/serverAiProvider.ts`, `api/compliance/ai-summary.ts`, surfaced at `src/pages/admin/DDPComplianceWatchtower.tsx:1565-1594`; production-verified 2026-07-10 @ `ffb38be` |
+| 15 | *(self-contradiction)* "No AI/LLM model is called anywhere in the codebase" | **FALSE** | Contradicted the same document's own Section 3. The Anthropic Messages API is called from `src/lib/serverAiProvider.ts` |
+| 16 | *(self-contradiction)* "No dedicated backend server… no `/api` directory" | **FALSE** | Two Vercel serverless routes exist under `api/`. There is still no long-running Express/Fastify/Nest process — that part remains accurate |
+| 17 | The immutable buyer-pack snapshot library is unwired dead code | **FALSE** | Wired: `src/pages/admin/DDPBuyerPreview.tsx:21-29, 38, 257-296`; repository selection at `src/lib/buyerPackSnapshotSupabaseStore.ts:258-264`; covered by `src/lib/buyerPackWiring.test.ts` |
+| 18 | The `fn_protect_farm_admin_fields()` role-literal defect is open | **FIXED IN CODE** | Migration 19 replaces the role literal entirely with `public.is_ddp_admin()` (`19_..._HARDENING.sql:117-119`) and additionally closes farmer-INSERT self-assignment. Statically locked by `scripts/check-security-migrations.mjs:300-382`. **Runtime confirmation is still self-reported only** — Section 6.3 |
+
+Claims from the previous revision that were re-checked and **remain true**: chain of custody is hardcoded `'missing'` (`src/lib/procurementControl.ts:114-116`); licence/certification fields are plain text inputs, not uploads (`src/pages/farmer/FarmerOnboarding.tsx:448-460`); inventory photos are base64 `data:` URLs held in state, not Storage objects (`src/pages/farmer/FarmerSubmitInventory.tsx:148-157`); carbon-programme actions are no-ops against Supabase (`src/App.tsx:748-760`); no farmer-scoped `DELETE` policy exists on any table (zero `FOR DELETE` matches across the SQL corpus); two Thai review documents contradict each other and two "needs native speaker review" comments remain live in `src/translations.ts`; no buyer role or account exists.
+
+---
+
+## 6. Current Product Area Map
+
+### 6.1 Public bilingual website — IMPLEMENTED
+Landing page and login (`src/pages/public/LandingPage.tsx`, `LoginPage.tsx`), Thai/English translation layer (`src/translations.ts`), language toggle (`src/components/shared/LangToggle.tsx`). Merged PRs #1, #2, #17.
+*Caveat:* two "needs native speaker review" comments remain live in `src/translations.ts` and the two Thai review documents in `docs/` still contradict one another on the same phrase set.
+
+### 6.2 Authentication and session restoration — IMPLEMENTED
+Supabase Auth email/password; `onAuthStateChange` re-fetches the profile on every auth event; authenticated routing survives refresh (merged PR #27); sign-out clears sensitive browser storage (merged PR #25 regression test; `src/services/auth.ts:74`).
+*Not implemented:* MFA, SSO/OAuth, magic link — **PLANNED**.
+
+### 6.3 DDP-controlled farmer provisioning — IMPLEMENTED — RUNTIME VERIFICATION REQUIRED
+**Merged PR #22.** Mechanism, verified in code and SQL:
+- Migration 21 sets `profiles.role` default to `'pending'`, widens the CHECK to `('ddp_admin','farmer','pending')`, rewrites `handle_new_user()` so every new `auth.users` row lands as `pending`, and re-asserts RLS so a user may update their own profile **but not their own `role`** (`21_..._HARDENING.sql:37-97`).
+- Migration 22 adds an `AS RESTRICTIVE FOR ALL` overlay keyed on `has_operational_farmer_access()` (role must be exactly `'farmer'`) across **11 operational tables**, both storage buckets, and `market_price_benchmarks` — closing the gap where a `pending` account could still write via the REST API directly (`22_..._HARDENING.sql:45-189`).
+- Promotion runs server-side through `api/admin/provision-farmer.ts` with a constrained `UPDATE … WHERE id=? AND role='pending'` verifying exactly one row changed.
+
+*Found during README reconciliation:* **no admin provisioning UI is wired on `main`.** No `.tsx` component imports `inviteFarmer`, `provisionFarmer`, or `listPendingProfiles` — the capability exists at the service and API layer only. Provisioning a farmer today requires calling the endpoint directly. An admin provisioning screen is an unbuilt phase of this feature.
+
+**Why runtime verification is required:** `docs/MIGRATION_RUNTIME_STATUS.md` contains **no entry for migrations 21 or 22**. No application-status document for them exists anywhere in `docs/`. Migration 21's own VERIFY script explicitly defers the "non-admin JWT cannot self-promote" proof to the live staging harness (`21_..._VERIFY.sql:14-16`), and no recorded output of that harness having been run was found. Until `npm run security:staging` is run against staging with credentials and its result recorded, the enforcement is **authored and statically tested, not confirmed live**.
+
+The same applies to the migration-19/20 farm admin-field guard: `docs/FARM_ADMIN_FIELD_GUARD_APPLICATION.md:31-40` asserts "Production is already corrected," but this is doc prose with no date, no commit, and no corroborating entry in the dated `docs/SECURITY_TEST_LOG.md`. **UNABLE TO VERIFY** independently.
+
+### 6.4 Pending-user state — IMPLEMENTED
+Routing decision at `src/lib/postLoginRouting.ts:22-33` distinguishes `pending-approval` from `unresolved-role`; `src/App.tsx:584-602` signs the account out and returns it to login. Offline probe-matrix coverage in `scripts/pending-user-matrix.test.mjs`; fail-closed behaviour pinned by `scripts/pending-gate-fail-closed.test.mjs`.
+*Gap:* the two denial reasons produce an **identical generic UI message** ("Your account does not have an assigned DDP role"). A provisioned-but-pending farmer sees the same text as a broken account. Product gap, not a security gap.
+
+### 6.5 Farmer onboarding, farm profiles, inventory and COA submission — PARTIALLY IMPLEMENTED
+Working: 9-step onboarding wizard with per-step autosave and completion tracking; advanced profile; inventory batch submission with client-side MIME/extension validation and **real PDF upload to the private, path-scoped `farmer-documents` Storage bucket**; "My Stock" with a working replace-COA action; requests inbox; status timeline.
+Missing phases: licence/certification "documents" are plain text inputs (`FarmerOnboarding.tsx:448-460`); farm/product photos are pasted external URLs (`:282-313`); inventory photos are base64 `data:` URLs capped at 4 and never uploaded (`FarmerSubmitInventory.tsx:148-157`); carbon-programme exclusion is a no-op against Supabase (`App.tsx:748-753`).
+
+### 6.6 Farm review, inventory review, master inventory — IMPLEMENTED
+Per-batch review with approve / reject / request-missing-document, internal notes, buyer-visibility toggle, farmer-facing request creation, and COA viewing via time-limited signed URL. Farm review with a 9-item scoring sidebar and decision actions. Master inventory table with a route into the Buyer Pack.
+*Carried forward, still open:* where the 9 Farm Review compliance sub-scores are actually computed remains **UNABLE TO VERIFY** — they default to zero in onboarding and no reviewed admin surface writes to them, so they may only ever be seeded by demo fixtures. Do not describe this as a working scoring engine until traced end-to-end.
+*Caveat:* the admin carbon-programme control is disabled against live Supabase with an on-screen warning (`App.tsx:755-760`).
+
+### 6.7 Missing Documents, COA Intelligence, Risk Register — IMPLEMENTED (deterministic, not AI)
+Missing Documents evaluates a fixed 12-type requirement set by hand-written boolean logic with manual admin override (`src/lib/procurementControl.ts`). COA Intelligence summarises lab values **typed by the farmer** and applies a rule-based red-flag scan — there is **no OCR, PDF parsing, or AI extraction anywhere in the codebase**. Risk Register emits entries from a small fixed if/else cascade; severity is not weighted or model-derived.
+`chain_of_custody` is unconditionally `'missing'` (`procurementControl.ts:114-116`), so it surfaces as an unmet requirement everywhere it appears.
+
+### 6.8 Operations Desk — IMPLEMENTED (read-only by construction)
+**Merged PR #34.** `src/pages/admin/DDPOperationsDesk.tsx` states in its header (`:24-35`) that it performs no approve/reject, no procurement decision, no rule activation, and no Buyer Pack issue/print/download/copy — every action is a navigation. No mutation call exists in the file; buttons either adjust local filter/expansion state or route.
+It is fed by loader-aware views that distinguish **loaded / loading / failed / filtered-empty**: `deskAdminDataView` (`App.tsx:521-524`), `deskReviewRequestsView` (`:489-492`), `resolveDeskComplianceAlerts` (`:535-546`), assembled by `src/lib/operationsDesk.ts` with filtering, priority, empty-state and routing modules alongside. Follow-up buttons are **disabled** when the target record is not loaded (`:296-309`), so no click can open an empty detail page. A footnote (`:336-341`) discloses that document/risk overrides are browser-local rather than organisation-wide, and that Buyer Pack matters are deliberately excluded from the desk.
+
+### 6.9 Compliance Watchtower, Risk rules, and AI-assisted legal-update summaries — IMPLEMENTED
+Manual legal-update intake, human review queue, rule approval, and rule-based alerting, persisted to seven RLS-protected admin-only tables with a database-enforced append-only audit trigger (migration 9; TRUNCATE additionally blocked by migration 11). Rules seed as `suggested` and only affect alerting once a human sets `approved`/`active`.
+
+**The five-stage compliance principle and its current status:**
 
 | Stage | Status | Evidence |
 |---|---|---|
-| AI detects | **Planned** | No regulatory-source monitoring or detection job exists. Intake of legal/regulatory updates is a 100%-manual paste form (`DDPComplianceWatchtower.tsx`, "Manual Legal / Regulatory Update Intake"). |
-| AI summarises | **Implemented — server-side draft summariser** | A real server-side summariser now realises this stage. `src/lib/serverAiProvider.ts` calls the Anthropic Messages API directly (no vendor SDK), and `api/compliance/ai-summary.ts` exposes the secure server-side boundary (POST-only, JSON-only, Supabase bearer token required, `ddp_admin`-only). The output contains exactly five review-oriented sections: `draftSummary`, `possibleSignificance`, `uncertainties`, `reviewQuestions`, `sourceReferences`. Every response is stamped `requiresHumanReview: true`; the draft is transient and not persisted (never written back to the legal update, Supabase, or the audit log); and the path cannot approve, certify, create a rule, or enforce. The older four-method `ComplianceAIProvider` interface (`src/lib/aiComplianceProvider.ts`) remains unimplemented — only the newer `ComplianceAiSummaryProvider` draft-summary path is live. **Production verification completed on 2026-07-10 at commit `ffb38be2945e20f9d3056a7ad215f8bdc014c237`:** the API smoke test returned HTTP 200 with `ok:true`, `requiresHumanReview:true`, `provider: anthropic`, `model: claude-opus-4-5-20251101`, all five sections present, no prohibited approval/certification/enforcement wording, and no secret, token, stack trace, or vendor error exposed. The production model is configured through the `AI_SUMMARY_MODEL` environment variable; the code fallback default is `claude-opus-4-8` (`api/compliance/ai-summary.ts`) and was **not** used in production. `ANTHROPIC_API_KEY` is server-only (never in the client bundle). |
-| Human reviews | **Implemented** | A Review Queue tab lets a DDP admin classify each intake as informational / create-rule / approve-rule / send-to-legal / reject / archive, with real state transitions persisted (Supabase when configured, else `localStorage`). |
-| Approved rule | **Implemented** | Rules only take effect once a human sets their status to `approved` or `active` via the Rules tab (`isEnforcedRuleStatus`, `src/lib/complianceRules.ts`). Rules are seeded as `suggested` (non-enforced) by default. |
-| System enforces | **Implemented, alert-level only** | `deriveRuleBasedComplianceAlerts` (`src/lib/complianceAlerts.ts`) checks only enforced rules against current farm/inventory data and raises alerts. There is no automated downstream action (e.g. no automatic hold on a batch) — enforcement means "an alert is shown," not "a workflow is blocked."
+| AI detects | **PLANNED** | Intake is still a 100% manual paste form. `docs/CANNAMONITOR_WATCHTOWER_INTEGRATION.md` records the source connector as "INACTIVE AND UNREACHABLE" |
+| AI summarises | **IMPLEMENTED** | `src/lib/serverAiProvider.ts` calls the Anthropic Messages API directly; `api/compliance/ai-summary.ts` is the POST-only, JSON-only, bearer-token, `ddp_admin`-only boundary. Output is five review-oriented sections, always stamped `requiresHumanReview: true`, **transient and never persisted** (`src/lib/watchtowerAiSummary.ts:30-35`), surfaced as a dismissible "Draft only" card (`DDPComplianceWatchtower.tsx:1565-1594`). Eligibility is re-checked inside `runAiDraftSummary` (`:176-183`) so a UI bug cannot reach the provider. `ANTHROPIC_API_KEY` is server-only |
+| Human reviews | **IMPLEMENTED** | Review Queue with real, persisted state transitions |
+| Approved rule | **IMPLEMENTED** | `isEnforcedRuleStatus`, `src/lib/complianceRules.ts` |
+| System enforces | **IMPLEMENTED — alert-level only** | `deriveRuleBasedComplianceAlerts` raises alerts; no automated downstream action such as a batch hold |
 
-**Important distinction verified in code:** there is one deterministic, non-AI safety mechanism that *is* wired in today — `src/lib/aiComplianceGuard.ts`, a plain regex/keyword scanner that blocks unqualified claim-words ("compliant," "certified," "verified," "guaranteed," "export-ready," etc.) from being submitted in the manual legal-update intake form unless properly qualified. This is a genuine, working control, but it is a wording linter, not an AI system, and it should not be described as "AI compliance detection."
+*Production verification of the AI path:* 2026-07-10 @ `ffb38be2945e20f9d3056a7ad215f8bdc014c237` — HTTP 200, `ok:true`, `requiresHumanReview:true`, `provider: anthropic`, `model: claude-opus-4-5-20251101`, all five sections present, no prohibited approval/certification wording, no secret, token, stack trace, or vendor error exposed. **This is the only end-to-end production verification of a server route recorded in the repository.**
 
----
+Separately, `src/lib/aiComplianceGuard.ts` is a deterministic regex/keyword scanner blocking unqualified claim-words in the intake form. It is a genuine working control but is a **wording linter, not AI** and must not be described as AI compliance detection.
 
-## 4. What Has Been Built So Far
+### 6.10 Editorial admin and farmer appearance — PARTIALLY IMPLEMENTED
+**Merged PRs #29, #30.** A single design system spans both surfaces: `.eo-*` shell/nav/header/content classes from `src/components/admin/AdminShell.tsx:47-80` for admin, and the same institutional frame applied additively to farmer pages via `isFarmerPage ? ' eo-farmer' : ''` (`src/App.tsx:1153`), with 277 `.eo-*` rules in `src/App.css`.
+**Why partial:** `AdminShell.tsx:74` splits content into `eo-content-canvas` (only `ddp-overview`) versus `eo-content-legacy` (every other admin page). Only the Overview page received the full canvas treatment; the remaining Supply Ledger, Watchtower, and Operations Desk pages sit inside the new shell while keeping their pre-existing internal layout. The class name is the codebase's own admission of the remaining phase.
 
-High-level, verified inventory (details in later sections):
+### 6.11 Procurement decisions — IMPLEMENTED — RUNTIME VERIFICATION REQUIRED
+**Merged PR #4.** Migration 17 creates an append-only decision trail and the `procurement_decisions_current` view; `scripts/migration-17-decision-set.test.mjs` asserts the TypeScript union and the database CHECK constraint enumerate an identical decision set.
+`docs/MIGRATION_RUNTIME_STATUS.md:14-17` records migration 17 as applied and verified on **staging** (2026-07-14) and **explicitly not applied to production**. Production therefore still relies on the localStorage fallback for procurement decisions.
 
-- Farmer registration, a 9-step onboarding wizard with autosave, an advanced/extended profile form, inventory/COA submission with real PDF upload, a "My Stock" management view, a request/response inbox, and a status/activity timeline.
-- Admin dashboards: overview, inventory dashboard, per-batch inventory review with approve/reject/request-info actions, master inventory table, farm profile registry, per-farm review with a scoring sidebar and decision actions.
-- A "Supply Ledger" navigation grouping (Inventory Review, Master Inventory, Missing Documents, COA Intelligence, Risk Register, Buyer Preview) — a UI label, not a distinct data ledger (see Section 10).
-- A Missing Documents Matrix computing document-completeness status per farm against a fixed set of 12 document types.
-- A COA Intelligence dashboard summarizing lab-value fields already entered by the farmer, with a rule-based red-flag scan.
-- A Risk Register that emits risk entries from a small, fixed if/else rule cascade over COA red flags and farm status.
-- A Compliance Watchtower: manual legal-update intake, human review queue, rule approval workflow, and rule-based alerting, with real Supabase persistence (RLS-protected, 7 tables) including a database-enforced append-only audit log trigger.
-- A Buyer Pack preview (admin-only) showing a curated summary of an approved batch, with copy-to-clipboard and browser-print export.
-- A fully built, unit-tested "immutable buyer pack snapshot" library (SHA-256 hashing, object-freezing, append-only versioned store, audit trail, download-history log) — **not currently wired into any page**.
-- An extensive, staged Row-Level Security rollout across many SQL migration files, with a rollback file, and a substantial manual live-testing log (`docs/SECURITY_TEST_LOG.md`) documenting real tests against a production Supabase project.
-- A Thai/English bilingual translation layer (~700 key-value pairs) with two rounds of native-speaker/legal review documented.
-- 103 passing automated unit tests (Vitest) covering business logic in `src/lib/` — compliance rules, buyer-pack logic, and the AI-guard wording filter. No UI/component or end-to-end tests exist.
-- A prior professionalization audit and roadmap (`docs/PROFESSIONALIZATION_ROADMAP.md`) covering a 7-agent read-only review plus an implemented "Wave 1" of copy/CSS fixes, and a separately closed-out "Compliance Rules Operationalization v1" workstream, verified live in production on 2026-07-08.
+### 6.12 Buyer Pack — preview, snapshots, issuance, browser output — mixed
 
----
+| Sub-area | Status | Detail |
+|---|---|---|
+| Preview | **IMPLEMENTED** | Admin-only curated batch view with signed-URL COA link, completeness matrix, risk summary, recommended decision |
+| Immutable snapshots | **IMPLEMENTED** | SHA-256 content hashing over a canonically ordered, deep-frozen evidence copy; append-only versioned store rejecting overwrites. **Now genuinely wired** — `DDPBuyerPreview.tsx:21-29, 38, 257-296`; `selectBuyerPackSnapshotRepository` (`buyerPackSnapshotSupabaseStore.ts:258-264`) prefers Supabase and falls back to localStorage **only** on a missing-schema error, never on permission, RLS, network, or append-only (23505) errors |
+| Server-authoritative issuance | **ACTIVE / NOT LIVE** | Migration 23 makes the database the release gate: it reads `procurement_decisions_current` itself and requires `decision='progress'`, a non-null `decided_by`, and a non-blank reason, **ignoring** the client-supplied `p_procurement_decision` (`23_...sql:120-172`). The client still sends that parameter for signature compatibility only (`buyerPackSnapshotSupabaseStore.ts:167-171`). **But the migration has never been executed** — `docs/BUYER_PACK_AUTHORITATIVE_ISSUANCE_APPLICATION.md:9-10`. Until applied, the live release gate is still migration 10's client-trusting RPC |
+| Browser output gate | **IMPLEMENTED** | See Section 5, row 9 |
+| Audit and download trail | **PARTIALLY IMPLEMENTED** | `src/lib/buyerPackAudit.ts` and `buyerPackDownloads.ts` are **localStorage-only** — no Supabase import, no server persistence. The pack *content* is server-authoritative once migration 23 is applied; the who-viewed / who-downloaded record is not durable and is erasable by clearing browser storage |
+| Content hash authority | **PLANNED** | Migration 23 states explicitly (`:48-56`) that it does **not** claim `content_hash` is server-recomputed |
 
-## 5. Current Architecture
+**Do not describe the Buyer Pack externally as having a durable, tamper-evident audit trail.** The snapshot is on a credible path to that; the access trail is not there yet.
+*Stale UI copy:* `DDPBuyerPreview.tsx:793-796` still displays "Stored in this browser only for now — tamper-evident, not a durable server record," which is inaccurate once migration 23 is applied. Carried to Section 11.
 
-**Implemented, verified against `package.json`, `vite.config.ts`, `tsconfig*.json`, `src/lib/supabase.ts`, `src/lib/db.ts`, `src/App.tsx`:**
+### 6.13 RLS, private storage, and browser persistence — IMPLEMENTED — RUNTIME VERIFICATION REQUIRED
+RLS with per-role policies across the farmer, admin, and Watchtower table sets; `is_ddp_admin()` as the canonical admin predicate; farmer access scoped by membership or `created_by`; no table grants `anon` access. Private, MIME-restricted, size-capped `farmer-documents` Storage bucket with three policies.
+Browser persistence in production is suppressed by `shouldPersistToBrowser()` returning `false` whenever Supabase is configured (`browserPersistence.ts:25-27`), with a sensitive-key allowlist swept on sign-out and pinned by `scripts/sensitive-storage-registry.test.mjs`.
+**No farmer-scoped `DELETE` policy exists on any table** — zero `FOR DELETE` matches corpus-wide. This is closure by omission (RLS default-deny), live-confirmed for `inventory_batches` + Farmer A on 2026-07-08 (`docs/SECURITY_TEST_LOG.md:567-636`), where the request returned HTTP 200 with zero rows affected rather than an explicit denial. The log itself caveats that `farms`, `farm_memberships`, admin DELETE, and other combinations were not tested.
 
-- **Frontend:** React 19, TypeScript 6 (project references, `strict`-adjacent flags including `noUnusedLocals`/`noUnusedParameters`), Vite 8 for build/dev, ESLint 10 + typescript-eslint for linting.
-- **No dedicated backend server.** There is no Express/Fastify/Nest process, and no `/api` directory. The browser talks directly to Supabase using the public anon key (`src/lib/supabase.ts`).
-- **No routing library.** Navigation is a hand-rolled `Page` string-union type held in component state (`goTo(page)` in `App.tsx`), not React Router or any URL-based routing. There are no deep-linkable URLs for individual farms/batches.
-- **No state-management library.** All state is local `useState`/`useEffect`, persisted to `localStorage` in demo mode (`src/data.ts`) or read/written directly against Supabase in live mode (`src/lib/db.ts`, ~980 lines, the sole data-access layer).
-- **Authorization boundary:** the real access-control boundary is intended to be Postgres Row-Level Security, not the React code. Frontend role checks (`isAdminRole`/`isFarmerRole` derived inline in `App.tsx`) exist only to avoid rendering UI a user shouldn't see or issuing requests doomed to be rejected by RLS — they are not a substitute for RLS and are trivially bypassable by any direct API call.
-- **Dual operating mode:** if Supabase environment variables are absent, the entire app runs against `localStorage` with all pages/roles unlocked for demo purposes (`isSupabaseConfigured` flag). This is clearly useful for demos but means "the app works" is not, by itself, evidence that the live/Supabase-backed security model works.
-
----
-
-## 6. User Roles
-
-**Implemented:** Exactly two backend-enforced roles exist: `ddp_admin` and `farmer` (`UserRole` type, `src/services/auth.ts`). Role is stored on a `profiles` table row and read on login/session-change.
-
-**Not implemented as a role:** There is no buyer role, buyer login, or buyer-scoped table anywhere in the schema or auth code. The "Buyer Preview" page is reachable only by an already-authenticated `ddp_admin` — it is DDP staff previewing what a buyer would be shown, not a buyer's own account.
-
-**Cosmetic-only, not an auth role:** A farmer "sub-role" (`Farmer` / `Farm Manager` / `Broker`) exists purely as a display label typed during registration; it has no effect on authorization.
-
-**Unable to verify:** How `ddp_admin` profile rows are actually provisioned in production (no self-service admin signup path exists in the code, so admin accounts are presumably created directly against the database — this was not observed in the repository).
+### 6.14 Deployment and observability controls — IMPLEMENTED
+Covered in 4.2 and Section 5 rows 12–13.
 
 ---
 
-## 7. Farmer Workflow
+## 7. Active Implementation
 
-**Implemented:**
-- Registration (local draft only, not yet a backend account).
-- A 9-step onboarding wizard with per-step autosave, completion-percentage tracking, and a final review/submit step producing a `FarmProfile` with status `Submitted to DDP`.
-- Inventory/batch submission (`FarmerSubmitInventory.tsx`) with real client-side MIME/extension validation and a genuine PDF upload to Supabase Storage (bucket `farmer-documents`, path scoped to the uploading user).
-- "My Stock" list/filter view, including a working "replace COA" action using the same real upload path.
-- A requests inbox reflecting admin-created review requests, with resolve/edit actions.
-- A status/activity timeline merging farm and inventory state.
-- An "Advanced Profile" second-tier form covering business, licensing, facility, production, genetics, compliance, and export/partnership fields.
+### Evidence Request & Resolution — **ACTIVE IMPLEMENTATION**
 
-**Partially implemented / stub:**
-- Licence and certification fields throughout the onboarding wizard and the Advanced Profile (e.g. processing licence, export licence, organic certification, ISO certifications) are **plain text inputs**, not file uploads — a farmer types a filename or reference string; no file is attached or stored. This contrasts with the genuinely working COA/photo-related upload path used elsewhere.
-- Product/facility photo fields in onboarding accept a pasted **external URL** (e.g. a Google Photos or LINE link), not an uploaded file.
-- Inventory submission photos are read client-side as `data:` URLs and kept only in application state — they are **not** uploaded to Supabase Storage.
-- The farmer-side carbon-programme "exclude/withdraw" action is explicitly a no-op against live Supabase: the UI displays a warning that production persistence requires an approved migration, and the action only updates local React state.
+**This feature is not shipped. No part of it is merged into `main`.**
 
----
+The work exists as **draft PR #37** (`feature/evidence-request-resolution-v2`), based on `afbe59e`, adding **five new files and modifying none**: `24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql`, `..._VERIFY.sql`, `..._ROLLBACK.sql`, `..._STORAGE.sql`, and `scripts/evidence-request-resolution-migration.test.mjs`.
 
-## 8. Buyer Workflow
+Design properties claimed and asserted by that PR's tests: authorization via `can_operationally_access_farm(uuid)` ANDing farmer role, `has_operational_farmer_access()`, and an active `farm_memberships` row, reading the role from `profiles` and never from JWT metadata; non-disclosure by returning `NOT_FOUND` rather than `FORBIDDEN` for unauthorized ids; direct-DML denial with no INSERT/UPDATE/DELETE policy on any workflow table; optimistic concurrency via `expected_revision` under `FOR UPDATE`; an unconditional append-only history trigger; server-derived `farm_id` never accepted as an RPC parameter; and a private storage bucket with farm-scoped paths.
 
-**Implemented:**
-- An admin-only "Buyer Pack Preview" (`DDPBuyerPreview.tsx`) shown to DDP staff for an approved batch: product/farm identity, allocatable quantity, price, lab values (explicitly captioned "as documented by the farm from its COA — DDP review required before commercial reliance"), a COA link generated via a real, time-limited (1-hour) Supabase signed URL, a document-completeness matrix, a risk-register summary, and a recommended-decision control.
-- "Copy Summary" (clipboard text) and "Print / Save PDF" (`window.print()`) export mechanisms. There is no server-side PDF generation pipeline.
-- A human-approval gate (`buyerApprovalGate.ts`, unit tested) that only allows a batch to be labeled approved-for-buyer-discussion when there are no blocking issues **and** a DDP staffer has recorded an explicit "progress" decision — a status field alone is not sufficient.
+**Two documented contract deviations** are flagged in the SQL itself and are the points most warranting reviewer attention: `size_bytes` is nullable for linked existing documents (contract §6.4 requires NOT NULL, but `farmer_documents`/`documents` carry no size column and fabricating a byte count was rejected), and storage policies live in a companion file because `CREATE POLICY` on `storage.objects` requires `supabase_storage_admin` ownership.
 
-**Partially implemented (built, but not reachable by users):**
-- A fully designed and unit-tested "immutable buyer pack snapshot" system exists (`buyerPackSnapshot.ts`, `buyerPackSnapshotRepository.ts`, `buyerPackSnapshotStore.ts`, `buyerPackAudit.ts`, `buyerPackDownloads.ts`): SHA-256 content hashing over a canonically ordered, deep-frozen copy of the pack's evidence; an append-only version store that rejects overwrites; an audit-event log (generated/viewed/superseded/archived); and a separate download-history log. **This code is not imported or called anywhere in `DDPBuyerPreview.tsx` or any other page** — confirmed by a repository-wide search for its exported functions. The Buyer Pack a user actually sees today is recomputed live on every render and is not hashed, versioned, or snapshotted in practice.
-- Persistence for this snapshot/audit system, where it is used at all (its own tests), is `localStorage` only — there is no Supabase table backing it. It is not durable across devices or browsers, and nothing prevents a user from clearing browser storage to erase the "immutable" record.
+**Blocking state as at 2026-07-21:**
 
-**Not implemented:** A real buyer account, buyer login, buyer-initiated access request, or buyer-visible audit trail of who viewed which pack and when.
+| Signal | Value |
+|---|---|
+| Draft | Yes |
+| Unresolved review threads | **83 of 83** |
+| Behind `origin/main` | 0 |
+| CI `verify` | SUCCESS |
+| Merge state | UNSTABLE |
+| Migration 24 applied anywhere | **No** — "not production, not staging, not a local database", per the PR's own description |
 
----
+**Remaining phases, in order:**
 
-## 9. Admin Workflow
+1. **Database review closeout** — resolve all 83 open review threads and settle the two contract deviations.
+2. **Runtime database verification** — execute migration 24 and its VERIFY against a real database (staging first). This is the phase that converts the security properties from *asserted* to *demonstrated*, and it currently gates everything below.
+3. **Admin interface** — request creation, tracking, and resolution surfaces for DDP staff.
+4. **Farmer interface** — inbound request visibility, response drafting, and submission.
+5. **Storage orchestration** — reserved-path upload, finalization, size measurement, and the 150 MB aggregate limit.
+6. **Notifications** — informing farmers of new requests and DDP of submitted responses.
+7. **Operations Desk integration** — surfacing outstanding evidence requests in the desk queue.
+8. **End-to-end and adversarial validation** — full-flow testing plus deliberate attempts to defeat the authorization, non-disclosure, and append-only properties.
 
-**Implemented:**
-- Overview dashboard (farm/inventory counts, action-required list, top batches/farms).
-- Inventory dashboard and per-batch inventory review with real approve/reject/request-missing-document actions, an internal note field, a buyer-visibility toggle, a "send request to farmer" action (feeding the farmer requests inbox), and COA viewing via signed URL.
-- Master Inventory: filterable/sortable table of approved batches, with a route into the Buyer Pack for a given batch.
-- Farm Profiles registry with simple, transparent (non-black-box) heuristics for risk level and export readiness.
-- Farm Review: a full read-only detail view plus a scoring sidebar (9 named sub-scores) and real decision actions (Approve / Request Additional Information / Watchlist / Strategic Partner / Reject), persisted via `updateFarmProfileStatus`.
+**Do not describe any part of Evidence Request & Resolution as available.** Phases 3–8 have no code on any branch.
 
-**Partially implemented / caveat:**
-- The admin-side carbon-programme status control is explicitly disabled against live Supabase with an on-screen warning that changes will not be saved, mirroring the farmer-side limitation in Section 7.
-- **Unable to verify:** where the 9 Farm Review compliance sub-scores are actually computed. They default to zero in the onboarding wizard, and no admin UI reviewed writes to them directly — it is possible they are only ever seeded by demo fixtures rather than computed from real farm data. This needs direct confirmation against `src/lib/complianceScoring.ts` and `src/lib/testFixtures.ts` before being described in any product materials as a working scoring engine.
+**Related branches carrying earlier attempts:** `feature/evidence-request-workflow` (contract and Phase-0 audit commits; **SUPERSEDED** by v2) and `feature/evidence-intelligence-phase-a` (single commit, 67 behind `main`; **SUPERSEDED / stale**).
 
 ---
 
-## 10. Supply Ledger
+## 8. Original Planned Feature Sequence
 
-**Partially implemented — a navigation label, not a ledger mechanism.** "Supply Ledger" is the name of a tab group (`SupplyLedgerTabs.tsx`) spanning six existing admin pages (Inventory Review, Master Inventory, Missing Documents, COA Intelligence, Risk Register, Buyer Preview). There is no dedicated ledger data type, no per-batch history/versioning, and no append-only or hash-chained record of state changes to a batch.
+The full brokerage plan, preserved in its original order. Feature 1 is in active implementation (Section 7); features 2–12 are **PLANNED** unless noted.
 
-`chain_of_custody` is a recognized document-requirement type in the type system, but its status is **hardcoded to `missing`** in two independent places (`src/lib/procurementControl.ts`, `src/lib/complianceScoring.ts`), each with an explicit source comment stating that chain-of-custody evidence is not captured in the current MVP. No blockchain, hash-chaining, or other tamper-evidence mechanism exists for inventory/farm data — it is stored as ordinary mutable rows (Postgres in live mode, `localStorage` in demo mode).
+### 1. Evidence Request and Resolution
+- **Business purpose** — close the evidence gap between what a farm has submitted and what DDP needs, with a tracked, auditable request/response loop instead of ad-hoc chasing.
+- **Principal users** — DDP staff (raise, track, accept, reject); farmers (see, respond, upload).
+- **Major capabilities** — request creation against a farm or batch; typed request categories; farmer response drafting and submission; attachment upload and linking of existing documents; state transitions with optimistic concurrency; append-only history.
+- **Dependencies** — controlled farmer provisioning and the operational-farmer RLS overlay (migrations 21, 22); farm memberships; private storage.
+- **Security boundaries** — farm-scoped authorization ANDed across role, operational access, and membership; non-disclosure of foreign request ids; no direct DML on workflow tables; append-only history with no bypass; server-derived scope.
+- **Status** — **ACTIVE IMPLEMENTATION** (draft PR #37, database phase only, 83 unresolved threads, migration unapplied).
+- **Sequencing** — next. Phases per Section 7.
+- **Must not claim** — that evidence requests are available to farmers or staff; that migration 24's properties are proven at runtime; that any evidence has been collected through this workflow.
 
----
+### 2. Notification and Communications System
+- **Business purpose** — ensure a request, decision, or state change actually reaches the person who must act, rather than depending on someone opening the app.
+- **Principal users** — farmers, DDP staff.
+- **Major capabilities** — event-driven notification generation; per-user inbox and read state; delivery channels (in-app first; email/LINE later); digest and escalation for overdue items; notification preferences.
+- **Dependencies** — Evidence Request & Resolution (its first real event source); the existing farmer requests inbox as the in-app precedent.
+- **Security boundaries** — notification content must not leak cross-farm data; delivery outside the app moves data past the RLS boundary and needs an explicit content policy; templates must be subject to the existing wording guard.
+- **Status** — **PLANNED**. The current farmer requests inbox (`src/pages/farmer/FarmerRequests.tsx`) is a per-page fetch, not a notification system. No scheduled job, queue, or outbound channel exists.
+- **Sequencing** — immediately after Evidence Request phases 3–5.
+- **Must not claim** — reliable or guaranteed delivery; any email/SMS/LINE capability.
 
-## 11. COA Intelligence
+### 3. Buyer CRM and Controlled Buyer Accounts
+- **Business purpose** — make buyers first-class entities so relationships, requirements, and deals attach to a real record rather than living in staff memory.
+- **Principal users** — DDP staff; later, controlled buyer users.
+- **Major capabilities** — buyer organisation and contact records; qualification and KYC status; interaction history; a controlled buyer login with narrowly scoped visibility; per-buyer pack access records.
+- **Dependencies** — the provisioning pattern proven by migrations 21/22 (buyer accounts must be DDP-provisioned, never self-registered); Buyer Pack issuance.
+- **Security boundaries** — a third role requires its own RLS scoping designed before any UI; buyers must never see farm identity or other buyers' data except where DDP has explicitly disclosed it; every pack view must be attributable.
+- **Status** — **PLANNED**. No buyer role, buyer table, or buyer login exists anywhere in the schema or auth code. "Buyer Preview" is DDP staff previewing what a buyer *would* see.
+- **Sequencing** — after notifications; the first genuinely new role since `pending`.
+- **Must not claim** — that buyers have accounts, that pack access is currently attributable to a named buyer, or that any KYC has been performed.
 
-**Implemented, as a manual-data summary and file viewer — not document extraction.** `DDPCoaIntelligence.tsx` displays lab fields (THC/CBD/terpenes, moisture, heavy metals/pesticides/mycotoxins/microbial pass-fail, lab name, report number) that were **typed directly into a form by the farmer** during inventory submission, together with a small rule-based scan that flags missing/expired/failed results. The actual COA document is a PDF stored in Supabase Storage and opened via a signed URL for a human to read.
+### 4. Buyer Requirements and Inventory Matching
+- **Business purpose** — convert a buyer's stated specification into a repeatable search against real inventory, so DDP proposes evidence-backed matches rather than recalling what is in stock.
+- **Principal users** — DDP staff.
+- **Major capabilities** — structured requirement capture (product type, cannabinoid ranges, volume, price band, certification and jurisdiction constraints, timing); deterministic match scoring against master inventory; explainable match rationale; saved requirements with re-run on new inventory.
+- **Dependencies** — Buyer CRM; master inventory; COA data; document completeness; price benchmarks (`market_price_benchmarks`).
+- **Security boundaries** — matching must respect batch buyer-visibility flags; rationale must not disclose non-visible batches or farm identity prematurely.
+- **Status** — **PLANNED**. Master inventory has filtering and sorting but no requirement entity and no matching engine.
+- **Sequencing** — directly after Buyer CRM.
+- **Must not claim** — that matching is AI-powered or predictive; it should be deterministic and explainable, like the existing rule and risk engines.
 
-There is **no OCR, PDF parsing, or AI-based extraction anywhere in the codebase.** The page itself carries an on-screen disclaimer that the displayed values are as typed by the farm and are not independently verified — this document preserves that same caution and does not describe this feature as AI-powered extraction.
+### 5. Brokerage Deal Pipeline
+- **Business purpose** — give every live opportunity a stage, an owner, and a next action, so the brokerage has an operational forecast rather than a list of conversations.
+- **Principal users** — DDP staff and management.
+- **Major capabilities** — deal records linking buyer, requirement, and one or more batches; stage model with entry and exit criteria; ownership and next-action tracking; stage-change history; pipeline reporting by stage, value, and age.
+- **Dependencies** — Buyer CRM; requirements and matching; procurement decision trail (migration 17) as the existing precedent for append-only decision history.
+- **Security boundaries** — pipeline value and buyer identity are commercially sensitive and are admin-only; farmers must never see deal-stage or buyer data.
+- **Status** — **PLANNED**. Procurement decisions exist per batch; there is no deal entity, stage model, or pipeline view.
+- **Sequencing** — after matching; it is the spine every later commercial feature hangs from.
+- **Must not claim** — that pipeline figures are forecasts, or that any deal has been transacted through the platform.
 
----
+### 6. Sample Request and Evaluation Workflow
+- **Business purpose** — track physical samples from buyer request through dispatch to recorded evaluation, since sampling is normally the gate before any contract.
+- **Principal users** — DDP staff, farmers, buyers (indirectly).
+- **Major capabilities** — sample request against a batch; quantity and dispatch tracking; courier and reference capture; buyer evaluation outcome recorded against the sample; linkage of the outcome back to the deal.
+- **Dependencies** — deal pipeline; Evidence Request patterns (a sample is an evidence artefact with a physical leg); notifications.
+- **Security boundaries** — dispatch details include addresses and are personal data; retention and visibility need an explicit policy.
+- **Status** — **PLANNED**. No sample entity exists.
+- **Sequencing** — after the pipeline; the first workflow with a physical-world leg, which makes it the natural precursor to chain of custody.
+- **Must not claim** — chain-of-custody coverage; a sample record is not custody evidence.
 
-## 12. Missing Documents Matrix
+### 7. Contracts, Orders and Commercial Documents
+- **Business purpose** — capture the binding commercial agreement and the resulting order so downstream fulfilment and finance work from an authoritative record.
+- **Principal users** — DDP staff and management.
+- **Major capabilities** — contract records with parties, terms, quantities, prices, Incoterms, and dates; order creation from a contract; document generation and versioning; signature and execution status; immutable execution snapshots.
+- **Dependencies** — deal pipeline; buyer CRM; the Buyer Pack snapshot machinery, which is the existing precedent for hashed, append-only, versioned documents.
+- **Security boundaries** — executed contracts must be immutable and server-persisted, not browser-held; access is admin-only plus, later, the counterparty buyer; e-signature is a legal question requiring qualified advice before implementation.
+- **Status** — **PLANNED**. No contract or order entity; no server-side document generation (the Buyer Pack uses `window.print()`).
+- **Sequencing** — after samples.
+- **Must not claim** — legal enforceability of any generated document, or that any signature captured constitutes a qualified electronic signature.
 
-**Implemented, as a static, hardcoded rule engine.** A fixed list of 12 document-requirement types is evaluated per farm/batch by deterministic, hand-written boolean logic (`deriveFarmDocumentRequirements`, `src/lib/procurementControl.ts`). DDP staff can manually override any computed status, and overrides persist to `localStorage`. This is not a dynamic or externally configurable requirements schema — the requirement types and derivation rules are fixed in source code, and changing them requires a code change, not a data change.
+### 8. Fulfilment and Chain of Custody
+- **Business purpose** — evidence the physical movement of goods from farm through DDP to buyer, which is the missing spine of the current evidence story.
+- **Principal users** — DDP operations staff, farmers, logistics partners.
+- **Major capabilities** — custody transfer events with actor, timestamp, location, and supporting document; shipment and consignment records; hash-chained or otherwise tamper-evident event sequence; a custody timeline surfaced in the Buyer Pack.
+- **Dependencies** — contracts and orders; private storage; the append-only trigger pattern already proven on `compliance_audit_log` (migrations 9, 11, 15).
+- **Security boundaries** — custody events must be genuinely append-only at the database level, not by application convention; each transfer must be attributable to an identified actor.
+- **Status** — **PLANNED**. `chain_of_custody` is a recognised requirement type whose status is unconditionally hardcoded to `'missing'` (`src/lib/procurementControl.ts:114-116`), with a source comment stating no custody record is captured. It is consequently an unmet requirement everywhere it surfaces, including the Buyer Pack.
+- **Sequencing** — after contracts. This is the highest-value single unlock for buyer credibility.
+- **Must not claim** — any custody, traceability, or provenance guarantee until real transfer events are captured and made tamper-evident.
 
----
+### 9. Brokerage Commission and Financial Tracking
+- **Business purpose** — record the commercial substance of the brokerage: what was paid, what was charged, what commission was earned, what is outstanding, and what margin resulted.
+- **Principal users** — DDP management and finance.
+- **Major capabilities** — purchase value and sale value per deal; commission model (rate, fixed, or tiered) with calculated and adjusted amounts; invoice generation and status; payment milestones and schedules; amounts due, received, and overdue; commercial reporting; financial exports (CSV/accounting-package format); margin and profitability analysis per deal, buyer, farm, and period.
+- **Dependencies** — deal pipeline; contracts and orders; fulfilment for revenue-recognition triggers.
+- **Security boundaries** — the most commercially sensitive data in the platform: strictly admin/finance-scoped RLS, no farmer or buyer visibility of margin or counterparty pricing; every amount change must be attributable and append-only; exports are an exfiltration surface and need explicit control.
+- **Status** — **PLANNED**. Verified absent: a repository-wide search finds **no** occurrence of commission, invoice, payment, or margin logic in `src/`, `api/`, or the SQL corpus. What exists today is farmer asking price (`pricePerKg`, `src/types.ts:382`), DDP market price benchmarks (`src/lib/db.ts:573-589`), and a `'price'` review-request type (`src/types.ts:346`).
+- **Sequencing** — after fulfilment, so revenue events have real triggers. **This feature is fully in scope and must not be dropped from the plan.**
+- **Must not claim** — accounting-grade correctness, tax treatment, statutory reporting compliance, or that any figure is auditable, until reviewed by a qualified finance professional.
 
-## 13. Risk Register
+### 10. Complete Evidence and Document Platform
+- **Business purpose** — make every document in the system a real, stored, access-controlled, versioned file, ending the current mix of uploads, pasted URLs, base64 blobs, and typed filenames.
+- **Principal users** — all.
+- **Major capabilities** — unified document entity with type, version, owner, and expiry; real Storage upload for every licence, certification, and photo field; expiry tracking and renewal prompts; a single document register per farm; retention policy.
+- **Dependencies** — cross-cutting; the COA upload path (migration 8) is the working pattern to generalise.
+- **Security boundaries** — every new document type inherits the private, path-scoped, MIME-restricted, size-capped, RLS-protected pattern; the vestigial `farmer_documents` / `farmer_photos` tables must be either adopted or removed, not left ambiguous.
+- **Status** — **PARTIALLY IMPLEMENTED**. Real: COA PDFs to the private `farmer-documents` bucket with signed-URL retrieval. Not real: licence/certification fields (plain text, `FarmerOnboarding.tsx:448-460`), farm/product photos (pasted URLs, `:282-313`), inventory photos (base64 `data:` in state, `FarmerSubmitInventory.tsx:148-157`). The `farmer-photos` bucket exists only in a commented-out, never-applied SQL block.
+- **Sequencing** — cross-cutting; advance opportunistically alongside every feature above.
+- **Must not claim** — that a farm's licences or certifications are on file. Today, in most cases, only a typed string is.
 
-**Implemented, as a mechanical gap-scan — not a weighted or learned risk model.** `deriveAutoRisks` (`src/lib/procurementControl.ts`) emits risk entries from a small fixed if/else cascade: batches with COA red flags produce `blocker`/`high`/`medium` entries depending on the nature of the flag; farms flagged "More Information Required" produce a fixed medium-severity entry. Severity is not numerically weighted or model-derived, and `owner` defaults to "Unassigned" pending manual assignment. DDP staff can manually override status.
+### 11. Compliance Source Monitoring
+- **Business purpose** — complete stage 1 of the compliance principle so regulatory change is detected rather than waiting for someone to paste it in.
+- **Principal users** — DDP compliance staff.
+- **Major capabilities** — registered regulatory sources per jurisdiction; scheduled polling; change detection and deduplication; automatic creation of a legal update in `pending` state for human review; source health monitoring.
+- **Dependencies** — Compliance Watchtower (built); the AI draft summariser (built); scheduled execution, which the platform does not yet have.
+- **Security boundaries** — detection must **never** create or activate a rule; every detected item must enter the existing human-review queue at the lowest-trust state; the existing wording guard must apply to all ingested text.
+- **Status** — **PLANNED**, with foundations in place. Connector scaffolding exists (`src/lib/complianceSourceConnectors.ts`, `complianceSourceRegistry.ts`, `complianceSourceConnectorRuntime.ts`, `complianceRssConnector.ts`, `browserRssFetch.ts`) and `docs/CANNAMONITOR_WATCHTOWER_INTEGRATION.md` records the Cannamonitor integration as **"INACTIVE AND UNREACHABLE"** by design. There is no scheduled job, cron, or server-side poller.
+- **Sequencing** — parallelisable; it depends on scheduling infrastructure rather than on the deal-flow chain.
+- **Must not claim** — comprehensive regulatory coverage, or that any jurisdiction is monitored, until named sources are polling and their health is observable.
 
-A related but distinct feature, "Export Readiness" (`src/lib/complianceScoring.ts`), computes a 16-item pass/fail checklist per batch; four of those items (buyer licence, import permit, export permit, chain-of-custody, human review) are **hardcoded to fail**, each annotated in source as "not active in this MVP." No AI or machine-learning involvement exists in either the Risk Register or Export Readiness logic — confirmed by tracing all call paths and finding no import of the AI-related modules from either feature.
-
----
-
-## 14. Buyer Pack / Immutable Evidence Packs
-
-See Section 8 for the user-facing workflow. Summarized status:
-
-- **Implemented (as a tested, standalone library):** SHA-256 content hashing over a deep-frozen, canonically serialized snapshot; an append-only version store that rejects overwrites of an existing `(packId, version)`; an audit-event log; a download-history log.
-- **Not implemented (as a shipped, reachable feature):** none of this library is called from the Buyer Pack page or any other page in the application. It is unit-tested, dead code from the product's point of view.
-- **Not implemented:** server-side (Supabase) persistence for any of this — all of it, where used at all (its own tests), is `localStorage`-backed only, meaning it is neither durable nor genuinely tamper-resistant in a real deployment (a user can edit or clear their own browser storage).
-- **Recommendation embedded in this audit:** do not describe the Buyer Pack as having immutable evidence, hashing, or an audit trail in any external-facing material until this library is actually wired into the live page and backed by durable, server-side storage.
-
----
-
-## 15. Compliance Watchtower
-
-**Implemented, as a human-gated, rule-based alerting system with real database persistence.**
-
-- Alerts are computed synchronously on render (`useMemo` over current farm/inventory/rule data) — there is no polling, realtime subscription, or scheduled job. The system reflects whatever data happens to be loaded at the time.
-- 14 baseline compliance rules are hardcoded in source, seeded with status `suggested` (i.e., **not enforced by default**). A rule only affects alerting once a human admin explicitly sets it to `approved` or `active` via the Rules tab. New rules can also be created dynamically from a reviewed legal update.
-- When Supabase is configured, all Watchtower data (legal updates, reviews, rules, alerts, entity status, audit log) is persisted to seven RLS-protected, admin-only Postgres tables. The audit log table has a **database-level trigger that raises an exception on any UPDATE or DELETE**, making it a genuinely enforced append-only log when Supabase is configured — not merely an application-level convention.
-- In demo mode (no Supabase configured), the same data model falls back to `localStorage`, which carries none of the same server-enforced guarantees; the UI explicitly labels this as local/demo-only data.
-- A full end-to-end proof of the intended pipeline (legal update → human review → approved rule → generated alert → visible rule-impact badge on a Supply Ledger page) was executed and verified live against production Supabase on 2026-07-08, using a clearly labeled demo entity, and was subsequently cleaned up with the audit trail confirmed intact (`docs/PROFESSIONALIZATION_ROADMAP.md`). This is real evidence the mechanism works end-to-end in production, for the one entity and rule tested.
-
-**Unable to verify:** whether the underlying SQL migration (`9_COMPLIANCE_WATCHTOWER_MVP.sql`) is applied in every environment this system might be deployed to, beyond the specific production project referenced in the above proof.
-
----
-
-## 16. Security and RLS Work Completed
-
-**Implemented — a staged, chronological Row-Level Security rollout:**
-
-RLS is enabled with per-role policies on: `farms`, `farm_profiles`, `farm_memberships`, `inventory_batches`, `ddp_scores`, `risk_flags`, `status_history`, `documents`, `profiles`, `farmer_review_requests`, `market_price_benchmarks`, `farmer_documents`, `farmer_photos`, and the seven Compliance Watchtower tables. The general pattern is: `ddp_admin` gets full access via an `is_ddp_admin()` helper; farmers get access scoped to their own farm membership or `created_by = auth.uid()`; no table grants unauthenticated (`anon`) access.
-
-The migration history shows deliberate staging and correction discipline: an initial schema draft, a staged enablement file, two documented hotfix patches for drift discovered after initial rollout (`INVENTORY_BATCHES_RLS_PATCH.sql`, `INVENTORY_BATCHES_INSERT_GUARDRAIL_FIX.sql`), a dedicated search-path/grants hardening pass for five database functions (revoking `PUBLIC`/`anon` execute rights), and a full rollback script (`RLS_ROLLBACK.sql`).
-
-**Defect found during this audit — requires live verification before relying on it:**
-
-`FARM_RESAVE_PERSISTENCE_MIGRATION.sql` defines a trigger function, `fn_protect_farm_admin_fields()`, that checks `profiles.role = 'admin'`. Every other admin-gating function in this codebase checks `role = 'ddp_admin'` — the only value the `profiles.role` check constraint actually permits alongside `farmer`. As written, this trigger's admin check can never be true, which means it would unconditionally revert several fields (including `status`, `reviewed_by`, `compliance_status`, `risk_level`) back to their prior value on every update to the `farms` table — including legitimate admin approve/reject actions. Prior validation documentation (`PHASE_3E_2_FARM_RESAVE_PERSISTENCE_VALIDATION.md`) records that this migration was manually applied to production, but its own verification only confirmed that the trigger and function *exist*, not that admin status changes actually persist afterward.
-
-**This is flagged as the single highest-priority item in this document's Immediate roadmap (Section 24).** It should be confirmed directly against production before this document, or anyone reading it, assumes admin farm-approval actions are being saved correctly.
-
-**Storage security — implemented, with one unused planned bucket:**
-
-The `farmer-documents` Supabase Storage bucket is private, restricted to `application/pdf`, capped at 10MB (dashboard-configured), and has three RLS policies (admin: all; farmer: upload own path-prefixed content; farmer: read own content). A second bucket, `farmer-photos`, is defined only in a commented-out SQL block that was never applied — photo data is instead stored as base64/JSONB directly on the inventory row, which is a materially different (less scalable, less access-controlled) storage pattern than the COA path.
-
-**Unused schema found:** the `farmer_documents` and `farmer_photos` database tables are RLS-protected and were confirmed present in the live policy sweep, but have zero references anywhere in the application code — the real upload path uses Supabase Storage directly. These tables appear to be vestigial.
-
----
-
-## 17. Authentication and Authorization
-
-**Implemented:** Supabase Auth, email + password only (`signInWithPassword`, `signUp`). Session state is handled via Supabase's own client-side session management, with a subscription (`onAuthStateChange`) that re-fetches the user's profile row on every auth event.
-
-**Not implemented:** multi-factor authentication, single sign-on/OAuth, and magic-link sign-in — confirmed absent by direct search of the authentication code; none of these are wired into the UI or the auth service.
-
-**Authorization:** enforced primarily by Postgres RLS (Section 16), not by application code. Frontend role checks exist only to shape the UI (hiding admin pages from farmers, showing an "Access Denied" screen for out-of-scope pages) and are not a security boundary on their own. Two small helper functions (`isAdmin()`/`isFarmer()`) exist in the auth service but are not actually called anywhere else in the app — role checks are re-derived inline elsewhere instead. This is a minor code-hygiene issue, not a security gap, since the inline checks are functionally equivalent.
-
----
-
-## 18. Storage Security
-
-Covered in detail in Section 16. Summary: real, path-scoped, MIME-restricted, size-capped, RLS-protected private storage exists for COA PDFs. It does not yet exist for photos (base64/JSONB instead) or for any of the free-text licence/certification "upload" fields described in Section 7, which do not actually store a file at all.
-
----
-
-## 19. Testing and Verification Completed
-
-**Automated tests — implemented, but narrow in scope.** `vitest run` currently passes 103 of 103 tests across 11 test files, all located under `src/lib/`. These tests cover business logic — compliance rule status transitions, buyer-pack approval gating, the AI-guard wording filter, and related domain logic — and were confirmed (by direct reading) to contain substantive assertions and real branch coverage, not placeholder tests. **There are no automated UI/component tests, no automated RLS/integration tests, and no end-to-end tests.**
-
-**Manual RLS verification — implemented, and extensive relative to the size of the codebase, but explicitly self-declared as partial.** `docs/SECURITY_TEST_LOG.md` documents real, live functional tests run against the production Supabase project using the anon key and dedicated test identities (two farmer accounts, one admin fixture), citing actual HTTP and Postgres error codes as evidence. It records: a genuine access-control drift that was found and fixed; a full `pg_policies` parity sweep across all 28 public/storage tables; passing cross-farmer data-isolation tests; passing storage-isolation tests using real uploaded files; and a real gap it found — no farmer-level `DELETE` policy exists on any table, so farmer delete requests silently succeed with zero rows affected rather than being explicitly denied. The log explicitly states it is **not** a full security audit or penetration test, and lists specific untested combinations (admin `DELETE`, `farms`/`farm_memberships` `DELETE`, more storage-isolation scenarios, and — naturally — anything buyer-role-related, since no buyer role exists).
-
-Live policy snapshots (`tmp/live_pg_policies_snapshot*.csv`, `tmp/parsed_*.json`) in the repository are genuine exports queried from the production database, corroborating the security log's claims rather than being fabricated evidence.
-
----
-
-## 20. Thai/English Language Review
-
-**Implemented, with a known internal inconsistency that should be resolved.** The translation layer (`src/translations.ts`) contains roughly 700 bilingual key-value pairs. Two review documents exist: `docs/THAI_LEGAL_REVIEW_BUYER_DISCUSSION.md`, which marks a specific set of "buyer discussion" phrases as **Status: Pending**, and `docs/THAI_NATIVE_SPEAKER_REVIEW.md`, which later states the same phrases were reviewed and approved, citing specific commit hashes. **These two documents directly contradict each other** — one of them is stale and should be corrected or reconciled. Separately, two "needs native speaker review" comments remain live in `src/translations.ts` for strings that the native-speaker review document marks as already resolved — the documented cleanup step (removing those comments once confirmed) does not appear to have been carried out.
-
----
-
-## 21. Documentation Already Created
-
-The repository root contains 29 markdown files and `docs/` contains 4, almost all of which are dated, point-in-time validation or phase-completion logs rather than living architectural reference documentation:
-
-- `docs/PROFESSIONALIZATION_ROADMAP.md` — a prior 7-agent read-only audit plus an implemented "Wave 1" copy/CSS patch, and a separately closed-out "Compliance Rules Operationalization v1" workstream verified live in production. This is the most substantive prior planning document and this roadmap builds on it rather than duplicating it.
-- `docs/SECURITY_TEST_LOG.md` — covered in Section 19.
-- `docs/THAI_LEGAL_REVIEW_BUYER_DISCUSSION.md` and `docs/THAI_NATIVE_SPEAKER_REVIEW.md` — covered in Section 20.
-- `README.md` — general project overview.
-- 20 `PHASE_*_VALIDATION.md` files and several similarly named root-level validation documents — each records a specific, narrow refactor or feature validation at a specific commit.
-
-**A prior audit (`docs/PROFESSIONALIZATION_ROADMAP.md`) already flagged that a number of these root-level validation documents are stale or contradictory — some claim different branches/commits as "currently deployed" — and recommended archiving them into `docs/archive/`. That recommendation has not yet been executed** and is carried forward into this roadmap (Section 24).
-
----
-
-## 22. Known Limitations
-
-Consolidated from all sections above, without repeating evidence already cited:
-
-- No real buyer role, account, or login exists; the Buyer Pack is an admin-only simulation.
-- The immutable buyer-pack snapshot/audit system is fully built and tested but not wired into the product and not backed by durable server-side storage.
-- Chain-of-custody tracking is explicitly not implemented; the field is hardcoded to "missing."
-- Most licence/certification "upload" fields across farmer onboarding are plain text inputs, not real file uploads; product/facility photos are similarly not stored as real files in most flows.
-- Carbon-programme status changes do not persist against live Supabase on either the farmer or admin side.
-- A likely-defective SQL trigger (`fn_protect_farm_admin_fields()`, wrong role literal) may be silently reverting admin farm-status changes in production — unconfirmed, high priority to verify.
-- No farmer-level `DELETE` RLS policy exists on any table (requests silently no-op rather than being denied) — a real gap noted in the project's own security test log.
-- The `farmer-photos` storage bucket was never actually created; the `farmer_documents`/`farmer_photos` database tables appear unused.
-- Two Thai-review documents contradict each other on the review status of the same set of phrases.
-- No AI/LLM model is called anywhere in the codebase, despite AI-shaped naming (`aiComplianceProvider`, "COA Intelligence") — these are currently rule-based/manual, not AI-driven.
-- No CI/CD pipeline exists to gate lint, typecheck, or tests before deploy; no error/observability monitoring exists.
-- Automated test coverage is limited to business logic in `src/lib/`; there are no automated UI, integration, RLS, or end-to-end tests.
-- Manual RLS testing, while extensive, is explicitly self-declared as non-exhaustive by its own author.
-- A number of root-level documentation files are stale/contradictory and have not yet been archived, despite a prior audit recommending it.
+### 12. Enterprise Operations and Assurance
+- **Business purpose** — the organisational and infrastructural capabilities an enterprise buyer, investor, or auditor will require once the product itself is complete.
+- **Principal users** — DDP management, security, and external reviewers.
+- **Major capabilities** — MFA and session hardening for admin accounts; structured audit logging of **all** admin actions, not only Compliance Watchtower actions; automated RLS/integration/end-to-end test suites replacing manual checklists; independent security review or penetration test; documented secrets management; data retention, backup and disaster recovery, and incident response policies; capacity and availability planning.
+- **Dependencies** — cross-cutting.
+- **Security boundaries** — this feature *is* the security boundary work.
+- **Status** — **PLANNED**, partially seeded. Present: CI-gated deployment with live commit verification, privacy-safe observability, a database-enforced append-only Watchtower audit log, an extensive but self-declared-partial manual security log, and a credentialled staging security harness. Absent: MFA, platform-wide admin audit logging, automated RLS/E2E suites, external review, and the written policies.
+- **Sequencing** — continuous, with MFA and platform-wide admin audit logging warranting early attention given admins hold broad `FOR ALL` RLS access.
+- **Must not claim** — SOC 2, ISO 27001, audit readiness, or complete security. None of these has been granted or assessed.
 
 ---
 
-## 23. Remaining Work
+## 9. Dependency Map
 
-The remaining work spans: fixing the specific defects above, wiring already-built-but-unreachable code into the product, replacing stubbed/placeholder data-entry patterns with real ones, closing testing gaps, and — only after all of that — considering any claims about compliance, security certification, or audit readiness. The prioritized breakdown is in Section 24.
+```
+Controlled Farmer Provisioning  [IMPLEMENTED — runtime verification required]
+        │   (migrations 21 + 22; api/admin/provision-farmer.ts)
+        ▼
+Evidence Request and Resolution  [ACTIVE IMPLEMENTATION — draft PR #37, DB phase only]
+        │
+        ▼
+Notification and Communications System  [PLANNED]
+        │
+        ▼
+Buyer CRM and Controlled Buyer Accounts  [PLANNED]
+        │
+        ▼
+Buyer Requirements and Inventory Matching  [PLANNED]
+        │
+        ▼
+Brokerage Deal Pipeline  [PLANNED]
+        │
+        ▼
+Sample Request and Evaluation Workflow  [PLANNED]
+        │
+        ▼
+Contracts, Orders and Commercial Documents  [PLANNED]
+        │
+        ▼
+Fulfilment and Chain of Custody  [PLANNED]
+        │
+        ▼
+Brokerage Commission and Financial Tracking  [PLANNED]
+```
 
----
+**Why the chain holds.** Evidence Request depends on provisioning because its authorization predicate ANDs `has_operational_farmer_access()` with an active `farm_memberships` row — both established by migrations 21/22. Notifications depend on Evidence Request for their first genuine event source. Buyer CRM must precede requirements, which must precede matching-driven deals. Samples, contracts, fulfilment, and finance each consume the record the previous stage creates; commission and margin in particular cannot be computed before a contract exists and a fulfilment event triggers recognition.
 
-## 24. Roadmap to World-Class Standard
+**Cross-cutting capabilities** — these attach to every stage above rather than sitting at a point in the chain:
 
-### Immediate (days)
-1. Confirm live, in the Supabase SQL editor, whether `fn_protect_farm_admin_fields()`'s role check is actually reverting admin farm-status updates in production (Section 16). This affects whether core admin approve/reject actions are working at all.
-2. Directly query live `pg_tables`/`pg_policies` in production and diff against what the on-disk SQL files claim, closing the loop `docs/PROFESSIONALIZATION_ROADMAP.md` already identified as open.
-3. Reconcile the two contradictory Thai-review documents (Section 20) and remove the two stale "needs review" comments in `translations.ts` once genuinely confirmed.
-4. Decide on and execute the previously recommended archiving of stale/contradictory root-level validation documents into `docs/archive/`.
+```
+Complete Evidence and Document Platform ──┐
+                                          ├──▶ applies to every feature 1–9
+Compliance Source Monitoring ─────────────┤
+                                          │
+Enterprise Operations and Assurance ──────┘
+```
 
-### Short term (weeks)
-1. Either wire the existing buyer-pack snapshot/audit/download library into `DDPBuyerPreview.tsx` with real Supabase persistence, or remove/clearly label it as unused until that work happens — do not leave tested-but-unreachable code that could be mistaken for a shipped feature.
-2. Add an explicit farmer-level `DELETE` policy decision (deny with a clear error, or permit with scoping) for every table currently missing one, closing the gap noted in `docs/SECURITY_TEST_LOG.md`.
-3. Correct the "upload document" copy on licence/certification fields that are actually plain text inputs, or implement real file upload for them, backed by Supabase Storage with the same RLS pattern used for COAs.
-4. Stand up CI (e.g. GitHub Actions) to run lint, typecheck, and `vitest run` on every change before merge.
-5. Implement the Buyer Pack print/reference-number/legend improvements already scoped in `docs/PROFESSIONALIZATION_ROADMAP.md` Phase C.
-
-### Medium term (months)
-1. Make an explicit product decision on whether a real buyer role/account is in scope; if yes, design its auth, RLS scoping, and audit logging before building any buyer-facing UI beyond the current admin preview.
-2. Design and implement a real chain-of-custody data model (farm → DDP → buyer transfer events) to replace the current hardcoded placeholder.
-3. Implement real file storage (not base64/JSONB, not free text) for product photos and all licence/certification documents, with RLS matching the COA pattern.
-4. If regulatory-source monitoring and AI summarization are still desired, implement a concrete `ComplianceAIProvider` behind the existing interface — with the human-review and approved-rule gates in Section 3 preserved exactly as designed, not weakened.
-5. Expand automated testing to include UI/component tests and a scripted (not purely manual) RLS/integration test suite that formalizes the checks already documented by hand in `docs/SECURITY_TEST_LOG.md`.
-6. Add error/observability monitoring (e.g. Sentry or equivalent) for both the frontend and any server-side logic introduced later.
-
-### Long term (quarters and beyond)
-1. Commission a formal, independent security review or penetration test — current testing, while substantive, is self-declared partial and performed by the same people building the system.
-2. If pursuing pharmaceutical-, GACP-, GMP-, or GDP-adjacent claims, engage qualified regulatory/legal counsel to define the actual applicable requirements for the specific target jurisdictions and product categories before building toward them — this system does not currently implement, and should not claim, any such certification.
-3. Evaluate whether stronger, infrastructure-level tamper-evidence (true content-addressed storage, WORM-compliant object storage, or a dedicated audit-log service) is needed for buyer-facing evidence, beyond the current database-level trigger protecting the Compliance Watchtower audit log.
-4. Establish formal data retention, backup/disaster-recovery, and incident-response policies.
-5. Plan for scale (multi-region/high-availability infrastructure) only once real usage patterns justify it.
-
----
-
-## 25. Enterprise Security Roadmap
-
-Enterprise-grade security readiness, given the current state, requires (in addition to items already listed in Section 24): resolving the live-vs-documented RLS confirmation gap; closing the missing farmer-DELETE-policy gap; independently verifying the farm-admin-fields trigger defect; introducing MFA and session-management hardening for admin accounts specifically (given they hold broad `FOR ALL` RLS access); introducing structured audit logging for all admin actions (not just Compliance Watchtower actions); and a documented secrets-management and environment-variable handling policy (out of scope for this document to audit, since env files were explicitly not to be read or changed).
-
-**This system does not currently implement, and this document does not claim, SOC 2, ISO 27001, or any other formal security certification.** Achieving any of those would require a dedicated compliance program (policies, formal risk assessments, third-party audits) well beyond application code changes.
-
----
-
-## 26. Pharmaceutical/GxP Readiness Roadmap
-
-The codebase's own comments already correctly disclaim pharmaceutical, GACP, GMP, and GDP readiness — several fields in the Export Readiness checklist (Section 13) are explicitly hardcoded as not-yet-implemented for exactly this reason. Any future work toward such standards should be **led by qualified regulatory/quality professionals defining the actual requirements**, with engineering work following from that definition — not the reverse. Until that happens, this document deliberately does not propose a technical roadmap toward GxP readiness, because the requirements are not yet defined by anyone qualified to define them.
+The Evidence and Document Platform generalises the working COA upload pattern to every document any feature introduces. Compliance Source Monitoring feeds rules that alert against data produced at any stage. Enterprise Operations and Assurance governs all of it and is never "done."
 
 ---
 
-## 27. AI Compliance Agent Roadmap
+## 10. Open and Superseded Work — Decision Register
 
-Building on Section 3's stage-by-stage status:
+**Record only. Nothing in this section was closed, edited, rebased, merged, or otherwise altered.**
 
-1. Define, with human compliance stakeholders, what "AI detects" should actually monitor (specific regulatory sources, jurisdictions, update cadence) before writing any detection code.
-2. Implement a concrete `ComplianceAIProvider` (the interface already exists in `src/lib/aiComplianceProvider.ts`) that calls a real model for summarization/classification, with every output explicitly marked as requiring human review — the `requiresHumanReview: true` provenance field already designed into the type system should remain non-negotiable.
-3. Preserve the existing human-review → approved-rule → system-enforces pipeline exactly as built; do not allow an AI-generated summary or classification to auto-approve a rule or auto-generate an enforced alert.
-4. Retain and extend the existing wording-safety guard (`aiComplianceGuard.ts`) to cover any new AI-generated text surfaces.
-5. Only after a real provider exists and has been tested, update this document (and any external materials) to describe "AI-assisted" (not "AI-certified" or "AI-verified") compliance monitoring.
+### 10.1 Open pull requests
+
+| PR | Title | State | Merge state | Threads | Assessment |
+|---|---|---|---|---|---|
+| **#37** | Evidence Request & Resolution — database phase (migration 24) | Draft | UNSTABLE, 0 behind | **83 unresolved** | **Still relevant — the critical path.** Section 7. Awaiting review closeout, then runtime verification |
+| **#35** | Fail closed on missing hosted Supabase config | Draft | BEHIND by 2 | 0 | **Still relevant.** Addresses a real exposure: a hosted build missing `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` silently enters demo mode, where `isDemo` grants signed-in admin treatment on a public domain. Scope is a `prebuild` validator plus tests; no runtime, auth, or SQL change. Needs a rebase and a product decision |
+| **#33** | Fix demo admin entry routing | Draft | **CONFLICTING**, 2 behind | 0 | **Awaiting a product decision.** Restores demo admin entry lost in the homepage redesign (#17). Its own security review produced #35. Question to settle: is a publicly reachable demo mode still wanted at all? If not, close both #33 and the demo-entry concern. Conflicts must be resolved either way |
+| **#26** | Gate and harden Buyer Pack printing | Open, not draft | **CONFLICTING**, 6 behind | 3 unresolved | **Partly superseded.** Merged PR #32 delivered the browser-output gate, including a print-block overlay outside `.no-print` (`DDPBuyerPreview.tsx:405-419`). #26 additionally contains a `data-print-authorized` CSS-specificity mechanism, `beforeprint` provenance stamping, and substantial print-legibility fixes (contrast, page-break rules, A4/Letter measure) **not** present on `main`. Decide explicitly: harvest the print-presentation work, or close as superseded. Do not leave it open by default |
+| **#20** | Remove public farmer self-registration | Open, not draft | **CONFLICTING**, 30 behind | 1 unresolved | **SUPERSEDED.** Its objective was achieved by merged PR #22 and migration 21 — self-registration is gone (`src/services/auth.ts:50-57`) and enforced by `scripts/client-provisioning-boundary.test.mjs`. Retained here only as a decision record |
+
+### 10.2 Closed without merge
+
+| PR | Title | Note |
+|---|---|---|
+| #28 | Redesign admin overview with truthful load states | Closed unmerged. Loader-truthfulness concerns were subsequently addressed within the Operations Desk work (#34) |
+| #12 | Test branch protection with deliberate CI failure | Closed unmerged. Deliberate CI-gate test, not product work |
+
+### 10.3 Branch register
+
+| Branch | Relative to `origin/main` | Assessment |
+|---|---|---|
+| `feature/evidence-request-resolution-v2` | 4 ahead, 0 behind | **Active** — PR #37 |
+| `feature/evidence-request-workflow` | 4 ahead, 1 behind | **SUPERSEDED** by v2 (contract and Phase-0 audit commits) |
+| `feature/evidence-intelligence-phase-a` | 1 ahead, 67 behind | **Stale / SUPERSEDED** |
+| `feature/admin-operations-desk-readonly` | 16 ahead, 2 behind | **Merged in squashed form** as PR #34. The unsquashed branch is redundant. *(This was the checked-out branch during the audit.)* |
+| `feature/ddp-controlled-farmer-provisioning` | 19 ahead, 1 behind | **Merged in squashed form** as PR #22. Redundant |
+| `fix/audit-actor-integrity` | 1 ahead, 12 behind | **Stale, no PR.** Carries unmerged work with no tracking issue — needs a decision |
+| `fix/buyer-pack-print-gate` | 3 ahead, 6 behind | PR #26 — see above |
+| `fix/fail-closed-hosted-supabase-config` | 1 ahead, 2 behind | PR #35 |
+| `fix/demo-admin-entry-routing` | 1 ahead, 2 behind | PR #33 |
+| `chore/staging-smoke-test` | 1 ahead, 30 behind | PR #20 — superseded |
+| `design/editorial-appearance-only` | 5 ahead, 6 behind | Superseded by merged #29/#30 |
+| `design/editorial-operations-overview` | 5 ahead, 6 behind | Superseded by merged #29/#30 |
+| `feat/homepage-redesign` | 4 ahead, 34 behind | Superseded by merged #17 |
+| `backend-mvp` | 3 ahead, 254 behind | **Stale**, last touched 2026-06-28 |
+| `auth-rls-mvp`, `feat/cannamonitor-watchtower-restart`, `fix/buyer-pack-authoritative-issuance`, `fix/buyer-pack-verify-comment-sensitivity`, `fix/farm-admin-field-guard`, `fix/farm-guard-authenticated-acl` | fully merged | Safe to retire |
+
+### 10.4 Unrelated to the next critical path
+PRs #33 and #35 both concern demo-mode behaviour rather than the brokerage feature sequence. They are real and #35 describes a genuine exposure, but neither blocks Evidence Request & Resolution.
 
 ---
 
-## 28. Audit and Regulator Readiness
+## 11. Known Defects, Gaps, and Inconsistencies
 
-**Unable to verify** whether this system has ever been reviewed by an external auditor or regulator — no such review is referenced anywhere in the repository. What currently exists that would be useful evidence in a future audit: the staged RLS migration history with a rollback plan, the manual security test log with live production evidence, the Compliance Watchtower's database-enforced append-only audit trigger, and this document's own explicit separation of implemented-vs-planned claims. What is currently missing that a real audit would ask for: independent verification of the items in Section 24 (Immediate), a resolved chain-of-custody model, automated (not purely manual) security testing, and a documented incident-response process. This document does not claim the system is audit-ready; it documents what evidence currently exists toward that goal.
+Consolidated; evidence cited once above is not repeated.
+
+**Database state (highest priority)**
+1. Migrations **19, 20, 21, 22, 23 have no entry** in `docs/MIGRATION_RUNTIME_STATUS.md`. Their application status in staging and production is **UNABLE TO VERIFY** from the repository.
+2. Migrations 10 and 17 are recorded as **not applied to production** (`MIGRATION_RUNTIME_STATUS.md:15,17,31`). Production therefore still uses browser-local fallbacks for buyer-pack snapshots and procurement decisions.
+3. Migration 23 has **never been executed against any database** by its own runbook's statement. Until it is, the live Buyer Pack release gate remains migration 10's client-trusting RPC.
+4. The claim that migration 19 was applied to production (`docs/FARM_ADMIN_FIELD_GUARD_APPLICATION.md:31-40`) is undated, uncommitted prose with no corroborating entry in the dated `docs/SECURITY_TEST_LOG.md`. **UNABLE TO VERIFY.**
+5. Migration 20 has **no rollback script**.
+6. Migration ordering (10 before 17) is enforced by convention only — there is no migration runner.
+7. Migration numbers are reserved optimistically across parallel branches (documented in migration 23's own header; migration 24 currently reserved by draft PR #37).
+
+**Application**
+
+8. `src/data.ts:637,651` — `persistInventory` / `persistFarms` call `safeSetItem` **unconditionally**, without the `shouldPersistToBrowser()` gate that `saveReviewRequests` (`:699-700`) and the demo reset (`:659-661`) use. `safeSetItem` swallows failures, so nothing breaks, but this is inconsistent with the stated design intent that "the browser must not hold a copy of production supply data" (`browserPersistence.ts:4-5`).
+9. `src/pages/admin/DDPBuyerPreview.tsx:793-796` displays stale copy — "Stored in this browser only for now — tamper-evident, not a durable server record" — which will be inaccurate once migration 23 is applied.
+10. `src/lib/serverFarmerProvisioning.ts:105-106` forwards raw Supabase Admin Auth `error.message` text to the client on invite failure.
+11. `src/pages/farmer/FarmerRegister.tsx` still exists and is still rendered for `page === 'farmer-register'`, but **no `goTo('farmer-register')` call exists anywhere** in `src/`. It is unreachable dead code. It performs no Supabase call — only a local draft save — so it is not a signup path, but it should be removed or deliberately repurposed.
+12. Pending and role-less accounts receive an identical generic denial message despite the routing layer distinguishing them (`App.tsx:599`).
+13. Buyer Pack audit and download trails are localStorage-only, with no Supabase persistence.
+14. Buyer Pack `content_hash` is **not** server-recomputed; migration 23 explicitly disclaims this.
+15. Admin editorial redesign covers only `ddp-overview` with the full canvas treatment; all other admin pages remain `eo-content-legacy`.
+16. Carbon-programme status changes do not persist against live Supabase on either side.
+17. Chain of custody is hardcoded `'missing'`.
+18. Licence/certification fields, farm/product photos, and inventory photos are not real stored files.
+19. No farmer-scoped `DELETE` policy exists on any table; denial is by RLS default rather than explicit policy, and was live-tested for only one table and one identity.
+20. The 9 Farm Review compliance sub-scores have no verified computation path. **UNABLE TO VERIFY.**
+21. The vestigial `farmer_documents` / `farmer_photos` tables remain RLS-protected but entirely unreferenced by application code; the `farmer-photos` bucket was never created.
+
+**Documentation**
+
+22. ~~`README.md` contained multiple stale factual claims~~ — **corrected in this same documentation pass.** At `afbe59e` the README asserted Vercel Git auto-deploy of `main` (contradicted by `vercel.json` and the `deploy-production` job), a non-existent "fulfilment packing queue", "AI detects and summarises" (detection is manual), "no server-side component" (two serverless routes exist), a two-role model, admin creation "via the signup form", an in-app "Create farmer account" form, and a `handle_new_user()` trigger creating rows with `role = 'farmer'`. All are now corrected against `afbe59e`. The README's "SQL prerequisites" list — which stopped at migration 11, omitted migrations 12–23, and instructed the reader to run `FARM_RESAVE_PERSISTENCE_MIGRATION.sql` (a file marked *"Do not run… ACL-TEST-EXEMPT: INTENTIONAL-DRAFT"* and superseded by migration 19) — has also been **replaced** with a "Database setup and migration safety" register covering all 18 numbered migrations, their VERIFY/ROLLBACK companions, per-group runtime status, and an explicit do-not-run exclusion list.
+    **Residual documentation limitation, unchanged by that rewrite:** the register can only report runtime status as strongly as the repository's own evidence allows. Because `docs/MIGRATION_RUNTIME_STATUS.md` covers only migrations 10 and 17, the README necessarily records migrations 11, 12, 14, 15, 19, 21 and 22 as *unable to verify*. Closing that gap requires the runtime work in Section 13, steps 1–4 — not further documentation.
+23. `docs/THAI_LEGAL_REVIEW_BUYER_DISCUSSION.md` (Status: Pending) and `docs/THAI_NATIVE_SPEAKER_REVIEW.md` (reviewed and approved) still contradict each other; two "needs native speaker review" comments remain live in `src/translations.ts`.
+24. 29 root-level markdown files, mostly dated `PHASE_*_VALIDATION.md` snapshots, remain unarchived despite a prior audit recommending it. Section 12 marks them historical.
 
 ---
 
-## 29. Investor/Partner Due Diligence Readiness
+## 12. Historical Records
 
-For due-diligence purposes, this document itself — and the verified state it describes — is the most accurate current answer to "what has actually been built." Reviewers should be pointed to: this document, `docs/SECURITY_TEST_LOG.md`, and `docs/PROFESSIONALIZATION_ROADMAP.md`. Reviewers should **not** be given any of the individual `PHASE_*_VALIDATION.md` files as a primary reference, since several are known to be stale or to contradict each other about what is "currently deployed" (Section 21) — this is exactly the kind of documentation-hygiene issue that damages credibility in due diligence and should be fixed per Section 24 (Immediate) before any external review.
+These documents are **preserved as historical evidence** and are **not** current status. Where they conflict with this document, this document governs.
+
+| Document | Nature | Date / commit |
+|---|---|---|
+| `docs/AUDIT_2026_07_13_MULTI_AGENT_DUE_DILIGENCE.md` | 15-agent due-diligence audit | 2026-07-13 @ `f5c8cbb` — **historical snapshot** |
+| `docs/AUDIT_PHASE2_EVIDENCE_REVIEW.md` | Falsification pass over the above | 2026-07-13 @ `f5c8cbb` — self-marked "SUPERSEDED IN PART" |
+| `docs/DDP_AI_LEGAL_PRODUCTION_READINESS_MASTER_REPORT.md` | Execution plan for migrations 10/17 | References PRs #3–#6, commit `5b21999` — **historical**, superseded by `MIGRATION_RUNTIME_STATUS.md` |
+| `docs/DDP_AI_LEGAL_PRODUCTION_READINESS_REVIEW.md` | Companion review to the above | Same cycle — **historical** |
+| `docs/BUYER_PACK_PHASE_B_DESIGN.md` | Design sketch for durable evidence storage | Self-marked "design only… not migrations" — **superseded in practice** by migrations 10/17/23 |
+| `docs/PROFESSIONALIZATION_ROADMAP.md` | 7-agent audit, Wave-1 implementation, Compliance-Rules-Operationalization closure | Branch `professional-site-elevation-v1` @ `1fe7885`, entries through 2026-07-08 — **historical closure record** |
+| `docs/SECURITY_TEST_LOG.md` | Dated live RLS/Auth/storage functional tests | 2026-07-07 → 2026-07-11 — **historical but load-bearing**; the only dated live-test evidence in the repository |
+| `docs/MIGRATION_RUNTIME_STATUS.md` | Per-environment migration ledger | Last verified 2026-07-14 — **current but narrowly scoped** (migrations 10 and 17 only) |
+| `docs/BUYER_PACK_AUTHORITATIVE_ISSUANCE_APPLICATION.md` | Migration 23 runbook | Undated — **current and authoritative for migration 23's unapplied status** |
+| `docs/FARM_ADMIN_FIELD_GUARD_APPLICATION.md` | Migrations 19/20 runbook | Undated — current for the narrative; its production claim is unverifiable |
+| `docs/CANNAMONITOR_WATCHTOWER_INTEGRATION.md` | Source-connector safety boundary | "INACTIVE AND UNREACHABLE" — **current** |
+| `docs/DEPLOYMENT_RUNBOOK.md` | Vercel production runbook | Undated — **historical / superseded for current deployment instructions.** Its §2, "Why Vercel Git auto-deploy is STILL ACTIVE", records the transition state in which the CI path had been added but the Vercel Git integration still auto-deployed `main` and a merge produced two Production deployments. That state was closed by merged PR #14, which set `git.deploymentEnabled.main` to `false`. **Current deployment authority is `.github/workflows/security-ci.yml`, `vercel.json`, and the README's "Deploy to Vercel" section.** The runbook retains real value as historical operational evidence — its account of the authorised CI path, the `Production` environment restriction, the deployment blast radius, and manual deployment as an emergency-only override remains accurate and is not restated elsewhere |
+| `docs/BUYER_PACK_PHASE_A_SMOKE_TEST.md` | Manual browser checklist | Documentation only — current, low risk |
+| `docs/THAI_LEGAL_REVIEW_BUYER_DISCUSSION.md`, `docs/THAI_NATIVE_SPEAKER_REVIEW.md` | Thai wording review | **Open and mutually contradictory** |
+| 29 root-level `*.md` files, incl. ~20 `PHASE_*_VALIDATION.md` | Point-in-time refactor/feature validations | **Historical.** Several are known to be stale or to disagree about what is deployed. Do **not** cite these in due diligence |
+
+**For external review, cite:** this document, `docs/MIGRATION_RUNTIME_STATUS.md`, `docs/SECURITY_TEST_LOG.md`, and `docs/BUYER_PACK_AUTHORITATIVE_ISSUANCE_APPLICATION.md`. Nothing else in the repository is a reliable current-state reference.
 
 ---
 
-## 30. Final Highest-Standard Checklist
+## 13. Execution Sequence
 
-This checklist reflects verified current state, not aspiration. An item is checked only if directly confirmed in this repository.
+### Immediate — resolve unverified database state
+1. Run `npm run security:staging` against the staging project with credentials, and **record the result in `docs/MIGRATION_RUNTIME_STATUS.md`**. Its preflight gate will itself confirm whether migrations 21 and 22 are actually present.
+2. Extend `docs/MIGRATION_RUNTIME_STATUS.md` to cover migrations **19 through 23**, with per-environment applied/verified status and dates. It is currently the repository's authoritative ledger and it covers only two of eighteen migrations.
+3. Independently confirm the migration-19 farm admin-field guard in production and replace the undated prose claim with a dated, evidenced entry.
+4. Decide and record whether migrations 10, 17, and 23 are to be applied to production, and on what change-control path.
+5. Author a rollback script for migration 20.
 
-- [x] Role-based data model with two enforced roles (`ddp_admin`, `farmer`)
-- [x] Database-level (RLS) access control, staged and largely tested manually
-- [x] Real, path-scoped, RLS-protected file storage for COA documents
-- [x] Human-approval gate for buyer-facing evidence (code-level, tested)
-- [x] Database-enforced append-only audit log (Compliance Watchtower)
-- [x] Automated unit tests for core business logic (103 passing)
-- [x] Bilingual (Thai/English) UI with a documented native-speaker review process (two review documents currently contradict each other on status — see Section 20 — and should be reconciled before this is relied on as complete)
-- [ ] Independently confirmed, current-as-of-today live RLS state matching on-disk SQL
-- [ ] Confirmed-correct admin farm-status persistence (pending trigger-defect verification)
-- [ ] Real buyer role/account with its own scoped access and audit trail
+### Short term — close out active work
+6. Resolve the 83 open review threads on PR #37 and settle its two documented contract deviations.
+7. Apply migration 24 and its VERIFY to staging; record the result. This is Evidence Request phase 2 and it gates phases 3–8.
+8. Take an explicit decision on PRs #26, #33, #35, and #20 per Section 10.1 — harvest, rebase, or close. None should remain open by default.
+9. Fix the Section 11 application inconsistencies: the ungated `persistInventory`/`persistFarms` writes, the stale Buyer Pack storage copy, the forwarded Admin Auth error text, and the unreachable `FarmerRegister.tsx`.
+10. ~~Correct `README.md`'s deployment description, capability list, AI wording, role model, provisioning instructions, and unsafe SQL-prerequisites list~~ — **done** (Section 11, item 22). The README now carries a migration register with an explicit do-not-run exclusion list rather than an execution recipe. Its runtime-status column can only improve once steps 1–4 above are complete.
+11. Reconcile the two Thai review documents and clear the two stale comments in `src/translations.ts`.
+12. Archive the stale root-level `PHASE_*_VALIDATION.md` files into `docs/archive/`, as recommended by two prior audits and still not done.
+
+### Medium term — build the sequence
+13. Evidence Request phases 3–8 (Section 7).
+14. Notifications, then Buyer CRM and controlled buyer accounts — the latter being the first new role since `pending`, and requiring RLS design before any UI.
+15. Requirements and matching, then the deal pipeline.
+16. Generalise the working COA upload pattern to every licence, certification, and photo field.
+17. Design and implement the chain-of-custody data model, replacing the hardcoded placeholder.
+18. Add MFA and platform-wide structured admin audit logging.
+19. Replace the manual RLS checklist with an automated integration suite, and add UI/component and end-to-end tests. The unit layer is now strong (1,169 tests); the integration and UI layers remain absent.
+
+### Long term
+20. Samples, contracts and orders, fulfilment and chain of custody, then **commission and financial tracking** — in that order, because each supplies the record the next consumes.
+21. Compliance source monitoring, once scheduled-execution infrastructure exists.
+22. Commission an independent security review or penetration test. Current testing, while substantive, is performed by the same people building the system and is self-declared partial.
+23. Establish formal data retention, backup and disaster recovery, and incident response policies.
+24. Evaluate infrastructure-level tamper evidence (content-addressed or WORM storage) for buyer-facing evidence.
+25. Engage qualified regulatory and legal counsel before building toward any GACP, GMP, GDP, or pharmaceutical-adjacent claim. The requirements are not yet defined by anyone qualified to define them, and no technical roadmap toward them is proposed here for that reason.
+
+---
+
+## 14. Verified Status Checklist
+
+An item is checked only if directly confirmed in this repository at `afbe59e`.
+
+**Confirmed**
+- [x] Three-role model with a non-operational `pending` state (`ddp_admin`, `farmer`, `pending`)
+- [x] Public self-registration removed and enforced by a standing test
+- [x] DDP-controlled farmer provisioning through a server-side, service-role, admin-only endpoint
+- [x] Database-level RLS access control, staged across 18 numbered migrations
+- [x] Real, path-scoped, MIME-restricted, RLS-protected private storage for COA documents
+- [x] Human-approval gate for buyer-facing evidence, enforced in-page and fail-closed for raw browser print
+- [x] Buyer Pack immutable snapshot library genuinely wired into the Buyer Pack page
+- [x] Database-enforced append-only audit log with TRUNCATE blocked (Compliance Watchtower)
+- [x] Append-only procurement decision trail with TS/SQL decision-set parity under test
+- [x] Read-only admin Operations Desk with truthful loading, failure, and empty states
+- [x] Production browser-persistence suppression with a sign-out sweep and an enforced key allowlist
+- [x] Privacy-safe observability with a closed field set and a machine-code regex
+- [x] CI pipeline gating static SQL security checks, unit tests, typecheck, lint, and build
+- [x] CI-exclusive production deployment with a pinned CLI and live commit-SHA verification
+- [x] Server-side AI draft summarisation, transient and human-review-stamped, production-verified 2026-07-10
+- [x] 1,169 automated tests across 72 files, all passing
+- [x] Bilingual Thai/English UI *(two review documents still contradict each other — Section 11)*
+
+**Not confirmed**
+- [ ] Migrations 19–23 application status recorded for any environment
+- [ ] Migrations 10, 17, and 23 applied to production
+- [ ] Migration 19 farm admin-field guard independently confirmed in production
+- [ ] Live staging security harness executed and its result recorded
+- [ ] Server-recomputed Buyer Pack `content_hash`
+- [ ] Durable, server-persisted Buyer Pack access and download trail
+- [ ] Evidence Request and Resolution available to any user
+- [ ] Real buyer role, account, or scoped access
 - [ ] Chain-of-custody data model
-- [ ] Real file storage for all licence/certification/photo fields
-- [ ] Wired, server-persisted immutable buyer-pack evidence system
-- [ ] CI pipeline gating lint/typecheck/tests before deploy
-- [ ] Automated UI/integration/end-to-end test coverage
-- [ ] A real AI compliance provider implementation, gated by the existing human-review pipeline
-- [ ] Independent (external) security review or penetration test
+- [ ] Commission, invoicing, payment, or margin tracking
+- [ ] Real file storage for licence, certification, and photo fields
+- [ ] MFA, SSO, or magic-link authentication
+- [ ] Platform-wide structured admin audit logging
+- [ ] Automated UI, integration, RLS, or end-to-end test coverage
+- [ ] Automated compliance source detection
+- [ ] Independent external security review or penetration test
 - [ ] Formal data retention, backup/DR, and incident-response policies
-- [ ] Consolidated, non-contradictory documentation set (stale validation docs archived)
+- [ ] Consolidated, non-contradictory documentation set
 
-## Definition of Highest Standard
+---
 
-For this platform, "highest standard" means: every claim made to a farmer, buyer, investor, auditor, or regulator is directly traceable to working code or a verified live test — never to a comment, an interface name, or a document written before the feature it describes actually existed. It means the security boundary that matters (database-level access control) is independently confirmed against live infrastructure, not assumed from source files. It means automation that touches compliance or legal judgment is designed so a human always makes the final call, and the system can prove that a human did. It means documentation is consolidated and internally consistent, not a trail of dated validation notes that contradict each other about what is actually deployed. And it means the platform never asserts a certification, legal compliance status, or regulatory approval that has not been granted by the qualified party actually authorized to grant it. Reaching that standard is a continuous process, evidenced by verification, not a one-time declaration — this document is one step in that process, not its conclusion.
+## 15. Definition of Highest Standard
+
+For this platform, "highest standard" means: every claim made to a farmer, buyer, investor, auditor, or regulator is traceable to working code or a dated, verified live test — never to a comment, an interface name, an open pull request, or a document written before the feature it describes existed. It means the security boundary that matters — database-level access control — is confirmed against live infrastructure rather than inferred from source files, which is precisely the gap this revision identifies as the programme's dominant risk. It means automation touching compliance or legal judgement is built so a human always makes the final call and the system can prove one did. It means documentation is consolidated and internally consistent rather than a trail of dated notes that disagree about what is deployed. And it means the platform never asserts a certification, legal compliance status, or regulatory approval that has not been granted by the party actually authorised to grant it.
+
+Reaching that standard is a continuous process evidenced by verification, not a one-time declaration. This document is one step in it, not its conclusion.
