@@ -129,8 +129,13 @@ What this does and does not establish:
   applied migration 23 to staging, when it was applied, or through which operational
   process. Origin, timing and execution record are all unknown.
 - The categorical baseline documentation was **wrong for staging**. It is corrected here
-  rather than silently superseded; `README.md` and `docs/MASTER_DEVELOPMENT_ROADMAP.md`
-  are **not** amended by this PR.
+  rather than silently superseded, and **`README.md` and
+  `docs/MASTER_DEVELOPMENT_ROADMAP.md` are corrected in this same PR** so that their
+  migration 19–23 runtime-status statements now agree with this register: the README
+  migration table was updated, and the roadmap's correction register, source-authority
+  table and execution sequence were updated. The historical migration-23 runbook
+  (`docs/BUYER_PACK_AUTHORITATIVE_ISSUANCE_APPLICATION.md`) remains **superseded** for
+  application status.
 
 ---
 
