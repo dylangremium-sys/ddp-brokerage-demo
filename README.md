@@ -191,11 +191,11 @@ Numbered migrations run 3 → 23. Numbers 1, 2, 5, 6, 7 do not exist; the number
 | COA / private storage | `8_COA_UPLOAD_STORAGE_MIGRATION.sql` | — | Implemented | Storage isolation tested live (`docs/SECURITY_TEST_LOG.md`) |
 | Compliance Watchtower | `9_COMPLIANCE_WATCHTOWER_MVP.sql` | — | Implemented | End-to-end pipeline verified live 2026-07-08 (`docs/PROFESSIONALIZATION_ROADMAP.md`) |
 | Buyer Pack snapshots | `10_BUYER_PACK_SNAPSHOTS_MVP.sql` | `10_..._VERIFY.sql`, `10_..._ROLLBACK.sql` | Implemented | **Staging: applied + verified 2026-07-14. Production: NOT applied** (`docs/MIGRATION_RUNTIME_STATUS.md`) |
-| Audit-log TRUNCATE guard | `11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql` | `11_..._VERIFY.sql`, `11_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
-| Function EXECUTE ACL | `12_PUBLIC_FUNCTION_EXECUTE_HARDENING.sql` | `12_..._VERIFY.sql`, `12_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
+| Audit-log TRUNCATE guard | `11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql` | `11_..._VERIFY.sql`, `11_..._ROLLBACK.sql` | Implemented | **Staging: catalog VERIFY passed 2026-07-21. Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Function EXECUTE ACL | `12_PUBLIC_FUNCTION_EXECUTE_HARDENING.sql` | `12_..._VERIFY.sql`, `12_..._ROLLBACK.sql` | Implemented | **Staging: catalog VERIFY FAILED 2026-07-21, cause unresolved** (stale expectation vs genuine drift). **Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
 | Function ACL drift check | — | `13_PUBLIC_FUNCTION_EXECUTE_DRIFT_CHECK.sql` (SELECT-only) | Verification only | Safe to run read-only anywhere |
-| Default privileges | `14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_HARDENING.sql` | `14_..._VERIFY.sql`, `14_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
-| Existing-table + audit-log hardening | `15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql` | `15_..._VERIFY.sql`, `15_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
+| Default privileges | `14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_HARDENING.sql` | `14_..._VERIFY.sql`, `14_..._ROLLBACK.sql` | Implemented | **Staging: catalog VERIFY FAILED 2026-07-21, cause unresolved** (stale expectation vs genuine drift). **Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Existing-table + audit-log hardening | `15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql` | `15_..._VERIFY.sql`, `15_..._ROLLBACK.sql` | Implemented | **Staging: catalog VERIFY FAILED 2026-07-21, cause unresolved** (stale expectation vs genuine drift). **Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
 | Production safety inspection | — | `16_PRODUCTION_SAFETY_VERIFY.sql` (read-only) | Verification only | **Production-safe.** Run this first when assessing a live project |
 | Procurement decisions | `17_PROCUREMENT_DECISIONS_MVP.sql` | `17_..._VERIFY.sql`, `17_..._ROLLBACK.sql` | Implemented | **Staging: applied + verified 2026-07-14. Production: NOT applied.** Requires migration 10 first (FK dependency) |
 | Behavioural runtime proof | — | `18_SYNTHETIC_RUNTIME_VERIFY.sql` | Verification only | **Non-production.** Writes synthetic rows; requires 10 and 17 applied and verified first |
@@ -216,7 +216,7 @@ Numbered migrations run 3 → 23. Numbers 1, 2, 5, 6, 7 do not exist; the number
 
 Migration 24 (Evidence Request & Resolution) is **not part of `main`** — it exists only on draft PR #37 and has not been applied to any environment. It is not a prerequisite for anything.
 
-For the authoritative per-environment position, read `docs/MIGRATION_RUNTIME_STATUS.md` and `docs/MASTER_DEVELOPMENT_ROADMAP.md`. Note that the runtime ledger currently covers only migrations 10 and 17.
+For the authoritative per-environment position, read `docs/MIGRATION_RUNTIME_STATUS.md` — it is the current authority for runtime application status and covers migrations 10, 17 and 19–23, plus the 2026-07-21 staging security harness result.
 
 ### Bootstrap the first DDP Admin user
 
