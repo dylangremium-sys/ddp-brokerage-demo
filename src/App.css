@@ -4818,6 +4818,18 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   width: 100%; border-collapse: collapse; margin-top: 4px;
   background: var(--ddp-paper); font-size: 14px;
 }
+/* Bounded horizontal-scroll container for the table (wraps it in
+   DDPOperationsDesk.tsx). overflow-x:auto gives this box min-content 0, so the
+   table's nowrap width never widens the page; on desktop the table fits and no
+   scrollbar shows. contain:paint adds a paint-containment boundary: without it,
+   the scroll container's clipped horizontal overflow still leaks into the ROOT
+   element's scrollable-overflow region (documentElement.scrollWidth), which on
+   narrow viewports inflates the fixed demo strip and the reported page width even
+   though body never scrolls. Paint containment severs that leak so the page/root
+   width equals the viewport. Safe here — nothing needs to visually escape this
+   box (expandable detail rows render inside the table). Scoped to .ops-desk —
+   no global/other-page table is touched. */
+.ops-desk-table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; contain: paint; }
 .ops-desk-caption {
   caption-side: top; text-align: left; padding: 0 0 12px;
   font-size: 12px; line-height: 18px; color: var(--ddp-ink-500); max-width: 78ch;
@@ -4865,6 +4877,12 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   border: 1px solid var(--ddp-line-strong); border-radius: 0;
 }
 .ops-desk-action:hover { background: var(--ddp-green-900); color: #FFFFFF; border-color: var(--ddp-green-900); }
+/* Target record not loaded — action disabled, stated plainly and non-actionable. */
+.ops-desk-action:disabled {
+  cursor: not-allowed; opacity: 0.55; color: var(--ddp-ink-500);
+  background: var(--ddp-paper); border-color: var(--ddp-line);
+}
+.ops-desk-action:disabled:hover { background: var(--ddp-paper); color: var(--ddp-ink-500); border-color: var(--ddp-line); }
 
 .ops-desk :focus-visible { outline: 2px solid var(--ddp-gold-700); outline-offset: 2px; }
 
@@ -4884,7 +4902,10 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 /* Narrow viewports: the table scrolls inside its own container so the page
    body never scrolls sideways, and the detail grid stacks. */
 @media (max-width: 900px) {
-  .ops-desk-table { display: block; overflow-x: auto; white-space: nowrap; }
+  /* The .ops-desk-table-scroll wrapper contains the horizontal scroll; the table
+     keeps a legible min-width and scrolls inside it, so the page/root stays at
+     viewport width and no column is hidden or truncated. */
+  .ops-desk-table { min-width: 760px; white-space: nowrap; }
   .ops-desk-reason { white-space: normal; min-width: 28ch; }
   .ops-desk-detail { grid-template-columns: 1fr; }
   .ops-desk-field input { min-width: 0; width: 100%; }

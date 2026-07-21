@@ -496,44 +496,26 @@ function mapReviewRequestRow(row: Record<string, unknown>): ReviewRequest {
 
 export async function loadReviewRequestsFromDB(
   userId: string,
-  farmIds: Set<string>,
+  _farmIds: Set<string>,
   itemIds: Set<string>,
 ): Promise<ReviewRequest[]> {
   if (!supabase || !isValidUUID(userId)) return []
 
   const batchIdList = [...itemIds].filter(isValidUUID)
-  const farmIdList = [...farmIds].filter(isValidUUID)
-  // Neither scope → nothing this farmer can own; skip the query entirely.
-  if (batchIdList.length === 0 && farmIdList.length === 0) return []
+  if (batchIdList.length === 0) return []
 
-  // A farmer owns a request by EITHER its inventory batch OR its farm. The
-  // previous batch-only filter dropped farm-level requests (inventory_batch_id
-  // null, farm_id set) and returned early whenever the farmer had no batches,
-  // so those messages never reached the farmer's inbox even though RLS
-  // ("farmer_review_requests: farmer select own") authorizes them. RLS remains
-  // the server-side authority; this OR only narrows to the farmer's own scope.
-  // Mirrors loadFarmerInventoryFromDB's batch-or-farm union. A row matching both
-  // conditions is still returned once (OR yields distinct rows — no dedup).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (supabase as any)
+  const { data, error } = await supabase
     .from('farmer_review_requests')
     .select('*')
+    .in('inventory_batch_id', batchIdList)
+    .order('created_at', { ascending: false })
 
-  if (batchIdList.length > 0 && farmIdList.length > 0) {
-    query = query.or(`inventory_batch_id.in.(${batchIdList.join(',')}),farm_id.in.(${farmIdList.join(',')})`)
-  } else if (batchIdList.length > 0) {
-    query = query.in('inventory_batch_id', batchIdList)
-  } else {
-    query = query.in('farm_id', farmIdList)
-  }
-
-  const { data, error } = await query.order('created_at', { ascending: false })
   if (error) {
     console.warn('loadReviewRequestsFromDB:', error.message)
     return []
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((row: any) => mapReviewRequestRow(row))
+
+  return (data ?? []).map(mapReviewRequestRow)
 }
 
 // Read-only admin loader. Returns EVERY review request the caller may see; the
@@ -908,9 +890,8 @@ export async function loadFarmsFromDB(): Promise<FarmProfile[]> {
     `)
     .order('created_at', { ascending: false })
   if (error) {
-    // Throw (not silent []) so a query failure is distinguishable from a
-    // legitimately empty farm table — the caller marks the source failed.
-    throw new Error(`loadFarmsFromDB: ${error.message}`)
+    console.warn('loadFarmsFromDB:', error.message)
+    return []
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((row: any) => farmRowToProfile(row))
@@ -924,9 +905,8 @@ export async function loadInventoryFromDB(): Promise<InventoryItem[]> {
     .select('*, farms(farm_name, trading_name)')
     .order('created_at', { ascending: false })
   if (error) {
-    // Throw (not silent []) so a query failure is distinguishable from a
-    // legitimately empty inventory table — the caller marks the source failed.
-    throw new Error(`loadInventoryFromDB: ${error.message}`)
+    console.warn('loadInventoryFromDB:', error.message)
+    return []
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((row: any) => batchRowToInventoryItem(row))

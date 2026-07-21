@@ -18,8 +18,6 @@ import {
   PRIORITY_LABEL,
   type OperationsDeskPriority,
 } from '../../lib/operationsDeskPriority'
-import { resolveOperationsDeskEmptyState } from '../../lib/operationsDeskEmptyState'
-import { operationsDeskActionAvailable, resolveOperationsDeskRoute } from '../../lib/operationsDeskActions'
 
 /**
  * Operations Desk — an operational index over records that already exist.
@@ -40,25 +38,18 @@ export default function DDPOperationsDesk({
   reviewRequestsLoading,
   complianceAlerts,
   complianceLoading,
-  farmInventoryLoading,
-  farmInventoryFailed,
   onOpenFarm,
   onOpenItem,
   goTo,
 }: {
   farms: FarmProfile[]
-  /** null means the inventory source is unavailable — distinct from a genuine []. */
-  inventory: InventoryItem[] | null
+  inventory: InventoryItem[]
   /** null means the review-request source failed to load — not "no requests". */
   reviewRequests: ReviewRequest[] | null
   reviewRequestsLoading: boolean
   /** null means the compliance source failed to load — not "no alerts". */
   complianceAlerts: ComplianceAlert[] | null
   complianceLoading: boolean
-  /** The farm/inventory source (feeds most queues) is still loading. */
-  farmInventoryLoading: boolean
-  /** The farm/inventory source failed — the desk must not show an all-clear. */
-  farmInventoryFailed: boolean
   onOpenFarm: (farmId: string) => void
   onOpenItem: (itemId: string) => void
   goTo: (page: Page) => void
@@ -78,42 +69,15 @@ export default function DDPOperationsDesk({
 
   const summary = useMemo(() => summariseOperationsDeskItems(result.items), [result.items])
 
-  // Ids actually present in the loaded arrays. A follow-up's detail action is
-  // only enabled when its target is here — otherwise (source loading/failed/
-  // partial/stale, or a malformed request) the review page would be an empty
-  // shell, so the action is disabled instead of navigating nowhere.
-  const loadedFarmIds = useMemo(() => new Set(farms.map(f => f.id)), [farms])
-  const loadedItemIds = useMemo(() => new Set((inventory ?? []).map(i => i.id)), [inventory])
-
   const isFiltered =
     filters.search.trim() !== '' || filters.category !== 'all' || filters.priority !== 'all'
 
-  // A source is still settling — App passes [] for a loading source to avoid
-  // showing stale data, so an empty queue during loading is NOT a confirmed
-  // all-clear. The farm/inventory source feeds most queues, so its loading and
-  // failure states join the pending/failure tally below.
-  const hasPendingSources = reviewRequestsLoading || complianceLoading || farmInventoryLoading
-
-  // Farm/inventory failure is an App-level source state (the arrays themselves
-  // are retained), counted alongside the queue-build failures so the desk never
-  // shows an all-clear when that source could not be loaded.
-  const failureCount = result.failures.length + (farmInventoryFailed ? 1 : 0)
-
-  const emptyState = resolveOperationsDeskEmptyState({
-    visibleCount: visible.length,
-    failureCount,
-    hasPendingSources,
-    isFiltered,
-  })
-
   function openItem(item: OperationsDeskItem) {
-    // Route via the pure resolver. A 'none' route (target not loaded) does
-    // nothing — so no click/keyboard/programmatic path can open an empty detail
-    // shell, in addition to the action being disabled below.
-    const route = resolveOperationsDeskRoute(item, loadedFarmIds, loadedItemIds)
-    if (route.kind === 'open-farm') onOpenFarm(route.farmId)
-    else if (route.kind === 'open-item') onOpenItem(route.itemId)
-    else if (route.kind === 'go') goTo(route.page)
+    const farmId = item.destinationParams?.farmId
+    const itemId = item.destinationParams?.itemId
+    if (item.destinationPage === 'ddp-farm-review' && farmId) { onOpenFarm(farmId); return }
+    if (item.destinationPage === 'ddp-inventory-review' && itemId) { onOpenItem(itemId); return }
+    goTo(item.destinationPage)
   }
 
   return (
@@ -138,21 +102,6 @@ export default function DDPOperationsDesk({
             ))}
           </ul>
         </div>
-      )}
-
-      {/* Farm/inventory failure — most queues are built from this source, so a
-          failure is stated plainly and can never read as an all-clear. */}
-      {farmInventoryFailed && (
-        <div className="ops-desk-notice" role="status">
-          <strong>This view is incomplete.</strong>
-          <ul>
-            <li>Farm and inventory data could not be loaded — most matters are not represented below.</li>
-          </ul>
-        </div>
-      )}
-
-      {farmInventoryLoading && (
-        <p className="ops-desk-loading" role="status">Loading farm and inventory matters…</p>
       )}
 
       {reviewRequestsLoading && (
@@ -241,13 +190,11 @@ export default function DDPOperationsDesk({
           {visible.length === 0 && (
             <tr>
               <td colSpan={7} className="ops-desk-empty">
-                {emptyState === 'failed'
+                {result.failures.length > 0
                   ? 'No matters could be listed. Some sources failed to load — see the notice above.'
-                  : emptyState === 'loading'
-                    ? 'Loading matters — the queue is still being assembled…'
-                    : emptyState === 'filtered-empty'
-                      ? 'No matters match the current filters.'
-                      : 'Nothing is currently awaiting review, decision, or follow-up.'}
+                  : isFiltered
+                    ? 'No matters match the current filters.'
+                    : 'Nothing is currently awaiting review, decision, or follow-up.'}
               </td>
             </tr>
           )}
@@ -284,29 +231,14 @@ export default function DDPOperationsDesk({
                     : `${item.ageInDays} day${item.ageInDays === 1 ? '' : 's'}`}
                 </td>
                 <td>
-                  {operationsDeskActionAvailable(item, loadedFarmIds, loadedItemIds) ? (
-                    <button
-                      type="button"
-                      className="ops-desk-action"
-                      onClick={() => openItem(item)}
-                    >
-                      {item.actionLabel}
-                      <span className="sr-only"> — {item.title}, {item.entityLabel}</span>
-                    </button>
-                  ) : (
-                    // Target record not loaded (source loading/failed/partial or a
-                    // malformed request) — disabled so neither click nor keyboard can
-                    // open an empty detail shell.
-                    <button
-                      type="button"
-                      className="ops-desk-action"
-                      disabled
-                      title="The authoritative record is not loaded yet."
-                    >
-                      Record unavailable
-                      <span className="sr-only"> — {item.title}, {item.entityLabel}; the record is not loaded</span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="ops-desk-action"
+                    onClick={() => openItem(item)}
+                  >
+                    {item.actionLabel}
+                    <span className="sr-only"> — {item.title}, {item.entityLabel}</span>
+                  </button>
                 </td>
               </tr>,
               expanded ? (
