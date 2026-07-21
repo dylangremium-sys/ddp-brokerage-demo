@@ -83,23 +83,37 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key-here
 
 Run `npm run dev`. The navbar badge should switch to **"Database mode: Supabase"**.
 
-### Required environment variable names
+### Client configuration
 
-| Variable | Where to find it |
+These two are `VITE_`-prefixed, which means Vite inlines them into the browser bundle. Only ever put public values here.
+
+| Variable | Purpose | Where to find it |
+|---|---|---|
+| `VITE_SUPABASE_URL` | Supabase project URL used by the browser client | Supabase dashboard → Settings → API → Project URL |
+| `VITE_SUPABASE_ANON_KEY` | Public anon key used by the browser client | Supabase dashboard → Settings → API → anon public key |
+
+When deploying to Vercel, add the same two variables in **Vercel → Project Settings → Environment Variables**. Vercel injects them at build time so `import.meta.env.VITE_*` resolves correctly.
+
+### Server-only provisioning configuration
+
+Controlled farmer provisioning runs in the serverless function `api/admin/provision-farmer.ts`, which reads two variables from `process.env`. They are **server-only** and are never part of the browser bundle.
+
+| Variable | Purpose |
 |---|---|
-| `VITE_SUPABASE_URL` | Supabase dashboard → Settings → API → Project URL |
-| `VITE_SUPABASE_ANON_KEY` | Supabase dashboard → Settings → API → anon public key |
+| `SUPABASE_URL` | Supabase project URL used by the server-side Admin Auth client |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key, required to invite a user via Admin Auth and to promote a `pending` profile |
 
-### Vercel environment variable names
+**Hosted controlled provisioning does not function unless both server-only variables are configured.** Without them the endpoint cannot construct its Admin Auth client, and no farmer can be provisioned.
 
-When deploying to Vercel with Supabase, add the same two variables in **Vercel → Project Settings → Environment Variables**:
+Rules for `SUPABASE_SERVICE_ROLE_KEY`:
 
-| Key | Value |
-|---|---|
-| `VITE_SUPABASE_URL` | your Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | your Supabase anon key |
+- **It must never carry a `VITE_` prefix.** A `VITE_`-prefixed variable is inlined into the browser bundle and would publish the key to every visitor.
+- **It must never be committed** to the repository, and never exposed to browser code. Set it only as a Vercel Environment Variable, or locally in a git-ignored `.env.local`.
+- It is read exclusively from `process.env` in server-side code. A standing test (`scripts/client-provisioning-boundary.test.mjs`) fails the build if `src/` references a service-role key or reads it from `import.meta.env`.
 
-Vercel injects these at build time so `import.meta.env.VITE_*` picks them up correctly.
+> `SUPABASE_URL` is shared with the compliance AI-summary route, which additionally uses `SUPABASE_ANON_KEY` and its own AI provider variables — see `.env.example`. That route uses no service-role key.
+
+**Current status:** `main` has the provisioning API and service layer, but **no admin provisioning UI is wired** — no component imports `inviteFarmer`, `provisionFarmer`, or `listPendingProfiles`. Provisioning today means calling the endpoint directly.
 
 ### Local fallback
 
