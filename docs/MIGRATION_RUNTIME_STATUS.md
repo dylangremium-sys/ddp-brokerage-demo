@@ -94,9 +94,15 @@ Against that:
   query.
 
 The claims are therefore recorded but **not** accepted as runtime evidence. Production
-status for 19 and 20 remains **`UNKNOWN`**. Resolving it requires running
-`19_..._VERIFY.sql` **Section A only** (read-only, safe anywhere) against production and
-recording the output here. Section B writes and must not be run against production.
+status for 19 and 20 remains **`UNKNOWN`**. Resolving it requires a SELECT-only catalog
+check of the guard function and its EXECUTE ACL. `19_..._VERIFY.sql` **Section A** is the
+object-state section and is written to be read-only, but it must be re-read at the exact
+repository revision and independently confirmed SELECT-only before any production use;
+the script must never be run wholesale. **Section B must never be run against
+production** — it inserts into `auth.users`, `public.profiles`, `public.farms` and
+`public.farm_memberships`, and updates `public.farms`. Its closing `rollback` does **not**
+make it operationally safe: the statements still execute, fire triggers, take locks and
+consume sequence values.
 
 ### Conflicting evidence — migration 23 in staging
 
@@ -233,8 +239,24 @@ operation, not an improvisation. Recorded here for a decision.
 ## Remaining unknowns
 
 1. **Production status of migrations 19, 20, 21, 22, 23** — `UNKNOWN`. Production was
-   not contacted in this audit. Resolve by running read-only Section A verifications
-   and `16_PRODUCTION_SAFETY_VERIFY.sql` against production and recording the output.
+   not contacted in this audit. **There is no blanket "read-only Section A" path across
+   these migrations, and no migration 19/21/22/23 VERIFY script may be run wholesale
+   against production:**
+   - **19** and **23** each carry an object-state Section A written to be read-only.
+     Either may be used only after that exact section has been re-read at the current
+     repository revision and independently confirmed SELECT-only.
+   - **21** and **22** have **no production-safe read-only section at all**. Migration
+     21's VERIFY inserts into `auth.users` and updates `public.profiles`; migration 22's
+     VERIFY is likewise behavioural and performs DML. A closing `rollback` does **not**
+     make either safe against production.
+   - **`16_PRODUCTION_SAFETY_VERIFY.sql`** contains no DML, but must still be reviewed at
+     the exact repository revision before execution.
+
+   Resolve production status instead with separately reviewed, purpose-built, SELECT-only
+   catalog queries that positively identify the production project reference before
+   connecting, run under an enforced read-only session, and perform no application-table
+   DML, no `auth.users` DML and no storage writes. This register records status; it is
+   not an execution recipe and deliberately carries no runnable production SQL.
 2. **Production status of migrations 10 and 17** — recorded `NOT_APPLIED` on the
    2026-07-14 operator record; **not re-verified** on 2026-07-21.
 3. **Migration 23 behavioural enforcement on staging** — installed, but the decision-gate
