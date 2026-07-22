@@ -191,19 +191,19 @@ Numbered migrations run 3 → 23. Numbers 1, 2, 5, 6, 7 do not exist; the number
 | COA / private storage | `8_COA_UPLOAD_STORAGE_MIGRATION.sql` | — | Implemented | Storage isolation tested live (`docs/SECURITY_TEST_LOG.md`) |
 | Compliance Watchtower | `9_COMPLIANCE_WATCHTOWER_MVP.sql` | — | Implemented | End-to-end pipeline verified live 2026-07-08 (`docs/PROFESSIONALIZATION_ROADMAP.md`) |
 | Buyer Pack snapshots | `10_BUYER_PACK_SNAPSHOTS_MVP.sql` | `10_..._VERIFY.sql`, `10_..._ROLLBACK.sql` | Implemented | **Staging: applied + verified 2026-07-14. Production: NOT applied** (`docs/MIGRATION_RUNTIME_STATUS.md`) |
-| Audit-log TRUNCATE guard | `11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql` | `11_..._VERIFY.sql`, `11_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
-| Function EXECUTE ACL | `12_PUBLIC_FUNCTION_EXECUTE_HARDENING.sql` | `12_..._VERIFY.sql`, `12_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
+| Audit-log TRUNCATE guard | `11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql` | `11_..._VERIFY.sql`, `11_..._ROLLBACK.sql` | Implemented | **Staging: catalog VERIFY passed 2026-07-21. Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Function EXECUTE ACL | `12_PUBLIC_FUNCTION_EXECUTE_HARDENING.sql` | `12_..._VERIFY.sql`, `12_..._ROLLBACK.sql` | Implemented | **Staging: catalog VERIFY FAILED 2026-07-21, cause unresolved** (stale expectation vs genuine drift). **Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
 | Function ACL drift check | — | `13_PUBLIC_FUNCTION_EXECUTE_DRIFT_CHECK.sql` (SELECT-only) | Verification only | Safe to run read-only anywhere |
-| Default privileges | `14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_HARDENING.sql` | `14_..._VERIFY.sql`, `14_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
-| Existing-table + audit-log hardening | `15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql` | `15_..._VERIFY.sql`, `15_..._ROLLBACK.sql` | Implemented | Unable to verify from the repository |
+| Default privileges | `14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_HARDENING.sql` | `14_..._VERIFY.sql`, `14_..._ROLLBACK.sql` | Implemented | **Staging: catalog VERIFY FAILED 2026-07-21, cause unresolved** (stale expectation vs genuine drift). **Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Existing-table + audit-log hardening | `15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql` | `15_..._VERIFY.sql`, `15_..._ROLLBACK.sql` | Implemented | **Staging: catalog VERIFY FAILED 2026-07-21, cause unresolved** (stale expectation vs genuine drift). **Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
 | Production safety inspection | — | `16_PRODUCTION_SAFETY_VERIFY.sql` (read-only) | Verification only | **Production-safe.** Run this first when assessing a live project |
 | Procurement decisions | `17_PROCUREMENT_DECISIONS_MVP.sql` | `17_..._VERIFY.sql`, `17_..._ROLLBACK.sql` | Implemented | **Staging: applied + verified 2026-07-14. Production: NOT applied.** Requires migration 10 first (FK dependency) |
 | Behavioural runtime proof | — | `18_SYNTHETIC_RUNTIME_VERIFY.sql` | Verification only | **Non-production.** Writes synthetic rows; requires 10 and 17 applied and verified first |
-| Farm admin-field guard | `19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql` | `19_..._VERIFY.sql`, `19_..._ROLLBACK.sql` | Implemented; supersedes the earlier draft guard | Its companion runbook and `20_...` header both state Production was corrected manually, but this is undated self-reported prose — treat as **unable to verify** from the repository |
-| Guard ACL correction | `20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql` | **no rollback script exists** | Implemented | Makes the manual Production `REVOKE` durable for fresh environments |
-| Controlled farmer provisioning | `21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql` | `21_..._VERIFY.sql`, `21_..._ROLLBACK.sql` | Implemented | **Unable to verify** — no entry in `docs/MIGRATION_RUNTIME_STATUS.md` |
-| Operational-farmer access overlay | `22_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql` | `22_..._VERIFY.sql`, `22_..._ROLLBACK.sql` | Implemented | **Unable to verify** — no entry in `docs/MIGRATION_RUNTIME_STATUS.md` |
-| Server-authoritative Buyer Pack issuance | `23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql` | `23_..._VERIFY.sql`, `23_..._ROLLBACK.sql` | Implemented | **Not applied anywhere.** Its runbook states it "runs no SQL against any database" (`docs/BUYER_PACK_AUTHORITATIVE_ISSUANCE_APPLICATION.md`) |
+| Farm admin-field guard | `19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql` | `19_..._VERIFY.sql`, `19_..._ROLLBACK.sql` | Implemented; supersedes the earlier draft guard | **Staging: `APPLIED_NOT_VERIFIED`** (installed; behavioural coverage partial — UPDATE path only, 4 of 7 protected columns). **Production: `UNKNOWN`** — its runbook and the `20_...` header state Production was corrected manually, but that is undated self-reported prose. See `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Guard ACL correction | `20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql` | **no rollback script exists** | Implemented | **Staging: `APPLIED_AND_VERIFIED`. Production: `UNKNOWN`.** Makes the manual Production `REVOKE` durable for fresh environments. See `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Controlled farmer provisioning | `21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql` | `21_..._VERIFY.sql`, `21_..._ROLLBACK.sql` | Implemented | **Staging: `APPLIED_AND_VERIFIED`. Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Operational-farmer access overlay | `22_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql` | `22_..._VERIFY.sql`, `22_..._ROLLBACK.sql` | Implemented | **Staging: `APPLIED_NOT_VERIFIED`** — installed, and the 11-table overlay is substantially verified, but the storage half of the policy (`FOR ALL`) has incomplete behavioural coverage: no pending-user storage UPDATE or DELETE enforcement probe, and the list probe failed. **Production: `UNKNOWN`.** See `docs/MIGRATION_RUNTIME_STATUS.md` |
+| Server-authoritative Buyer Pack issuance | `23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql` | `23_..._VERIFY.sql`, `23_..._ROLLBACK.sql` | Implemented | **Staging: `APPLIED_NOT_VERIFIED`** — 2026-07-21 catalog evidence shows `issue_buyer_pack_snapshot` present and reading `procurement_decisions_current` (the migration-23 definition). Behavioural issuance verification not completed. **Production: `UNKNOWN`.** No execution record identifies who applied it to staging, when, or through which process; **do not re-run it** on the strength of the earlier "not applied anywhere" claim, which is **superseded**. See `docs/MIGRATION_RUNTIME_STATUS.md` |
 
 **Do not run — historical, draft or superseded**
 
@@ -216,7 +216,7 @@ Numbered migrations run 3 → 23. Numbers 1, 2, 5, 6, 7 do not exist; the number
 
 Migration 24 (Evidence Request & Resolution) is **not part of `main`** — it exists only on draft PR #37 and has not been applied to any environment. It is not a prerequisite for anything.
 
-For the authoritative per-environment position, read `docs/MIGRATION_RUNTIME_STATUS.md` and `docs/MASTER_DEVELOPMENT_ROADMAP.md`. Note that the runtime ledger currently covers only migrations 10 and 17.
+For the authoritative per-environment position, read `docs/MIGRATION_RUNTIME_STATUS.md` — it is the current authority for runtime application status and covers migrations 10, 17 and 19–23, plus the 2026-07-21 staging security harness result.
 
 ### Bootstrap the first DDP Admin user
 
