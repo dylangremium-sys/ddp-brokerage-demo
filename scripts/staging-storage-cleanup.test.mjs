@@ -8,8 +8,7 @@
 //
 //   * cleanup ran as a farmer client, and farmers hold no permissive DELETE
 //     policy on either farmer bucket — so the delete matched zero rows;
-//   * Supabase Storage answers an RLS no-op with `{ data: [], error: null }`,
-//     and the harness accepted `!error` as proof of deletion;
+//   * the harness accepted `!error` as proof of deletion;
 //   * only one of the four objects a healthy run creates was registered, because
 //     the registry was written by assignment rather than append;
 //   * the post-cleanup listing inspected one bucket, one prefix, one filename,
@@ -17,8 +16,16 @@
 //   * `cleanupFailures` was derived from a property ordinary result rows never
 //     carry, so storage failures could not reach the exit code.
 //
-// 36 synthetic objects accumulated on staging as a result. Every test below uses
-// mocks only — nothing here contacts a live Supabase project.
+// 36 synthetic objects accumulated on staging as a result.
+//
+// THE DELETION CONTRACT. `@supabase/storage-js` documents a SUCCESSFUL remove()
+// as `{ data: [], error: null }`, and an RLS no-op returns the identical shape.
+// The response payload therefore proves nothing in either direction — requiring
+// it to echo the requested paths would fail every genuinely successful cleanup.
+// Deletion is proved ONLY by the paginated absence sweep. Every mock below uses
+// the documented success shape; none assumes remove() echoes filenames.
+//
+// Mocks only — nothing here contacts a live Supabase project.
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -36,6 +43,9 @@ const TAG = 'security-test-1784659142065-868ac4ea'
 const FARMER_A = '35e521e0-aaae-4474-b835-05f2f92ba948'
 const FARMER_B = 'a920a20f-4566-4ed6-9475-503f3aadc8ba'
 
+// The response the Storage API documents for a SUCCESSFUL remove().
+const REMOVE_SUCCESS = { data: [], error: null }
+
 // A list function backed by a plain array, honouring limit/offset exactly as the
 // storage client does.
 const listerFor = (byPrefix) => ({ prefix, limit, offset }) => {
@@ -43,75 +53,157 @@ const listerFor = (byPrefix) => ({ prefix, limit, offset }) => {
   return Promise.resolve({ data: rows.slice(offset, offset + limit), error: null })
 }
 
-// ── Test 1 — silent no-op deletion ──────────────────────────────────────────
-describe('Test 1 — a silent no-op delete is a cleanup failure', () => {
-  it('treats { data: [], error: null } as undeleted, not as success', () => {
-    const requested = [`${FARMER_A}/${TAG}.txt`]
-    const cmp = compareRequestedAndDeletedPaths(requested, [])
-    expect(cmp.ok).toBe(false)
-    expect(cmp.deleted).toBe(0)
-    expect(cmp.missing).toEqual(requested)
+// Drive the same sequence the harness performs: remove(), then sweep, then judge.
+async function runCleanup({ registered, removeResult = REMOVE_SUCCESS, remaining = {} , guard = { ok: true, reason: '' } }) {
+  const errors = []
+  let reportedDeleted = 0
+  const notEchoed = []
+  if (guard.ok) {
+    if (removeResult.error) {
+      errors.push(`farmer-documents: ${removeResult.error.message}`)
+    } else {
+      const cmp = compareRequestedAndDeletedPaths(registered.map((r) => r.path), removeResult.data)
+      reportedDeleted += cmp.deleted
+      notEchoed.push(...cmp.missing)
+    }
+  }
+  const residual = []
+  let truncated = false
+  if (guard.ok) {
+    for (const bucket of STORAGE_CLEANUP_BUCKETS) {
+      for (const prefix of [...new Set(registered.map((r) => r.path.split('/')[0]))]) {
+        const swept = await collectPaginatedRunObjects(listerFor(remaining[bucket] ?? {}), { bucket, prefix, tag: TAG })
+        if (swept.error) { errors.push(String(swept.error.message)); continue }
+        if (swept.truncated) truncated = true
+        residual.push(...swept.found)
+      }
+    }
+  }
+  return evaluateStorageCleanup({
+    created: registered.length,
+    requested: guard.ok ? registered.length : 0,
+    deleted: reportedDeleted,
+    missing: notEchoed,
+    residual,
+    errors,
+    truncated,
+    configError: guard.ok ? null : guard.reason,
+  })
+}
 
-    const verdict = evaluateStorageCleanup({
-      created: 1,
-      requested: 1,
-      deleted: cmp.deleted,
-      missing: cmp.missing,
-      residual: [{ bucket: 'farmer-documents', path: requested[0] }],
-    })
-    expect(verdict.ok).toBe(false)
-    expect(verdict.reason).toContain('not reported deleted')
+// ── Test A — the documented successful response ─────────────────────────────
+describe('Test A — an empty remove() payload with a clean sweep is a success', () => {
+  it('passes on { data: [], error: null } when nothing remains', async () => {
+    const registered = [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }]
+    const verdict = await runCleanup({ registered, remaining: { 'farmer-documents': { [FARMER_A]: [] } } })
+    expect(verdict.ok).toBe(true)
+    expect(verdict.residualCount).toBe(0)
+    expect(verdict.reason).toContain('absence proven by paginated sweep')
+    expect(computeSecurityHarnessExitCode({ storageResidue: verdict.residualCount })).toBe(0)
   })
 
-  it('fails the process exit code', () => {
-    expect(computeSecurityHarnessExitCode({ cleanupFailures: 1, storageResidue: 1 })).toBe(1)
+  it('does not count the empty payload as a cleanup failure', async () => {
+    // The exact regression Codex caught: an empty success payload must not make
+    // every requested path look undeleted.
+    const registered = [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }]
+    const verdict = await runCleanup({ registered, remaining: { 'farmer-documents': { [FARMER_A]: [] } } })
+    expect(verdict.notEchoed).toHaveLength(1) // recorded as diagnostic…
+    expect(verdict.ok).toBe(true)             // …but not a verdict
   })
 })
 
-// ── Test 2 — partial deletion ───────────────────────────────────────────────
-describe('Test 2 — a partial delete is a cleanup failure', () => {
-  it('identifies exactly which paths were not deleted', () => {
-    const requested = ['p/a.txt', 'p/b.txt', 'p/c.txt', 'p/d.txt']
-    const cmp = compareRequestedAndDeletedPaths(
-      requested,
-      [{ name: 'p/a.txt' }, { name: 'p/b.txt' }, { name: 'p/c.txt' }],
-    )
-    expect(cmp.requested).toBe(4)
-    expect(cmp.deleted).toBe(3)
-    expect(cmp.missing).toEqual(['p/d.txt'])
-    expect(cmp.ok).toBe(false)
-  })
-
-  it('produces a non-zero exit code', () => {
-    const verdict = evaluateStorageCleanup({ created: 4, requested: 4, deleted: 3, missing: ['p/d.txt'] })
+// ── Test B — silent no-op detected by the sweep ─────────────────────────────
+describe('Test B — a silent RLS no-op is caught by the absence sweep', () => {
+  it('fails when the object is still present after an apparently successful remove', async () => {
+    const registered = [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }]
+    const verdict = await runCleanup({
+      registered,
+      remaining: { 'farmer-documents': { [FARMER_A]: [`${TAG}.txt`] } },
+    })
     expect(verdict.ok).toBe(false)
-    expect(computeSecurityHarnessExitCode({ cleanupFailures: verdict.ok ? 0 : 1 })).toBe(1)
-  })
-
-  it('accepts plain-string rows as well as { name } rows', () => {
-    expect(compareRequestedAndDeletedPaths(['x'], ['x']).ok).toBe(true)
+    expect(verdict.residualCount).toBe(1)
+    expect(verdict.residual[0].path).toBe(`${FARMER_A}/${TAG}.txt`)
+    expect(verdict.reason).toContain('current-run object(s) remain')
+    expect(computeSecurityHarnessExitCode({ storageResidue: verdict.residualCount })).toBe(1)
   })
 })
 
-// ── Test 3 — explicit deletion error ────────────────────────────────────────
-describe('Test 3 — an explicit Storage API error is surfaced', () => {
-  it('reports the error and still evaluates the remaining buckets', () => {
-    const verdict = evaluateStorageCleanup({
-      created: 2,
-      requested: 2,
-      deleted: 1,
-      missing: ['farmer-photos/x.jpg'],
-      errors: ['farmer-photos: permission denied'],
+// ── Test C — partial deletion detected by the sweep ─────────────────────────
+describe('Test C — partial deletion is caught, and only the residual is reported', () => {
+  it('reports exactly the one object that survived', async () => {
+    const registered = [
+      { bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` },
+      { bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}-attrib.pdf` },
+      { bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}-x.txt` },
+    ]
+    const verdict = await runCleanup({
+      registered,
+      remaining: { 'farmer-documents': { [FARMER_A]: [`${TAG}-attrib.pdf`] } },
     })
     expect(verdict.ok).toBe(false)
-    expect(verdict.reason).toContain('permission denied')
-    expect(verdict.reason).toContain('not reported deleted')
+    expect(verdict.residualCount).toBe(1)
+    expect(verdict.residual.map((r) => r.path)).toEqual([`${FARMER_A}/${TAG}-attrib.pdf`])
+    expect(computeSecurityHarnessExitCode({ storageResidue: verdict.residualCount })).toBe(1)
+  })
+})
+
+// ── Test D — explicit API error ─────────────────────────────────────────────
+describe('Test D — an explicit Storage API error fails cleanup', () => {
+  it('records the error, still sweeps, and fails', async () => {
+    const registered = [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }]
+    const verdict = await runCleanup({
+      registered,
+      removeResult: { data: null, error: { message: 'permission denied' } },
+      remaining: { 'farmer-documents': { [FARMER_A]: [`${TAG}.txt`] } },
+    })
+    expect(verdict.ok).toBe(false)
+    expect(verdict.errors.join(' ')).toContain('permission denied')
+    // The sweep ran regardless and independently corroborates the failure.
+    expect(verdict.residualCount).toBe(1)
     expect(computeSecurityHarnessExitCode({ cleanupFailures: 1 })).toBe(1)
   })
+
+  it('fails on an API error even when the sweep comes back clean', async () => {
+    const registered = [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }]
+    const verdict = await runCleanup({
+      registered,
+      removeResult: { data: null, error: { message: 'transport failure' } },
+      remaining: { 'farmer-documents': { [FARMER_A]: [] } },
+    })
+    expect(verdict.ok).toBe(false)
+    expect(verdict.reason).toContain('transport failure')
+  })
 })
 
-// ── Test 4 — complete registry ──────────────────────────────────────────────
-describe('Test 4 — every created object is registered exactly once', () => {
+// ── Test E — the response payload is non-authoritative ──────────────────────
+describe('Test E — an arbitrary remove() payload cannot change the verdict', () => {
+  it('passes when the payload does not match the request but the sweep is clean', async () => {
+    const registered = [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }]
+    const verdict = await runCleanup({
+      registered,
+      removeResult: { data: [{ name: 'something/else.txt' }, { name: 'unrelated.bin' }], error: null },
+      remaining: { 'farmer-documents': { [FARMER_A]: [] } },
+    })
+    expect(verdict.ok).toBe(true)
+    expect(verdict.residualCount).toBe(0)
+  })
+
+  it('still FAILS when a rich payload claims success but the object remains', async () => {
+    // The inverse guard: a non-empty payload must not be able to vouch for a
+    // deletion that did not happen — that was the original false "clean".
+    const registered = [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }]
+    const verdict = await runCleanup({
+      registered,
+      removeResult: { data: [{ name: `${FARMER_A}/${TAG}.txt` }], error: null },
+      remaining: { 'farmer-documents': { [FARMER_A]: [`${TAG}.txt`] } },
+    })
+    expect(verdict.ok).toBe(false)
+    expect(verdict.residualCount).toBe(1)
+  })
+})
+
+// ── Complete registry ───────────────────────────────────────────────────────
+describe('every created object is registered exactly once', () => {
   it('registers all four objects a healthy run creates, without overwriting', () => {
     const reg = []
     registerStorageFixture(reg, { bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt`, scenario: 'G own', createdBy: 'farmer A' })
@@ -144,8 +236,8 @@ describe('Test 4 — every created object is registered exactly once', () => {
   })
 })
 
-// ── Test 5 — pagination ─────────────────────────────────────────────────────
-describe('Test 5 — the residue sweep pages past the first 100 objects', () => {
+// ── Pagination ──────────────────────────────────────────────────────────────
+describe('the residue sweep pages past the first 100 objects', () => {
   it('finds a current-run residual that sits beyond page one', async () => {
     const names = Array.from({ length: 250 }, (_, i) => `security-test-old-${i}.txt`)
     names.push(`${TAG}-listctl.txt`) // index 250 — invisible to a single default page
@@ -158,7 +250,7 @@ describe('Test 5 — the residue sweep pages past the first 100 objects', () => 
     expect(swept.found).toHaveLength(1)
     expect(swept.found[0].path).toBe(`${FARMER_B}/${TAG}-listctl.txt`)
 
-    const verdict = evaluateStorageCleanup({ created: 1, requested: 1, deleted: 1, residual: swept.found })
+    const verdict = evaluateStorageCleanup({ created: 1, requested: 1, residual: swept.found })
     expect(verdict.ok).toBe(false)
     expect(verdict.residualCount).toBe(1)
   })
@@ -175,11 +267,12 @@ describe('Test 5 — the residue sweep pages past the first 100 objects', () => 
     const swept = await collectPaginatedRunObjects(failing, { bucket: 'b', prefix: 'p', tag: TAG })
     expect(swept.error).toBeTruthy()
     expect(swept.found).toHaveLength(0)
+    expect(evaluateStorageCleanup({ errors: ['boom'] }).ok).toBe(false)
   })
 })
 
-// ── Test 6 — residue-only run must fail ─────────────────────────────────────
-describe('Test 6 — residue alone fails the run', () => {
+// ── Residue-only run must fail ──────────────────────────────────────────────
+describe('residue alone fails the run', () => {
   it('exits 1 with zero access-control failures and zero blocks', () => {
     expect(computeSecurityHarnessExitCode({ failed: 0, blocked: 0, cleanupFailures: 0, storageResidue: 1 })).toBe(1)
   })
@@ -190,8 +283,8 @@ describe('Test 6 — residue alone fails the run', () => {
   })
 })
 
-// ── Test 7 — wrong cleanup identity ─────────────────────────────────────────
-describe('Test 7 — cleanup refuses a non-admin identity before deleting', () => {
+// ── Wrong cleanup identity ──────────────────────────────────────────────────
+describe('cleanup refuses a non-admin identity before deleting', () => {
   it('rejects a farmer session', () => {
     const r = assertAdminCleanupClient({ client: {}, label: 'farmer A' })
     expect(r.ok).toBe(false)
@@ -209,38 +302,42 @@ describe('Test 7 — cleanup refuses a non-admin identity before deleting', () =
     expect(assertAdminCleanupClient({ client: {}, label: 'admin' }).ok).toBe(true)
   })
 
-  it('turns a misconfigured identity into a cleanup failure', () => {
+  it('turns a misconfigured identity into a cleanup failure without sweeping', async () => {
     const guard = assertAdminCleanupClient({ client: {}, label: 'farmer B' })
-    const verdict = evaluateStorageCleanup({ created: 1, configError: guard.reason })
+    const verdict = await runCleanup({
+      registered: [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }],
+      guard,
+    })
     expect(verdict.ok).toBe(false)
     expect(verdict.reason).toContain('admin session')
   })
 })
 
-// ── Test 8 — both buckets ───────────────────────────────────────────────────
-describe('Test 8 — cleanup and residue verification cover both farmer buckets', () => {
+// ── Both buckets ────────────────────────────────────────────────────────────
+describe('cleanup and residue verification cover both farmer buckets', () => {
   it('enumerates farmer-documents and farmer-photos', () => {
     expect([...STORAGE_CLEANUP_BUCKETS]).toEqual(['farmer-documents', 'farmer-photos'])
   })
 
   it('detects residue that exists only in farmer-photos', async () => {
-    const perBucket = {
-      'farmer-documents': listerFor({ [FARMER_A]: [] }),
-      'farmer-photos': listerFor({ [FARMER_A]: [`${TAG}-attrib.jpg`] }),
-    }
-    const residual = []
-    for (const bucket of STORAGE_CLEANUP_BUCKETS) {
-      const swept = await collectPaginatedRunObjects(perBucket[bucket], { bucket, prefix: FARMER_A, tag: TAG })
-      residual.push(...swept.found)
-    }
-    expect(residual).toHaveLength(1)
-    expect(residual[0].bucket).toBe('farmer-photos')
-    expect(evaluateStorageCleanup({ created: 2, requested: 2, deleted: 2, residual }).ok).toBe(false)
+    const verdict = await runCleanup({
+      registered: [
+        { bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}-attrib.pdf` },
+        { bucket: 'farmer-photos', path: `${FARMER_A}/${TAG}-attrib.jpg` },
+      ],
+      remaining: {
+        'farmer-documents': { [FARMER_A]: [] },
+        'farmer-photos': { [FARMER_A]: [`${TAG}-attrib.jpg`] },
+      },
+    })
+    expect(verdict.ok).toBe(false)
+    expect(verdict.residual).toHaveLength(1)
+    expect(verdict.residual[0].bucket).toBe('farmer-photos')
   })
 })
 
-// ── Test 9 — historical residue isolation ───────────────────────────────────
-describe('Test 9 — historical residue never fails or is deleted by the current run', () => {
+// ── Historical residue isolation ────────────────────────────────────────────
+describe('historical residue never fails or is deleted by the current run', () => {
   it('ignores objects carrying other run tags', async () => {
     const historical = [
       'security-test-1783898016520-090782de.txt',
@@ -249,12 +346,10 @@ describe('Test 9 — historical residue never fails or is deleted by the current
       'attrib-53e7d9fd.jpg',
       'focused-c8117ba6.txt',
     ]
-    const swept = await collectPaginatedRunObjects(listerFor({ [FARMER_A]: historical }), {
-      bucket: 'farmer-documents', prefix: FARMER_A, tag: TAG,
+    const verdict = await runCleanup({
+      registered: [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }],
+      remaining: { 'farmer-documents': { [FARMER_A]: historical } },
     })
-    expect(swept.found).toHaveLength(0)
-
-    const verdict = evaluateStorageCleanup({ created: 1, requested: 1, deleted: 1, residual: swept.found })
     expect(verdict.ok).toBe(true)
     expect(verdict.residualCount).toBe(0)
     expect(computeSecurityHarnessExitCode({ storageResidue: verdict.residualCount })).toBe(0)
@@ -278,29 +373,28 @@ describe('Test 9 — historical residue never fails or is deleted by the current
   })
 })
 
-// ── Test 10 — exact deletion result ─────────────────────────────────────────
-describe('Test 10 — a genuinely complete cleanup passes', () => {
-  it('passes when every requested path is returned and nothing remains', async () => {
-    const requested = [`${FARMER_A}/${TAG}.txt`, `${FARMER_A}/${TAG}-attrib.pdf`]
-    const cmp = compareRequestedAndDeletedPaths(requested, requested.map((name) => ({ name })))
-    expect(cmp.ok).toBe(true)
-    expect(cmp.deleted).toBe(2)
-    expect(cmp.missing).toEqual([])
+// ── Diagnostic helper stays diagnostic ──────────────────────────────────────
+describe('compareRequestedAndDeletedPaths is diagnostic only', () => {
+  it('still computes a comparison for reporting', () => {
+    const cmp = compareRequestedAndDeletedPaths(['a', 'b'], [{ name: 'a' }])
+    expect(cmp.requested).toBe(2)
+    expect(cmp.deleted).toBe(1)
+    expect(cmp.missing).toEqual(['b'])
+  })
 
-    const swept = await collectPaginatedRunObjects(listerFor({ [FARMER_A]: [] }), {
-      bucket: 'farmer-documents', prefix: FARMER_A, tag: TAG,
-    })
-    const verdict = evaluateStorageCleanup({
-      created: 2, requested: cmp.requested, deleted: cmp.deleted, missing: cmp.missing, residual: swept.found,
-    })
-    expect(verdict.ok).toBe(true)
-    expect(verdict.residualCount).toBe(0)
-    expect(verdict.reason).toBe('created=2 requested=2 deleted=2 remaining=0')
-    expect(computeSecurityHarnessExitCode({ failed: 0, blocked: 0, cleanupFailures: 0, storageResidue: 0 })).toBe(0)
+  it('accepts plain-string rows as well as { name } rows', () => {
+    expect(compareRequestedAndDeletedPaths(['x'], ['x']).ok).toBe(true)
+  })
+
+  it('never influences the verdict', () => {
+    const clean = evaluateStorageCleanup({ created: 2, requested: 2, deleted: 0, missing: ['a', 'b'], residual: [] })
+    expect(clean.ok).toBe(true)
+    expect(clean.notEchoed).toEqual(['a', 'b'])
+    expect(clean.reportedDeleted).toBe(0)
   })
 
   it('a run that created no storage objects is trivially clean', () => {
-    const verdict = evaluateStorageCleanup({ created: 0, requested: 0, deleted: 0, residual: [] })
+    const verdict = evaluateStorageCleanup({ created: 0, requested: 0, residual: [] })
     expect(verdict.ok).toBe(true)
     expect(compareRequestedAndDeletedPaths([], []).ok).toBe(true)
   })

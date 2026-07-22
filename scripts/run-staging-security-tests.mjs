@@ -606,8 +606,18 @@ export function assertAdminCleanupClient(session) {
   return { ok: true, reason: '' }
 }
 
-// C. Never treat a missing error as proof of deletion. Supabase returns the rows
-// it actually removed; compare that set against what was requested.
+// C. DIAGNOSTIC ONLY — never a verdict.
+//
+// The pinned client documents a SUCCESSFUL remove() as `{ data: [], error: null }`
+// (@supabase/storage-js 2.108.x, StorageFileApi.remove JSDoc; the declared success
+// type is `FileObject[]`, which may be empty). An RLS no-op produces the very same
+// shape. The payload therefore proves NOTHING in either direction: requiring it to
+// echo the requested paths would fail every genuinely successful cleanup, and
+// trusting a non-empty payload would re-introduce the original false "clean".
+//
+// This helper is retained only so the run can print what the API reported. It must
+// never influence cleanup pass/fail, the cleanup failure count, the residue count,
+// or the exit code. Deletion is proved solely by the paginated absence sweep.
 export function compareRequestedAndDeletedPaths(requested, data) {
   const req = [...new Set((Array.isArray(requested) ? requested : []).filter(Boolean))]
   const rows = Array.isArray(data) ? data : []
@@ -668,10 +678,13 @@ export function evaluateStorageCleanup(obs) {
   const truncated = o.truncated === true
   const configError = o.configError || null
 
+  // The verdict rests on the absence sweep, an explicit API error, a failed
+  // identity check, or an incomplete listing — never on the remove() payload.
+  // `deleted` and `missing` are carried for reporting only (see
+  // compareRequestedAndDeletedPaths) and are deliberately absent from `problems`.
   const problems = []
   if (configError) problems.push(configError)
-  if (errors.length) problems.push(`${errors.length} deletion error(s): ${errors.slice(0, 3).join('; ')}`)
-  if (missing.length) problems.push(`${missing.length} object(s) were requested but not reported deleted: ${missing.slice(0, 3).join(', ')}`)
+  if (errors.length) problems.push(`${errors.length} deletion/listing error(s): ${errors.slice(0, 3).join('; ')}`)
   if (truncated) problems.push('the post-cleanup listing was truncated — absence could not be proven')
   if (residual.length) problems.push(`${residual.length} current-run object(s) remain: ${residual.slice(0, 3).map((r) => `${r.bucket}/${r.path}`).join(', ')}`)
 
@@ -679,14 +692,15 @@ export function evaluateStorageCleanup(obs) {
     ok: problems.length === 0,
     created,
     requested,
-    deleted,
-    missing,
     residual,
     residualCount: residual.length,
     errors,
     truncated,
+    // Non-authoritative diagnostics.
+    reportedDeleted: deleted,
+    notEchoed: missing,
     reason: problems.length === 0
-      ? `created=${created} requested=${requested} deleted=${deleted} remaining=0`
+      ? `created=${created} requested=${requested} remaining=0 (absence proven by paginated sweep)`
       : problems.join(' | '),
   }
 }
@@ -1655,7 +1669,7 @@ async function main() {
         const guard = assertAdminCleanupClient(admin)
         const requestedPaths = []
         const deletionErrors = []
-        const missingPaths = []
+        const notEchoedPaths = []  // diagnostic only — see compareRequestedAndDeletedPaths
         let deletedCount = 0
 
         if (!guard.ok && created.storageObjects.length) {
@@ -1669,18 +1683,21 @@ async function main() {
             requestedPaths.push(...paths)
             try {
               const del = await admin.client.storage.from(bucket).remove(paths)
+              // An explicit API error is a real failure and is recorded. Execution
+              // continues so the absence sweep still runs for every bucket.
               if (del?.error) {
                 deletionErrors.push(`${bucket}: ${String(del.error.message || del.error).slice(0, 60)}`)
-                missingPaths.push(...paths.map((p) => `${bucket}/${p}`))
                 continue
               }
-              // `!error` is NOT proof: an RLS no-op answers 200 with data: [].
+              // A successful remove() is documented as `{ data: [], error: null }`,
+              // and an RLS no-op returns the identical shape. The payload is
+              // therefore recorded for reporting only and does NOT decide anything
+              // — deletion is proved below, by the paginated absence sweep.
               const cmp = compareRequestedAndDeletedPaths(paths, del?.data)
               deletedCount += cmp.deleted
-              missingPaths.push(...cmp.missing.map((p) => `${bucket}/${p}`))
+              notEchoedPaths.push(...cmp.missing.map((p) => `${bucket}/${p}`))
             } catch (e) {
               deletionErrors.push(`${bucket}: ${String(e?.message || e).slice(0, 60)}`)
-              missingPaths.push(...paths.map((p) => `${bucket}/${p}`))
             }
           }
         }
@@ -1709,7 +1726,7 @@ async function main() {
           created: created.storageObjects.length,
           requested: requestedPaths.length,
           deleted: deletedCount,
-          missing: missingPaths,
+          missing: notEchoedPaths,
           residual,
           errors: [...deletionErrors, ...sweepErrors],
           truncated: sweepTruncated,
