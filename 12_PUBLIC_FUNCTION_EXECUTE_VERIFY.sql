@@ -77,14 +77,48 @@ WHERE n.nspname = 'public'
   AND ( has_function_privilege('public', p.oid, 'EXECUTE')
      OR has_function_privilege('anon',   p.oid, 'EXECUTE') );
 
--- V5. Public function inventory is exactly the six known application functions
---     (implicitly confirms no unexpected/extra function was introduced).
-SELECT CASE WHEN count(*) = 6
-              AND bool_and(p.proname IN (
-                'is_ddp_admin','has_farm_membership','handle_new_user',
-                'fn_protect_owner_notes','fn_protect_review_request_fields',
-                'prevent_compliance_audit_log_mutation'))
-            THEN 'PASS' ELSE 'FAIL' END AS result,
-       count(*) AS public_function_count
+-- V5. The six migration-12 functions are all still present.
+--
+--     WAS: `count(*) = 6` over every function in schema public — a frozen
+--     inventory. Migrations 10, 17, 19, 22 and 23 have since added five more
+--     application functions, so the count assertion failed purely because the
+--     schema grew as intended, while telling us nothing about privileges. The
+--     security property migration 12 actually protects is EXECUTE exposure
+--     (V2/V3/V4), not the size of the catalog.
+--
+--     NOW: assert presence of the six, and let V6 police every function that
+--     exists — including future ones — on the properties that matter.
+SELECT 'migration-12 functions all present' AS check,
+       CASE WHEN count(*) = 6 THEN 'PASS' ELSE 'FAIL' END AS result,
+       count(*) AS found_of_six
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname = 'public' AND p.prokind = 'f';
+WHERE n.nspname = 'public' AND p.prokind = 'f'
+  AND p.proname IN (
+    'is_ddp_admin','has_farm_membership','handle_new_user',
+    'fn_protect_owner_notes','fn_protect_review_request_fields',
+    'prevent_compliance_audit_log_mutation');
+
+-- V6. GROWTH-TOLERANT GUARD over EVERY function in schema public, present and
+--     future. A new function is allowed to exist; it is NOT allowed to be owned
+--     by a non-superuser role, to be reachable by PUBLIC/anon, or — if it is
+--     SECURITY DEFINER — to run without a pinned search_path (the search-path
+--     hijack that migration 12's `SET search_path` clauses exist to prevent).
+--     Expect: offenders = 0. Any row listed names the exact function and defect.
+SELECT 'no public function is unsafely exposed or configured' AS check,
+       CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       count(*) AS offenders,
+       coalesce(string_agg(sig || ' [' || defect || ']', '; ' ORDER BY sig), '') AS detail
+FROM (
+  SELECT p.oid::regprocedure::text AS sig,
+         CASE
+           WHEN has_function_privilege('public', p.oid, 'EXECUTE') THEN 'PUBLIC can EXECUTE'
+           WHEN has_function_privilege('anon',   p.oid, 'EXECUTE') THEN 'anon can EXECUTE'
+           WHEN pg_get_userbyid(p.proowner) <> 'postgres'          THEN 'owner is not postgres'
+           WHEN p.prosecdef AND NOT EXISTS (
+                  SELECT 1 FROM unnest(coalesce(p.proconfig, array[]::text[])) s
+                  WHERE s LIKE 'search_path=%')                    THEN 'SECURITY DEFINER without a pinned search_path'
+         END AS defect
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.prokind = 'f'
+) y
+WHERE defect IS NOT NULL;
