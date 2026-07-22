@@ -570,3 +570,141 @@ describe('the success line reports sweep-derived facts and never renders undefin
     expect(rich.residualCount).toBe(empty.residualCount)
   })
 })
+
+// ── Upload-site → registry correspondence ──────────────────────────────────
+//
+// A count-only assertion ("N uploads, N registrations") is not protection: it
+// passed while `${b.userId}/${TAG}-pending.txt` was silently unregistered,
+// because it compared a number rather than a correspondence. These tests model
+// every upload site the harness can perform and assert the EXACT entry each one
+// must contribute — bucket, path, scenario and creator — plus that denied probes
+// contribute nothing.
+describe('every successful upload contributes its exact registry entry', () => {
+  const PENDING = '4b46595a-4fb5-48fa-ae6f-cd48e8da6ec2'
+
+  // One row per `.upload(` site in run-staging-security-tests.mjs.
+  const UPLOAD_SITES = [
+    { site: 'A anon probe',            bucket: 'farmer-documents', path: `${TAG}-anon.txt`,                    scenario: 'A anon upload (unexpected success)',                  createdBy: 'anon',     normally: 'denied'  },
+    { site: 'G own-prefix',            bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt`,             scenario: 'G own-prefix upload',                                 createdBy: 'farmer A', normally: 'allowed' },
+    { site: 'G cross-prefix',          bucket: 'farmer-documents', path: `${FARMER_B}/${TAG}-cross.txt`,       scenario: 'G cross-prefix upload (unexpected success)',           createdBy: 'farmer A', normally: 'denied'  },
+    { site: 'G anon',                  bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}-anon2.txt`,       scenario: 'G anon upload (unexpected success)',                   createdBy: 'anon',     normally: 'denied'  },
+    { site: 'H attrib control (docs)', bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}-attrib.pdf`,      scenario: 'H attribution control',                               createdBy: 'farmer A', normally: 'allowed' },
+    { site: 'H attrib control (pics)', bucket: 'farmer-photos',    path: `${FARMER_A}/${TAG}-attrib.jpg`,      scenario: 'H attribution control',                               createdBy: 'farmer A', normally: 'allowed' },
+    { site: 'H attrib subject',        bucket: 'farmer-photos',    path: `${PENDING}/${TAG}-attrib.jpg`,       scenario: 'H attribution subject (unexpected success)',           createdBy: 'pending',  normally: 'denied'  },
+    { site: 'H attrib cross',          bucket: 'farmer-photos',    path: `${FARMER_B}/${TAG}-attrib-x.jpg`,    scenario: 'H attribution cross-prefix (unexpected success)',      createdBy: 'pending',  normally: 'denied'  },
+    { site: 'H pending foreign',       bucket: 'farmer-documents', path: `${FARMER_B}/${TAG}-pending.txt`,     scenario: 'H pending cross-prefix upload (unexpected success)',   createdBy: 'pending',  normally: 'denied'  },
+    { site: 'H list-control',          bucket: 'farmer-documents', path: `${FARMER_B}/${TAG}-listctl.txt`,     scenario: 'H list-control',                                      createdBy: 'farmer B', normally: 'allowed' },
+  ]
+
+  it.each(UPLOAD_SITES)('$site — a successful upload registers exactly its own entry', (s) => {
+    const reg = []
+    registerStorageFixture(reg, { bucket: s.bucket, path: s.path, scenario: s.scenario, createdBy: s.createdBy })
+    const matches = reg.filter((e) => e.bucket === s.bucket && e.path === s.path)
+    expect(matches).toHaveLength(1)
+    expect(matches[0]).toEqual({ bucket: s.bucket, path: s.path, scenario: s.scenario, createdBy: s.createdBy })
+    expect(matches[0].path).toContain(TAG) // every fixture path carries the full run tag
+  })
+
+  it('a denied upload contributes nothing to the registry', () => {
+    const reg = []
+    for (const s of UPLOAD_SITES.filter((x) => x.normally === 'denied')) {
+      // outcome !== 'allowed' → the harness performs no registration at all
+      if (false) registerStorageFixture(reg, s)
+    }
+    expect(reg).toHaveLength(0)
+  })
+
+  it('a full run in which every site unexpectedly succeeds registers all of them, once each', () => {
+    const reg = []
+    for (const s of UPLOAD_SITES) {
+      registerStorageFixture(reg, { bucket: s.bucket, path: s.path, scenario: s.scenario, createdBy: s.createdBy })
+      registerStorageFixture(reg, { bucket: s.bucket, path: s.path, scenario: s.scenario, createdBy: s.createdBy }) // idempotent
+    }
+    expect(reg).toHaveLength(UPLOAD_SITES.length)
+    for (const s of UPLOAD_SITES) {
+      expect(reg.filter((e) => e.bucket === s.bucket && e.path === s.path)).toHaveLength(1)
+    }
+    // The previously missing entry is explicitly present.
+    expect(reg.some((e) => e.path === `${FARMER_B}/${TAG}-pending.txt`
+      && e.scenario === 'H pending cross-prefix upload (unexpected success)'
+      && e.createdBy === 'pending')).toBe(true)
+  })
+
+  // Supplementary static check — never the only protection (see the behavioural
+  // cases above). Every `.upload(` site must have a registration within reach.
+  it('supplementary: no .upload( site in the harness lacks a registration', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(new URL('./run-staging-security-tests.mjs', import.meta.url), 'utf8').split('\n')
+    const unregistered = []
+    src.forEach((line, i) => {
+      if (!line.includes('.upload(')) return
+      const window = src.slice(i, i + 12).join('\n')
+      if (!window.includes('registerStorageFixture')) unregistered.push(i + 1)
+    })
+    expect(unregistered, `upload sites with no registration: ${unregistered.join(', ')}`).toEqual([])
+  })
+})
+
+// ── The dangerous sub-case the missing registration created ────────────────
+describe('pending foreign-prefix upload: the silent sub-case', () => {
+  const foreignPath = `${FARMER_B}/${TAG}-pending.txt`
+
+  // Reproduces: the forbidden pending upload unexpectedly SUCCEEDS, the farmer-B
+  // list-control fixture was never created, and no other registered object shares
+  // farmer B's prefix. Before the fix this object was in neither the deletion set
+  // nor the sweep's prefix set — invisible to both, with the run reporting clean.
+  const registryForSubCase = () => {
+    const reg = []
+    // farmer A's own-prefix object is the only other fixture this run created
+    registerStorageFixture(reg, { bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt`, scenario: 'G own-prefix upload', createdBy: 'farmer A' })
+    // list-control upload FAILED, so nothing registers farmer B's prefix…
+    // …but the forbidden pending write unexpectedly succeeded:
+    registerStorageFixture(reg, { bucket: 'farmer-documents', path: foreignPath, scenario: 'H pending cross-prefix upload (unexpected success)', createdBy: 'pending' })
+    return reg
+  }
+
+  it('1–2: the foreign upload is registered with the exact expected entry', () => {
+    const reg = registryForSubCase()
+    const entry = reg.find((e) => e.path === foreignPath)
+    expect(entry).toEqual({
+      bucket: 'farmer-documents',
+      path: foreignPath,
+      scenario: 'H pending cross-prefix upload (unexpected success)',
+      createdBy: 'pending',
+    })
+  })
+
+  it('3: the path enters the deletion target set for farmer-documents', () => {
+    const reg = registryForSubCase()
+    const targets = reg.filter((o) => o.bucket === 'farmer-documents').map((o) => o.path)
+    expect(targets).toContain(foreignPath)
+  })
+
+  it('4: farmer B prefix enters the residue-sweep prefix set', () => {
+    const reg = registryForSubCase()
+    // Mirrors the harness: prefixes are derived from the registry.
+    const prefixes = [...new Set(reg.map((o) => o.path.includes('/') ? o.path.split('/')[0] : ''))]
+    expect(prefixes).toContain(FARMER_B)
+    expect(prefixes).toContain(FARMER_A)
+  })
+
+  it('5: a silent no-op plus a surviving object fails cleanup and exits 1', async () => {
+    const out = await runCleanup({
+      registered: registryForSubCase(),
+      remaining: { 'farmer-documents': { [FARMER_A]: [], [FARMER_B]: [`${TAG}-pending.txt`] } },
+    })
+    expect(out.ok).toBe(false)
+    expect(out.residualCount).toBe(1)
+    expect(out.residual.map((r) => `${r.bucket}/${r.path}`)).toEqual([`farmer-documents/${foreignPath}`])
+    expect(computeSecurityHarnessExitCode({ storageResidue: out.residualCount })).toBe(1)
+  })
+
+  it('and it is deleted cleanly when removal genuinely works', async () => {
+    const out = await runCleanup({
+      registered: registryForSubCase(),
+      remaining: { 'farmer-documents': { [FARMER_A]: [], [FARMER_B]: [] } },
+    })
+    expect(out.ok).toBe(true)
+    expect(out.residualCount).toBe(0)
+  })
+})

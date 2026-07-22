@@ -1647,11 +1647,21 @@ async function main() {
           // `!error` check that could never observe an RLS no-op.
         }
         // Writing beneath another user's prefix must also be denied.
+        const foreignPath = `${b.userId}/${TAG}-pending.txt`
         const foreign = await p.client.storage.from('farmer-documents')
-          .upload(`${b.userId}/${TAG}-pending.txt`, new Blob(['x']))
+          .upload(foreignPath, new Blob(['x']))
         const foreignCls = classifyStorageOutcome(foreign)
         record('pending cannot upload beneath another user prefix',
           foreignCls.outcome === 'denied', redactSecrets(foreignCls.reason))
+        // If this forbidden write unexpectedly SUCCEEDS the probe above already
+        // fails loudly — but the object it created is still this run's to remove.
+        // Leaving it unregistered would exclude it from the deletion set AND, when
+        // no other registered object shares farmer B's prefix, from the residue
+        // sweep's prefix set too — making it invisible to both.
+        if (foreignCls.outcome === 'allowed') {
+          registerStorageFixture(created.storageObjects,
+            { bucket: 'farmer-documents', path: foreignPath, scenario: 'H pending cross-prefix upload (unexpected success)', createdBy: 'pending' })
+        }
         // DIFFERENTIAL list probe. Listing B's prefix and finding it empty proves
         // nothing unless an object provably EXISTS there: "empty by policy" and
         // "empty because the prefix is bare" are byte-identical responses. So
