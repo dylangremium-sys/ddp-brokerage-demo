@@ -109,6 +109,14 @@ CREATE POLICY "evidence-request-files: farmer insert reserved path"
         AND a.storage_object_path = storage.objects.name
         AND a.origin = 'request_upload'
         AND a.upload_state = 'pending_upload'
+        -- Once controlled removal has been authorized the reservation is spent:
+        -- no NEW object may be inserted at this path. Without this predicate the
+        -- removal marker was decorative for INSERT — remove_draft_evidence_attachment
+        -- could mark a row and an upload authorized against the same row would
+        -- still be admitted, which is precisely how an object could land with no
+        -- attachment row to own it. This is the database half of closing that
+        -- race; the RPC half is the two-phase protocol in 7.11.
+        AND a.removal_requested_at IS NULL
         AND a.created_by_user_id = auth.uid()
         AND r.state = 'draft'
         AND er.status IN ('open','clarification_requested')

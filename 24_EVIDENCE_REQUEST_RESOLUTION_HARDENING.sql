@@ -1621,23 +1621,50 @@ BEGIN
     );
   END IF;
 
-  -- Does the storage object actually exist?
   IF to_regclass('storage.objects') IS NULL THEN
     RAISE EXCEPTION 'STORAGE_ERROR: storage.objects is unavailable'
       USING ERRCODE = 'undefined_table';
   END IF;
 
+  -- ── PHASE 1 — revoke upload authorization BEFORE trusting any absence ──────
+  --
+  -- A point-in-time "no object exists" result is NOT evidence that no object
+  -- will exist. An upload authorized against this still-insertable row can be
+  -- in flight: the Storage INSERT evaluates its policy on its own snapshot, and
+  -- FOR UPDATE above does not block it, because a policy subquery is a plain
+  -- read that takes no lock. The previous code deleted the row on that absence
+  -- result, so the in-flight object could land afterwards with no attachment
+  -- row — no DELETE policy could then match it, and the path-prefix SELECT
+  -- policy left it readable by farm members. That is the orphan this protocol
+  -- exists to prevent.
+  --
+  -- So the FIRST call never deletes anything. It sets removal_requested_at,
+  -- which the storage INSERT policy now treats as "reservation spent", and
+  -- returns. Once THAT transaction commits, no new upload can be authorized.
+  IF att.removal_requested_at IS NULL THEN
+    UPDATE public.evidence_request_attachments
+    SET removal_requested_at = now()
+    WHERE id = p_attachment_id;
+
+    RETURN jsonb_build_object(
+      'result', 'STORAGE_DELETE_REQUIRED',
+      'attachment_id', p_attachment_id,
+      'storage_bucket', att.storage_bucket,
+      'storage_object_path', att.storage_object_path
+    );
+  END IF;
+
+  -- ── PHASE 2 — the marker is already committed by an earlier transaction ────
+  --
+  -- Reached only on a later call, so "removal authorized" is durable and every
+  -- INSERT whose snapshot postdates it is refused. Only now is an absence
+  -- observation strong enough to justify deleting the row.
   SELECT EXISTS (
     SELECT 1 FROM storage.objects o
     WHERE o.bucket_id = att.storage_bucket
       AND o.name      = att.storage_object_path
   ) INTO object_exists;
 
-  -- Stage 1 — no object was ever uploaded (a reservation the farmer abandoned),
-  -- or the client has already deleted it through the Storage API. Either way
-  -- there is nothing left to orphan, so complete the removal now. This is the
-  -- idempotent completion path: calling the RPC again after a successful
-  -- Storage API delete lands here and returns REMOVED.
   IF NOT object_exists THEN
     DELETE FROM public.evidence_request_attachments WHERE id = p_attachment_id;
     RETURN jsonb_build_object(
@@ -1648,18 +1675,9 @@ BEGIN
     );
   END IF;
 
-  -- Stage 2 — the object still exists. Do NOT delete the row: dropping it here
-  -- would leave the file orphaned and still readable by farm members, because
-  -- the storage DELETE policy matches on the attachment row. Instead authorize
-  -- exactly this one object for deletion and hand the path back. Re-authorizing
-  -- an already-authorized attachment is a no-op, so repeated calls are safe and
-  -- deterministic.
-  IF att.removal_requested_at IS NULL THEN
-    UPDATE public.evidence_request_attachments
-    SET removal_requested_at = now()
-    WHERE id = p_attachment_id;
-  END IF;
-
+  -- The object is still there. Keep the row: it is what authorizes the client's
+  -- Storage API delete, and what guarantees a late-landing object still has an
+  -- owner. Repeated calls are idempotent and deterministic.
   RETURN jsonb_build_object(
     'result', 'STORAGE_DELETE_REQUIRED',
     'attachment_id', p_attachment_id,
@@ -1765,6 +1783,26 @@ REVOKE ALL ON public.evidence_requests             FROM PUBLIC, anon, authentica
 REVOKE ALL ON public.evidence_request_responses    FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON public.evidence_request_attachments  FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON public.evidence_request_history      FROM PUBLIC, anon, authenticated;
+
+-- service_role is NOT exempt from "all writes go through the RPCs". Supabase's
+-- ALTER DEFAULT PRIVILEGES grants it full DML on every new table in public, so
+-- without this revoke it kept INSERT/UPDATE/DELETE here. That left one way to
+-- erase an audit pointer despite the append-only trigger: DELETE a draft
+-- attachment (the FK's ON DELETE SET NULL legitimately nulls
+-- evidence_request_history.attachment_id), then re-INSERT an identical
+-- attachment row. Each step passes its own trigger — the exemption checks the
+-- row shape and that the attachment is gone, which is true at that instant —
+-- yet the end state is a live attachment whose history event no longer names
+-- it. Removing direct DML closes that path at the privilege layer rather than
+-- trying to make a row-level trigger infer which statement invoked it.
+--
+-- SELECT is retained: back-office reads stay possible; only writes are funnelled
+-- through the SECURITY DEFINER RPCs, which are owned by postgres and therefore
+-- unaffected by this revoke.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.evidence_requests            FROM service_role;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.evidence_request_responses   FROM service_role;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.evidence_request_attachments FROM service_role;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.evidence_request_history     FROM service_role;
 
 GRANT SELECT ON public.evidence_requests            TO authenticated;
 GRANT SELECT ON public.evidence_request_responses   TO authenticated;
