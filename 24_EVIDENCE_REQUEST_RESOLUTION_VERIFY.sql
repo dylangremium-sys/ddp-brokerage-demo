@@ -721,4 +721,246 @@ BEGIN
 END
 $verify_i$;
 
+-- -----------------------------------------------------------------------------
+-- VERIFY J — terminal requests must not strand unsubmitted draft evidence.
+-- Cleanup eligibility comes from the DRAFT RESPONSE, not from an actionable
+-- parent request. Every INSERT/UPDATE/DELETE asserts its affected-row count, so
+-- no check here can pass on an empty fixture.
+-- -----------------------------------------------------------------------------
+DO $verify_j$
+DECLARE
+  actor uuid; farm_id_v uuid; profile_v uuid;
+  req_id uuid; resp_id uuid; att_id uuid; sub_resp_id uuid; sub_att_id uuid;
+  other_farm_v uuid;
+  n integer; marked timestamptz; ok boolean; authorized boolean;
+BEGIN
+  SELECT id INTO actor FROM auth.users LIMIT 1;
+  IF actor IS NULL THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: no auth.users row available to act as creator';
+  END IF;
+
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor) RETURNING id INTO farm_id_v;
+  INSERT INTO public.farm_profiles (id, farm_id) VALUES (gen_random_uuid(), farm_id_v) RETURNING id INTO profile_v;
+  INSERT INTO public.evidence_requests
+    (farm_id, target_type, farm_profile_id, category, title, explanation, created_by_user_id)
+  VALUES (farm_id_v, 'farm_profile', profile_v, 'farm_license',
+          'Licence', 'Please upload the current cultivation licence document.', actor)
+  RETURNING id INTO req_id;
+  INSERT INTO public.evidence_request_responses
+    (request_id, response_number, state, created_by_user_id)
+  VALUES (req_id, 1, 'draft', actor) RETURNING id INTO resp_id;
+  IF req_id IS NULL OR resp_id IS NULL THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: fixture request/response not created (test would be vacuous)';
+  END IF;
+
+  -- J1: a reserved pending upload on a draft response.
+  INSERT INTO public.evidence_request_attachments
+    (request_id, response_id, origin, storage_bucket, storage_object_path,
+     upload_state, original_filename, mime_type, size_bytes, created_by_user_id)
+  VALUES (req_id, resp_id, 'request_upload', 'evidence-request-files',
+          farm_id_v || '/' || req_id || '/' || resp_id || '/j/licence.pdf',
+          'pending_upload', 'licence.pdf', 'application/pdf', 1024, actor)
+  RETURNING id INTO att_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 OR att_id IS NULL THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: pending upload fixture insert affected % row(s)', n;
+  END IF;
+
+  -- J2: the request becomes terminal WITHOUT the draft ever being submitted.
+  UPDATE public.evidence_requests SET status = 'cancelled', closed_at = now() WHERE id = req_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: cancellation affected % row(s)', n;
+  END IF;
+  IF (SELECT status FROM public.evidence_requests WHERE id = req_id) <> 'cancelled' THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: request did not reach a terminal status (test would be vacuous)';
+  END IF;
+  IF (SELECT state FROM public.evidence_request_responses WHERE id = resp_id) <> 'draft' THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: response is not a draft — a terminal request must be able to hold one';
+  END IF;
+
+  -- J3: phase 1 remains possible after cancellation. The RPC cannot be called
+  -- here (auth.uid() is NULL in a verify transaction), so the DATABASE STATE the
+  -- RPC depends on is asserted instead: the attachment is still present, still
+  -- pending, and can be marked non-uploadable.
+  UPDATE public.evidence_request_attachments
+  SET removal_requested_at = now()
+  WHERE id = att_id AND removal_requested_at IS NULL;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: marking removal after cancellation affected % row(s)', n;
+  END IF;
+  SELECT removal_requested_at INTO marked FROM public.evidence_request_attachments WHERE id = att_id;
+  IF marked IS NULL THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: removal marker did not persist (test would be vacuous)';
+  END IF;
+
+  -- J4: the marked attachment no longer satisfies the storage INSERT predicate
+  -- (removal_requested_at IS NULL), so no new object can be authorized for it.
+  IF EXISTS (
+    SELECT 1 FROM public.evidence_request_attachments a
+    WHERE a.id = att_id AND a.upload_state = 'pending_upload' AND a.removal_requested_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: attachment is still uploadable after removal was authorized';
+  END IF;
+
+  -- J5: the DELETE-policy predicate still holds after cancellation — this is the
+  -- exact condition set the storage policy evaluates, minus the caller identity.
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.evidence_request_attachments a
+    JOIN public.evidence_request_responses r ON r.id = a.response_id
+    JOIN public.evidence_requests er         ON er.id = a.request_id
+    WHERE a.id = att_id
+      AND a.storage_bucket = 'evidence-request-files'
+      AND a.origin = 'request_upload'
+      AND a.removal_requested_at IS NOT NULL
+      AND r.state = 'draft'
+  ) INTO authorized;
+  IF NOT authorized THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: storage delete authorization does not survive a terminal request';
+  END IF;
+
+  -- J6: completion removes the row; history survives with a nulled pointer.
+  INSERT INTO public.evidence_request_history
+    (request_id, previous_status, next_status, actor_user_id, actor_role,
+     event_type, response_id, attachment_id)
+  VALUES (req_id, 'open', 'open', actor, 'farmer', 'attachment_uploaded', resp_id, att_id);
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: history fixture affected % row(s)', n;
+  END IF;
+
+  DELETE FROM public.evidence_request_attachments WHERE id = att_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: completing removal after cancellation affected % row(s)', n;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.evidence_request_history
+    WHERE request_id = req_id AND event_type = 'attachment_uploaded' AND attachment_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: history event was destroyed or kept a dangling pointer';
+  END IF;
+
+  -- J7: retry is deterministic — the row is already gone, nothing else changes.
+  DELETE FROM public.evidence_request_attachments WHERE id = att_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: retry after completion affected % row(s)', n;
+  END IF;
+
+  -- J8: a SUBMITTED response is never cleanable, terminal request or not.
+  INSERT INTO public.evidence_request_responses
+    (request_id, response_number, state, response_text, submitted_at, created_by_user_id)
+  VALUES (req_id, 2, 'submitted', 'Submitted evidence response text.', now(), actor)
+  RETURNING id INTO sub_resp_id;
+  INSERT INTO public.evidence_request_attachments
+    (request_id, response_id, origin, storage_bucket, storage_object_path,
+     upload_state, original_filename, mime_type, size_bytes, sha256_hex,
+     created_by_user_id, finalized_at)
+  VALUES (req_id, sub_resp_id, 'request_upload', 'evidence-request-files',
+          farm_id_v || '/' || req_id || '/' || sub_resp_id || '/j/final.pdf',
+          'ready', 'final.pdf', 'application/pdf', 2048, repeat('d', 64), actor, now())
+  RETURNING id INTO sub_att_id;
+  IF sub_att_id IS NULL THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: submitted-evidence fixture missing (test would be vacuous)';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.evidence_request_attachments a
+    JOIN public.evidence_request_responses r ON r.id = a.response_id
+    WHERE a.id = sub_att_id AND r.state = 'draft'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: submitted evidence satisfies the draft cleanup predicate';
+  END IF;
+
+  ok := false;
+  BEGIN
+    DELETE FROM public.evidence_request_attachments WHERE id = sub_att_id;
+  EXCEPTION WHEN others THEN ok := true;
+  END;
+  IF NOT ok THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: submitted evidence was deletable';
+  END IF;
+
+  -- J9: a cross-farm caller matches nothing — cleanup is farm-scoped, and the
+  -- predicate reveals no request existence to an unauthorized farm.
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor) RETURNING id INTO other_farm_v;
+  IF EXISTS (
+    SELECT 1
+    FROM public.evidence_request_attachments a
+    JOIN public.evidence_requests er ON er.id = a.request_id
+    WHERE a.id = sub_att_id AND er.farm_id = other_farm_v
+  ) THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: an attachment resolved under the wrong farm';
+  END IF;
+
+  RAISE NOTICE 'VERIFY J PASSED: terminal requests no longer strand unsubmitted draft evidence; submitted evidence stays immutable.';
+END
+$verify_j$;
+
+-- -----------------------------------------------------------------------------
+-- VERIFY K — filename extension allow-listing.
+-- Table-driven so a missing case is visible; every expectation is asserted, and
+-- an empty expectation set fails loudly.
+-- -----------------------------------------------------------------------------
+DO $verify_k$
+DECLARE
+  r record; checked integer := 0;
+BEGIN
+  IF to_regprocedure('public.evidence_filename_extension_allowed(text,text,text)') IS NULL THEN
+    RAISE EXCEPTION 'VERIFY K FAILED: evidence_filename_extension_allowed(text,text,text) is missing';
+  END IF;
+
+  FOR r IN
+    SELECT * FROM (VALUES
+      -- category,            mime,               filename,            expected
+      ('farm_license',        'application/pdf',  'report.pdf',        true),
+      ('farm_license',        'application/pdf',  'REPORT.PDF',        true),
+      ('farm_license',        'application/pdf',  'report.exe.pdf',    true),
+      ('coa',                 'application/pdf',  'coa.pdf',           true),
+      ('inventory_photo',     'image/jpeg',       'photo.jpg',         true),
+      ('inventory_photo',     'image/jpeg',       'photo.jpeg',        true),
+      ('inventory_photo',     'image/jpeg',       'photo.JPEG',        true),
+      ('inventory_photo',     'image/png',        'photo.png',         true),
+      ('inventory_photo',     'image/webp',       'photo.webp',        true),
+      ('inventory_video',     'video/mp4',        'clip.mp4',          true),
+      -- rejections
+      ('farm_license',        'application/pdf',  'payload.exe',       false),
+      ('farm_license',        'application/pdf',  'report.pdf.exe',    false),
+      ('farm_license',        'application/pdf',  'report',            false),
+      ('farm_license',        'application/pdf',  'report.',           false),
+      ('farm_license',        'application/pdf',  '',                  false),
+      ('farm_license',        'application/pdf',  '   ',               false),
+      ('farm_license',        'application/pdf',  NULL,                false),
+      ('farm_license',        'application/pdf',  '../../etc/passwd.pdf', false),
+      ('farm_license',        'application/pdf',  'dir/report.pdf',    false),
+      ('farm_license',        'application/pdf',  'photo.jpg',         false),
+      ('inventory_photo',     'image/jpeg',       'report.pdf',        false),
+      ('inventory_photo',     'image/jpeg',       'clip.mp4',          false),
+      ('farm_license',        'video/mp4',        'clip.mp4',          false),
+      ('coa',                 'image/jpeg',       'photo.jpg',         false),
+      ('inventory_video',     'video/mp4',        'clip.mov',          false),
+      ('farm_license',        NULL,               'report.pdf',        false)
+    ) AS t(category, mime, filename, expected)
+  LOOP
+    checked := checked + 1;
+    IF public.evidence_filename_extension_allowed(r.category, r.mime, r.filename)
+       IS DISTINCT FROM r.expected THEN
+      RAISE EXCEPTION
+        'VERIFY K FAILED: (%, %, %) expected % but the helper disagreed',
+        r.category, coalesce(r.mime,'<null>'), coalesce(r.filename,'<null>'), r.expected;
+    END IF;
+  END LOOP;
+
+  IF checked < 26 THEN
+    RAISE EXCEPTION 'VERIFY K FAILED: only % case(s) evaluated (test would be vacuous)', checked;
+  END IF;
+
+  RAISE NOTICE 'VERIFY K PASSED: % filename/MIME/category cases enforced.', checked;
+END
+$verify_k$;
+
 ROLLBACK;

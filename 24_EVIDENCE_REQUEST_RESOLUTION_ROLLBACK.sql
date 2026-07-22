@@ -140,6 +140,8 @@ DROP TABLE IF EXISTS public.evidence_requests;
 --    deliberately NOT dropped here.
 -- -----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.can_operationally_access_farm(uuid);
+-- Dropped BEFORE evidence_mime_allowed(), which it calls.
+DROP FUNCTION IF EXISTS public.evidence_filename_extension_allowed(text,text,text);
 DROP FUNCTION IF EXISTS public.evidence_document_mime(text);
 DROP FUNCTION IF EXISTS public.evidence_max_size_bytes(text,text);
 DROP FUNCTION IF EXISTS public.evidence_mime_allowed(text,text);

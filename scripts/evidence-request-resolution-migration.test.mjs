@@ -912,10 +912,13 @@ describe('migration 24 — Codex F2: finalized objects cannot be deleted via sto
     expect(p).not.toMatch(/upload_state IS NOT NULL/)
   })
 
-  it('submitted responses and non-actionable requests are excluded', () => {
+  it('submitted responses are excluded; a terminal request no longer is', () => {
+    // REVISED: requiring an actionable request here made this policy and the
+    // removal RPC mutually gating, stranding unsubmitted draft uploads once a
+    // request was cancelled/resolved/rejected. Draft-only is what matters.
     const p = policy()
     expect(p).toMatch(/r\.state = 'draft'/)
-    expect(p).toMatch(/er\.status IN \('open','clarification_requested'\)/)
+    expect(p).not.toMatch(/er\.status IN \('open','clarification_requested'\)/)
   })
 
   it('the policy is scoped to uploads, not linked existing documents', () => {
@@ -1107,9 +1110,12 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
     expect(b).toMatch(/IF NOT object_exists THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments[\s\S]*?'REMOVED'/)
   })
 
-  it('removal is denied on a submitted response or a terminal request', () => {
+  it('removal is denied on a submitted response, but allowed on a terminal request', () => {
+    // REVISED: cleanup eligibility now derives from the DRAFT RESPONSE. A draft
+    // attachment is never submitted evidence, so removing it after cancellation
+    // destroys nothing of record — and refusing it stranded the file.
     const b = fn()
-    expect(b).toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
+    expect(b).not.toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
     expect(b).toMatch(/resp\.state <> 'draft'/)
   })
 
@@ -1143,7 +1149,10 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
     expect(p).toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
     expect(p).toMatch(/a\.storage_object_path = storage\.objects\.name/)
     expect(p).toMatch(/r\.state = 'draft'/)
-    expect(p).toMatch(/er\.status IN \('open','clarification_requested'\)/)
+    // REVISED: deliberately NOT gated on request status — see the terminal
+    // draft-cleanup fix. Farm access remains required.
+    expect(p).not.toMatch(/er\.status IN \('open','clarification_requested'\)/)
+    expect(p).toMatch(/can_operationally_access_farm\(er\.farm_id\)/)
   })
 
   it('rollback documents the new column and the Storage API requirement', () => {
@@ -1548,8 +1557,9 @@ describe('migration 24 — Codex P2: removal cannot orphan an in-flight upload',
     expect(deletePolicy).toMatch(/a\.removal_requested_at\s+IS NOT NULL/)
   })
 
-  it('removal stays denied on a terminal request and a non-draft response', () => {
-    expect(body).toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
+  it('removal stays denied on a non-draft response (terminal requests now clean up)', () => {
+    // REVISED alongside the terminal draft-cleanup fix.
+    expect(body).not.toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
     expect(body).toMatch(/resp\.state <> 'draft'/)
   })
 
@@ -1627,5 +1637,188 @@ describe('migration 24 — Codex P2: append-only history cannot be worked around
       'evidence_request_attachments', 'evidence_request_history']) {
       expect(FWD).toMatch(new RegExp(`REVOKE ALL ON public\\.${t}\\s+FROM PUBLIC, anon, authenticated`))
     }
+  })
+})
+
+// ── Codex P2: terminal requests must not strand unsubmitted draft evidence ──
+describe('migration 24 — Codex P2: terminal draft cleanup', () => {
+  const remove = BODIES.get('remove_draft_evidence_attachment') ?? ''
+  const deletePolicy = STO.match(/CREATE POLICY "evidence-request-files: farmer delete own draft"[\s\S]*?\);/)?.[0] ?? ''
+  const insertPolicy = STO.match(/CREATE POLICY "evidence-request-files: farmer insert reserved path"[\s\S]*?\);/)?.[0] ?? ''
+
+  it('cleanup no longer requires an actionable parent request', () => {
+    expect(remove).not.toBe('')
+    // The guard that made removal and the storage policy mutually gating.
+    expect(remove).not.toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
+  })
+
+  it('cleanup is still gated on a DRAFT response', () => {
+    expect(remove).toMatch(/resp\.state <> 'draft'[\s\S]{0,120}?RAISE EXCEPTION 'INVALID_TRANSITION'/)
+  })
+
+  it('cleanup still requires operational farm access and attachment ownership', () => {
+    expect(remove).toMatch(/NOT public\.can_operationally_access_farm\(req\.farm_id\)/)
+    expect(remove).toMatch(/att\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
+  })
+
+  it('the storage DELETE policy survives a terminal request but keeps every other gate', () => {
+    expect(deletePolicy).not.toBe('')
+    expect(deletePolicy).not.toMatch(/er\.status IN \('open','clarification_requested'\)/)
+    expect(deletePolicy).toMatch(/a\.removal_requested_at\s+IS NOT NULL/)
+    expect(deletePolicy).toMatch(/r\.state = 'draft'/)
+    expect(deletePolicy).toMatch(/a\.storage_object_path = storage\.objects\.name/)
+    expect(deletePolicy).toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
+    expect(deletePolicy).toMatch(/public\.can_operationally_access_farm\(er\.farm_id\)/)
+  })
+
+  it('adding evidence STILL requires an actionable request', () => {
+    // The INSERT policy must keep the status gate the DELETE policy dropped.
+    expect(insertPolicy).toMatch(/er\.status IN \('open','clarification_requested'\)/)
+    for (const fn of ['reserve_evidence_attachment', 'link_existing_evidence_document',
+      'save_evidence_response_draft', 'submit_evidence_response', 'finalize_evidence_attachment']) {
+      expect(BODIES.get(fn) ?? '', `${fn} lost its actionable-request guard`)
+        .toMatch(/req\.status NOT IN \('open','clarification_requested'\)|terminal_statuses/)
+    }
+  })
+
+  it('there is no path-prefix-only delete authority', () => {
+    expect(deletePolicy).toMatch(/EXISTS \(/)
+    expect(deletePolicy).not.toMatch(/string_to_array\(name/)
+  })
+
+  it('the two-phase race correction is preserved', () => {
+    const markerAt = remove.indexOf('SET removal_requested_at = now()')
+    const existsAt = remove.indexOf('SELECT EXISTS')
+    expect(markerAt).toBeGreaterThan(-1)
+    expect(existsAt).toBeGreaterThan(-1)
+    expect(markerAt, 'marker must still precede the existence check').toBeLessThan(existsAt)
+    const phase1 = remove.match(/IF att\.removal_requested_at IS NULL THEN[\s\S]*?END IF;/)?.[0] ?? ''
+    expect(phase1).not.toMatch(/DELETE FROM public\.evidence_request_attachments/)
+    expect(insertPolicy).toMatch(/a\.removal_requested_at\s+IS NULL/)
+  })
+
+  it('VERIFY J covers cancellation, completion, retry and submitted-evidence denial', () => {
+    const j = VER.match(/DO \$verify_j\$[\s\S]*?\$verify_j\$;/)?.[0] ?? ''
+    expect(j).not.toBe('')
+    expect(j).toMatch(/status = 'cancelled'/)
+    expect(j).toMatch(/GET DIAGNOSTICS n = ROW_COUNT/)
+    expect(j).toMatch(/submitted evidence was deletable/)
+    expect(j).toMatch(/retry after completion affected/)
+    expect(j).toMatch(/an attachment resolved under the wrong farm/)
+  })
+})
+
+// ── Storage SELECT must not authorise orphans ──────────────────────────────
+describe('migration 24 — storage read authority is tied to a live attachment row', () => {
+  const selectPolicy = STO.match(/CREATE POLICY "evidence-request-files: farmer read own farm"[\s\S]*?\);/)?.[0] ?? ''
+
+  it('read is no longer granted on the path prefix alone', () => {
+    expect(selectPolicy).not.toBe('')
+    expect(selectPolicy).not.toMatch(/string_to_array\(name/)
+    expect(selectPolicy).toMatch(/FROM public\.evidence_request_attachments a/)
+    expect(selectPolicy).toMatch(/a\.storage_object_path = storage\.objects\.name/)
+  })
+
+  it('the farm comes from the request, not from the object name', () => {
+    expect(selectPolicy).toMatch(/JOIN public\.evidence_requests er ON er\.id = a\.request_id/)
+    expect(selectPolicy).toMatch(/public\.can_operationally_access_farm\(er\.farm_id\)/)
+  })
+
+  it('the bucket stays private with no UPDATE policy and no public access', () => {
+    expect(STO).not.toMatch(/CREATE POLICY[^;]*FOR UPDATE[^;]*storage\.objects/)
+    expect(STO).not.toMatch(/public\s*=\s*true/)
+  })
+})
+
+// ── Codex P2: filename extension allow-listing ─────────────────────────────
+describe('migration 24 — Codex P2: filename extensions are validated', () => {
+  const helper = BODIES.get('evidence_filename_extension_allowed') ?? ''
+  const reserve = BODIES.get('reserve_evidence_attachment') ?? ''
+  const finalize = BODIES.get('finalize_evidence_attachment') ?? ''
+
+  it('the helper exists with the intended signature and safety properties', () => {
+    expect(helper).not.toBe('')
+    expect(FWD).toMatch(/CREATE OR REPLACE FUNCTION public\.evidence_filename_extension_allowed\(\s*p_category text, p_mime text, p_filename text\s*\)/)
+    expect(helper).toMatch(/IMMUTABLE/)
+    expect(helper).toMatch(/SET search_path = public, pg_temp/)
+    expect(helper).not.toMatch(/EXECUTE\s+format|EXECUTE\s+'/)   // no dynamic SQL
+  })
+
+  it('the MIME-to-extension map is complete and matches the MIME allow-list', () => {
+    const mimes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4']
+    for (const m of mimes) expect(helper, `map is missing ${m}`).toContain(`'${m}'`)
+    for (const e of ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'mp4']) {
+      expect(helper, `map is missing extension ${e}`).toMatch(new RegExp(`'${e}'`))
+    }
+    // Every MIME the category allow-list can return must appear in the map.
+    const allowed = BODIES.get('evidence_mime_allowed') ?? ''
+    for (const [, m] of allowed.matchAll(/'((?:application|image|video)\/[a-z0-9+.-]+)'/g)) {
+      expect(mimes, `${m} is allowed by MIME policy but absent from the extension map`).toContain(m)
+    }
+  })
+
+  it('the helper rejects the malformed and traversal cases', () => {
+    expect(helper).toMatch(/p_filename IS NULL\s+THEN false/)
+    expect(helper).toMatch(/btrim\(p_filename\) = ''\s+THEN false/)
+    expect(helper).toMatch(/p_filename ~ '\[\/\\\\\]'\s+THEN false/)     // path separators
+    expect(helper).toMatch(/!~ '\\\.\[A-Za-z0-9\]\+\$'/)                 // missing/trailing-dot suffix
+  })
+
+  it('the rule is conjunctive — category/MIME consistency is inside the helper', () => {
+    expect(helper).toMatch(/NOT public\.evidence_mime_allowed\(p_category, p_mime\)\s+THEN false/)
+  })
+
+  it('only the FINAL suffix is compared, case-insensitively', () => {
+    expect(helper).toMatch(/lower\(regexp_replace\(p_filename, '\^\.\*\\\.', ''\)\)/)
+  })
+
+  it('reservation invokes the helper on the ORIGINAL filename before path construction', () => {
+    expect(reserve).toMatch(/public\.evidence_filename_extension_allowed\(req\.category, p_mime_type, p_original_filename\)/)
+    const checkAt = reserve.indexOf('evidence_filename_extension_allowed')
+    const sanitizeAt = reserve.indexOf('sanitized :=')
+    const insertAt = reserve.indexOf('INSERT INTO public.evidence_request_attachments')
+    expect(checkAt).toBeGreaterThan(-1)
+    expect(checkAt, 'must be validated before sanitization').toBeLessThan(sanitizeAt)
+    expect(checkAt, 'must be validated before any row is created').toBeLessThan(insertAt)
+  })
+
+  it('finalization revalidates from STORED fields, not caller input', () => {
+    expect(finalize).toMatch(/public\.evidence_filename_extension_allowed\(req\.category, att\.mime_type, att\.original_filename\)/)
+    expect(finalize).toMatch(/NOT public\.evidence_mime_allowed\(req\.category, att\.mime_type\)/)
+    // The canonical path's final extension must agree with the stored filename.
+    expect(finalize).toMatch(/att\.storage_object_path[\s\S]{0,160}?att\.original_filename/)
+  })
+
+  it('finalization takes no filename argument that could launder a bad reservation', () => {
+    expect(FWD).toMatch(/CREATE OR REPLACE FUNCTION public\.finalize_evidence_attachment\([\s\S]{0,200}?\)/)
+    const sig = FWD.match(/CREATE OR REPLACE FUNCTION public\.finalize_evidence_attachment\(([\s\S]*?)\)/)?.[1] ?? ''
+    expect(sig).not.toMatch(/filename/i)
+  })
+
+  it('rollback drops the helper before the allow-list it depends on', () => {
+    expect(RBK).toMatch(/DROP FUNCTION IF EXISTS public\.evidence_filename_extension_allowed\(text,text,text\);/)
+    expect(RBK.indexOf('evidence_filename_extension_allowed'))
+      .toBeLessThan(RBK.indexOf('DROP FUNCTION IF EXISTS public.evidence_mime_allowed'))
+  })
+
+  it('VERIFY K covers the accepted and rejected extension cases', () => {
+    const k = VER.match(/DO \$verify_k\$[\s\S]*?\$verify_k\$;/)?.[0] ?? ''
+    expect(k).not.toBe('')
+    for (const c of ['payload.exe', 'report.pdf.exe', 'report.exe.pdf', 'REPORT.PDF',
+      "'report.'", 'dir/report.pdf', 'clip.mp4', 'photo.jpeg']) {
+      expect(k, `VERIFY K is missing case ${c}`).toContain(c.replace(/^'|'$/g, ''))
+    }
+    expect(k).toMatch(/checked < 26[\s\S]{0,140}?test would be vacuous/)
+  })
+
+  it('the contract comment no longer overstates what is enforced', () => {
+    // The claim that both MIME and extension are validated must now be true.
+    // The guarantee is now scoped to uploaded evidence, because linked existing
+    // documents carry no reliable filename and are deliberately not checked.
+    expect(FWD_RAW).toMatch(/both\s*--?\s*MIME and extension are validated/)
+    expect(FWD_RAW).toMatch(/LINKED EXISTING documents are deliberately NOT extension-validated/)
+    expect(BODIES.get('link_existing_evidence_document') ?? '')
+      .not.toContain('evidence_filename_extension_allowed')
+    expect(reserve).toContain('evidence_filename_extension_allowed')
   })
 })

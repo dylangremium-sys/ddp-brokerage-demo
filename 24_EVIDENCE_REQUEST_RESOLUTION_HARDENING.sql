@@ -123,8 +123,21 @@ AS $$
   END
 $$;
 
--- Allowed MIME types per category (contract §7.3). Both MIME and extension are
--- validated; MIME is never inferred from the filename extension alone.
+-- Allowed MIME types per category (contract §7.3).
+--
+-- SCOPE OF THE GUARANTEE. For UPLOADED request evidence ('request_upload') both
+-- MIME and extension are validated — see evidence_filename_extension_allowed()
+-- below, which reservation and finalization both enforce. MIME is never inferred
+-- from the filename extension alone: the declared MIME selects which extensions
+-- are permitted, not the reverse.
+--
+-- LINKED EXISTING documents are deliberately NOT extension-validated. Their name
+-- comes from public.farmer_documents.file_name / public.documents.file_name,
+-- which are nullable and carry no guaranteed extension, and their MIME is
+-- classified authoritatively from document_type via evidence_document_mime()
+-- rather than declared by the caller. Requiring an extension there would reject
+-- valid pre-existing rows on the basis of data the source tables never promised.
+-- The MIME/category check still applies to them.
 CREATE OR REPLACE FUNCTION public.evidence_mime_allowed(p_category text, p_mime text)
 RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE
 SET search_path = public, pg_temp
@@ -152,6 +165,55 @@ $$;
 -- Existing farmer/inventory document rows carry `document_type` but no MIME
 -- column. This is an explicit classification of the source document type, not a
 -- measurement — see the size_bytes note on evidence_request_attachments.
+-- Filename extension allow-list, paired with the MIME allow-list above.
+--
+-- The comment on evidence_mime_allowed() promised that "both MIME and extension
+-- are validated". Only the MIME half was implemented: reservation accepted any
+-- p_original_filename provided the declared MIME and size passed, and
+-- finalization repeated only those checks — so `payload.exe` declared as
+-- application/pdf was reserved and finalized, and the extension was written into
+-- both the canonical object path and original_filename. This closes that half.
+--
+-- The rule is CONJUNCTIVE: the category must permit the MIME (checked here via
+-- evidence_mime_allowed, so the two can never drift apart) AND the filename's
+-- FINAL extension must be one this MIME permits. MIME is never inferred from the
+-- extension — the declared MIME selects the permitted extensions, not the other
+-- way round.
+--
+-- Only the last suffix counts, so `report.pdf.exe` is rejected for a PDF while
+-- `report.exe.pdf` is accepted: what a consumer dispatches on is the final
+-- extension. Validation runs against the ORIGINAL logical filename, before path
+-- sanitization, so character replacement can never turn a forbidden extension
+-- into a permitted one.
+CREATE OR REPLACE FUNCTION public.evidence_filename_extension_allowed(
+  p_category text, p_mime text, p_filename text
+)
+RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = public, pg_temp
+AS $$
+  SELECT CASE
+    WHEN p_filename IS NULL              THEN false
+    WHEN btrim(p_filename) = ''          THEN false
+    -- A path is not a filename. Rejected outright rather than trimmed, so a
+    -- traversal attempt can never be silently reinterpreted as a valid name.
+    WHEN p_filename ~ '[/\\]'            THEN false
+    -- Requires a final ASCII alphanumeric suffix: no extension, a trailing dot,
+    -- and non-ASCII suffixes are all rejected deterministically.
+    WHEN p_filename !~ '\.[A-Za-z0-9]+$' THEN false
+    -- Category/MIME consistency is part of this predicate, not an assumption.
+    WHEN NOT public.evidence_mime_allowed(p_category, p_mime) THEN false
+    ELSE lower(regexp_replace(p_filename, '^.*\.', '')) = ANY (
+      CASE p_mime
+        WHEN 'application/pdf' THEN ARRAY['pdf']
+        WHEN 'image/jpeg'      THEN ARRAY['jpg','jpeg']
+        WHEN 'image/png'       THEN ARRAY['png']
+        WHEN 'image/webp'      THEN ARRAY['webp']
+        WHEN 'video/mp4'       THEN ARRAY['mp4']
+        ELSE ARRAY[]::text[]
+      END)
+  END
+$$;
+
 CREATE OR REPLACE FUNCTION public.evidence_document_mime(p_document_type text)
 RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE
 SET search_path = public, pg_temp
@@ -1397,6 +1459,13 @@ BEGIN
   IF NOT public.evidence_mime_allowed(req.category, p_mime_type) THEN
     RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED' USING ERRCODE = 'check_violation';
   END IF;
+  -- Extension is validated against the ORIGINAL filename, before sanitization
+  -- and before the canonical path is built — so a forbidden suffix can never be
+  -- rewritten into a permitted one, and a rejected reservation creates no
+  -- attachment row, no history event and no reserved path.
+  IF NOT public.evidence_filename_extension_allowed(req.category, p_mime_type, p_original_filename) THEN
+    RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED' USING ERRCODE = 'check_violation';
+  END IF;
   IF p_size_bytes IS NULL OR p_size_bytes <= 0
      OR p_size_bytes > public.evidence_max_size_bytes(req.category, p_mime_type) THEN
     RAISE EXCEPTION 'FILE_TOO_LARGE' USING ERRCODE = 'check_violation';
@@ -1488,6 +1557,27 @@ BEGIN
 
   IF p_sha256_hex IS NULL OR p_sha256_hex !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: sha256_hex' USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- INDEPENDENT REVALIDATION of the reservation, from STORED fields only. A row
+  -- reserved before this rule existed — or under any earlier defective state —
+  -- must not become ready now. The caller supplies no filename here on purpose:
+  -- re-deriving it from input would let a caller launder a bad reservation by
+  -- presenting a different name at finalization.
+  IF NOT public.evidence_mime_allowed(req.category, att.mime_type) THEN
+    RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED: stored MIME is not permitted for category %',
+      req.category USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT public.evidence_filename_extension_allowed(req.category, att.mime_type, att.original_filename) THEN
+    RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED: stored filename extension is not permitted for MIME %',
+      att.mime_type USING ERRCODE = 'check_violation';
+  END IF;
+  -- The canonical path must carry the same final extension as the stored name,
+  -- so the object a consumer fetches cannot disagree with what was validated.
+  IF lower(regexp_replace(att.storage_object_path, '^.*\.', ''))
+     IS DISTINCT FROM lower(regexp_replace(att.original_filename, '^.*\.', '')) THEN
+    RAISE EXCEPTION 'VALIDATION_ERROR: canonical path extension does not match the stored filename'
+      USING ERRCODE = 'check_violation';
   END IF;
 
   -- OBJECT EXISTENCE (contract §7.4 step 6). The caller-supplied size, MIME and
@@ -1587,11 +1677,24 @@ BEGIN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
   END IF;
 
-  -- Removal is only ever possible while the request is still actionable.
-  IF req.status NOT IN ('open','clarification_requested') THEN
-    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
-  END IF;
-
+  -- CLEANUP ELIGIBILITY IS DERIVED FROM THE DRAFT RESPONSE, NOT FROM AN
+  -- ACTIONABLE PARENT REQUEST.
+  --
+  -- This previously required req.status IN ('open','clarification_requested').
+  -- The storage DELETE policy required the same, so the two were mutually
+  -- gating: once an admin cancelled (or resolved/rejected) a request while a
+  -- farmer held a reserved or uploaded draft attachment, the farmer could
+  -- neither mark the attachment for removal nor delete the object, and the row
+  -- and file were stranded until privileged manual cleanup. resolve/reject act
+  -- on the SUBMITTED response, so a draft can coexist with every terminal
+  -- status — this was reachable from all three, not just cancellation.
+  --
+  -- A draft attachment is by definition NOT submitted evidence: nothing of
+  -- record is destroyed by removing it, and the history event survives via the
+  -- FK's ON DELETE SET NULL. So the authorization that matters is the response
+  -- being a draft, the caller owning the attachment, and operational access to
+  -- the farm — all asserted below. Adding evidence still requires an actionable
+  -- request: reserve, link, save, submit and finalize all keep that guard.
   SELECT * INTO resp FROM public.evidence_request_responses
   WHERE id = p_response_id AND request_id = p_request_id FOR UPDATE;
   IF NOT FOUND OR resp.state <> 'draft' THEN
@@ -1936,6 +2039,7 @@ REVOKE EXECUTE ON FUNCTION public.evidence_actor_role() FROM PUBLIC, anon, authe
 --        acl-no-grant: evidence_mime_allowed
 --        acl-no-grant: evidence_max_size_bytes
 --        acl-no-grant: evidence_document_mime
+--        acl-no-grant: evidence_filename_extension_allowed
 REVOKE EXECUTE ON FUNCTION public.evidence_request_statuses() FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.evidence_request_terminal_statuses() FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.evidence_request_priorities() FROM PUBLIC, anon;
@@ -1944,6 +2048,7 @@ REVOKE EXECUTE ON FUNCTION public.evidence_category_allows_target(text,text) FRO
 REVOKE EXECUTE ON FUNCTION public.evidence_mime_allowed(text,text) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.evidence_max_size_bytes(text,text) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.evidence_document_mime(text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_filename_extension_allowed(text,text,text) FROM PUBLIC, anon;
 
 -- 10.4 Trigger functions. Invoked only by the trigger machinery, never called
 --      directly. Deliberate no-grant decisions:
