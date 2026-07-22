@@ -52,21 +52,23 @@ const code = (f) => sql(f)
 
 // ── Layer 1 — the shipped SQL no longer freezes the catalog ────────────────
 describe('the remediated VERIFY scripts contain no frozen catalog counts', () => {
-  it('12: the WHOLE-SCHEMA count(*) = 6 inventory is gone', () => {
-    // The distinction that matters. `count(*) = 6` is fine as a PRESENCE check
-    // scoped by `proname IN (...)` — "all six are still here". It is not fine as
-    // an unscoped inventory — "only six may ever exist", which is what failed.
-    // So: every count(*) = 6 must sit in a statement that also scopes by name.
-    const statements = code(V12).split(';')
-    const unscoped = statements.filter((s) => /count\(\*\)\s*=\s*6/.test(s) && !/proname\s+IN\s*\(/i.test(s))
-    expect(unscoped, `unscoped count(*) = 6 in: ${unscoped.join(' | ').slice(0, 200)}`).toEqual([])
+  it('12: no count(*) = N presence assertion remains at all', () => {
+    // The first remediation kept `count(*) = 6` scoped by `proname IN (...)`.
+    // That still counted bare NAMES, so a same-name/wrong-argument overload
+    // satisfied it (substitution passed) while an extra legitimate overload
+    // broke it (growth failed). Presence is now an exact-signature anti-join,
+    // so no count-based presence assertion should survive.
+    const c = code(V12)
+    expect(c).not.toMatch(/count\(\*\)\s*=\s*6/)
+    expect(c).not.toMatch(/proname\s+IN\s*\(/i)
   })
 
-  it('12: and the surviving count(*) = 6 is genuinely a scoped presence check', () => {
-    const stmt = code(V12).split(';').find((s) => /count\(\*\)\s*=\s*6/.test(s))
-    expect(stmt).toBeDefined()
-    expect(stmt).toMatch(/proname\s+IN\s*\(/i)
-    expect(stmt).toMatch(/is_ddp_admin/)
+  it('12: presence is asserted per exact signature, and counts only the MISSING', () => {
+    const c = code(V12)
+    // The only surviving count is over the anti-join's misses, which is the
+    // opposite of an inventory: it grows with absence, not with the catalog.
+    expect(c).toMatch(/count\(\*\) FILTER \(WHERE missing\) = 0/)
+    expect(c).toMatch(/to_regprocedure\('public\.' \|\| e\.signature\) IS NULL AS missing/)
   })
 
   it('14: the 20/43/6/4 object-count equality is gone', () => {
@@ -397,5 +399,209 @@ describe('the exact 2026-07-21/22 staging failures now pass, without weakening',
     expect(functionOffenders([...LIVE.functions, fn('leaky', { anonExec: true })])).not.toEqual([])
     expect(rlsPosture([...LIVE.tables, tbl('naked', { rls: false })]).tablesWithoutRls).toEqual(['naked'])
     expect(priorMigrationsActive({ ...LIVE.prior, anonCanExecIsDdpAdmin: true })).toBe(false)
+  })
+})
+
+// ── Absence detection — the gap the first remediation opened ────────────────
+//
+// Replacing frozen counts with property checks made the scripts blind to objects
+// that STOPPED existing: a catalog-driven query yields no rows for a missing
+// object, so nothing fails. The old counts caught disappearance incidentally;
+// removing them (correctly, since they also failed on growth) removed that too.
+//
+// Both scripts now drive from an EXPECTED set and anti-join the catalog, which
+// detects absence AND tolerates growth instead of trading one for the other.
+
+// --- VERIFY 12: exact required signatures -------------------------------------
+const REQUIRED_SIGNATURES = [
+  'is_ddp_admin()',
+  'has_farm_membership(uuid)',
+  'handle_new_user()',
+  'fn_protect_owner_notes()',
+  'fn_protect_review_request_fields()',
+  'prevent_compliance_audit_log_mutation()',
+]
+
+// Mirrors `to_regprocedure('public.'||signature) IS NULL` — exact identity match,
+// so a same-name/different-argument overload does NOT satisfy a requirement.
+const missingSignatures = (catalogSignatures) =>
+  REQUIRED_SIGNATURES.filter((s) => !catalogSignatures.includes(s))
+
+const ALL_PRESENT = [...REQUIRED_SIGNATURES]
+
+describe('VERIFY 12 — required functions are checked by exact signature', () => {
+  it('1. all six exact signatures present → PASS', () => {
+    expect(missingSignatures(ALL_PRESENT)).toEqual([])
+  })
+
+  it('2. an exact signature absent → FAIL, naming it', () => {
+    const catalog = ALL_PRESENT.filter((s) => s !== 'has_farm_membership(uuid)')
+    expect(missingSignatures(catalog)).toEqual(['has_farm_membership(uuid)'])
+  })
+
+  it('3. replaced by a same-name WRONG-ARGUMENT overload → FAIL', () => {
+    // The exact case Codex raised: proname-counting would still see 6 and PASS.
+    const catalog = ALL_PRESENT
+      .filter((s) => s !== 'has_farm_membership(uuid)')
+      .concat('has_farm_membership(text)')
+    expect(catalog).toHaveLength(6)                       // a bare-name count: 6 → PASS
+    expect(missingSignatures(catalog)).toEqual(['has_farm_membership(uuid)']) // exact: FAIL
+  })
+
+  it('4. expected signature PLUS a legitimate overload → PASS', () => {
+    // The false-positive direction: bare-name counting would see 7 and FAIL.
+    const catalog = [...ALL_PRESENT, 'has_farm_membership(text)']
+    expect(catalog).toHaveLength(7)
+    expect(missingSignatures(catalog)).toEqual([])
+  })
+
+  it('5. unrelated legitimate functions added → PASS', () => {
+    const catalog = [...ALL_PRESENT,
+      'fn_protect_farm_admin_fields()', 'has_operational_farmer_access()',
+      'issue_buyer_pack_snapshot(uuid,text)', 'prevent_buyer_pack_mutation()',
+      'prevent_procurement_decision_mutation()']
+    expect(catalog).toHaveLength(11)
+    expect(missingSignatures(catalog)).toEqual([])
+  })
+
+  it('6. a dangerous grant on a NEW function is still caught by the schema-wide guard', () => {
+    const fns = [...BASELINE_SIX, ...GROWTH_FIVE, fn('brand_new_helper', { anonExec: true })]
+    expect(missingSignatures(ALL_PRESENT)).toEqual([])            // presence: PASS
+    expect(functionOffenders(fns)).toContain('brand_new_helper [anon can EXECUTE]') // property: FAIL
+  })
+
+  it('7. complete absence → FAIL listing every signature', () => {
+    expect(missingSignatures([])).toEqual(REQUIRED_SIGNATURES)
+  })
+
+  it('static: the SQL uses explicit signatures, not proname totals', () => {
+    const c = code(V12)
+    expect(c).toMatch(/to_regprocedure\('public\.' \|\| e\.signature\)/)
+    expect(c).toMatch(/has_farm_membership\(uuid\)/)          // identity args, not bare name
+    expect(c).toMatch(/WITH expected\(signature\) AS \(/)
+    // The bare-name presence count is gone.
+    expect(c).not.toMatch(/proname\s+IN\s*\(/i)
+  })
+})
+
+// --- VERIFY 15: governed-table expected set -----------------------------------
+const GOVERNED_19 = [
+  'compliance_alerts', 'compliance_entity_status', 'compliance_reviews',
+  'compliance_rules', 'ddp_scores', 'documents', 'farm_memberships',
+  'farm_profiles', 'farmer_documents', 'farmer_photos', 'farmer_review_requests',
+  'farms', 'inventory_batches', 'legal_updates', 'market_price_benchmarks',
+  'profiles', 'regulatory_sources', 'risk_flags', 'status_history',
+]
+const CRUD = ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+
+// Mirrors the LEFT JOIN + UNION ALL: ABSENT and MISSING_GRANT as distinct causes.
+const governedFindings = (presentTables, grants) => {
+  const out = []
+  for (const t of GOVERNED_19) {
+    if (!presentTables.includes(t)) { out.push({ cause: 'ABSENT', detail: t }); continue }
+    for (const r of CLIENT_ROLES) for (const p of CRUD) {
+      if (!grants[`${t}/${r}/${p}`]) out.push({ cause: 'MISSING_GRANT', detail: `${t}/${r}/${p}` })
+    }
+  }
+  return out
+}
+const grantAll = (tables) => {
+  const g = {}
+  for (const t of tables) for (const r of CLIENT_ROLES) for (const p of CRUD) g[`${t}/${r}/${p}`] = true
+  return g
+}
+
+describe('VERIFY 15 — governed tables are driven by an expected set', () => {
+  it('1. all governed tables present with full CRUD → PASS', () => {
+    expect(governedFindings(GOVERNED_19, grantAll(GOVERNED_19))).toEqual([])
+  })
+
+  it('2. one governed table entirely ABSENT → FAIL (the old form passed here)', () => {
+    const present = GOVERNED_19.filter((t) => t !== 'farms')
+    const found = governedFindings(present, grantAll(present))
+    expect(found).toEqual([{ cause: 'ABSENT', detail: 'farms' }])
+    // The previous catalog-driven form produced no row for a missing table:
+    const oldStyle = present.filter((t) => GOVERNED_19.includes(t))
+      .flatMap((t) => CLIENT_ROLES.flatMap((r) => CRUD.filter((p) => !grantAll(present)[`${t}/${r}/${p}`])))
+    expect(oldStyle).toEqual([])   // old: PASS despite farms being gone
+  })
+
+  it('2b. a governed table RENAMED fails under its original expected name', () => {
+    const present = GOVERNED_19.filter((t) => t !== 'ddp_scores').concat('ddp_scores_v2')
+    const found = governedFindings(present, grantAll(present))
+    expect(found).toEqual([{ cause: 'ABSENT', detail: 'ddp_scores' }])
+  })
+
+  it('3. present but required grants incomplete → FAIL as MISSING_GRANT', () => {
+    const grants = grantAll(GOVERNED_19)
+    delete grants['farms/anon/SELECT']
+    const found = governedFindings(GOVERNED_19, grants)
+    expect(found).toEqual([{ cause: 'MISSING_GRANT', detail: 'farms/anon/SELECT' }])
+  })
+
+  it('4. an additional legitimate RLS-enabled table → PASS', () => {
+    const present = [...GOVERNED_19, 'buyer_pack_snapshots']
+    expect(governedFindings(present, grantAll(present))).toEqual([])
+    expect(rlsPosture([...GROWN_24, tbl('buyer_pack_snapshots')]).tablesWithoutRls).toEqual([])
+  })
+
+  it('5. an additional restricted/admin-only table → PASS (not required to be writable)', () => {
+    // procurement_decisions: anon has nothing, authenticated no UPDATE/DELETE.
+    const present = [...GOVERNED_19, 'procurement_decisions']
+    const grants = grantAll(GOVERNED_19)
+    grants['procurement_decisions/authenticated/SELECT'] = true
+    expect(governedFindings(present, grants)).toEqual([])
+  })
+
+  it('6. RLS disabled on a present table → FAIL via the whole-schema property', () => {
+    const bad = [...GROWN_24, tbl('naked_table', { rls: false })]
+    expect(rlsPosture(bad).tablesWithoutRls).toEqual(['naked_table'])
+  })
+
+  it('7. a forbidden non-CRUD privilege → FAIL via the whole-schema guard', () => {
+    const all = [...GOVERNED_19, 'procurement_decisions']
+    const grants = grantAll(GOVERNED_19)
+    grants['procurement_decisions/anon/TRUNCATE'] = true
+    expect(overGrants(all, grants)).toEqual(['procurement_decisions/anon/TRUNCATE'])
+  })
+
+  it('8. the diagnostic distinguishes ABSENT from MISSING_GRANT', () => {
+    const present = GOVERNED_19.filter((t) => t !== 'documents')
+    const grants = grantAll(present)
+    delete grants['profiles/authenticated/DELETE']
+    const found = governedFindings(present, grants)
+    expect(found.filter((f) => f.cause === 'ABSENT')).toEqual([{ cause: 'ABSENT', detail: 'documents' }])
+    expect(found.filter((f) => f.cause === 'MISSING_GRANT'))
+      .toEqual([{ cause: 'MISSING_GRANT', detail: 'profiles/authenticated/DELETE' }])
+  })
+
+  it('static: the SQL drives from an expected VALUES set and LEFT JOINs the catalog', () => {
+    const c = code(V15)
+    expect(c).toMatch(/WITH expected\(relname\) AS \(/)
+    expect(c).toMatch(/oid IS NULL/)          // the absence arm
+    expect(c).toMatch(/'ABSENT'/)
+    expect(c).toMatch(/'MISSING_GRANT'/)
+    // No catalog-driven relname filter remains for the governed set.
+    expect(c).not.toMatch(/AND c\.relname IN \(/)
+  })
+})
+
+describe('the two-layer model holds for both scripts', () => {
+  it('an object disappearing fails even when everything remaining is secure', () => {
+    // Secure remaining catalog…
+    const present = GOVERNED_19.filter((t) => t !== 'farms')
+    expect(overGrants(present, grantAll(present))).toEqual([])      // no over-grants
+    expect(rlsPosture(GROWN_24).tablesWithoutRls).toEqual([])       // RLS everywhere
+    expect(functionOffenders([...BASELINE_SIX, ...GROWTH_FIVE])).toEqual([])
+    // …yet absence still fails, in both scripts.
+    expect(governedFindings(present, grantAll(present))).toHaveLength(1)
+    expect(missingSignatures(ALL_PRESENT.filter((s) => s !== 'is_ddp_admin()'))).toEqual(['is_ddp_admin()'])
+  })
+
+  it('a legitimate new object never fails merely because the catalog grew', () => {
+    const present = [...GOVERNED_19, 'buyer_pack_snapshots', 'procurement_decisions']
+    const grants = grantAll(GOVERNED_19)
+    expect(governedFindings(present, grants)).toEqual([])
+    expect(missingSignatures([...ALL_PRESENT, 'issue_buyer_pack_snapshot(uuid,text)'])).toEqual([])
   })
 })

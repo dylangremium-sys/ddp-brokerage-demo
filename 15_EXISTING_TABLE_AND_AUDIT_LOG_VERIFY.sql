@@ -33,23 +33,48 @@ WHERE n.nspname = 'public' AND c.relkind = 'r'
 --     NOW: scope to the 20 tables migration 15 actually governs. Tables added by
 --     later migrations carry their own privilege design and are verified by their
 --     own VERIFY scripts; V2a below still ensures they cannot be over-granted.
-SELECT 'V2 crud_intact_non_audit (migration-15 tables)' AS check,
+--     Driven from the EXPECTED set and LEFT JOINed to pg_class, not filtered by
+--     it. A catalog-driven `relname IN (...)` cannot see absence: a dropped or
+--     renamed governed table simply contributes no rows, so `missing_crud_grants`
+--     stayed 0 and the check passed. The old `V6 tables = 20` used to catch that
+--     incidentally; removing it (correctly, since it also failed on growth) left
+--     nothing detecting disappearance. Anti-joining restores absence detection
+--     without reintroducing any count.
+--
+--     ABSENT and PRESENT-BUT-UNDER-GRANTED are reported as distinct causes.
+WITH expected(relname) AS (
+  VALUES ('compliance_alerts'),('compliance_entity_status'),('compliance_reviews'),
+         ('compliance_rules'),('ddp_scores'),('documents'),('farm_memberships'),
+         ('farm_profiles'),('farmer_documents'),('farmer_photos'),
+         ('farmer_review_requests'),('farms'),('inventory_batches'),
+         ('legal_updates'),('market_price_benchmarks'),('profiles'),
+         ('regulatory_sources'),('risk_flags'),('status_history')
+),
+resolved AS (
+  SELECT e.relname,
+         (SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname = e.relname) AS oid
+  FROM expected e
+),
+findings AS (
+  -- Cause 1: the governed table is gone (dropped or renamed).
+  SELECT relname, 'ABSENT' AS cause, relname AS detail
+  FROM resolved WHERE oid IS NULL
+  UNION ALL
+  -- Cause 2: present, but a required client CRUD grant is missing.
+  SELECT r.relname, 'MISSING_GRANT' AS cause, r.relname || '/' || ro.rolname || '/' || p.priv AS detail
+  FROM resolved r
+  CROSS JOIN (VALUES ('anon'), ('authenticated')) ro(rolname)
+  CROSS JOIN (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE')) p(priv)
+  WHERE r.oid IS NOT NULL
+    AND NOT has_table_privilege(ro.rolname, r.oid, p.priv)
+)
+SELECT 'V2 governed tables present with client CRUD' AS check,
        CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-       count(*) AS missing_crud_grants,
-       coalesce(string_agg(DISTINCT c.relname || '/' || r.rolname || '/' || p.priv, ', '), '') AS detail
-FROM pg_class c
-JOIN pg_namespace n ON n.oid = c.relnamespace
-CROSS JOIN (VALUES ('anon'), ('authenticated')) r(rolname)
-CROSS JOIN (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE')) p(priv)
-WHERE n.nspname = 'public' AND c.relkind = 'r'
-  AND c.relname <> 'compliance_audit_log'
-  AND c.relname IN (
-    'compliance_alerts','compliance_entity_status','compliance_reviews',
-    'compliance_rules','ddp_scores','documents','farm_memberships','farm_profiles',
-    'farmer_documents','farmer_photos','farmer_review_requests','farms',
-    'inventory_batches','legal_updates','market_price_benchmarks','profiles',
-    'regulatory_sources','risk_flags','status_history')
-  AND NOT has_table_privilege(r.rolname, c.oid, p.priv);
+       count(*) FILTER (WHERE cause = 'ABSENT')        AS absent_tables,
+       count(*) FILTER (WHERE cause = 'MISSING_GRANT') AS missing_crud_grants,
+       coalesce(string_agg(cause || ': ' || detail, ', ' ORDER BY cause, detail), '') AS detail
+FROM findings;
 
 -- V2a. GROWTH-TOLERANT over-grant guard: NO table in schema public — including
 --      every table added after migration 15 — may expose TRUNCATE, TRIGGER,

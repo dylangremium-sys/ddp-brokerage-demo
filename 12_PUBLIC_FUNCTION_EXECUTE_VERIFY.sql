@@ -88,15 +88,49 @@ WHERE n.nspname = 'public'
 --
 --     NOW: assert presence of the six, and let V6 police every function that
 --     exists — including future ones — on the properties that matter.
-SELECT 'migration-12 functions all present' AS check,
-       CASE WHEN count(*) = 6 THEN 'PASS' ELSE 'FAIL' END AS result,
-       count(*) AS found_of_six
-FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname = 'public' AND p.prokind = 'f'
-  AND p.proname IN (
-    'is_ddp_admin','has_farm_membership','handle_new_user',
-    'fn_protect_owner_notes','fn_protect_review_request_fields',
-    'prevent_compliance_audit_log_mutation');
+--     Driven from the EXPECTED set, not from the catalog. A catalog-driven count
+--     cannot see absence: `count(*) = 6` over `proname IN (...)` still returned 6
+--     if `has_farm_membership(uuid)` were dropped and `has_farm_membership(text)`
+--     added in its place, and it FAILED at 7 when a legitimate overload was added
+--     alongside. V1/V2/V3 above cannot cover the gap either — they emit one row
+--     per function that EXISTS, so a missing signature produces no row at all and
+--     therefore no FAIL. Anti-joining an expected-signature list fixes both
+--     directions at once: absence and substitution fail, growth does not.
+WITH expected(signature) AS (
+  VALUES ('is_ddp_admin()'),
+         ('has_farm_membership(uuid)'),
+         ('handle_new_user()'),
+         ('fn_protect_owner_notes()'),
+         ('fn_protect_review_request_fields()'),
+         ('prevent_compliance_audit_log_mutation()')
+)
+SELECT 'migration-12 required signatures present' AS check,
+       CASE WHEN count(*) FILTER (WHERE missing) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       count(*) FILTER (WHERE missing) AS missing_signatures,
+       coalesce(string_agg(signature, ', ' ORDER BY signature) FILTER (WHERE missing), '') AS missing_detail
+FROM (
+  SELECT e.signature,
+         -- to_regprocedure() resolves the EXACT identity signature, so a
+         -- same-name/different-argument overload does not satisfy it.
+         to_regprocedure('public.' || e.signature) IS NULL AS missing
+  FROM expected e
+) z;
+
+-- V5a. Per-signature diagnostic: one row per required function, so a failure in
+--      V5 names precisely which signature is absent rather than a bare count.
+WITH expected(signature) AS (
+  VALUES ('is_ddp_admin()'),
+         ('has_farm_membership(uuid)'),
+         ('handle_new_user()'),
+         ('fn_protect_owner_notes()'),
+         ('fn_protect_review_request_fields()'),
+         ('prevent_compliance_audit_log_mutation()')
+)
+SELECT 'signature ' || e.signature AS check,
+       CASE WHEN to_regprocedure('public.' || e.signature) IS NOT NULL
+            THEN 'PASS' ELSE 'FAIL' END AS result
+FROM expected e
+ORDER BY e.signature;
 
 -- V6. GROWTH-TOLERANT GUARD over EVERY function in schema public, present and
 --     future. A new function is allowed to exist; it is NOT allowed to be owned
