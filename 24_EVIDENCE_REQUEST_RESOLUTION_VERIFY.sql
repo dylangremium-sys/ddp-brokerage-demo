@@ -571,6 +571,8 @@ DO $verify_i$
 DECLARE
   farm_id_v uuid; profile_v uuid; actor uuid;
   req_id uuid; resp_id uuid; att_id uuid;
+  src_doc_id uuid; linked_att_id uuid; linked_rows integer;
+  other_farm_v uuid; other_doc_id uuid;
   ok boolean;
 BEGIN
   IF NOT EXISTS (
@@ -616,12 +618,56 @@ BEGIN
 
   -- I2: a linked existing document carries no storage path at all, so it can be
   -- removed without any storage stage.
+  --
+  -- NON-VACUITY. This previously read `INSERT … SELECT … FROM farmer_documents
+  -- WHERE farm_id = farm_id_v LIMIT 1`. VERIFY I creates a BRAND-NEW farm above
+  -- and never creates a document for it, so that SELECT matched nothing, the
+  -- INSERT affected zero rows, and the `IF EXISTS … storage_object_path IS NOT
+  -- NULL` check below then found no rows and passed. The section reported
+  -- linked-document coverage while never linking a document. The fixture is now
+  -- created explicitly, its id captured, and the insert's row count asserted, so
+  -- an empty result can no longer masquerade as a pass.
+  INSERT INTO public.farmer_documents (farm_id, document_type, file_name)
+  VALUES (farm_id_v, 'licence', 'linked-source.pdf')
+  RETURNING id INTO src_doc_id;
+  IF src_doc_id IS NULL THEN
+    RAISE EXCEPTION 'VERIFY I FAILED: farmer_documents fixture was not created';
+  END IF;
+
   INSERT INTO public.evidence_request_attachments
     (request_id, response_id, origin, farmer_document_id,
      original_filename, mime_type, created_by_user_id)
   SELECT req_id, resp_id, 'existing_farm_document', fd.id,
          'linked.pdf', 'application/pdf', actor
-  FROM public.farmer_documents fd WHERE fd.farm_id = farm_id_v LIMIT 1;
+  FROM public.farmer_documents fd
+  WHERE fd.id = src_doc_id AND fd.farm_id = farm_id_v
+  RETURNING id INTO linked_att_id;
+
+  GET DIAGNOSTICS linked_rows = ROW_COUNT;
+  IF linked_rows <> 1 THEN
+    RAISE EXCEPTION 'VERIFY I FAILED: linked-document insert affected % row(s), expected exactly 1', linked_rows;
+  END IF;
+  IF linked_att_id IS NULL THEN
+    RAISE EXCEPTION 'VERIFY I FAILED: linked attachment id was not returned';
+  END IF;
+
+  -- The linked row must point at THIS document, on THIS farm, with the linked
+  -- origin, no storage stage, and no upload state.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.evidence_request_attachments a
+    JOIN public.farmer_documents fd ON fd.id = a.farmer_document_id
+    WHERE a.id = linked_att_id
+      AND a.origin = 'existing_farm_document'
+      AND a.farmer_document_id = src_doc_id
+      AND fd.farm_id = farm_id_v
+      AND a.storage_bucket IS NULL
+      AND a.storage_object_path IS NULL
+      AND a.upload_state IS NULL
+      AND a.inventory_document_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'VERIFY I FAILED: linked attachment does not match its source document, farm, origin or shape';
+  END IF;
 
   IF EXISTS (
     SELECT 1 FROM public.evidence_request_attachments
@@ -630,6 +676,46 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'VERIFY I FAILED: a linked document carries a storage path';
   END IF;
+
+  -- History linkage. This section inserts attachments DIRECTLY rather than
+  -- through link_existing_evidence_document(), because the RPCs require an
+  -- authenticated farmer with operational farm access and auth.uid() is NULL in
+  -- a verify transaction. History is written by those RPCs, not by a trigger, so
+  -- no event appears here on its own — asserting one would fail for the wrong
+  -- reason. The event is therefore written explicitly and its linkage asserted,
+  -- which is what this section can honestly prove; the RPC-produced event is
+  -- covered by VERIFY G.
+  INSERT INTO public.evidence_request_history
+    (request_id, previous_status, next_status, actor_user_id, actor_role,
+     event_type, response_id, attachment_id)
+  VALUES (req_id, 'open', 'open', actor, 'farmer',
+          'existing_document_linked', resp_id, linked_att_id);
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.evidence_request_history
+    WHERE request_id = req_id
+      AND attachment_id = linked_att_id
+      AND event_type = 'existing_document_linked'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY I FAILED: history event does not reference the linked attachment';
+  END IF;
+
+  -- Cross-farm linkage must be refused: same shape, a document on another farm.
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor) RETURNING id INTO other_farm_v;
+  INSERT INTO public.farmer_documents (farm_id, document_type, file_name)
+  VALUES (other_farm_v, 'licence', 'foreign-source.pdf')
+  RETURNING id INTO other_doc_id;
+
+  BEGIN
+    INSERT INTO public.evidence_request_attachments
+      (request_id, response_id, origin, farmer_document_id,
+       original_filename, mime_type, created_by_user_id)
+    VALUES (req_id, resp_id, 'existing_farm_document', other_doc_id,
+            'foreign.pdf', 'application/pdf', actor);
+    RAISE EXCEPTION 'VERIFY I FAILED: a document from another farm was linked';
+  EXCEPTION
+    WHEN check_violation THEN NULL;   -- expected: same-farm guard rejected it
+  END;
 
   RAISE NOTICE 'VERIFY I PASSED: removal_requested_at present; authorized removal completes; linked documents need no storage stage.';
 END

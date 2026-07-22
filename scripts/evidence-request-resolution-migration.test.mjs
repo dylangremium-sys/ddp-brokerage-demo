@@ -1067,13 +1067,18 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
     expect(b).toMatch(/IF NOT object_exists THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments[\s\S]*?'REMOVED'/)
   })
 
-  it('stage 2 — an upload with a stored object is authorized, not deleted', () => {
+  it('phase 1 — the first call authorizes removal and deletes nothing', () => {
+    // REVISED with the orphan-race fix. This previously sliced from the marker
+    // to the end of the function and asserted no DELETE followed, which only
+    // held while the marker was the LAST stage. The marker is now the FIRST
+    // stage, so the assertion is scoped to the phase-1 block itself: it must
+    // set the marker, return STORAGE_DELETE_REQUIRED, and delete nothing.
     const b = fn()
-    const stage2 = b.slice(b.indexOf('IF att.removal_requested_at IS NULL THEN'))
-    expect(stage2).toMatch(/SET removal_requested_at = now\(\)/)
-    expect(stage2).toMatch(/'STORAGE_DELETE_REQUIRED'/)
-    // The row must NOT be deleted on this path.
-    expect(stage2).not.toMatch(/DELETE FROM public\.evidence_request_attachments/)
+    const phase1 = b.match(/IF att\.removal_requested_at IS NULL THEN[\s\S]*?END IF;/)?.[0] ?? ''
+    expect(phase1).not.toBe('')
+    expect(phase1).toMatch(/SET removal_requested_at = now\(\)/)
+    expect(phase1).toMatch(/'STORAGE_DELETE_REQUIRED'/)
+    expect(phase1).not.toMatch(/DELETE FROM public\.evidence_request_attachments/)
   })
 
   it('returns a stable result carrying id, bucket and exact path', () => {
@@ -1090,10 +1095,16 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
   })
 
   it('completion after an interrupted Storage API delete lands on REMOVED', () => {
-    // Second call: object now absent -> stage 1 completes the removal.
+    // REVISED with the orphan-race fix. This asserted the OLD ordering — that
+    // the existence check ran BEFORE the removal marker — which is precisely
+    // the racy sequence Codex reported: an absence result was trusted while the
+    // row was still insertable. The order is now inverted deliberately, so the
+    // assertion is inverted with it. Completion (phase 2) is reachable only
+    // once the marker is already committed.
     const b = fn()
-    expect(b.indexOf('IF NOT object_exists THEN'))
-      .toBeLessThan(b.indexOf('IF att.removal_requested_at IS NULL THEN'))
+    expect(b.indexOf('IF att.removal_requested_at IS NULL THEN'))
+      .toBeLessThan(b.indexOf('IF NOT object_exists THEN'))
+    expect(b).toMatch(/IF NOT object_exists THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments[\s\S]*?'REMOVED'/)
   })
 
   it('removal is denied on a submitted response or a terminal request', () => {
@@ -1476,6 +1487,145 @@ describe('migration 24 — isolation from unrelated subsystems', () => {
       for (const phrase of banned) {
         expect(sql.toLowerCase(), `prohibited phrase "${phrase}"`).not.toContain(phrase)
       }
+    }
+  })
+})
+
+// ── Codex P2: pending removal cannot orphan an in-flight upload ────────────
+//
+// The reported defect: remove_draft_evidence_attachment deleted the attachment
+// row as soon as a point-in-time storage check said "no object". An upload
+// already authorized against that still-insertable row could pass the INSERT
+// policy on its own snapshot and land AFTER the check — leaving an object with
+// no attachment row, no DELETE-policy path, and (because the SELECT policy is
+// path-prefix based, not attachment-joined) still readable by farm members.
+describe('migration 24 — Codex P2: removal cannot orphan an in-flight upload', () => {
+  const body = BODIES.get('remove_draft_evidence_attachment') ?? ''
+
+  it('the removal function exists and is SECURITY DEFINER with a pinned search_path', () => {
+    expect(body).not.toBe('')
+    expect(FWD).toMatch(/CREATE OR REPLACE FUNCTION public\.remove_draft_evidence_attachment[\s\S]{0,400}?SECURITY DEFINER[\s\S]{0,120}?SET search_path/)
+  })
+
+  it('the storage INSERT policy treats an authorized removal as a spent reservation', () => {
+    // Without this predicate the removal marker does not stop uploads at all.
+    const insertPolicy = STO.match(/CREATE POLICY "evidence-request-files: farmer insert reserved path"[\s\S]*?\);/)?.[0] ?? ''
+    expect(insertPolicy).not.toBe('')
+    expect(insertPolicy).toMatch(/a\.upload_state\s*=\s*'pending_upload'/)
+    expect(insertPolicy).toMatch(/a\.removal_requested_at\s+IS NULL/)
+  })
+
+  it('the FIRST call marks removal and returns without deleting the row', () => {
+    // Phase 1 must set the marker and RETURN before any DELETE.
+    const phase1 = body.match(/IF att\.removal_requested_at IS NULL THEN[\s\S]*?END IF;/)?.[0] ?? ''
+    expect(phase1).not.toBe('')
+    expect(phase1).toMatch(/UPDATE public\.evidence_request_attachments\s+SET removal_requested_at = now\(\)/)
+    expect(phase1).toMatch(/'STORAGE_DELETE_REQUIRED'/)
+    expect(phase1, 'phase 1 must not delete the attachment row').not.toMatch(/DELETE FROM public\.evidence_request_attachments/)
+  })
+
+  it('no DELETE of the attachment row precedes the removal marker being set', () => {
+    // Ordering is the whole fix: for request_upload rows the marker must be
+    // established before any deletion decision. The only earlier DELETE is the
+    // linked-document path, which owns no storage object at all.
+    const markerAt = body.indexOf('SET removal_requested_at = now()')
+    const existsAt = body.indexOf('SELECT EXISTS')
+    expect(markerAt).toBeGreaterThan(-1)
+    expect(existsAt).toBeGreaterThan(-1)
+    expect(markerAt, 'existence check must come AFTER the marker is set').toBeLessThan(existsAt)
+  })
+
+  it('the deleting DELETE is reachable only after an existence check', () => {
+    const tail = body.slice(body.indexOf('SELECT EXISTS'))
+    expect(tail).toMatch(/IF NOT object_exists THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments/)
+  })
+
+  it('a still-present object keeps the row so the object always has an owner', () => {
+    expect(body).toMatch(/'STORAGE_DELETE_REQUIRED'[\s\S]*?END\s*\$\$/)
+    // The DELETE policy keys off the attachment row; retaining it is what makes
+    // a late-landing object deletable rather than orphaned.
+    const deletePolicy = STO.match(/CREATE POLICY "evidence-request-files: farmer delete own draft"[\s\S]*?\);/)?.[0] ?? ''
+    expect(deletePolicy).toMatch(/a\.removal_requested_at\s+IS NOT NULL/)
+  })
+
+  it('removal stays denied on a terminal request and a non-draft response', () => {
+    expect(body).toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
+    expect(body).toMatch(/resp\.state <> 'draft'/)
+  })
+
+  it('linked documents still remove in one step (they own no storage object)', () => {
+    expect(body).toMatch(/IF att\.origin <> 'request_upload' THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments/)
+  })
+
+  it('finalization stays closed once removal has been authorized', () => {
+    const fin = BODIES.get('finalize_evidence_attachment') ?? ''
+    expect(fin).toMatch(/att\.removal_requested_at IS NOT NULL[\s\S]{0,200}?RAISE EXCEPTION/)
+  })
+})
+
+// ── Codex P2: VERIFY I must actually link a document ───────────────────────
+describe('migration 24 — Codex P2: VERIFY I is non-vacuous', () => {
+  const sectionI = VER.match(/DO \$verify_i\$[\s\S]*?\$verify_i\$;/)?.[0] ?? ''
+
+  it('VERIFY I exists', () => {
+    expect(sectionI).not.toBe('')
+  })
+
+  it('creates an explicit farmer_documents fixture on the test farm', () => {
+    expect(sectionI).toMatch(/INSERT INTO public\.farmer_documents[\s\S]{0,160}?VALUES \(farm_id_v/)
+    expect(sectionI).toMatch(/RETURNING id INTO src_doc_id/)
+  })
+
+  it('asserts the linked-document insert affected exactly one row', () => {
+    expect(sectionI).toMatch(/GET DIAGNOSTICS linked_rows = ROW_COUNT/)
+    expect(sectionI).toMatch(/linked_rows <> 1[\s\S]{0,200}?RAISE EXCEPTION/)
+  })
+
+  it('no longer selects a source document that may not exist', () => {
+    // The original form matched nothing on a freshly created farm.
+    expect(sectionI).not.toMatch(/FROM public\.farmer_documents fd WHERE fd\.farm_id = farm_id_v LIMIT 1/)
+    expect(sectionI).toMatch(/WHERE fd\.id = src_doc_id AND fd\.farm_id = farm_id_v/)
+  })
+
+  it('verifies origin, source document, farm and shape of the linked row', () => {
+    expect(sectionI).toMatch(/a\.origin = 'existing_farm_document'/)
+    expect(sectionI).toMatch(/a\.farmer_document_id = src_doc_id/)
+    expect(sectionI).toMatch(/fd\.farm_id = farm_id_v/)
+    expect(sectionI).toMatch(/a\.storage_object_path IS NULL/)
+    expect(sectionI).toMatch(/a\.upload_state IS NULL/)
+  })
+
+  it('proves a document from another farm is refused', () => {
+    expect(sectionI).toMatch(/other_farm_v/)
+    expect(sectionI).toMatch(/a document from another farm was linked/)
+    expect(sectionI).toMatch(/WHEN check_violation THEN NULL/)
+  })
+
+  it('asserts the history event names the linked attachment', () => {
+    expect(sectionI).toMatch(/attachment_id = linked_att_id/)
+  })
+})
+
+// ── Codex P2: direct DML is denied to EVERY client role ────────────────────
+describe('migration 24 — Codex P2: append-only history cannot be worked around', () => {
+  it('revokes direct write DML from service_role on all four tables', () => {
+    // Supabase default privileges grant service_role full DML on new public
+    // tables, which allowed DELETE + re-INSERT to erase a history pointer.
+    for (const t of ['evidence_requests', 'evidence_request_responses',
+      'evidence_request_attachments', 'evidence_request_history']) {
+      expect(FWD, `service_role DML not revoked on ${t}`)
+        .toMatch(new RegExp(`REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public\\.${t}\\s+FROM service_role`))
+    }
+  })
+
+  it('retains SELECT for back-office reads', () => {
+    expect(FWD).not.toMatch(/REVOKE SELECT[^;]*FROM service_role/)
+  })
+
+  it('still denies direct DML to PUBLIC, anon and authenticated', () => {
+    for (const t of ['evidence_requests', 'evidence_request_responses',
+      'evidence_request_attachments', 'evidence_request_history']) {
+      expect(FWD).toMatch(new RegExp(`REVOKE ALL ON public\\.${t}\\s+FROM PUBLIC, anon, authenticated`))
     }
   })
 })
