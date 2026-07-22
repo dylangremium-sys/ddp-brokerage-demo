@@ -448,10 +448,15 @@ describe('storage denial must be attributable, not merely observed', () => {
     }
   })
 
-  it('FAILS when cleanup cannot be verified', () => {
+  // Teardown no longer participates in the attribution verdict. Folding it in
+  // meant a cleanup defect surfaced as a migration-22 policy FAIL, and — more
+  // dangerously — that a passing cleanup contributed to the impression the
+  // overlay had enforced. Residue is asserted independently by the run-scoped
+  // storage sweep (see scripts/staging-storage-cleanup.test.mjs).
+  it('ignores teardown state — cleanup is asserted separately, not as a policy verdict', () => {
     const v = evaluateStorageAttribution({ ...ok, cleanupVerified: false })
-    expect(v.status).toBe('FAIL')
-    expect(v.reason).toMatch(/cleanup/)
+    expect(v.status).toBe('PASS')
+    expect(v.attributable).toBe(true)
   })
 
   it('treats a pending write as a security failure even if cleanup succeeded', () => {

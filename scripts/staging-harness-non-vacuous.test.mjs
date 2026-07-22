@@ -413,7 +413,13 @@ describe('finding 5 — the pending list probe is differential and non-vacuous',
     expect(evaluatePendingListProbe({ ...base, pendingError: { message: 'fetch failed' } }).status).toBe('BLOCK')
   })
 
-  it('FAILS when the control object cannot be cleaned up', () => {
-    expect(evaluatePendingListProbe({ ...base, cleanupVerified: false }).status).toBe('FAIL')
+  // Teardown is no longer folded into this verdict. Cleanup and access control
+  // are separate result categories: a teardown defect used to be reported as a
+  // listing-policy FAIL, which both mislabelled the defect and meant cleanup
+  // "success" read as evidence the policy enforced. Residue is now asserted
+  // independently by the run-scoped storage sweep (see
+  // scripts/staging-storage-cleanup.test.mjs).
+  it('ignores teardown state — cleanup is asserted separately, not as a policy verdict', () => {
+    expect(evaluatePendingListProbe({ ...base, cleanupVerified: false }).status).toBe('PASS')
   })
 })
