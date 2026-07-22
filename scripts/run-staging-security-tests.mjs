@@ -110,10 +110,22 @@ export function resolveConfig(env) {
 
 // ── Result matrix ───────────────────────────────────────────────────────────
 const results = []
+// Structured outcome of the run-scoped storage teardown (evaluateStorageCleanup).
+// Held separately from the result rows so the exit rule can read the residual
+// count directly rather than re-deriving it from printed text.
+let storageCleanupVerdict = null
 let currentGroup = 'setup'
 function group(name) { currentGroup = name }
 function record(name, ok, detail = '') {
   results.push({ group: currentGroup, name, status: ok ? 'PASS' : 'FAIL', detail })
+}
+// Teardown results carry an explicit `kind: 'cleanup'` so the exit rule can see
+// them. The previous design derived cleanup failures from `r.cleanupVerified ===
+// false`, a property `record()` never set — so a storage teardown failure was
+// structurally incapable of being counted, and `0 cleanup-failures` was printed
+// alongside genuine residue.
+function recordCleanup(name, ok, detail = '') {
+  results.push({ group: currentGroup, name, status: ok ? 'PASS' : 'FAIL', detail, kind: 'cleanup' })
 }
 function skip(name, reason) { results.push({ group: currentGroup, name, status: 'SKIP', detail: reason }) }
 // BLOCK: the probe could not be executed under conditions that would make its
@@ -323,8 +335,8 @@ export async function applyPendingGate(roleRow, { block, runMatrix }) {
 // The suite's exit rule. A BLOCK is never a pass — it must fail the process just
 // as a FAIL does, otherwise an unconfigured or unprovable pending matrix would
 // leave the suite green. Pure and exported so that rule is directly testable.
-export function computeExitCode({ failed = 0, blocked = 0, cleanupFailures = 0 } = {}) {
-  return failed > 0 || blocked > 0 || cleanupFailures > 0 ? 1 : 0
+export function computeExitCode({ failed = 0, blocked = 0, cleanupFailures = 0, storageResidue = 0 } = {}) {
+  return computeSecurityHarnessExitCode({ failed, blocked, cleanupFailures, storageResidue })
 }
 
 // Minimal INSERT payloads. Every column here was confirmed against the staging
@@ -529,14 +541,161 @@ export function evaluateStorageAttribution(obs) {
   if (o.pendingSubject !== 'DENIED-BY-POLICY' && o.pendingSubject !== 'denied') {
     return blocked(`pending denial classified as "${o.pendingSubject ?? 'unknown'}" — only an authorization-layer denial proves the overlay`)
   }
-  if (o.cleanupVerified === false) {
-    return failed('cleanup could not be verified — synthetic storage objects may remain')
-  }
+  // NOTE: teardown is deliberately NOT part of this verdict. Cleanup and access
+  // control are separate result categories — folding them together meant a
+  // teardown defect was reported as a policy failure (and, worse, that cleanup
+  // "success" read as evidence the overlay enforced). Residue is asserted
+  // independently by the run-scoped storage sweep.
   return {
     status: 'PASS',
     attributable: true,
     reason: 'operational farmer allowed, pending denied on an identical request — denial attributable to the migration 22 restrictive overlay',
   }
+}
+
+// ── Storage fixture teardown ────────────────────────────────────────────────
+//
+// WHY THIS EXISTS. Storage teardown used to be a farmer-client `remove()` whose
+// result was accepted whenever `error` was falsy. Farmers hold no permissive
+// DELETE policy on either farmer bucket (only "<bucket>: admin all" grants it),
+// so those deletes matched zero rows; Supabase Storage answers an RLS no-op with
+// `{ data: [], error: null }`, which the old check read as success. Only one of
+// the four objects a healthy run creates was ever registered, and only one was
+// ever read back — so 36 synthetic objects accumulated while runs reported clean.
+//
+// The rules below are the contract. Each helper is pure (or takes an injected
+// list function) so every failure mode is provable offline, without a live
+// project.
+
+// Every bucket the harness may create an object in. The post-cleanup sweep must
+// enumerate all of them — a residue check that inspects one bucket is how
+// farmer-photos residue went unreported.
+export const STORAGE_CLEANUP_BUCKETS = Object.freeze(['farmer-documents', 'farmer-photos'])
+
+// A. ONE run-scoped registry. Append-only and deduplicated; never assignment.
+// `created.storageObjects = [path]` (the previous form) silently discarded every
+// earlier entry, which is why three of four objects were untracked.
+export function registerStorageFixture(registry, entry) {
+  if (!Array.isArray(registry)) throw new TypeError('storage registry must be an array')
+  const { bucket, path, scenario, createdBy } = entry || {}
+  if (!bucket || !path) throw new TypeError('a storage fixture requires both bucket and path')
+  if (registry.some((e) => e.bucket === bucket && e.path === path)) return registry
+  registry.push({
+    bucket,
+    path,
+    scenario: scenario || 'unspecified',
+    createdBy: createdBy || 'unknown',
+  })
+  return registry
+}
+
+// B. Teardown identity. Only `is_ddp_admin()` satisfies the farmer buckets'
+// permissive ALL policy, so cleanup MUST hold the admin session. This is checked
+// before any remove() call rather than after, so a misconfigured run fails loudly
+// instead of silently deleting nothing.
+export function assertAdminCleanupClient(session) {
+  if (!session || !session.client) {
+    return { ok: false, reason: 'storage cleanup requires an authenticated admin session; none was supplied' }
+  }
+  if (session.label !== 'admin') {
+    return {
+      ok: false,
+      reason: `storage cleanup must run as the DDP admin session, not "${session.label ?? 'unknown'}" — farmers hold no DELETE grant on the farmer buckets, so a farmer-scoped delete removes nothing and reports no error`,
+    }
+  }
+  return { ok: true, reason: '' }
+}
+
+// C. Never treat a missing error as proof of deletion. Supabase returns the rows
+// it actually removed; compare that set against what was requested.
+export function compareRequestedAndDeletedPaths(requested, data) {
+  const req = [...new Set((Array.isArray(requested) ? requested : []).filter(Boolean))]
+  const rows = Array.isArray(data) ? data : []
+  const deleted = new Set(
+    rows
+      .map((r) => (typeof r === 'string' ? r : (r?.name ?? r?.path ?? null)))
+      .filter(Boolean),
+  )
+  const missing = req.filter((p) => !deleted.has(p))
+  return {
+    requested: req.length,
+    deleted: req.length - missing.length,
+    missing,
+    ok: missing.length === 0,
+  }
+}
+
+// D. Absence must be proven by an explicitly paginated sweep. The storage client
+// defaults to limit:100 with no paging; because the residue check is a negative
+// ("the tag is absent"), a truncated first page silently reads as clean — and
+// these very prefixes are where residue accumulates.
+export async function collectPaginatedRunObjects(listFn, opts = {}) {
+  const { bucket = null, prefix = '', tag = null, pageSize = 100, maxPages = 200 } = opts
+  if (typeof listFn !== 'function') throw new TypeError('collectPaginatedRunObjects requires a list function')
+  const found = []
+  let pages = 0
+  for (let offset = 0; pages < maxPages; offset += pageSize) {
+    const res = await listFn({ bucket, prefix, limit: pageSize, offset })
+    pages += 1
+    if (res?.error) return { error: res.error, found, pages, truncated: false }
+    const rows = Array.isArray(res?.data) ? res.data : []
+    for (const row of rows) {
+      const name = typeof row === 'string' ? row : row?.name
+      if (!name) continue
+      if (tag && !name.includes(tag)) continue
+      found.push({ bucket, name, path: prefix ? `${prefix}/${name}` : name })
+    }
+    // A short page is the end of the listing. Anything else means keep going.
+    if (rows.length < pageSize) return { error: null, found, pages, truncated: false }
+  }
+  // Ran out of pages before the listing ended: report truncation rather than
+  // claiming a clean sweep.
+  return { error: null, found, pages, truncated: true }
+}
+
+// E/F. The cleanup verdict, as an explicit structure rather than an optional
+// property bolted onto an ordinary result row. `cleanupFailures` used to be
+// derived from `r.cleanupVerified === false`, a field `record()` never set — so
+// storage cleanup failures were structurally invisible to the exit rule.
+export function evaluateStorageCleanup(obs) {
+  const o = obs || {}
+  const created = Number(o.created ?? 0)
+  const requested = Number(o.requested ?? 0)
+  const deleted = Number(o.deleted ?? 0)
+  const missing = Array.isArray(o.missing) ? o.missing : []
+  const residual = Array.isArray(o.residual) ? o.residual : []
+  const errors = Array.isArray(o.errors) ? o.errors : []
+  const truncated = o.truncated === true
+  const configError = o.configError || null
+
+  const problems = []
+  if (configError) problems.push(configError)
+  if (errors.length) problems.push(`${errors.length} deletion error(s): ${errors.slice(0, 3).join('; ')}`)
+  if (missing.length) problems.push(`${missing.length} object(s) were requested but not reported deleted: ${missing.slice(0, 3).join(', ')}`)
+  if (truncated) problems.push('the post-cleanup listing was truncated — absence could not be proven')
+  if (residual.length) problems.push(`${residual.length} current-run object(s) remain: ${residual.slice(0, 3).map((r) => `${r.bucket}/${r.path}`).join(', ')}`)
+
+  return {
+    ok: problems.length === 0,
+    created,
+    requested,
+    deleted,
+    missing,
+    residual,
+    residualCount: residual.length,
+    errors,
+    truncated,
+    reason: problems.length === 0
+      ? `created=${created} requested=${requested} deleted=${deleted} remaining=0`
+      : problems.join(' | '),
+  }
+}
+
+// The suite's exit rule, extended so current-run storage residue fails the run.
+// A residual object is not a cosmetic problem: it means teardown did not do what
+// the suite reported it did.
+export function computeSecurityHarnessExitCode({ failed = 0, blocked = 0, cleanupFailures = 0, storageResidue = 0 } = {}) {
+  return failed > 0 || blocked > 0 || cleanupFailures > 0 || storageResidue > 0 ? 1 : 0
 }
 
 // ── Matrix aggregation ──────────────────────────────────────────────────────
@@ -546,7 +705,7 @@ export function evaluateStorageAttribution(obs) {
 export function summarisePendingMatrix(rows) {
   const list = Array.isArray(rows) ? rows : []
   const count = (s) => list.filter((r) => r.status === s).length
-  const cleanupFailures = list.filter((r) => r.cleanupVerified === false).length
+  const cleanupFailures = list.filter((r) => (r.kind === 'cleanup' && r.status === 'FAIL') || r.cleanupVerified === false).length
   const summary = {
     total: list.length,
     passed: count('PASS'),
@@ -864,9 +1023,8 @@ export function evaluatePendingListProbe(obs) {
   if (names.includes(o.controlObjectName)) {
     return { status: 'FAIL', ok: false, reason: `SECURITY FAILURE: the pending identity listed another user's object ${o.controlObjectName}` }
   }
-  if (o.cleanupVerified === false) {
-    return { status: 'FAIL', ok: false, reason: 'the control object could not be removed — synthetic storage residue remains' }
-  }
+  // Teardown is asserted separately by the run-scoped storage sweep; a cleanup
+  // defect must not be reported as a listing-policy failure.
   return {
     status: 'PASS', ok: true,
     reason: `denied by policy — the owner sees ${o.controlObjectName} at this prefix while the pending identity sees ${names.length} object(s), none of them the control`,
@@ -883,7 +1041,9 @@ async function signedInClient(cfg, creds, label) {
   const c = makeClient(cfg)
   const { data, error } = await c.auth.signInWithPassword({ email: creds.email, password: creds.password })
   if (error || !data?.session) throw new Error(`could not sign in ${label} (check staging test-user creds)`)
-  return { client: c, userId: data.user.id }
+  // `label` is retained so teardown can prove it holds the admin session before
+  // attempting a storage delete (see assertAdminCleanupClient).
+  return { client: c, userId: data.user.id, label }
 }
 
 // ── Pending preflight + matrix drivers (live) ───────────────────────────────
@@ -1021,7 +1181,10 @@ async function main() {
 
   const anon = makeClient(cfg)
   let a, b, admin
-  const created = { batches: [], farms: [], pendingFixtures: [], benchmarks: [] } // tracked synthetic IDs for cleanup
+  // Tracked synthetic state for cleanup. `storageObjects` is declared here — not
+  // attached ad hoc later — so it can never be clobbered by assignment, and every
+  // successful upload is appended via registerStorageFixture().
+  const created = { batches: [], farms: [], pendingFixtures: [], benchmarks: [], storageObjects: [] }
 
   try {
     a = await signedInClient(cfg, cfg.farmerA, 'farmer A')
@@ -1045,8 +1208,15 @@ async function main() {
     record('anon cannot EXECUTE is_ddp_admin()', !!(await anon.rpc('is_ddp_admin')).error)
     record('anon cannot EXECUTE has_farm_membership(uuid)',
       !!(await anon.rpc('has_farm_membership', { p_farm_id: randomUUID() })).error)
-    record('anon cannot upload to farmer-documents',
-      !!(await anon.storage.from('farmer-documents').upload(`${runId}/anon.txt`, new Blob(['x']))).error)
+    // Tag-scoped path: an untagged filename would escape the run-scoped residue
+    // sweep entirely if this denial ever regressed into a success.
+    const anonProbePath = `${TAG}-anon.txt`
+    const anonProbeUp = await anon.storage.from('farmer-documents').upload(anonProbePath, new Blob(['x']))
+    record('anon cannot upload to farmer-documents', !!anonProbeUp.error)
+    if (!anonProbeUp.error) {
+      registerStorageFixture(created.storageObjects,
+        { bucket: 'farmer-documents', path: anonProbePath, scenario: 'A anon upload (unexpected success)', createdBy: 'anon' })
+    }
 
     // ── B. Farmer A isolation ────────────────────────────────────────────────
     group('B. farmer A isolation')
@@ -1259,12 +1429,29 @@ async function main() {
     const ownUp = await a.client.storage.from('farmer-documents').upload(ownPath, new Blob(['hello']))
     const ownOk = !ownUp.error
     record('farmer A can upload to own prefix', ownOk, ownUp.error ? ownUp.error.message?.slice(0, 40) : '')
-    if (ownOk) created.storagePaths = [ownPath]
-    // Cross-prefix write into B's userId prefix must be denied.
-    record('farmer A cannot upload into farmer B prefix',
-      !!(await a.client.storage.from('farmer-documents').upload(`${b.userId}/${TAG}.txt`, new Blob(['x']))).error)
-    record('anon cannot upload to farmer-documents',
-      !!(await anon.storage.from('farmer-documents').upload(`${runId}/anon2.txt`, new Blob(['x']))).error)
+    if (ownOk) {
+      registerStorageFixture(created.storageObjects,
+        { bucket: 'farmer-documents', path: ownPath, scenario: 'G own-prefix upload', createdBy: 'farmer A' })
+    }
+    // Cross-prefix write into B's userId prefix must be denied. Registered when it
+    // unexpectedly SUCCEEDS: that is a security failure, and the object it leaves
+    // behind must still be torn down rather than orphaned.
+    const crossOwnPath = `${b.userId}/${TAG}-cross.txt`
+    const crossOwnUp = await a.client.storage.from('farmer-documents').upload(crossOwnPath, new Blob(['x']))
+    record('farmer A cannot upload into farmer B prefix', !!crossOwnUp.error)
+    if (!crossOwnUp.error) {
+      registerStorageFixture(created.storageObjects,
+        { bucket: 'farmer-documents', path: crossOwnPath, scenario: 'G cross-prefix upload (unexpected success)', createdBy: 'farmer A' })
+    }
+    // The anon path carries the full run tag so a tag-scoped sweep can find it if
+    // it ever lands; a bare-runId filename would be invisible to that sweep.
+    const anonPath = `${a.userId}/${TAG}-anon2.txt`
+    const anonUp = await anon.storage.from('farmer-documents').upload(anonPath, new Blob(['x']))
+    record('anon cannot upload to farmer-documents', !!anonUp.error)
+    if (!anonUp.error) {
+      registerStorageFixture(created.storageObjects,
+        { bucket: 'farmer-documents', path: anonPath, scenario: 'G anon upload (unexpected success)', createdBy: 'anon' })
+    }
 
     // ── H. Pending user has NO operational access (migration 22) ─────────────
     // A 'pending' account is authenticated but not yet provisioned as a farmer.
@@ -1347,30 +1534,37 @@ async function main() {
           const { bucket, ext, contentType, bytes } = spec
           const body = () => new Blob([bytes], { type: contentType })
           const opts = { contentType }
-          const cleanups = []
+          // Every object that actually lands is registered in the run-scoped
+          // registry and torn down centrally as admin in the finally block. The
+          // previous per-bucket `cleanups` array was loop-local and discarded,
+          // and its deletes ran as the creating farmer — an identity with no
+          // DELETE grant, so they removed nothing and reported no error.
 
           // CONTROL: an operational farmer's own-scope write must succeed.
           const controlPath = `${a.userId}/${TAG}-attrib.${ext}`
           const controlRes = await a.client.storage.from(bucket).upload(controlPath, body(), opts)
           const control = classifyStorageOutcome(controlRes)
-          if (control.outcome === 'allowed') cleanups.push({ who: a, path: controlPath })
+          if (control.outcome === 'allowed') {
+            registerStorageFixture(created.storageObjects,
+              { bucket, path: controlPath, scenario: 'H attribution control', createdBy: 'farmer A' })
+          }
 
           // SUBJECT: the pending user's structurally identical write.
           const subjectPath = `${p.userId}/${TAG}-attrib.${ext}`
           const subjectRes = await p.client.storage.from(bucket).upload(subjectPath, body(), opts)
           const subject = classifyStorageOutcome(subjectRes)
-          if (subject.outcome === 'allowed') cleanups.push({ who: p, path: subjectPath })
+          if (subject.outcome === 'allowed') {
+            registerStorageFixture(created.storageObjects,
+              { bucket, path: subjectPath, scenario: 'H attribution subject (unexpected success)', createdBy: 'pending' })
+          }
 
           // Cross-prefix: pending writing beneath another user's prefix.
           const crossPath = `${b.userId}/${TAG}-attrib-x.${ext}`
           const crossRes = await p.client.storage.from(bucket).upload(crossPath, body(), opts)
           const cross = classifyStorageOutcome(crossRes)
-          if (cross.outcome === 'allowed') cleanups.push({ who: p, path: crossPath })
-
-          let cleanupVerified = true
-          for (const c of cleanups) {
-            const rm = await c.who.client.storage.from(bucket).remove([c.path])
-            if (rm?.error) cleanupVerified = false
+          if (cross.outcome === 'allowed') {
+            registerStorageFixture(created.storageObjects,
+              { bucket, path: crossPath, scenario: 'H attribution cross-prefix (unexpected success)', createdBy: 'pending' })
           }
 
           const bucketExists = control.outcome !== 'not-found' || subject.outcome !== 'not-found'
@@ -1379,7 +1573,6 @@ async function main() {
             farmerControl: control.outcome === 'allowed' ? 'ALLOWED' : control.outcome,
             pendingSubject: subject.outcome === 'denied' ? 'DENIED-BY-POLICY' : subject.outcome,
             crossPrefix: cross.outcome === 'allowed' ? 'ALLOWED' : cross.outcome,
-            cleanupVerified,
           })
           const name = `pending denied on ${bucket} (attributable to migration 22)`
           if (verdict.status === 'BLOCK') block(name, redactSecrets(verdict.reason))
@@ -1389,8 +1582,9 @@ async function main() {
             control.outcome === 'allowed', redactSecrets(control.reason))
           record(`pending cannot write beneath another user prefix on ${bucket}`,
             cross.outcome !== 'allowed', redactSecrets(cross.reason))
-          record(`cleanup verified on ${bucket}`, cleanupVerified,
-            cleanupVerified ? '' : 'a synthetic storage object could not be removed')
+          // Teardown for this bucket is asserted once, centrally, by the
+          // run-scoped residue sweep in the finally block — not by a per-bucket
+          // `!error` check that could never observe an RLS no-op.
         }
         // Writing beneath another user's prefix must also be denied.
         const foreign = await p.client.storage.from('farmer-documents')
@@ -1409,6 +1603,10 @@ async function main() {
         const listCtlUp = await b.client.storage.from('farmer-documents')
           .upload(listControlPath, new Blob(['list-control']), { contentType: 'text/plain' })
         const listControlCreated = !listCtlUp?.error
+        if (listControlCreated) {
+          registerStorageFixture(created.storageObjects,
+            { bucket: 'farmer-documents', path: listControlPath, scenario: 'H list-control', createdBy: 'farmer B' })
+        }
 
         let ownerCanSeeControl = false
         if (listControlCreated) {
@@ -1419,27 +1617,16 @@ async function main() {
 
         const listRes = await p.client.storage.from('farmer-documents').list(`${b.userId}`)
 
-        let listCleanupVerified = true
-        if (listControlCreated) {
-          const rm = await b.client.storage.from('farmer-documents').remove([listControlPath])
-          if (rm?.error) listCleanupVerified = false
-          else {
-            const after = await b.client.storage.from('farmer-documents').list(`${b.userId}`)
-            listCleanupVerified = !after?.error
-              && !(after?.data ?? []).some((o) => o?.name === listControlName)
-          }
-        }
-
+        // The list-control object is registered above and removed centrally as
+        // admin. Farmer B cannot delete it (no DELETE grant), which is precisely
+        // why the old inline `b.client...remove()` left it behind every run.
         recordSelectVerdict('pending cannot list another user private objects',
           evaluatePendingListProbe({
             controlObjectName: listControlCreated ? listControlName : null,
             ownerCanSeeControl,
             pendingError: listRes?.error ?? null,
             pendingNames: (listRes?.data ?? []).map((o) => o?.name),
-            cleanupVerified: listCleanupVerified,
           }))
-        record('cleanup verified for storage list-control object', listCleanupVerified,
-          listCleanupVerified ? '' : 'the farmer B list-control object could not be removed')
 
         // Affirmative: operational farmer and admin retain access under the
         // overlay. Each queries a KNOWN fixture by its exact id and requires that
@@ -1458,10 +1645,83 @@ async function main() {
     // ── Cleanup (reverse dependency order; run-id scoped only) ────────────────
     group('cleanup')
     try {
-      // Storage objects created by this run (own-prefix only).
-      if (created.storagePaths?.length && a?.client) {
-        const del = await a.client.storage.from('farmer-documents').remove(created.storagePaths)
-        record('removed synthetic storage objects', !del.error, del.error?.message?.slice(0, 40) || '')
+      // ── Storage teardown (admin identity; response-checked; residue-swept) ──
+      //
+      // Runs as ADMIN because only `is_ddp_admin()` satisfies the farmer buckets'
+      // permissive ALL policy. Every remove() response is compared against what
+      // was requested, and absence is then proven by an explicitly paginated
+      // sweep over BOTH buckets scoped to this run's tag.
+      {
+        const guard = assertAdminCleanupClient(admin)
+        const requestedPaths = []
+        const deletionErrors = []
+        const missingPaths = []
+        let deletedCount = 0
+
+        if (!guard.ok && created.storageObjects.length) {
+          recordCleanup('storage cleanup identity', false, guard.reason)
+        }
+
+        if (guard.ok && created.storageObjects.length) {
+          for (const bucket of STORAGE_CLEANUP_BUCKETS) {
+            const paths = created.storageObjects.filter((o) => o.bucket === bucket).map((o) => o.path)
+            if (!paths.length) continue
+            requestedPaths.push(...paths)
+            try {
+              const del = await admin.client.storage.from(bucket).remove(paths)
+              if (del?.error) {
+                deletionErrors.push(`${bucket}: ${String(del.error.message || del.error).slice(0, 60)}`)
+                missingPaths.push(...paths.map((p) => `${bucket}/${p}`))
+                continue
+              }
+              // `!error` is NOT proof: an RLS no-op answers 200 with data: [].
+              const cmp = compareRequestedAndDeletedPaths(paths, del?.data)
+              deletedCount += cmp.deleted
+              missingPaths.push(...cmp.missing.map((p) => `${bucket}/${p}`))
+            } catch (e) {
+              deletionErrors.push(`${bucket}: ${String(e?.message || e).slice(0, 60)}`)
+              missingPaths.push(...paths.map((p) => `${bucket}/${p}`))
+            }
+          }
+        }
+
+        // Independent absence proof: paginated, per bucket, per owner prefix,
+        // scoped to this run's tag. Historical objects carry other run tags and
+        // are neither counted nor touched.
+        const residual = []
+        let sweepTruncated = false
+        const sweepErrors = []
+        if (guard.ok) {
+          const prefixes = [...new Set(created.storageObjects.map((o) => o.path.includes('/') ? o.path.split('/')[0] : ''))]
+          for (const bucket of STORAGE_CLEANUP_BUCKETS) {
+            for (const prefix of prefixes) {
+              const listFn = ({ prefix: pfx, limit, offset }) =>
+                admin.client.storage.from(bucket).list(pfx, { limit, offset })
+              const swept = await collectPaginatedRunObjects(listFn, { bucket, prefix, tag: TAG })
+              if (swept.error) { sweepErrors.push(`${bucket}/${prefix}: ${String(swept.error.message || swept.error).slice(0, 50)}`); continue }
+              if (swept.truncated) sweepTruncated = true
+              residual.push(...swept.found)
+            }
+          }
+        }
+
+        const verdict = evaluateStorageCleanup({
+          created: created.storageObjects.length,
+          requested: requestedPaths.length,
+          deleted: deletedCount,
+          missing: missingPaths,
+          residual,
+          errors: [...deletionErrors, ...sweepErrors],
+          truncated: sweepTruncated,
+          configError: guard.ok ? null : guard.reason,
+        })
+        storageCleanupVerdict = verdict
+        recordCleanup('removed synthetic storage objects', verdict.ok, redactSecrets(verdict.reason))
+        // Global residue assertion — the storage counterpart of the farms check.
+        recordCleanup('zero residual current-run storage objects', verdict.residualCount === 0,
+          verdict.residualCount === 0
+            ? `created=${verdict.created} requested=${verdict.requested} deleted=${verdict.deleted} remaining=0`
+            : redactSecrets(verdict.residual.map((r) => `${r.bucket}/${r.path}`).join(', ')))
       }
       // Batches then farms, matching the run tag AND tracked ids.
       if (created.batches.length && a?.client) {
@@ -1495,6 +1755,7 @@ async function main() {
           status: allGone ? 'PASS' : 'FAIL',
           detail: allGone ? '' : `${created.pendingFixtures.length - removed} fixture row(s) remain`,
           cleanupVerified: allGone,
+          kind: 'cleanup',
         })
       }
       // Benchmark fixtures live in a table with no farm_id, so nothing cascades
@@ -1516,6 +1777,7 @@ async function main() {
           status: allGone ? 'PASS' : 'FAIL',
           detail: allGone ? '' : `${created.benchmarks.length - removed} benchmark fixture row(s) remain`,
           cleanupVerified: allGone,
+          kind: 'cleanup',
         })
       }
       if (admin?.client) {
@@ -1539,19 +1801,24 @@ async function main() {
 
   // ── Matrix + exit ──────────────────────────────────────────────────────────
   printMatrix()
+  const storageResidue = storageCleanupVerdict?.residualCount ?? 0
   const failed = results.filter((r) => r.status === 'FAIL').length
   // A BLOCK means a probe could not run under meaningful conditions. It is
   // never a pass, so it must fail the process just as a FAIL does (computeExitCode)
   // — otherwise an unconfigured pending matrix would leave the suite green.
   const blocked = results.filter((r) => r.status === 'BLOCK').length
-  const cleanupFailures = results.filter((r) => r.cleanupVerified === false).length
+  const cleanupFailures = results.filter((r) => (r.kind === 'cleanup' && r.status === 'FAIL') || r.cleanupVerified === false).length
   if (blocked > 0) {
     console.log(`\n${blocked} probe(s) BLOCKED — not executed under meaningful conditions; this is not a pass.`)
   }
   if (cleanupFailures > 0) {
-    console.log(`\n${cleanupFailures} cleanup failure(s) — synthetic rows may remain.`)
+    console.log(`\n${cleanupFailures} cleanup failure(s) — synthetic records or objects may remain.`)
   }
-  process.exit(computeExitCode({ failed, blocked, cleanupFailures }))
+  if (storageResidue > 0) {
+    console.log(`\n${storageResidue} synthetic storage object(s) from THIS run remain:`)
+    for (const r of storageCleanupVerdict.residual) console.log(`  ${r.bucket} :: ${r.path}`)
+  }
+  process.exit(computeExitCode({ failed, blocked, cleanupFailures, storageResidue }))
 }
 
 // Catalog checks run the committed SELECT-only VERIFY files against staging and
