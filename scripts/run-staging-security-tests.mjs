@@ -606,6 +606,49 @@ export function assertAdminCleanupClient(session) {
   return { ok: true, reason: '' }
 }
 
+// B2. THE AUTHORITATIVE cleanup-authority check.
+//
+// `label` above is assigned locally at the call site — `signedInClient(cfg,
+// cfg.admin, 'admin')` — so it is a naming convention, not a proven role. If
+// STAGING_ADMIN_* pointed at any other account that can sign in, a label-only
+// check would pass, the delete would silently no-op, AND the residue sweep would
+// go blind: under "farmer read own" a farmer sees only its own prefix and gets an
+// empty list with no error for every other prefix. That is precisely the original
+// false-clean condition, so authority must come from the database, not from us.
+//
+// Asks the database once, immediately before the cleanup phase. Fails closed on
+// anything that is not a literal `true`.
+export async function verifyAdminCleanupAuthority(session) {
+  const deny = (kind, reason) => ({ ok: false, kind, reason })
+
+  if (!session || !session.client) {
+    return deny('invalid-session', 'storage cleanup requires an authenticated admin session; none was supplied')
+  }
+  if (!session.userId) {
+    return deny('invalid-session', 'the cleanup session carries no user id — it is not a completed sign-in')
+  }
+
+  let res
+  try {
+    res = await session.client.rpc('is_ddp_admin')
+  } catch (e) {
+    return deny('rpc-failure', `is_ddp_admin() threw: ${String(e?.message || e).slice(0, 60)} — cleanup authority is unproven`)
+  }
+  if (!res || typeof res !== 'object') {
+    return deny('inconclusive', 'is_ddp_admin() returned an unrecognised response shape — cleanup authority is unproven')
+  }
+  if (res.error) {
+    return deny('rpc-failure', `is_ddp_admin() failed: ${String(res.error.message || res.error).slice(0, 60)} — cleanup authority is unproven`)
+  }
+  if (res.data === true) {
+    return { ok: true, kind: 'verified-admin', reason: '' }
+  }
+  if (res.data === false) {
+    return deny('not-admin', `is_ddp_admin() returned false for the configured cleanup account (label "${session.label ?? 'unknown'}") — it cannot delete from the farmer buckets, and its residue sweep would be blind`)
+  }
+  return deny('inconclusive', `is_ddp_admin() returned ${res.data === null ? 'null' : typeof res.data} rather than a boolean — cleanup authority is unproven`)
+}
+
 // C. DIAGNOSTIC ONLY — never a verdict.
 //
 // The pinned client documents a SUCCESSFUL remove() as `{ data: [], error: null }`
@@ -699,8 +742,11 @@ export function evaluateStorageCleanup(obs) {
     // Non-authoritative diagnostics.
     reportedDeleted: deleted,
     notEchoed: missing,
+    // Success is stated in sweep-derived terms only. The API response count is
+    // carried as an explicitly non-authoritative aside — it is never called
+    // "deleted", and it never decides anything.
     reason: problems.length === 0
-      ? `created=${created} requested=${requested} remaining=0 (absence proven by paginated sweep)`
+      ? `cleanup verified: created=${created} requested=${requested} remaining=0 absenceSweep=clean (apiResponseItems=${deleted}, non-authoritative)`
       : problems.join(' | '),
   }
 }
@@ -1666,17 +1712,20 @@ async function main() {
       // was requested, and absence is then proven by an explicitly paginated
       // sweep over BOTH buckets scoped to this run's tag.
       {
-        const guard = assertAdminCleanupClient(admin)
+        // Authority is proven by the DATABASE, once, before any remove() or list().
+        // A local `admin` label is descriptive only and can never authorise this
+        // phase. Anything short of is_ddp_admin() === true fails closed: no delete
+        // is attempted, no sweep is claimed, and the run exits non-zero.
+        const authority = await verifyAdminCleanupAuthority(admin)
         const requestedPaths = []
         const deletionErrors = []
         const notEchoedPaths = []  // diagnostic only — see compareRequestedAndDeletedPaths
         let deletedCount = 0
 
-        if (!guard.ok && created.storageObjects.length) {
-          recordCleanup('storage cleanup identity', false, guard.reason)
-        }
+        recordCleanup('storage cleanup authority proven (is_ddp_admin)', authority.ok,
+          authority.ok ? 'verified against the database' : redactSecrets(`${authority.kind}: ${authority.reason}`))
 
-        if (guard.ok && created.storageObjects.length) {
+        if (authority.ok && created.storageObjects.length) {
           for (const bucket of STORAGE_CLEANUP_BUCKETS) {
             const paths = created.storageObjects.filter((o) => o.bucket === bucket).map((o) => o.path)
             if (!paths.length) continue
@@ -1708,7 +1757,7 @@ async function main() {
         const residual = []
         let sweepTruncated = false
         const sweepErrors = []
-        if (guard.ok) {
+        if (authority.ok) {
           const prefixes = [...new Set(created.storageObjects.map((o) => o.path.includes('/') ? o.path.split('/')[0] : ''))]
           for (const bucket of STORAGE_CLEANUP_BUCKETS) {
             for (const prefix of prefixes) {
@@ -1730,15 +1779,22 @@ async function main() {
           residual,
           errors: [...deletionErrors, ...sweepErrors],
           truncated: sweepTruncated,
-          configError: guard.ok ? null : guard.reason,
+          configError: authority.ok ? null : `cleanup authority not proven (${authority.kind}): ${authority.reason}`,
         })
         storageCleanupVerdict = verdict
         recordCleanup('removed synthetic storage objects', verdict.ok, redactSecrets(verdict.reason))
         // Global residue assertion — the storage counterpart of the farms check.
-        recordCleanup('zero residual current-run storage objects', verdict.residualCount === 0,
-          verdict.residualCount === 0
-            ? `created=${verdict.created} requested=${verdict.requested} deleted=${verdict.deleted} remaining=0`
-            : redactSecrets(verdict.residual.map((r) => `${r.bucket}/${r.path}`).join(', ')))
+        // "Zero residue" may only be claimed when the sweep actually ran, under a
+        // proven admin identity, completely. Otherwise absence is UNPROVEN, which
+        // is a failure — never a silent pass.
+        const residueProven = authority.ok && !sweepTruncated && sweepErrors.length === 0
+        recordCleanup('zero residual current-run storage objects',
+          residueProven && verdict.residualCount === 0,
+          residueProven
+            ? (verdict.residualCount === 0
+              ? `requested=${verdict.requested} remaining=0 absenceSweep=clean`
+              : redactSecrets(verdict.residual.map((r) => `${r.bucket}/${r.path}`).join(', ')))
+            : 'absence UNPROVEN — the paginated sweep did not complete under a proven admin identity')
       }
       // Batches then farms, matching the run tag AND tracked ids.
       if (created.batches.length && a?.client) {

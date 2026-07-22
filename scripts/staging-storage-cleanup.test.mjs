@@ -31,6 +31,7 @@ import { describe, it, expect } from 'vitest'
 import {
   registerStorageFixture,
   assertAdminCleanupClient,
+  verifyAdminCleanupAuthority,
   compareRequestedAndDeletedPaths,
   collectPaginatedRunObjects,
   evaluateStorageCleanup,
@@ -53,12 +54,33 @@ const listerFor = (byPrefix) => ({ prefix, limit, offset }) => {
   return Promise.resolve({ data: rows.slice(offset, offset + limit), error: null })
 }
 
-// Drive the same sequence the harness performs: remove(), then sweep, then judge.
-async function runCleanup({ registered, removeResult = REMOVE_SUCCESS, remaining = {} , guard = { ok: true, reason: '' } }) {
+// Drive the exact sequence the harness performs, in order:
+//   1. verifyAdminCleanupAuthority()  2. remove()  3. paginated absence sweep
+// `calls` records every side effect so ordering and fail-closed behaviour are
+// directly assertable offline.
+async function runCleanup({ registered, removeResult = REMOVE_SUCCESS, remaining = {}, adminRpc = { data: true, error: null } }) {
+  const calls = []
+  const session = {
+    userId: 'admin-uid',
+    label: 'admin',
+    client: {
+      rpc: async (fn) => {
+        calls.push(`rpc:${fn}`)
+        if (typeof adminRpc === 'function') return adminRpc()
+        return adminRpc
+      },
+    },
+  }
+
+  // 1. authority
+  const authority = await verifyAdminCleanupAuthority(session)
+
   const errors = []
   let reportedDeleted = 0
   const notEchoed = []
-  if (guard.ok) {
+  // 2. remove — only when authority is proven
+  if (authority.ok) {
+    calls.push('remove')
     if (removeResult.error) {
       errors.push(`farmer-documents: ${removeResult.error.message}`)
     } else {
@@ -67,11 +89,13 @@ async function runCleanup({ registered, removeResult = REMOVE_SUCCESS, remaining
       notEchoed.push(...cmp.missing)
     }
   }
+  // 3. sweep — only when authority is proven
   const residual = []
   let truncated = false
-  if (guard.ok) {
+  if (authority.ok) {
     for (const bucket of STORAGE_CLEANUP_BUCKETS) {
       for (const prefix of [...new Set(registered.map((r) => r.path.split('/')[0]))]) {
+        calls.push('list')
         const swept = await collectPaginatedRunObjects(listerFor(remaining[bucket] ?? {}), { bucket, prefix, tag: TAG })
         if (swept.error) { errors.push(String(swept.error.message)); continue }
         if (swept.truncated) truncated = true
@@ -79,16 +103,17 @@ async function runCleanup({ registered, removeResult = REMOVE_SUCCESS, remaining
       }
     }
   }
-  return evaluateStorageCleanup({
+  const verdict = evaluateStorageCleanup({
     created: registered.length,
-    requested: guard.ok ? registered.length : 0,
+    requested: authority.ok ? registered.length : 0,
     deleted: reportedDeleted,
     missing: notEchoed,
     residual,
     errors,
     truncated,
-    configError: guard.ok ? null : guard.reason,
+    configError: authority.ok ? null : `cleanup authority not proven (${authority.kind}): ${authority.reason}`,
   })
+  return { ...verdict, calls, authority }
 }
 
 // ── Test A — the documented successful response ─────────────────────────────
@@ -98,7 +123,7 @@ describe('Test A — an empty remove() payload with a clean sweep is a success',
     const verdict = await runCleanup({ registered, remaining: { 'farmer-documents': { [FARMER_A]: [] } } })
     expect(verdict.ok).toBe(true)
     expect(verdict.residualCount).toBe(0)
-    expect(verdict.reason).toContain('absence proven by paginated sweep')
+    expect(verdict.reason).toContain('absenceSweep=clean')
     expect(computeSecurityHarnessExitCode({ storageResidue: verdict.residualCount })).toBe(0)
   })
 
@@ -302,14 +327,10 @@ describe('cleanup refuses a non-admin identity before deleting', () => {
     expect(assertAdminCleanupClient({ client: {}, label: 'admin' }).ok).toBe(true)
   })
 
-  it('turns a misconfigured identity into a cleanup failure without sweeping', async () => {
-    const guard = assertAdminCleanupClient({ client: {}, label: 'farmer B' })
-    const verdict = await runCleanup({
-      registered: [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }],
-      guard,
-    })
-    expect(verdict.ok).toBe(false)
-    expect(verdict.reason).toContain('admin session')
+  it('the structural label check remains available as descriptive metadata', () => {
+    // Retained for reporting, but it no longer authorises anything — see the
+    // is_ddp_admin() suite below.
+    expect(assertAdminCleanupClient({ client: {}, label: 'admin' }).ok).toBe(true)
   })
 })
 
@@ -397,5 +418,155 @@ describe('compareRequestedAndDeletedPaths is diagnostic only', () => {
     const verdict = evaluateStorageCleanup({ created: 0, requested: 0, residual: [] })
     expect(verdict.ok).toBe(true)
     expect(compareRequestedAndDeletedPaths([], []).ok).toBe(true)
+  })
+})
+
+// ── Cleanup authority — proven by the database, never by a local label ──────
+//
+// `label` is assigned at the call site (`signedInClient(cfg, cfg.admin, 'admin')`),
+// so it is a naming convention. If STAGING_ADMIN_* pointed at any other signable
+// account, a label-only check would pass, the delete would silently no-op, AND the
+// residue sweep would go blind — under "farmer read own" a farmer sees only its own
+// prefix and gets an empty list with no error for every other prefix. That is the
+// original false-clean condition. Authority therefore comes from is_ddp_admin().
+describe('cleanup authority is proven by is_ddp_admin(), not by a local label', () => {
+  const session = (over = {}) => ({
+    userId: 'uid', label: 'admin',
+    client: { rpc: async () => over.rpc ?? { data: true, error: null } },
+    ...over.session,
+  })
+
+  // Test A — forged local admin label
+  it('A — rejects a session labelled admin when is_ddp_admin() is false', async () => {
+    const r = await verifyAdminCleanupAuthority(session({ rpc: { data: false, error: null } }))
+    expect(r.ok).toBe(false)
+    expect(r.kind).toBe('not-admin')
+    expect(r.reason).toContain('cannot delete from the farmer buckets')
+  })
+
+  it('A — a forged label performs no remove and no list, and exits 1', async () => {
+    const out = await runCleanup({
+      registered: [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }],
+      adminRpc: { data: false, error: null },
+      remaining: { 'farmer-documents': { [FARMER_A]: [`${TAG}.txt`] } },
+    })
+    expect(out.calls).toEqual(['rpc:is_ddp_admin'])   // nothing after the check
+    expect(out.calls).not.toContain('remove')
+    expect(out.calls).not.toContain('list')
+    expect(out.ok).toBe(false)
+    expect(out.reason).toContain('authority not proven')
+    expect(computeSecurityHarnessExitCode({ cleanupFailures: 1 })).toBe(1)
+  })
+
+  // Test B — RPC error
+  it('B — fails closed on an is_ddp_admin() error, without touching storage', async () => {
+    const out = await runCleanup({
+      registered: [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }],
+      adminRpc: { data: null, error: { message: 'permission denied for function is_ddp_admin' } },
+    })
+    expect(out.authority.kind).toBe('rpc-failure')
+    expect(out.calls).toEqual(['rpc:is_ddp_admin'])
+    expect(out.ok).toBe(false)
+    expect(out.reason).toContain('permission denied')
+    expect(computeSecurityHarnessExitCode({ cleanupFailures: 1 })).toBe(1)
+  })
+
+  it('B — fails closed when the RPC throws', async () => {
+    const thrower = { userId: 'uid', label: 'admin', client: { rpc: async () => { throw new Error('network down') } } }
+    const r = await verifyAdminCleanupAuthority(thrower)
+    expect(r.ok).toBe(false)
+    expect(r.kind).toBe('rpc-failure')
+    expect(r.reason).toContain('network down')
+  })
+
+  // Test C — inconclusive responses
+  it('C — fails closed on null, undefined, a non-boolean or a malformed shape', async () => {
+    for (const data of [null, undefined, 'true', 1, {}, []]) {
+      const r = await verifyAdminCleanupAuthority(session({ rpc: { data, error: null } }))
+      expect(r.ok, `data=${JSON.stringify(data)}`).toBe(false)
+      expect(r.kind).toBe('inconclusive')
+    }
+    const noShape = { userId: 'uid', label: 'admin', client: { rpc: async () => null } }
+    expect((await verifyAdminCleanupAuthority(noShape)).kind).toBe('inconclusive')
+  })
+
+  it('C — rejects a session with no client or no user id before calling anything', async () => {
+    expect((await verifyAdminCleanupAuthority(null)).kind).toBe('invalid-session')
+    expect((await verifyAdminCleanupAuthority({ userId: 'uid' })).kind).toBe('invalid-session')
+    let called = false
+    const noUid = { label: 'admin', client: { rpc: async () => { called = true; return { data: true, error: null } } } }
+    expect((await verifyAdminCleanupAuthority(noUid)).kind).toBe('invalid-session')
+    expect(called).toBe(false)
+  })
+
+  // Test D — verified admin
+  it('D — accepts a signed-in session whose is_ddp_admin() is literally true', async () => {
+    const r = await verifyAdminCleanupAuthority(session())
+    expect(r.ok).toBe(true)
+    expect(r.kind).toBe('verified-admin')
+  })
+
+  it('D — a label other than "admin" still passes when the database says admin', async () => {
+    // The database is authoritative; the label is descriptive only.
+    const odd = { userId: 'uid', label: 'ops', client: { rpc: async () => ({ data: true, error: null }) } }
+    expect((await verifyAdminCleanupAuthority(odd)).ok).toBe(true)
+  })
+
+  // Test E — ordering
+  it('E — verification happens before any remove or list', async () => {
+    const out = await runCleanup({
+      registered: [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }],
+      remaining: { 'farmer-documents': { [FARMER_A]: [] } },
+    })
+    expect(out.calls[0]).toBe('rpc:is_ddp_admin')
+    expect(out.calls.indexOf('remove')).toBe(1)
+    expect(out.calls.indexOf('list')).toBeGreaterThan(out.calls.indexOf('remove'))
+    expect(out.calls.filter((c) => c === 'rpc:is_ddp_admin')).toHaveLength(1) // asked once
+  })
+})
+
+// ── Success reporting ───────────────────────────────────────────────────────
+describe('the success line reports sweep-derived facts and never renders undefined', () => {
+  // Test F
+  it('F — a verified clean run prints no "undefined" and claims no API proof', async () => {
+    const out = await runCleanup({
+      registered: [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }],
+      remaining: { 'farmer-documents': { [FARMER_A]: [] } },
+    })
+    expect(out.ok).toBe(true)
+    expect(out.reason).not.toContain('undefined')
+    expect(out.reason).toContain('remaining=0')
+    expect(out.reason).toContain('absenceSweep=clean')
+    // The API response is never described as proof of deletion.
+    expect(out.reason).not.toMatch(/\bdeleted=/)
+    expect(out.reason).not.toMatch(/confirmed deleted|verified deleted|deletion count/i)
+  })
+
+  it('F — no verdict field used in reporting can be undefined', async () => {
+    const out = await runCleanup({
+      registered: [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }],
+      remaining: { 'farmer-documents': { [FARMER_A]: [] } },
+    })
+    for (const f of ['created', 'requested', 'residualCount', 'reportedDeleted']) {
+      expect(out[f], f).toBeDefined()
+    }
+    expect(`requested=${out.requested} remaining=${out.residualCount}`).not.toContain('undefined')
+  })
+
+  // Test G — the API diagnostic stays labelled and inert
+  it('G — the API item count is labelled non-authoritative and changes nothing', async () => {
+    const registered = [{ bucket: 'farmer-documents', path: `${FARMER_A}/${TAG}.txt` }]
+    const clean = { 'farmer-documents': { [FARMER_A]: [] } }
+    const empty = await runCleanup({ registered, remaining: clean })
+    const rich = await runCleanup({
+      registered, remaining: clean,
+      removeResult: { data: [{ name: 'totally/unrelated.txt' }], error: null },
+    })
+    expect(empty.reason).toContain('apiResponseItems=0')
+    expect(empty.reason).toContain('non-authoritative')
+    // A mismatched payload changes the diagnostic but never the verdict.
+    expect(rich.ok).toBe(true)
+    expect(empty.ok).toBe(true)
+    expect(rich.residualCount).toBe(empty.residualCount)
   })
 })
