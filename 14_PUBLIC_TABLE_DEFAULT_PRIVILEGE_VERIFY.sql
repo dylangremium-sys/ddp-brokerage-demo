@@ -70,39 +70,75 @@ FROM (
 ) x
 ORDER BY grantee;
 
--- V4. EXISTING tables unaffected: a known existing table still grants anon the
---     full set (proves default-privilege change did NOT touch existing objects).
-SELECT 'existing table public.farms unchanged for anon' AS check,
-       CASE WHEN has_table_privilege('anon', 'public.farms', 'TRUNCATE')
-             AND has_table_privilege('anon', 'public.farms', 'TRIGGER')
+-- V4. DEFAULT privileges are distinct from privileges on EXISTING tables.
+--
+--     WAS: asserted anon still HOLDS TRUNCATE + TRIGGER on public.farms, to show
+--     migration 14 had not retroactively touched existing objects. Migration 15
+--     then deliberately revoked exactly those privileges on all 20 tables — so
+--     this assertion demanded the insecure state that a later migration removed,
+--     and 15's own V1 asserts the precise opposite. It was superseded on arrival.
+--
+--     NOW: assert the separation that migration 14 really guarantees — its
+--     default-ACL change did not itself confer anything on an existing table.
+--     SELECT/INSERT remain (the client roles legitimately hold them); the
+--     dangerous non-CRUD privileges must be absent, per migration 15.
+SELECT 'existing-table posture (post-migration-15)' AS check,
+       CASE WHEN NOT has_table_privilege('anon', 'public.farms', 'TRUNCATE')
+             AND NOT has_table_privilege('anon', 'public.farms', 'TRIGGER')
+             AND NOT has_table_privilege('anon', 'public.farms', 'REFERENCES')
+             AND NOT has_table_privilege('anon', 'public.farms', 'MAINTAIN')
              AND has_table_privilege('anon', 'public.farms', 'SELECT')
             THEN 'PASS' ELSE 'FAIL' END AS result;
 
--- V5. Baseline object counts unchanged (20 tables → also confirms no Buyer Pack
---     table was introduced; 6 functions → no Buyer Pack function).
-SELECT 'object counts' AS check,
-       CASE WHEN tables = 20 AND policies = 43 AND storage_fd = 3
-             AND app_funcs = 6 AND pub_triggers = 4 AND force_rls = 0
+-- V5. GROWTH-TOLERANT structural invariants, replacing frozen object counts.
+--
+--     WAS: tables = 20 AND policies = 43 AND app_funcs = 6 AND pub_triggers = 4.
+--     Migrations 10, 17 and 22 legitimately added tables, policies, functions and
+--     triggers, so this failed for growth alone (24/63/11/12) while detecting no
+--     privilege change whatsoever. A count is not a security property.
+--
+--     NOW: assert the properties that must hold no matter how many objects exist.
+--     RLS must be ON for every table in public — a new table shipped without RLS
+--     is exactly the regression worth catching, and a count could never see it.
+SELECT 'structural invariants (count-independent)' AS check,
+       CASE WHEN tables_without_rls = 0
+             AND force_rls = 0
+             AND storage_fd >= 3
             THEN 'PASS' ELSE 'FAIL' END AS result,
-       tables, policies, storage_fd, app_funcs, pub_triggers, force_rls
+       tables_total, tables_without_rls, force_rls, storage_fd
 FROM (
   SELECT (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'public' AND c.relkind = 'r') AS tables,
-         (SELECT count(*) FROM pg_policies WHERE schemaname = 'public') AS policies,
+            WHERE n.nspname = 'public' AND c.relkind = 'r') AS tables_total,
+         -- Every public table must have RLS enabled; zero exceptions.
+         (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity) AS tables_without_rls,
+         -- FORCE RLS stays off (table owners are not subject to RLS by design here).
+         (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relforcerowsecurity) AS force_rls,
+         -- The farmer-documents storage policies must not be dropped (>= allows
+         -- later additions such as migration 22's restrictive overlay).
          (SELECT count(*) FROM pg_policies
             WHERE schemaname = 'storage' AND tablename = 'objects'
-              AND policyname LIKE 'farmer-documents%') AS storage_fd,
-         (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-            WHERE n.nspname = 'public' AND p.prokind = 'f') AS app_funcs,
-         (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-            JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'public' AND NOT t.tgisinternal) AS pub_triggers,
-         (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relforcerowsecurity) AS force_rls
+              AND policyname LIKE 'farmer-documents%') AS storage_fd
 ) x;
 
--- V6. Migration 11 remains active; FARM_RESAVE guard remains absent.
-SELECT 'mig11 active & farm-resave absent' AS check,
+-- V6. Migration 11 remains active.
+--
+--     WAS: also required `fn_protect_farm_admin_fields()` to be ABSENT, as a
+--     proxy for "the superseded FARM_RESAVE draft was never applied". Migration
+--     19 then installed a function of that exact name as the canonical farm
+--     admin-field guard, so the absence check now fires on the intended object.
+--
+--     NOW: assert migration 11's trigger is intact, and that when the guard
+--     function exists it is the migration-19 implementation (is_ddp_admin-based,
+--     no hardcoded 'admin' role literal) rather than the rejected draft.
+SELECT 'mig11 active & farm guard is the migration-19 implementation' AS check,
        CASE WHEN EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'compliance_audit_log_no_truncate')
-             AND to_regprocedure('public.fn_protect_farm_admin_fields()') IS NULL
+             AND (
+               to_regprocedure('public.fn_protect_farm_admin_fields()') IS NULL
+               OR (
+                 pg_get_functiondef(to_regprocedure('public.fn_protect_farm_admin_fields()')) LIKE '%is_ddp_admin%'
+                 AND pg_get_functiondef(to_regprocedure('public.fn_protect_farm_admin_fields()')) NOT LIKE '%= ''admin''%'
+               )
+             )
             THEN 'PASS' ELSE 'FAIL' END AS result;
