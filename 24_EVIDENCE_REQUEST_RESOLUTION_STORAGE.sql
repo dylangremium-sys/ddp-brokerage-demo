@@ -84,12 +84,32 @@ CREATE POLICY "evidence-request-files: admin read"
 
 -- 2.2 Authorized farmers may read objects belonging to a farm they can access.
 DROP POLICY IF EXISTS "evidence-request-files: farmer read own farm" ON storage.objects;
+--     Read authority is tied to a LIVE ATTACHMENT ROW, not to the path prefix.
+--
+--     This previously granted SELECT on anything whose first path segment was a
+--     farm the caller can access. That made read access a property of the NAME
+--     rather than of the workflow: any object under a known farm prefix was
+--     readable, including one with no attachment row at all. Combined with the
+--     removal protocol that is exactly the wrong shape — an object that lost or
+--     never had its owning row stayed readable to every farm member with no way
+--     to delete it, since the DELETE policy does key on the attachment row.
+--
+--     Anchoring both SELECT and DELETE to the same row removes that asymmetry:
+--     an object is readable only while a workflow row claims it, and the farm is
+--     taken from the request rather than parsed out of the object name.
 CREATE POLICY "evidence-request-files: farmer read own farm"
   ON storage.objects FOR SELECT
   USING (
     bucket_id = 'evidence-request-files'
-    AND public.can_operationally_access_farm(
-          NULLIF((string_to_array(name, '/'))[1], '')::uuid)
+    AND EXISTS (
+      SELECT 1
+      FROM public.evidence_request_attachments a
+      JOIN public.evidence_requests er ON er.id = a.request_id
+      WHERE a.storage_bucket = 'evidence-request-files'
+        AND a.storage_object_path = storage.objects.name
+        AND a.origin = 'request_upload'
+        AND public.can_operationally_access_farm(er.farm_id)
+    )
   );
 
 -- 2.3 Farmers may INSERT only into a path reserved for them by
@@ -161,7 +181,17 @@ CREATE POLICY "evidence-request-files: farmer delete own draft"
         AND a.origin = 'request_upload'
         AND a.removal_requested_at IS NOT NULL
         AND r.state = 'draft'
-        AND er.status IN ('open','clarification_requested')
+        -- DELIBERATELY NOT gated on er.status. Requiring an actionable request
+        -- here made this policy and remove_draft_evidence_attachment mutually
+        -- gating: after an admin cancelled/resolved/rejected a request holding a
+        -- farmer's draft upload, neither the marker could be set nor the object
+        -- deleted, stranding unsubmitted files until privileged manual cleanup.
+        -- Every other condition still applies, and they are what actually
+        -- authorize the delete: the exact reserved path, the attachment's
+        -- creator, an explicit removal authorization from the RPC, a DRAFT
+        -- response (so submitted evidence is never deletable), and operational
+        -- access to the owning farm. Adding evidence still requires an
+        -- actionable request — see the INSERT policy above, which keeps it.
         AND public.can_operationally_access_farm(er.farm_id)
     )
   );
