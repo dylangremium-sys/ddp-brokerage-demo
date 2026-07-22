@@ -722,3 +722,179 @@ describe('VERIFY 15/V8 — the SECURITY INVOKER exemption is signature-scoped', 
     expect(c).not.toMatch(/proname\s*(=|<>|IN)/)
   })
 })
+
+// ── Required audit-log guard triggers ──────────────────────────────────────
+//
+// V5 enumerates triggers that EXIST, so a dropped guard emits no row and the
+// harness — which fails a VERIFY file only when its output contains the literal
+// FAIL — sees nothing. `V6 triggers = 4` was the sole detector and was removed.
+// 11_..._VERIFY.sql is NOT a backstop: it emits counts/rows for human reading
+// and contains zero FAIL verdicts, so it can never fail the harness.
+
+const GUARD_FN = 'prevent_compliance_audit_log_mutation()'
+const AUDIT_TABLE = 'compliance_audit_log'
+const REQUIRED_TRIGGERS = ['compliance_audit_log_no_truncate', 'compliance_audit_log_no_update_delete']
+
+const trg = (tgname, over = {}) => ({
+  tgname, onTable: AUDIT_TABLE, fn: GUARD_FN, enabled: 'A', ...over,
+})
+const BOTH_GUARDS = REQUIRED_TRIGGERS.map((n) => trg(n))
+
+// Mirrors V5a's anti-join + CASE ladder.
+const triggerDefects = (catalog) => REQUIRED_TRIGGERS.map((name) => {
+  const t = catalog.find((x) => x.tgname === name)
+  if (!t) return `${name}: ABSENT`
+  if (t.onTable !== AUDIT_TABLE) return `${name}: WRONG_TABLE`
+  if (t.fn !== GUARD_FN) return `${name}: WRONG_FUNCTION`
+  if (t.enabled !== 'A') return `${name}: DISABLED`
+  return null
+}).filter(Boolean)
+
+// Mirrors the OLD existence-driven V5: one row per trigger that EXISTS.
+const v5RowsEmitted = (catalog) => catalog.filter((t) => t.onTable === AUDIT_TABLE).length
+
+describe('VERIFY 15/V5a — required audit-log triggers are driven from an expected set', () => {
+  it('1. both required triggers present and correctly wired → PASS', () => {
+    expect(triggerDefects(BOTH_GUARDS)).toEqual([])
+  })
+
+  it('2. compliance_audit_log_no_update_delete absent → FAIL', () => {
+    const c = BOTH_GUARDS.filter((t) => t.tgname !== 'compliance_audit_log_no_update_delete')
+    expect(triggerDefects(c)).toEqual(['compliance_audit_log_no_update_delete: ABSENT'])
+  })
+
+  it('3. compliance_audit_log_no_truncate absent → FAIL', () => {
+    const c = BOTH_GUARDS.filter((t) => t.tgname !== 'compliance_audit_log_no_truncate')
+    expect(triggerDefects(c)).toEqual(['compliance_audit_log_no_truncate: ABSENT'])
+  })
+
+  it('4. a required trigger renamed → FAIL under the expected name', () => {
+    const c = [trg('compliance_audit_log_no_truncate'), trg('audit_no_update_delete_v2')]
+    expect(triggerDefects(c)).toEqual(['compliance_audit_log_no_update_delete: ABSENT'])
+  })
+
+  it('5. trigger attached to the wrong table → FAIL as WRONG_TABLE', () => {
+    const c = [trg('compliance_audit_log_no_truncate'),
+      trg('compliance_audit_log_no_update_delete', { onTable: 'farms' })]
+    expect(triggerDefects(c)).toEqual(['compliance_audit_log_no_update_delete: WRONG_TABLE'])
+  })
+
+  it('6. trigger wired to the wrong function → FAIL as WRONG_FUNCTION', () => {
+    const c = [trg('compliance_audit_log_no_truncate'),
+      trg('compliance_audit_log_no_update_delete', { fn: 'some_other_guard()' })]
+    expect(triggerDefects(c)).toEqual(['compliance_audit_log_no_update_delete: WRONG_FUNCTION'])
+  })
+
+  it('7. trigger disabled (not ENABLE ALWAYS) → FAIL as DISABLED', () => {
+    for (const state of ['O', 'D', 'R']) {
+      const c = [trg('compliance_audit_log_no_truncate'),
+        trg('compliance_audit_log_no_update_delete', { enabled: state })]
+      expect(triggerDefects(c), `enabled=${state}`).toEqual(['compliance_audit_log_no_update_delete: DISABLED'])
+    }
+  })
+
+  it('8. an additional unrelated trigger → PASS', () => {
+    const c = [...BOTH_GUARDS, trg('some_new_audit_trigger', { fn: 'other()' })]
+    expect(triggerDefects(c)).toEqual([])
+  })
+
+  it('9. existing-trigger property checks still fail on a malformed PRESENT trigger', () => {
+    // V5 (unchanged) grades attributes of triggers that exist; V5a grades presence.
+    // A present-but-disabled trigger is caught by both, from different angles.
+    const c = [trg('compliance_audit_log_no_truncate'),
+      trg('compliance_audit_log_no_update_delete', { enabled: 'O' })]
+    expect(v5RowsEmitted(c)).toBe(2)                       // V5 still emits both rows
+    expect(triggerDefects(c)).toHaveLength(1)              // V5a also flags it
+  })
+
+  it('10. diagnostics name the exact trigger and defect class', () => {
+    const c = [trg('compliance_audit_log_no_update_delete', { onTable: 'farms' })]
+    const d = triggerDefects(c)
+    expect(d).toContain('compliance_audit_log_no_truncate: ABSENT')
+    expect(d).toContain('compliance_audit_log_no_update_delete: WRONG_TABLE')
+    expect(d).toHaveLength(2)
+  })
+
+  it('THE DEFECT: the old existence-driven query alone emits NO failure on absence', () => {
+    const oneDropped = BOTH_GUARDS.filter((t) => t.tgname !== 'compliance_audit_log_no_update_delete')
+    // Old V5: one row per EXISTING trigger — the dropped one simply is not there,
+    // so no row, no 'FAIL' literal, and the harness marks the file PASS.
+    expect(v5RowsEmitted(oneDropped)).toBe(1)
+    expect(v5RowsEmitted(oneDropped)).not.toBe(0)  // the surviving trigger still passes
+    // New V5a: absence is a finding.
+    expect(triggerDefects(oneDropped)).toEqual(['compliance_audit_log_no_update_delete: ABSENT'])
+  })
+
+  it('static: V5a anti-joins an expected trigger set with defect classes', () => {
+    const c = code(V15)
+    expect(c).toMatch(/WITH expected\(tgname\) AS \(/)
+    expect(c).toMatch(/'compliance_audit_log_no_truncate'/)
+    expect(c).toMatch(/'compliance_audit_log_no_update_delete'/)
+    for (const d of ['ABSENT', 'WRONG_TABLE', 'WRONG_FUNCTION', 'DISABLED']) {
+      expect(c, d).toMatch(new RegExp(`'${d}'`))
+    }
+    expect(c).toMatch(/LEFT JOIN pg_trigger t ON t\.tgname = e\.tgname/)
+    expect(c).toMatch(/to_regprocedure\('public\.prevent_compliance_audit_log_mutation\(\)'\)/)
+  })
+})
+
+// ── Deleted-count responsibility matrix ────────────────────────────────────
+//
+// The removed `V6 tables = 20 AND policies = 43 AND storage_fd = 3 AND funcs = 6
+// AND triggers = 4 AND force_rls = 0 AND rls_on = 20` was, incidentally, the only
+// absence detector for several object classes. This test enumerates every class
+// that line covered and asserts each now has either an explicit expected-object
+// anti-join, or a documented property check that makes one unnecessary.
+//
+// It fails if a future edit removes the last effective absence detector for a
+// required class. It deliberately encodes NO totals.
+describe('every object class the removed frozen count covered is still guarded', () => {
+  const c15 = code(V15)
+  const c14 = code(V14)
+  const c12 = code(V12)
+
+  const MATRIX = [
+    { cls: 'tables (governed)', detector: () => /WITH expected\(relname\) AS \(/.test(c15) && /'ABSENT'/.test(c15),
+      kind: 'expected-set anti-join' },
+    { cls: 'functions (required)', detector: () => /to_regprocedure\('public\.' \|\| e\.signature\) IS NULL AS missing/.test(c12),
+      kind: 'expected-set anti-join' },
+    { cls: 'triggers (audit guards)', detector: () => /WITH expected\(tgname\) AS \(/.test(c15) && /'ABSENT'/.test(c15),
+      kind: 'expected-set anti-join' },
+    { cls: 'storage policies (farmer-documents)', detector: () => /storage_fd >= 3/.test(c15) && /storage_fd >= 3/.test(c14),
+      kind: 'property: >= floor, fails on drop, tolerates additions' },
+    { cls: 'rls_on', detector: () => /tables_without_rls = 0/.test(c15) && /tables_without_rls = 0/.test(c14),
+      kind: 'property: stronger than a count — every table, present and future' },
+    { cls: 'force_rls', detector: () => /force_rls = 0/.test(c15) && /force_rls = 0/.test(c14),
+      kind: 'property: absolute, count-independent' },
+  ]
+
+  it.each(MATRIX)('$cls has an effective detector ($kind)', ({ detector }) => {
+    expect(detector()).toBe(true)
+  })
+
+  it('no class is guarded by a reinstated catalog total', () => {
+    for (const c of [c12, c14, c15]) {
+      expect(c).not.toMatch(/tables\s*=\s*\d+/)
+      expect(c).not.toMatch(/policies\s*=\s*\d+/)
+      expect(c).not.toMatch(/triggers\s*=\s*\d+/)
+      expect(c).not.toMatch(/rls_on\s*=\s*\d+/)
+    }
+  })
+
+  // Public RLS policies are the one class WITHOUT a harness-effective absence
+  // detector. This is asserted explicitly, not silently tolerated, so the gap is
+  // visible in the suite and cannot be mistaken for coverage. Closing it requires
+  // files outside this PR's permitted scope (see the PR discussion).
+  it('public RLS policy absence is a KNOWN, documented gap — asserted, not hidden', () => {
+    const harnessEffective = [c12, c14, c15]
+    const anyPublicPolicyAssertion = harnessEffective.some((c) =>
+      /pg_policies[\s\S]{0,120}schemaname\s*=\s*'public'/.test(c))
+    expect(anyPublicPolicyAssertion).toBe(false)
+    // …and the only pg_policies references that DO exist are storage-scoped.
+    for (const c of harnessEffective) {
+      for (const m of c.match(/pg_policies[\s\S]{0,90}/g) ?? []) {
+        expect(m).toMatch(/schemaname\s*=\s*'storage'/)
+      }
+    }
+  })
+})

@@ -146,6 +146,56 @@ WHERE t.tgrelid = 'public.compliance_audit_log'::regclass
   AND NOT t.tgisinternal
 ORDER BY t.tgname;
 
+-- V5a. REQUIRED audit-log guard triggers, driven from an EXPECTED set.
+--
+--      WHY: V5 above enumerates the triggers that EXIST on compliance_audit_log,
+--      so a dropped guard emits no row and therefore no FAIL. The removed
+--      `V6 triggers = 4` was the only thing that caught disappearance, and the
+--      staging harness marks a VERIFY file failed only when its output contains
+--      the literal FAIL — so without this, dropping
+--      `compliance_audit_log_no_update_delete` would leave the append-only
+--      guarantee silently unverified while the whole run reported PASS.
+--      11_..._VERIFY.sql is not a backstop: it emits counts and rows for human
+--      reading and contains no FAIL verdict at all.
+--
+--      Anti-joins the two required triggers and classifies the defect. Joining on
+--      tgname alone (trigger names are unique per table, not globally) is what
+--      lets WRONG_TABLE be distinguished from ABSENT.
+WITH expected(tgname) AS (
+  VALUES ('compliance_audit_log_no_truncate'),
+         ('compliance_audit_log_no_update_delete')
+),
+resolved AS (
+  SELECT e.tgname,
+         t.oid            AS trg_oid,
+         c.relname::text  AS on_table,
+         t.tgfoid         AS fn_oid,
+         t.tgenabled::text AS enabled
+  FROM expected e
+  LEFT JOIN pg_trigger t ON t.tgname = e.tgname AND NOT t.tgisinternal
+  LEFT JOIN pg_class   c ON c.oid = t.tgrelid
+),
+graded AS (
+  SELECT tgname,
+         CASE
+           WHEN trg_oid IS NULL
+             THEN 'ABSENT'
+           WHEN on_table IS DISTINCT FROM 'compliance_audit_log'
+             THEN 'WRONG_TABLE'
+           WHEN fn_oid IS DISTINCT FROM to_regprocedure('public.prevent_compliance_audit_log_mutation()')::oid
+             THEN 'WRONG_FUNCTION'
+           WHEN enabled <> 'A'
+             THEN 'DISABLED'
+         END AS defect
+  FROM resolved
+)
+SELECT 'V5a required audit-log guard triggers present' AS check,
+       CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       count(*) AS defective_triggers,
+       coalesce(string_agg(tgname || ': ' || defect, ', ' ORDER BY tgname), '') AS detail
+FROM graded
+WHERE defect IS NOT NULL;
+
 -- V6. RLS posture, count-independent.
 --
 --     WAS: tables = 20 AND policies = 43 AND funcs = 6 AND triggers = 4 AND
