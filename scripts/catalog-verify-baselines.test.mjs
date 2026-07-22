@@ -605,3 +605,120 @@ describe('the two-layer model holds for both scripts', () => {
     expect(missingSignatures([...ALL_PRESENT, 'issue_buyer_pack_snapshot(uuid,text)'])).toEqual([])
   })
 })
+
+// ── V8 exemption scoped to the exact reviewed signature ────────────────────
+//
+// The exemption for migration 17's RAISE-only trigger body was written as
+// `p.proname <> 'prevent_procurement_decision_mutation'` — a BARE NAME, so every
+// overload of that name was exempted. A future
+// `prevent_procurement_decision_mutation(uuid)` shipped as SECURITY INVOKER would
+// have escaped review, defeating the clause's documented purpose ("a NEW
+// non-definer function still surfaces here for a decision").
+//
+// This is the same bare-name-vs-exact-signature defect corrected for the PRESENCE
+// check one round earlier; it survived in the EXEMPTION clause. Only the exact
+// zero-argument signature is exempt now.
+
+const EXEMPT_SIGNATURE = 'prevent_procurement_decision_mutation()'
+
+// Mirrors V8's CASE, keyed on the exact regprocedure signature rather than name.
+const sigFn = (signature, over = {}) => ({
+  signature, owner: 'postgres', secdef: true, pinnedSearchPath: true,
+  publicExec: false, anonExec: false, ...over,
+})
+
+const v8Offenders = (fns) => fns
+  .map((f) => {
+    if (f.publicExec) return `${f.signature} [PUBLIC can EXECUTE]`
+    if (f.anonExec) return `${f.signature} [anon can EXECUTE]`
+    if (f.owner !== 'postgres') return `${f.signature} [owner is not postgres]`
+    if (f.secdef && !f.pinnedSearchPath) return `${f.signature} [SECURITY DEFINER without a pinned search_path]`
+    if (!f.secdef && f.signature !== EXEMPT_SIGNATURE) return `${f.signature} [not SECURITY DEFINER (review required)]`
+    return null
+  })
+  .filter(Boolean)
+
+const HEALTHY_SIGS = [
+  sigFn('is_ddp_admin()'), sigFn('has_farm_membership(uuid)'), sigFn('handle_new_user()'),
+  sigFn('fn_protect_owner_notes()'), sigFn('fn_protect_review_request_fields()'),
+  sigFn('prevent_compliance_audit_log_mutation()'), sigFn('fn_protect_farm_admin_fields()'),
+  sigFn('has_operational_farmer_access()'), sigFn('issue_buyer_pack_snapshot(uuid,text)'),
+  sigFn('prevent_buyer_pack_mutation()'),
+  sigFn(EXEMPT_SIGNATURE, { secdef: false }),   // the reviewed exception
+]
+
+describe('VERIFY 15/V8 — the SECURITY INVOKER exemption is signature-scoped', () => {
+  it('the exact reviewed zero-argument function remains exempt', () => {
+    expect(v8Offenders(HEALTHY_SIGS)).toEqual([])
+    // …and it is genuinely SECURITY INVOKER, i.e. the exemption is doing work.
+    expect(HEALTHY_SIGS.find((f) => f.signature === EXEMPT_SIGNATURE).secdef).toBe(false)
+  })
+
+  it('a same-name INVOKER overload is NOT exempt and fails V8', () => {
+    // The exact case Codex raised: bare-name matching would have exempted this.
+    const withOverload = [...HEALTHY_SIGS,
+      sigFn('prevent_procurement_decision_mutation(uuid)', { secdef: false })]
+    const offenders = v8Offenders(withOverload)
+    expect(offenders).toEqual(['prevent_procurement_decision_mutation(uuid) [not SECURITY DEFINER (review required)]'])
+    // The zero-argument original stays exempt alongside it.
+    expect(offenders.join(' ')).not.toContain(`${EXEMPT_SIGNATURE} [`)
+  })
+
+  it('a bare-name predicate would have exempted that overload — the defect', () => {
+    const overload = sigFn('prevent_procurement_decision_mutation(uuid)', { secdef: false })
+    const bareName = (sig) => sig.split('(')[0]
+    // Old behaviour: exempt because the NAME matches.
+    expect(bareName(overload.signature)).toBe(bareName(EXEMPT_SIGNATURE))
+    // New behaviour: not exempt, because the SIGNATURE differs.
+    expect(overload.signature).not.toBe(EXEMPT_SIGNATURE)
+    expect(v8Offenders([overload])).toHaveLength(1)
+  })
+
+  it('a same-name DEFINER overload with a pinned search_path passes', () => {
+    // Sharing the name must not fail it either — the exemption narrowed, it did
+    // not become a prohibition on the name.
+    const withDefinerOverload = [...HEALTHY_SIGS,
+      sigFn('prevent_procurement_decision_mutation(text)', { secdef: true, pinnedSearchPath: true })]
+    expect(v8Offenders(withDefinerOverload)).toEqual([])
+  })
+
+  it('a same-name DEFINER overload WITHOUT a pinned search_path still fails', () => {
+    const bad = [...HEALTHY_SIGS,
+      sigFn('prevent_procurement_decision_mutation(text)', { secdef: true, pinnedSearchPath: false })]
+    expect(v8Offenders(bad)).toEqual([
+      'prevent_procurement_decision_mutation(text) [SECURITY DEFINER without a pinned search_path]'])
+  })
+
+  it('an unrelated non-definer function still fails — the exemption did not broaden', () => {
+    const bad = [...HEALTHY_SIGS, sigFn('some_new_guard()', { secdef: false })]
+    expect(v8Offenders(bad)).toEqual(['some_new_guard() [not SECURITY DEFINER (review required)]'])
+  })
+
+  it('dangerous EXECUTE grants are still caught regardless of the exemption', () => {
+    const bad = [...HEALTHY_SIGS, sigFn(EXEMPT_SIGNATURE.replace('()', '(int)'), { secdef: false, anonExec: true })]
+    expect(v8Offenders(bad)[0]).toContain('[anon can EXECUTE]')
+  })
+
+  it('static: V8 compares an exact regprocedure signature, with no bare-name exemption', () => {
+    const c = code(V15)
+    expect(c).toMatch(/p\.oid::regprocedure::text <> 'prevent_procurement_decision_mutation\(\)'/)
+    expect(c).not.toMatch(/proname\s*<>\s*'prevent_procurement_decision_mutation'/)
+  })
+
+  it('static: the only remaining bare-name predicate is the trigger-wiring check', () => {
+    // pg_trigger -> pg_proc via tgfoid: a POSITIVE requirement that the trigger
+    // calls the guard, not an exemption. PostgreSQL trigger functions must be
+    // declared with zero parameters, so no overload with arguments can be
+    // attached to a trigger and impersonate it.
+    const bare = code(V15).split('\n').filter((l) => /proname\s*(=|<>|IN)/.test(l))
+    expect(bare).toHaveLength(1)
+    expect(bare[0]).toContain("fn.proname = 'prevent_compliance_audit_log_mutation'")
+    expect(code(V15)).toMatch(/JOIN pg_proc fn ON fn\.oid = t\.tgfoid/)
+  })
+
+  it('static: VERIFY 12 presence checks use exact signatures throughout', () => {
+    const c = code(V12)
+    expect(c).toMatch(/to_regprocedure\('public\.' \|\| e\.signature\)/)
+    expect(c).not.toMatch(/proname\s*(=|<>|IN)/)
+  })
+})

@@ -224,8 +224,14 @@ FROM (
            WHEN p.prosecdef AND NOT EXISTS (
                   SELECT 1 FROM unnest(coalesce(p.proconfig, array[]::text[])) s
                   WHERE s LIKE 'search_path=%')                    THEN 'SECURITY DEFINER without a pinned search_path'
+           -- Exemption scoped to the EXACT reviewed signature, not the bare name.
+           -- `proname <> '...'` would exempt every overload of that name, so a
+           -- future `prevent_procurement_decision_mutation(uuid)` shipped as
+           -- SECURITY INVOKER would escape review — defeating the very purpose of
+           -- this clause. regprocedure renders the identity signature, so only the
+           -- zero-argument trigger body reviewed under migration 17 is exempt.
            WHEN NOT p.prosecdef
-            AND p.proname <> 'prevent_procurement_decision_mutation'  -- reviewed: RAISE-only trigger body, migration 17
+            AND p.oid::regprocedure::text <> 'prevent_procurement_decision_mutation()'
                                                                       THEN 'not SECURITY DEFINER (review required)'
          END AS defect
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
