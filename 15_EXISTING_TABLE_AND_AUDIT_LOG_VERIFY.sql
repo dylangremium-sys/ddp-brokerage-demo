@@ -290,109 +290,118 @@ FROM (
 WHERE defect IS NOT NULL;
 
 -- V9. Required public RLS policies remain present, on the right table, with the
---     right command, mode, roles and enforcement clauses.
+--     right command, mode, roles — and with predicates that still MEAN what the
+--     migration intended.
 --
---     WHY: removing `V6 policies = 43` deleted the ONLY assertion in the whole
---     harness-effective set (12/14/15) that could notice a public RLS policy
---     disappearing. Nothing else covered it: V6 now checks that RLS is ENABLED
---     per table, which stays true when every policy on that table is dropped;
---     V2/V2a check table-level grants, not policies; and 14/V5 counts only the
---     `farmer-documents%` policies in schema `storage`. The staging harness marks
---     a VERIFY file failed only when its output contains the literal FAIL, and
---     22_..._VERIFY.sql — which does cover migration 22's policies — is not in
---     the harness allowlist and raises exceptions instead of emitting FAIL. So a
---     dropped policy was invisible end to end.
+--     WHY THIS EXISTS: removing `V6 policies = 43` deleted the only assertion in
+--     the harness-effective set (12/14/15) that could notice a public RLS policy
+--     disappearing. V6 now checks RLS is ENABLED per table, which stays true when
+--     every policy on that table is dropped; V2/V2a check table grants, not
+--     policies; 14/V5 counts only `storage` policies. 22_..._VERIFY.sql does
+--     cover migration 22's policies but is not in the harness allowlist
+--     (11/12/14/15) and raises exceptions instead of emitting FAIL, so it can
+--     never fail a run.
 --
---     Dropping a PERMISSIVE policy is fail-safe: access narrows. Dropping a
---     RESTRICTIVE one is NOT — it removes an AND-ed deny layer, so migration 22's
---     twelve restrictive overlays silently re-open the pending-account write path
---     that migration closed. That is a real privilege escalation, and it is the
---     specific regression this check exists to catch.
+--     WHY PRESENCE IS NOT ENOUGH: the first version of this check asserted only
+--     that `qual`/`with_check` were non-null. That accepts
+--         ALTER POLICY "farms: operational farmer or admin" ON public.farms
+--           USING (true) WITH CHECK (true);
+--     which leaves mode, command, roles and non-nullness all intact while
+--     completely neutering the policy — a RESTRICTIVE policy is AND-ed into every
+--     access decision, so `true` never denies. The pending-account write path
+--     migration 22 closed would silently re-open and the harness would report
+--     PASS. Non-null is a SHAPE check, not a SEMANTIC one; both are needed.
 --
---     A COUNT IS DELIBERATELY NOT RESTORED. `policies = 63` fails on legitimate
---     growth (exactly the defect this PR removes) and cannot see a swap: drop one
---     policy, add an unrelated one, and the count is unchanged while the security
---     property is gone. This anti-joins an EXPLICIT expected set instead, so
---     absence and substitution both fail while new policies are free to appear.
+--     METHOD (structural components, not canonical text). Each expected policy
+--     carries the set of gate tokens its predicate must still contain. The
+--     deparsed expression is normalized — lowercased, whitespace stripped,
+--     `public.` qualification stripped — then checked for every required token,
+--     plus rejection of trivial and bypass predicates.
 --
---     Clause checks assert PRESENCE of USING / WITH CHECK, never their text.
---     Comparing `qual` as a string would break on any semantically neutral
---     reformat or on PostgreSQL's own deparsing changes across versions.
+--     Exact canonical-text comparison was considered and deliberately NOT used.
+--     pg_get_expr's output is not the migration source text: it re-parenthesises,
+--     rewrites `IN (...)` as `= ANY (ARRAY[...])`, renames subquery aliases, and
+--     adds casts. Pinning a canonical string without observing the live catalog
+--     would hard-code a guess, and a wrong guess FAILS all 12 overlays against a
+--     perfectly healthy database — reintroducing the exact frozen-expectation
+--     defect this PR exists to remove. Gate tokens are restricted to constructs
+--     PostgreSQL deparses stably: function calls, EXISTS, and bare column names.
+--     Never IN-lists, literals or subquery aliases.
 --
---     The expected set is derived from the migration SQL (9, 10, 17, 21, 22,
---     RLS_ENABLE_STAGED, FARMER_MVP, INVENTORY_BATCHES_*, 4), not from a live
---     catalog snapshot. Two deliberate exclusions:
---       * `farm_profiles: farmer update own` — FARM_RESAVE_PERSISTENCE_MIGRATION
---         is an unapplied draft ("Do not run this file automatically"). Only its
---         `farms: farmer update own` half was applied, and that one IS required
---         below because 19_..._VERIFY.sql fails outright if it is missing and
---         19_..._ROLLBACK.sql treats dropping it as rollback overreach.
---       * storage.objects policies — different schema; 14/V5 owns those.
-WITH expected(tablename, policyname, cmd, permissive, roles, has_using, has_check) AS (
+--     Token presence alone would be too weak — `gate() OR true` still contains
+--     the gate — so TRIVIAL_* and BYPASS_PREDICATE are rejected independently.
+--     Tautology detection is undecidable in general; this rejects the realistic
+--     weakening forms, and every legitimate predicate in the corpus was verified
+--     to trip none of them.
+--
+--     Growth stays tolerated: this anti-joins an EXPECTED set, so unrelated new
+--     policies are free to appear. No catalog total is used anywhere.
+WITH expected(tablename, policyname, cmd, permissive, roles,
+              has_using, has_check, using_gates, check_gates) AS (
   VALUES
-    ('buyer_pack_audit_log', 'buyer_pack_audit_log: admin insert', 'INSERT', 'PERMISSIVE', 'public', false, true),
-    ('buyer_pack_audit_log', 'buyer_pack_audit_log: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('buyer_pack_download_log', 'buyer_pack_download_log: admin insert', 'INSERT', 'PERMISSIVE', 'public', false, true),
-    ('buyer_pack_download_log', 'buyer_pack_download_log: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('buyer_pack_snapshots', 'buyer_pack_snapshots: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('compliance_alerts', 'compliance_alerts: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('compliance_audit_log', 'compliance_audit_log: admin insert', 'INSERT', 'PERMISSIVE', 'public', false, true),
-    ('compliance_audit_log', 'compliance_audit_log: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('compliance_entity_status', 'compliance_entity_status: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('compliance_reviews', 'compliance_reviews: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('compliance_rules', 'compliance_rules: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('ddp_scores', 'ddp_scores: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('ddp_scores', 'ddp_scores: farmer select own farm', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('ddp_scores', 'ddp_scores: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('documents', 'documents: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('documents', 'documents: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('documents', 'documents: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('farm_memberships', 'farm_memberships: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('farm_memberships', 'farm_memberships: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
-    ('farm_memberships', 'farm_memberships: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('farm_memberships', 'farm_memberships: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('farm_profiles', 'farm_profiles: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('farm_profiles', 'farm_profiles: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
-    ('farm_profiles', 'farm_profiles: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('farm_profiles', 'farm_profiles: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('farmer_documents', 'farmer_documents: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('farmer_documents', 'farmer_documents: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
-    ('farmer_documents', 'farmer_documents: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('farmer_documents', 'farmer_documents: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('farmer_photos', 'farmer_photos: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('farmer_photos', 'farmer_photos: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
-    ('farmer_photos', 'farmer_photos: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('farmer_photos', 'farmer_photos: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('farmer_review_requests', 'farmer_review_requests: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('farmer_review_requests', 'farmer_review_requests: farmer resolve own', 'UPDATE', 'PERMISSIVE', 'public', true, true),
-    ('farmer_review_requests', 'farmer_review_requests: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('farmer_review_requests', 'farmer_review_requests: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('farms', 'farms: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('farms', 'farms: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
-    ('farms', 'farms: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('farms', 'farms: farmer update own', 'UPDATE', 'PERMISSIVE', 'authenticated', true, true),
-    ('farms', 'farms: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('inventory_batches', 'inventory_batches: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('inventory_batches', 'inventory_batches: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
-    ('inventory_batches', 'inventory_batches: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('inventory_batches', 'inventory_batches: farmer update own', 'UPDATE', 'PERMISSIVE', 'public', true, true),
-    ('inventory_batches', 'inventory_batches: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('legal_updates', 'legal_updates: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('market_price_benchmarks', 'market_price_benchmarks: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('market_price_benchmarks', 'market_price_benchmarks: farmer select visible', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('market_price_benchmarks', 'market_price_benchmarks: operational farmer or admin', 'SELECT', 'RESTRICTIVE', 'public', true, false),
-    ('procurement_decisions', 'procurement_decisions: admin insert', 'INSERT', 'PERMISSIVE', 'authenticated', false, true),
-    ('procurement_decisions', 'procurement_decisions: admin select', 'SELECT', 'PERMISSIVE', 'authenticated', true, false),
-    ('profiles', 'profiles: admin update role', 'UPDATE', 'PERMISSIVE', 'public', true, false),
-    ('profiles', 'profiles: select own or admin', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('profiles', 'profiles: update own no role change', 'UPDATE', 'PERMISSIVE', 'public', true, true),
-    ('regulatory_sources', 'regulatory_sources: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('risk_flags', 'risk_flags: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('risk_flags', 'risk_flags: farmer select own farm', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('risk_flags', 'risk_flags: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
-    ('status_history', 'status_history: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
-    ('status_history', 'status_history: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
-    ('status_history', 'status_history: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true)
+    ('buyer_pack_audit_log', 'buyer_pack_audit_log: admin insert', 'INSERT', 'PERMISSIVE', 'public', false, true, '', 'is_ddp_admin()'),
+    ('buyer_pack_audit_log', 'buyer_pack_audit_log: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false, 'is_ddp_admin()', ''),
+    ('buyer_pack_download_log', 'buyer_pack_download_log: admin insert', 'INSERT', 'PERMISSIVE', 'public', false, true, '', 'is_ddp_admin()'),
+    ('buyer_pack_download_log', 'buyer_pack_download_log: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false, 'is_ddp_admin()', ''),
+    ('buyer_pack_snapshots', 'buyer_pack_snapshots: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false, 'is_ddp_admin()', ''),
+    ('compliance_alerts', 'compliance_alerts: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('compliance_audit_log', 'compliance_audit_log: admin insert', 'INSERT', 'PERMISSIVE', 'public', false, true, '', 'is_ddp_admin()'),
+    ('compliance_audit_log', 'compliance_audit_log: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false, 'is_ddp_admin()', ''),
+    ('compliance_entity_status', 'compliance_entity_status: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('compliance_reviews', 'compliance_reviews: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('compliance_rules', 'compliance_rules: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('ddp_scores', 'ddp_scores: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('ddp_scores', 'ddp_scores: farmer select own farm', 'SELECT', 'PERMISSIVE', 'public', true, false, 'has_farm_membership(', ''),
+    ('ddp_scores', 'ddp_scores: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('documents', 'documents: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('documents', 'documents: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false, 'auth.uid()|has_farm_membership(|exists(', ''),
+    ('documents', 'documents: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('farm_memberships', 'farm_memberships: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('farm_memberships', 'farm_memberships: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true, '', 'auth.uid()|exists('),
+    ('farm_memberships', 'farm_memberships: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false, 'auth.uid()|user_id', ''),
+    ('farm_memberships', 'farm_memberships: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('farm_profiles', 'farm_profiles: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('farm_profiles', 'farm_profiles: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true, '', 'auth.uid()|exists('),
+    ('farm_profiles', 'farm_profiles: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false, 'has_farm_membership(', ''),
+    ('farm_profiles', 'farm_profiles: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('farmer_documents', 'farmer_documents: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('farmer_documents', 'farmer_documents: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true, '', 'auth.uid()|has_farm_membership(|exists('),
+    ('farmer_documents', 'farmer_documents: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false, 'auth.uid()|has_farm_membership(|exists(', ''),
+    ('farmer_documents', 'farmer_documents: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('farmer_photos', 'farmer_photos: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('farmer_photos', 'farmer_photos: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true, '', 'auth.uid()|exists('),
+    ('farmer_photos', 'farmer_photos: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false, 'auth.uid()|has_farm_membership(|exists(', ''),
+    ('farmer_photos', 'farmer_photos: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('farmer_review_requests', 'farmer_review_requests: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('farmer_review_requests', 'farmer_review_requests: farmer resolve own', 'UPDATE', 'PERMISSIVE', 'public', true, true, 'auth.uid()|has_farm_membership(|exists(', 'status|resolved_at'),
+    ('farmer_review_requests', 'farmer_review_requests: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false, 'auth.uid()|has_farm_membership(|exists(', ''),
+    ('farmer_review_requests', 'farmer_review_requests: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('farms', 'farms: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('farms', 'farms: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true, '', 'auth.uid()|created_by'),
+    ('farms', 'farms: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false, 'auth.uid()|has_farm_membership(', ''),
+    ('farms', 'farms: farmer update own', 'UPDATE', 'PERMISSIVE', 'authenticated', true, true, 'auth.uid()|exists(', 'auth.uid()|exists('),
+    ('farms', 'farms: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('inventory_batches', 'inventory_batches: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('inventory_batches', 'inventory_batches: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true, '', 'auth.uid()|created_by'),
+    ('inventory_batches', 'inventory_batches: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false, 'auth.uid()|has_farm_membership(', ''),
+    ('inventory_batches', 'inventory_batches: farmer update own', 'UPDATE', 'PERMISSIVE', 'public', true, true, 'auth.uid()|has_farm_membership(', 'auth.uid()|has_farm_membership('),
+    ('inventory_batches', 'inventory_batches: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('legal_updates', 'legal_updates: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('market_price_benchmarks', 'market_price_benchmarks: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('market_price_benchmarks', 'market_price_benchmarks: farmer select visible', 'SELECT', 'PERMISSIVE', 'public', true, false, 'auth.uid()|visible_to_farmers', ''),
+    ('market_price_benchmarks', 'market_price_benchmarks: operational farmer or admin', 'SELECT', 'RESTRICTIVE', 'public', true, false, 'is_ddp_admin()|has_operational_farmer_access()', ''),
+    ('procurement_decisions', 'procurement_decisions: admin insert', 'INSERT', 'PERMISSIVE', 'authenticated', false, true, '', 'is_ddp_admin()|auth.uid()'),
+    ('procurement_decisions', 'procurement_decisions: admin select', 'SELECT', 'PERMISSIVE', 'authenticated', true, false, 'is_ddp_admin()', ''),
+    ('profiles', 'profiles: admin update role', 'UPDATE', 'PERMISSIVE', 'public', true, false, 'is_ddp_admin()', ''),
+    ('profiles', 'profiles: select own or admin', 'SELECT', 'PERMISSIVE', 'public', true, false, 'is_ddp_admin()|auth.uid()', ''),
+    ('profiles', 'profiles: update own no role change', 'UPDATE', 'PERMISSIVE', 'public', true, true, 'auth.uid()', 'auth.uid()|role'),
+    ('regulatory_sources', 'regulatory_sources: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('risk_flags', 'risk_flags: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('risk_flags', 'risk_flags: farmer select own farm', 'SELECT', 'PERMISSIVE', 'public', true, false, 'has_farm_membership(', ''),
+    ('risk_flags', 'risk_flags: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()'),
+    ('status_history', 'status_history: admin all', 'ALL', 'PERMISSIVE', 'public', true, true, 'is_ddp_admin()', 'is_ddp_admin()'),
+    ('status_history', 'status_history: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false, 'auth.uid()|has_farm_membership(|exists(', ''),
+    ('status_history', 'status_history: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true, 'is_ddp_admin()|has_operational_farmer_access()', 'is_ddp_admin()|has_operational_farmer_access()')
 ),
 -- Located by NAME across schema public, so a policy moved to another table is
 -- reported as WRONG_TABLE rather than masquerading as ABSENT.
@@ -408,13 +417,18 @@ by_name AS (
 ),
 resolved AS (
   SELECT e.tablename, e.policyname, e.cmd, e.permissive, e.roles,
-         e.has_using, e.has_check,
+         e.has_using, e.has_check, e.using_gates, e.check_gates,
          a.policyname::text                                AS found,
          a.cmd                                             AS actual_cmd,
          a.permissive                                      AS actual_permissive,
          array_to_string(ARRAY(SELECT unnest(a.roles::text[]) ORDER BY 1), ',') AS actual_roles,
+         -- SHAPE: is the clause present at all.
          a.qual       IS NOT NULL                          AS actual_using,
          a.with_check IS NOT NULL                          AS actual_check,
+         -- SEMANTICS: normalized predicate text. Formatting-only differences
+         -- (whitespace, schema qualification, letter case) cannot cause a FAIL.
+         regexp_replace(regexp_replace(lower(coalesce(a.qual, '')),       '\s+', '', 'g'), 'public\.', '', 'g') AS n_using,
+         regexp_replace(regexp_replace(lower(coalesce(a.with_check, '')), '\s+', '', 'g'), 'public\.', '', 'g') AS n_check,
          n.name_matches, n.any_table
   FROM expected e
   LEFT JOIN pg_policies a
@@ -424,15 +438,13 @@ resolved AS (
   LEFT JOIN by_name n ON n.policyname = e.policyname
 ),
 graded AS (
-  SELECT tablename, policyname,
+  SELECT tablename, policyname, n_using, n_check,
          CASE
+           -- ── identity ──────────────────────────────────────────────────────
            WHEN found IS NULL AND coalesce(name_matches, 0) > 0
              THEN 'WRONG_TABLE (found on ' || coalesce(any_table, '?') || ')'
            WHEN found IS NULL
              THEN 'ABSENT'
-           -- A second policy of the same name on another table is an extra
-           -- enforcement surface that review never saw; the expected row alone
-           -- cannot reveal it because it joins on the table too.
            WHEN name_matches > 1
              THEN 'DUPLICATE_MATCH (' || name_matches || ' policies share this name)'
            WHEN actual_permissive IS DISTINCT FROM permissive
@@ -441,41 +453,109 @@ graded AS (
              THEN 'WRONG_COMMAND (is ' || coalesce(actual_cmd, '?') || ', expected ' || cmd || ')'
            WHEN actual_roles IS DISTINCT FROM roles
              THEN 'WRONG_ROLES (is ' || coalesce(actual_roles, '?') || ', expected ' || roles || ')'
+           -- ── shape: null/non-null must match what the migration defines ────
            WHEN actual_using IS DISTINCT FROM has_using
-             THEN 'USING clause ' || CASE WHEN has_using THEN 'missing' ELSE 'unexpectedly present' END
+             THEN 'WRONG_USING (clause ' || CASE WHEN has_using THEN 'missing' ELSE 'unexpectedly present' END || ')'
            WHEN actual_check IS DISTINCT FROM has_check
-             THEN 'WITH CHECK clause ' || CASE WHEN has_check THEN 'missing' ELSE 'unexpectedly present' END
+             THEN 'WRONG_WITH_CHECK (clause ' || CASE WHEN has_check THEN 'missing' ELSE 'unexpectedly present' END || ')'
+           -- ── semantics ─────────────────────────────────────────────────────
+           WHEN has_using AND n_using ~ '^\(*true\)*$'  THEN 'TRIVIAL_USING'
+           WHEN has_check AND n_check ~ '^\(*true\)*$'  THEN 'TRIVIAL_WITH_CHECK'
+           WHEN has_using AND (n_using LIKE '%ortrue%' OR n_using LIKE '%trueor%'
+                            OR n_using LIKE '%or1=1%'  OR n_using LIKE '%or(1=1)%')
+             THEN 'BYPASS_PREDICATE (USING)'
+           WHEN has_check AND (n_check LIKE '%ortrue%' OR n_check LIKE '%trueor%'
+                            OR n_check LIKE '%or1=1%'  OR n_check LIKE '%or(1=1)%')
+             THEN 'BYPASS_PREDICATE (WITH CHECK)'
+           WHEN using_gates <> '' AND EXISTS (
+                  SELECT 1 FROM unnest(string_to_array(using_gates, '|')) g(tok)
+                  WHERE position(g.tok in n_using) = 0)
+             THEN 'MISSING_REQUIRED_GATE (USING lacks ' || (
+                  SELECT string_agg(g.tok, ' + ') FROM unnest(string_to_array(using_gates, '|')) g(tok)
+                  WHERE position(g.tok in n_using) = 0) || ')'
+           WHEN check_gates <> '' AND EXISTS (
+                  SELECT 1 FROM unnest(string_to_array(check_gates, '|')) g(tok)
+                  WHERE position(g.tok in n_check) = 0)
+             THEN 'MISSING_REQUIRED_GATE (WITH CHECK lacks ' || (
+                  SELECT string_agg(g.tok, ' + ') FROM unnest(string_to_array(check_gates, '|')) g(tok)
+                  WHERE position(g.tok in n_check) = 0) || ')'
          END AS defect
   FROM resolved
 )
-SELECT 'V9 required public RLS policies present' AS check,
+SELECT 'V9 required public RLS policies present and semantically intact' AS check,
        CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
        count(*) AS defective_policies,
-       coalesce(string_agg(tablename || '.' || policyname || ': ' || defect, '; '
-                           ORDER BY tablename, policyname), '') AS detail
+       coalesce(string_agg(
+         'public.' || tablename || '."' || policyname || '": ' || defect
+         || CASE WHEN defect LIKE 'TRIVIAL%' OR defect LIKE 'BYPASS%' OR defect LIKE 'MISSING_REQUIRED_GATE%'
+                 THEN ' [using=' || left(n_using, 80) || ' check=' || left(n_check, 80) || ']'
+                 ELSE '' END,
+         '; ' ORDER BY tablename, policyname), '') AS detail
 FROM graded
 WHERE defect IS NOT NULL;
 
--- V9a. The restrictive overlay specifically. Migration 22 installs one
---      AS RESTRICTIVE policy per farmer-operated table; losing any of them
---      re-opens direct REST/Storage writes to non-operational accounts. Reported
---      separately from V9 so the blast radius is legible at a glance instead of
---      being one entry in a combined list.
-WITH expected_restrictive(tablename) AS (
+-- V9a. The migration-22 restrictive overlay, reported separately so its blast
+--      radius is legible at a glance rather than being one entry in a combined
+--      list. Covers the ELEVEN FOR ALL overlay policies installed by the
+--      `DO $overlay$` loop; market_price_benchmarks' FOR SELECT overlay has no
+--      WITH CHECK and is verified by V9 above.
+--
+--      Losing — or neutering — any of these re-opens direct REST/Storage writes
+--      to non-operational ("pending") accounts. Both the USING and the WITH CHECK
+--      predicate must still gate on BOTH functions: has_operational_farmer_access()
+--      admits operational farmers, is_ddp_admin() admits admins; dropping either
+--      silently changes who can write.
+WITH overlay(tablename) AS (
   VALUES ('farms'), ('farm_profiles'), ('farm_memberships'), ('inventory_batches'),
          ('farmer_documents'), ('farmer_photos'), ('farmer_review_requests'),
          ('documents'), ('ddp_scores'), ('risk_flags'), ('status_history')
+),
+resolved AS (
+  SELECT o.tablename,
+         p.policyname::text AS found,
+         p.permissive, p.cmd,
+         regexp_replace(regexp_replace(lower(coalesce(p.qual, '')),       '\s+', '', 'g'), 'public\.', '', 'g') AS n_using,
+         regexp_replace(regexp_replace(lower(coalesce(p.with_check, '')), '\s+', '', 'g'), 'public\.', '', 'g') AS n_check
+  FROM overlay o
+  LEFT JOIN pg_policies p
+         ON p.schemaname = 'public'
+        AND p.tablename  = o.tablename
+        AND p.policyname = o.tablename || ': operational farmer or admin'
+),
+graded AS (
+  SELECT tablename, n_using, n_check,
+         CASE
+           WHEN found IS NULL                          THEN 'ABSENT'
+           WHEN permissive IS DISTINCT FROM 'RESTRICTIVE'
+             THEN 'WRONG_MODE (is ' || coalesce(permissive, '?') || ', expected RESTRICTIVE)'
+           WHEN cmd IS DISTINCT FROM 'ALL'
+             THEN 'WRONG_COMMAND (is ' || coalesce(cmd, '?') || ', expected ALL)'
+           WHEN n_using = ''                           THEN 'WRONG_USING (clause missing)'
+           WHEN n_check = ''                           THEN 'WRONG_WITH_CHECK (clause missing)'
+           WHEN n_using ~ '^\(*true\)*$'               THEN 'TRIVIAL_USING'
+           WHEN n_check ~ '^\(*true\)*$'               THEN 'TRIVIAL_WITH_CHECK'
+           WHEN n_using LIKE '%ortrue%' OR n_using LIKE '%trueor%'
+             OR n_using LIKE '%or1=1%'  OR n_using LIKE '%or(1=1)%'
+             THEN 'BYPASS_PREDICATE (USING)'
+           WHEN n_check LIKE '%ortrue%' OR n_check LIKE '%trueor%'
+             OR n_check LIKE '%or1=1%'  OR n_check LIKE '%or(1=1)%'
+             THEN 'BYPASS_PREDICATE (WITH CHECK)'
+           WHEN position('has_operational_farmer_access()' in n_using) = 0
+             THEN 'MISSING_REQUIRED_GATE (USING lacks has_operational_farmer_access())'
+           WHEN position('is_ddp_admin()' in n_using) = 0
+             THEN 'MISSING_REQUIRED_GATE (USING lacks is_ddp_admin())'
+           WHEN position('has_operational_farmer_access()' in n_check) = 0
+             THEN 'MISSING_REQUIRED_GATE (WITH CHECK lacks has_operational_farmer_access())'
+           WHEN position('is_ddp_admin()' in n_check) = 0
+             THEN 'MISSING_REQUIRED_GATE (WITH CHECK lacks is_ddp_admin())'
+         END AS defect
+  FROM resolved
 )
-SELECT 'V9a migration-22 restrictive overlay intact' AS check,
+SELECT 'V9a migration-22 restrictive overlay intact and enforcing' AS check,
        CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-       count(*) AS tables_missing_overlay,
-       coalesce(string_agg(tablename, ', ' ORDER BY tablename), '') AS detail
-FROM expected_restrictive e
-WHERE NOT EXISTS (
-  SELECT 1 FROM pg_policies p
-  WHERE p.schemaname = 'public'
-    AND p.tablename  = e.tablename
-    AND p.policyname = e.tablename || ': operational farmer or admin'
-    AND p.permissive = 'RESTRICTIVE'
-    AND p.cmd        = 'ALL'
-);
+       count(*) AS defective_overlays,
+       coalesce(string_agg('public.' || tablename || ': ' || defect
+                           || ' [using=' || left(n_using, 60) || ']',
+                           '; ' ORDER BY tablename), '') AS detail
+FROM graded
+WHERE defect IS NOT NULL;
