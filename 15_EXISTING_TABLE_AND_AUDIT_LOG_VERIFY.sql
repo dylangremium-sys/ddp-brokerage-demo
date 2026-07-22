@@ -288,3 +288,194 @@ FROM (
   WHERE n.nspname='public' AND p.prokind='f'
 ) y
 WHERE defect IS NOT NULL;
+
+-- V9. Required public RLS policies remain present, on the right table, with the
+--     right command, mode, roles and enforcement clauses.
+--
+--     WHY: removing `V6 policies = 43` deleted the ONLY assertion in the whole
+--     harness-effective set (12/14/15) that could notice a public RLS policy
+--     disappearing. Nothing else covered it: V6 now checks that RLS is ENABLED
+--     per table, which stays true when every policy on that table is dropped;
+--     V2/V2a check table-level grants, not policies; and 14/V5 counts only the
+--     `farmer-documents%` policies in schema `storage`. The staging harness marks
+--     a VERIFY file failed only when its output contains the literal FAIL, and
+--     22_..._VERIFY.sql — which does cover migration 22's policies — is not in
+--     the harness allowlist and raises exceptions instead of emitting FAIL. So a
+--     dropped policy was invisible end to end.
+--
+--     Dropping a PERMISSIVE policy is fail-safe: access narrows. Dropping a
+--     RESTRICTIVE one is NOT — it removes an AND-ed deny layer, so migration 22's
+--     twelve restrictive overlays silently re-open the pending-account write path
+--     that migration closed. That is a real privilege escalation, and it is the
+--     specific regression this check exists to catch.
+--
+--     A COUNT IS DELIBERATELY NOT RESTORED. `policies = 63` fails on legitimate
+--     growth (exactly the defect this PR removes) and cannot see a swap: drop one
+--     policy, add an unrelated one, and the count is unchanged while the security
+--     property is gone. This anti-joins an EXPLICIT expected set instead, so
+--     absence and substitution both fail while new policies are free to appear.
+--
+--     Clause checks assert PRESENCE of USING / WITH CHECK, never their text.
+--     Comparing `qual` as a string would break on any semantically neutral
+--     reformat or on PostgreSQL's own deparsing changes across versions.
+--
+--     The expected set is derived from the migration SQL (9, 10, 17, 21, 22,
+--     RLS_ENABLE_STAGED, FARMER_MVP, INVENTORY_BATCHES_*, 4), not from a live
+--     catalog snapshot. Two deliberate exclusions:
+--       * `farm_profiles: farmer update own` — FARM_RESAVE_PERSISTENCE_MIGRATION
+--         is an unapplied draft ("Do not run this file automatically"). Only its
+--         `farms: farmer update own` half was applied, and that one IS required
+--         below because 19_..._VERIFY.sql fails outright if it is missing and
+--         19_..._ROLLBACK.sql treats dropping it as rollback overreach.
+--       * storage.objects policies — different schema; 14/V5 owns those.
+WITH expected(tablename, policyname, cmd, permissive, roles, has_using, has_check) AS (
+  VALUES
+    ('buyer_pack_audit_log', 'buyer_pack_audit_log: admin insert', 'INSERT', 'PERMISSIVE', 'public', false, true),
+    ('buyer_pack_audit_log', 'buyer_pack_audit_log: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('buyer_pack_download_log', 'buyer_pack_download_log: admin insert', 'INSERT', 'PERMISSIVE', 'public', false, true),
+    ('buyer_pack_download_log', 'buyer_pack_download_log: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('buyer_pack_snapshots', 'buyer_pack_snapshots: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('compliance_alerts', 'compliance_alerts: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('compliance_audit_log', 'compliance_audit_log: admin insert', 'INSERT', 'PERMISSIVE', 'public', false, true),
+    ('compliance_audit_log', 'compliance_audit_log: admin select', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('compliance_entity_status', 'compliance_entity_status: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('compliance_reviews', 'compliance_reviews: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('compliance_rules', 'compliance_rules: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('ddp_scores', 'ddp_scores: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('ddp_scores', 'ddp_scores: farmer select own farm', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('ddp_scores', 'ddp_scores: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('documents', 'documents: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('documents', 'documents: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('documents', 'documents: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('farm_memberships', 'farm_memberships: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('farm_memberships', 'farm_memberships: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
+    ('farm_memberships', 'farm_memberships: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('farm_memberships', 'farm_memberships: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('farm_profiles', 'farm_profiles: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('farm_profiles', 'farm_profiles: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
+    ('farm_profiles', 'farm_profiles: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('farm_profiles', 'farm_profiles: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('farmer_documents', 'farmer_documents: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('farmer_documents', 'farmer_documents: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
+    ('farmer_documents', 'farmer_documents: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('farmer_documents', 'farmer_documents: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('farmer_photos', 'farmer_photos: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('farmer_photos', 'farmer_photos: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
+    ('farmer_photos', 'farmer_photos: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('farmer_photos', 'farmer_photos: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('farmer_review_requests', 'farmer_review_requests: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('farmer_review_requests', 'farmer_review_requests: farmer resolve own', 'UPDATE', 'PERMISSIVE', 'public', true, true),
+    ('farmer_review_requests', 'farmer_review_requests: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('farmer_review_requests', 'farmer_review_requests: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('farms', 'farms: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('farms', 'farms: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
+    ('farms', 'farms: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('farms', 'farms: farmer update own', 'UPDATE', 'PERMISSIVE', 'authenticated', true, true),
+    ('farms', 'farms: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('inventory_batches', 'inventory_batches: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('inventory_batches', 'inventory_batches: farmer insert own', 'INSERT', 'PERMISSIVE', 'public', false, true),
+    ('inventory_batches', 'inventory_batches: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('inventory_batches', 'inventory_batches: farmer update own', 'UPDATE', 'PERMISSIVE', 'public', true, true),
+    ('inventory_batches', 'inventory_batches: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('legal_updates', 'legal_updates: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('market_price_benchmarks', 'market_price_benchmarks: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('market_price_benchmarks', 'market_price_benchmarks: farmer select visible', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('market_price_benchmarks', 'market_price_benchmarks: operational farmer or admin', 'SELECT', 'RESTRICTIVE', 'public', true, false),
+    ('procurement_decisions', 'procurement_decisions: admin insert', 'INSERT', 'PERMISSIVE', 'authenticated', false, true),
+    ('procurement_decisions', 'procurement_decisions: admin select', 'SELECT', 'PERMISSIVE', 'authenticated', true, false),
+    ('profiles', 'profiles: admin update role', 'UPDATE', 'PERMISSIVE', 'public', true, false),
+    ('profiles', 'profiles: select own or admin', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('profiles', 'profiles: update own no role change', 'UPDATE', 'PERMISSIVE', 'public', true, true),
+    ('regulatory_sources', 'regulatory_sources: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('risk_flags', 'risk_flags: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('risk_flags', 'risk_flags: farmer select own farm', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('risk_flags', 'risk_flags: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true),
+    ('status_history', 'status_history: admin all', 'ALL', 'PERMISSIVE', 'public', true, true),
+    ('status_history', 'status_history: farmer select own', 'SELECT', 'PERMISSIVE', 'public', true, false),
+    ('status_history', 'status_history: operational farmer or admin', 'ALL', 'RESTRICTIVE', 'public', true, true)
+),
+-- Located by NAME across schema public, so a policy moved to another table is
+-- reported as WRONG_TABLE rather than masquerading as ABSENT.
+by_name AS (
+  -- ::text casts are explicit: pg_policies exposes these as `name`, which has no
+  -- native min() aggregate and would resolve only via an implicit cast.
+  SELECT p.policyname::text                                AS policyname,
+         count(*)                                          AS name_matches,
+         min(p.tablename::text)                            AS any_table
+  FROM pg_policies p
+  WHERE p.schemaname = 'public'
+  GROUP BY p.policyname
+),
+resolved AS (
+  SELECT e.tablename, e.policyname, e.cmd, e.permissive, e.roles,
+         e.has_using, e.has_check,
+         a.policyname::text                                AS found,
+         a.cmd                                             AS actual_cmd,
+         a.permissive                                      AS actual_permissive,
+         array_to_string(ARRAY(SELECT unnest(a.roles::text[]) ORDER BY 1), ',') AS actual_roles,
+         a.qual       IS NOT NULL                          AS actual_using,
+         a.with_check IS NOT NULL                          AS actual_check,
+         n.name_matches, n.any_table
+  FROM expected e
+  LEFT JOIN pg_policies a
+         ON a.schemaname = 'public'
+        AND a.tablename  = e.tablename
+        AND a.policyname = e.policyname
+  LEFT JOIN by_name n ON n.policyname = e.policyname
+),
+graded AS (
+  SELECT tablename, policyname,
+         CASE
+           WHEN found IS NULL AND coalesce(name_matches, 0) > 0
+             THEN 'WRONG_TABLE (found on ' || coalesce(any_table, '?') || ')'
+           WHEN found IS NULL
+             THEN 'ABSENT'
+           -- A second policy of the same name on another table is an extra
+           -- enforcement surface that review never saw; the expected row alone
+           -- cannot reveal it because it joins on the table too.
+           WHEN name_matches > 1
+             THEN 'DUPLICATE_MATCH (' || name_matches || ' policies share this name)'
+           WHEN actual_permissive IS DISTINCT FROM permissive
+             THEN 'WRONG_MODE (is ' || coalesce(actual_permissive, '?') || ', expected ' || permissive || ')'
+           WHEN actual_cmd IS DISTINCT FROM cmd
+             THEN 'WRONG_COMMAND (is ' || coalesce(actual_cmd, '?') || ', expected ' || cmd || ')'
+           WHEN actual_roles IS DISTINCT FROM roles
+             THEN 'WRONG_ROLES (is ' || coalesce(actual_roles, '?') || ', expected ' || roles || ')'
+           WHEN actual_using IS DISTINCT FROM has_using
+             THEN 'USING clause ' || CASE WHEN has_using THEN 'missing' ELSE 'unexpectedly present' END
+           WHEN actual_check IS DISTINCT FROM has_check
+             THEN 'WITH CHECK clause ' || CASE WHEN has_check THEN 'missing' ELSE 'unexpectedly present' END
+         END AS defect
+  FROM resolved
+)
+SELECT 'V9 required public RLS policies present' AS check,
+       CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       count(*) AS defective_policies,
+       coalesce(string_agg(tablename || '.' || policyname || ': ' || defect, '; '
+                           ORDER BY tablename, policyname), '') AS detail
+FROM graded
+WHERE defect IS NOT NULL;
+
+-- V9a. The restrictive overlay specifically. Migration 22 installs one
+--      AS RESTRICTIVE policy per farmer-operated table; losing any of them
+--      re-opens direct REST/Storage writes to non-operational accounts. Reported
+--      separately from V9 so the blast radius is legible at a glance instead of
+--      being one entry in a combined list.
+WITH expected_restrictive(tablename) AS (
+  VALUES ('farms'), ('farm_profiles'), ('farm_memberships'), ('inventory_batches'),
+         ('farmer_documents'), ('farmer_photos'), ('farmer_review_requests'),
+         ('documents'), ('ddp_scores'), ('risk_flags'), ('status_history')
+)
+SELECT 'V9a migration-22 restrictive overlay intact' AS check,
+       CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       count(*) AS tables_missing_overlay,
+       coalesce(string_agg(tablename, ', ' ORDER BY tablename), '') AS detail
+FROM expected_restrictive e
+WHERE NOT EXISTS (
+  SELECT 1 FROM pg_policies p
+  WHERE p.schemaname = 'public'
+    AND p.tablename  = e.tablename
+    AND p.policyname = e.tablename || ': operational farmer or admin'
+    AND p.permissive = 'RESTRICTIVE'
+    AND p.cmd        = 'ALL'
+);

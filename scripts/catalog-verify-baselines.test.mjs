@@ -866,6 +866,10 @@ describe('every object class the removed frozen count covered is still guarded',
       kind: 'property: stronger than a count — every table, present and future' },
     { cls: 'force_rls', detector: () => /force_rls = 0/.test(c15) && /force_rls = 0/.test(c14),
       kind: 'property: absolute, count-independent' },
+    { cls: 'public RLS policies', detector: () => /WITH expected\(tablename, policyname, cmd, permissive, roles, has_using, has_check\) AS \(/.test(c15) && /'ABSENT'/.test(c15),
+      kind: 'expected-set anti-join' },
+    { cls: 'migration-22 restrictive overlay', detector: () => /WITH expected_restrictive\(tablename\) AS \(/.test(c15) && /p\.permissive = 'RESTRICTIVE'/.test(c15),
+      kind: 'expected-set anti-join, reported separately' },
   ]
 
   it.each(MATRIX)('$cls has an effective detector ($kind)', ({ detector }) => {
@@ -881,20 +885,177 @@ describe('every object class the removed frozen count covered is still guarded',
     }
   })
 
-  // Public RLS policies are the one class WITHOUT a harness-effective absence
-  // detector. This is asserted explicitly, not silently tolerated, so the gap is
-  // visible in the suite and cannot be mistaken for coverage. Closing it requires
-  // files outside this PR's permitted scope (see the PR discussion).
-  it('public RLS policy absence is a KNOWN, documented gap — asserted, not hidden', () => {
+  // This assertion was previously INVERTED: it asserted that no harness-effective
+  // file referenced pg_policies in schema public, cementing the coverage gap as
+  // expected behaviour. Written that way it would have FAILED the moment the gap
+  // was closed — a test that actively defends a security hole. The gap is now
+  // closed by V9/V9a in migration 15, so the assertion is reversed to demand the
+  // coverage it used to forbid.
+  it('public RLS policy absence IS covered by a harness-effective detector', () => {
     const harnessEffective = [c12, c14, c15]
     const anyPublicPolicyAssertion = harnessEffective.some((c) =>
-      /pg_policies[\s\S]{0,120}schemaname\s*=\s*'public'/.test(c))
-    expect(anyPublicPolicyAssertion).toBe(false)
-    // …and the only pg_policies references that DO exist are storage-scoped.
-    for (const c of harnessEffective) {
-      for (const m of c.match(/pg_policies[\s\S]{0,90}/g) ?? []) {
-        expect(m).toMatch(/schemaname\s*=\s*'storage'/)
-      }
-    }
+      /pg_policies[\s\S]{0,200}schemaname\s*=\s*'public'/.test(c))
+    expect(anyPublicPolicyAssertion).toBe(true)
+    // The detector must live in a file the harness actually fails on, which means
+    // it has to emit the literal FAIL — the only thing the runner greps for.
+    expect(c15).toMatch(/V9 required public RLS policies present/)
+    expect(c15).toMatch(/'V9 required public RLS policies present' AS check,\s*\n\s*CASE WHEN count\(\*\) = 0 THEN 'PASS' ELSE 'FAIL' END/)
+    expect(c15).toMatch(/'V9a migration-22 restrictive overlay intact' AS check,\s*\n\s*CASE WHEN count\(\*\) = 0 THEN 'PASS' ELSE 'FAIL' END/)
+  })
+})
+
+// ── VERIFY 15 / V9 — required public RLS policies ──────────────────────────
+//
+// The expected set is PARSED OUT OF THE SHIPPED SQL rather than restated here.
+// A hand-copied duplicate would be free to drift from the file it claims to
+// model, and every scenario below would keep passing while the real check rotted.
+const EXPECTED_POLICIES = (() => {
+  const c = code(V15)
+  const block = c.match(
+    /WITH expected\(tablename, policyname, cmd, permissive, roles, has_using, has_check\) AS \(\s*VALUES([\s\S]*?)\n\),/)
+  if (!block) throw new Error('V9 expected-policy VALUES block not found in ' + V15)
+  return [...block[1].matchAll(
+    /\('([^']+)',\s*'([^']+)',\s*'([^']+)',\s*'([^']+)',\s*'([^']+)',\s*(true|false),\s*(true|false)\)/g)]
+    .map((m) => ({
+      tablename: m[1], policyname: m[2], cmd: m[3], permissive: m[4],
+      roles: m[5], hasUsing: m[6] === 'true', hasCheck: m[7] === 'true',
+    }))
+})()
+
+// Mirrors the V9 CASE ladder, in the same order — the order is load-bearing:
+// WRONG_TABLE must be tested before ABSENT, or a moved policy reports as missing.
+const policyDefects = (catalog, expected = EXPECTED_POLICIES) => {
+  const nameMatches = (n) => catalog.filter((p) => p.policyname === n)
+  const out = []
+  for (const e of expected) {
+    const found = catalog.find((p) => p.tablename === e.tablename && p.policyname === e.policyname)
+    const byName = nameMatches(e.policyname)
+    let defect = null
+    if (!found && byName.length > 0) defect = `WRONG_TABLE (found on ${byName.map((p) => p.tablename).sort()[0]})`
+    else if (!found) defect = 'ABSENT'
+    else if (byName.length > 1) defect = `DUPLICATE_MATCH (${byName.length} policies share this name)`
+    else if (found.permissive !== e.permissive) defect = `WRONG_MODE (is ${found.permissive}, expected ${e.permissive})`
+    else if (found.cmd !== e.cmd) defect = `WRONG_COMMAND (is ${found.cmd}, expected ${e.cmd})`
+    else if (found.roles !== e.roles) defect = `WRONG_ROLES (is ${found.roles}, expected ${e.roles})`
+    else if (found.hasUsing !== e.hasUsing) defect = `USING clause ${e.hasUsing ? 'missing' : 'unexpectedly present'}`
+    else if (found.hasCheck !== e.hasCheck) defect = `WITH CHECK clause ${e.hasCheck ? 'missing' : 'unexpectedly present'}`
+    if (defect) out.push({ policy: `${e.tablename}.${e.policyname}`, defect })
+  }
+  return out
+}
+
+const LIVE = () => EXPECTED_POLICIES.map((p) => ({ ...p }))
+const M22_OVERLAY_TABLES = [
+  'farms', 'farm_profiles', 'farm_memberships', 'inventory_batches', 'farmer_documents',
+  'farmer_photos', 'farmer_review_requests', 'documents', 'ddp_scores', 'risk_flags', 'status_history',
+]
+const overlayMissing = (catalog) => M22_OVERLAY_TABLES.filter((t) => !catalog.some((p) =>
+  p.tablename === t && p.policyname === `${t}: operational farmer or admin`
+  && p.permissive === 'RESTRICTIVE' && p.cmd === 'ALL'))
+
+describe('VERIFY 15 / V9 — required public RLS policies cannot vanish silently', () => {
+  it('1. the expected set matches the migration corpus: 63 policies, 12 restrictive', () => {
+    expect(EXPECTED_POLICIES).toHaveLength(63)
+    expect(EXPECTED_POLICIES.filter((p) => p.permissive === 'RESTRICTIVE')).toHaveLength(12)
+  })
+
+  it('2. the live staging catalog (63 in public, 12 restrictive) → PASS', () => {
+    expect(policyDefects(LIVE())).toEqual([])
+  })
+
+  it('3. legitimate growth — a new table with new policies → still PASS', () => {
+    const grown = [...LIVE(),
+      { tablename: 'shipments', policyname: 'shipments: admin all', cmd: 'ALL', permissive: 'PERMISSIVE', roles: 'public', hasUsing: true, hasCheck: true },
+      { tablename: 'shipments', policyname: 'shipments: operational farmer or admin', cmd: 'ALL', permissive: 'RESTRICTIVE', roles: 'public', hasUsing: true, hasCheck: true }]
+    expect(policyDefects(grown)).toEqual([])
+  })
+
+  it('4. a permissive policy dropped → ABSENT', () => {
+    const c = LIVE().filter((p) => p.policyname !== 'profiles: select own or admin')
+    expect(policyDefects(c)).toEqual([{ policy: 'profiles.profiles: select own or admin', defect: 'ABSENT' }])
+  })
+
+  it('5. a migration-22 RESTRICTIVE overlay dropped → ABSENT (the privilege escalation)', () => {
+    const c = LIVE().filter((p) => p.policyname !== 'farms: operational farmer or admin')
+    expect(policyDefects(c)).toEqual([{ policy: 'farms.farms: operational farmer or admin', defect: 'ABSENT' }])
+  })
+
+  it('6. the entire restrictive overlay rolled back → all 12 reported, not just a count', () => {
+    const c = LIVE().filter((p) => p.permissive !== 'RESTRICTIVE')
+    const d = policyDefects(c)
+    expect(d).toHaveLength(12)
+    expect(d.every((x) => x.defect === 'ABSENT')).toBe(true)
+  })
+
+  it('7. a policy moved to another table → WRONG_TABLE, not ABSENT', () => {
+    const c = LIVE().map((p) => p.policyname === 'documents: admin all' ? { ...p, tablename: 'ddp_scores' } : p)
+    expect(policyDefects(c)).toEqual([
+      { policy: 'documents.documents: admin all', defect: 'WRONG_TABLE (found on ddp_scores)' }])
+  })
+
+  it('8. the same policy name planted on a second table → DUPLICATE_MATCH', () => {
+    const c = [...LIVE(), { ...LIVE().find((p) => p.policyname === 'documents: admin all'), tablename: 'risk_flags' }]
+    expect(policyDefects(c)).toEqual([
+      { policy: 'documents.documents: admin all', defect: 'DUPLICATE_MATCH (2 policies share this name)' }])
+  })
+
+  it('9. a RESTRICTIVE overlay silently downgraded to PERMISSIVE → WRONG_MODE', () => {
+    const c = LIVE().map((p) => p.policyname === 'farms: operational farmer or admin'
+      ? { ...p, permissive: 'PERMISSIVE' } : p)
+    expect(policyDefects(c)).toEqual([{
+      policy: 'farms.farms: operational farmer or admin',
+      defect: 'WRONG_MODE (is PERMISSIVE, expected RESTRICTIVE)' }])
+  })
+
+  it('10. an overlay narrowed from FOR ALL to FOR SELECT → WRONG_COMMAND', () => {
+    const c = LIVE().map((p) => p.policyname === 'documents: operational farmer or admin'
+      ? { ...p, cmd: 'SELECT' } : p)
+    expect(policyDefects(c)).toEqual([{
+      policy: 'documents.documents: operational farmer or admin',
+      defect: 'WRONG_COMMAND (is SELECT, expected ALL)' }])
+  })
+
+  it('11. an admin-only policy widened from authenticated to public → WRONG_ROLES', () => {
+    const target = 'procurement_decisions: admin select'
+    expect(EXPECTED_POLICIES.find((p) => p.policyname === target).roles).toBe('authenticated')
+    const c = LIVE().map((p) => p.policyname === target ? { ...p, roles: 'public' } : p)
+    expect(policyDefects(c)).toEqual([{
+      policy: `procurement_decisions.${target}`,
+      defect: 'WRONG_ROLES (is public, expected authenticated)' }])
+  })
+
+  it('12. a USING clause dropped (row filter removed) → reported', () => {
+    const c = LIVE().map((p) => p.policyname === 'farms: farmer select own' ? { ...p, hasUsing: false } : p)
+    expect(policyDefects(c)).toEqual([
+      { policy: 'farms.farms: farmer select own', defect: 'USING clause missing' }])
+  })
+
+  it('13. a WITH CHECK dropped (write guard removed) → reported', () => {
+    const c = LIVE().map((p) => p.policyname === 'farms: farmer insert own' ? { ...p, hasCheck: false } : p)
+    expect(policyDefects(c)).toEqual([
+      { policy: 'farms.farms: farmer insert own', defect: 'WITH CHECK clause missing' }])
+  })
+
+  it('14. SWAP — drop one policy, add an unrelated one: total unchanged, V9 still FAILS', () => {
+    const c = LIVE().filter((p) => p.policyname !== 'risk_flags: operational farmer or admin')
+    c.push({ tablename: 'shipments', policyname: 'shipments: admin all', cmd: 'ALL', permissive: 'PERMISSIVE', roles: 'public', hasUsing: true, hasCheck: true })
+    expect(c).toHaveLength(63)                       // a restored `policies = 63` would PASS here
+    expect(policyDefects(c)).toEqual([
+      { policy: 'risk_flags.risk_flags: operational farmer or admin', defect: 'ABSENT' }])
+  })
+
+  it('15. the unapplied FARM_RESAVE draft half is excluded; the applied half is required', () => {
+    const names = EXPECTED_POLICIES.map((p) => p.policyname)
+    expect(names).toContain('farms: farmer update own')            // migration 19 depends on it
+    expect(names).not.toContain('farm_profiles: farmer update own') // never applied
+  })
+
+  it('16. V9a — a missing overlay table is NAMED, and a downgraded one still fails', () => {
+    expect(overlayMissing(LIVE())).toEqual([])
+    expect(overlayMissing(LIVE().filter((p) => p.policyname !== 'ddp_scores: operational farmer or admin')))
+      .toEqual(['ddp_scores'])
+    const downgraded = LIVE().map((p) => p.policyname === 'status_history: operational farmer or admin'
+      ? { ...p, permissive: 'PERMISSIVE' } : p)
+    expect(overlayMissing(downgraded)).toEqual(['status_history'])
   })
 })
