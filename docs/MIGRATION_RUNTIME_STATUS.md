@@ -48,7 +48,7 @@ presence of a `.sql` file in the repository is **not** evidence of application.
 
 ---
 
-## Migrations 19–23 — status matrix
+## Migrations 19–24 — status matrix
 
 | Migration | Repository | Staging | Production | Evidence (staging) | Unresolved |
 |---|---|---|---|---|---|
@@ -57,6 +57,7 @@ presence of a `.sql` file in the repository is **not** evidence of application.
 | **21** DDP-controlled farmer provisioning | On `main` | **`APPLIED_AND_VERIFIED`** | **`UNKNOWN`** | Catalog: `profiles.role` CHECK admits `pending`; column default is `pending`; `handle_new_user` body assigns `pending`. Harness preflight: **"migrations 21 and 22 present"** (PASS). Behavioural: farmers A and B each denied self-elevation to `ddp_admin` by RLS (`SQLSTATE 42501`), role unchanged afterwards | Supabase Auth "allow new users to sign up" is a dashboard setting, not expressible in SQL, and was **not** inspected |
 | **22** Operational-farmer RLS overlay | On `main` | **`APPLIED_NOT_VERIFIED`** | **`UNKNOWN`** | Catalog (installed): `has_operational_farmer_access()` present; 12 RESTRICTIVE policies in `public`. Behavioural — **table overlay substantially covered**: 59 of 61 pending-matrix probes passed — a `pending` identity was denied SELECT/INSERT/UPDATE/DELETE across all 11 overlay tables, denied `market_price_benchmarks` read, and denied both storage buckets, while an operational farmer retained access on identical requests | **Storage verification is incomplete.** The migration's storage policy is `AS RESTRICTIVE FOR ALL` on `storage.objects` for both farmer buckets (`22_..._HARDENING.sql:157-163`), i.e. SELECT + INSERT + UPDATE + DELETE. Only **INSERT** was fully exercised; **SELECT/list only partially** — the pending list-control probe **failed**; there was **no pending-user storage UPDATE** enforcement probe and **no pending-user storage DELETE** enforcement probe. The `remove()` calls were cleanup attempts that silently matched zero objects and are **not** DELETE-enforcement evidence. Full `FOR ALL` behavioural verification is therefore incomplete. **This is a coverage gap, not evidence of an access-control failure** — every operation actually probed enforced correctly. 2 storage probes failed on cleanup, not on enforcement — see Harness result |
 | **23** Buyer Pack server-authoritative issuance | On `main` | **`APPLIED_NOT_VERIFIED`** | **`UNKNOWN`** | Catalog: `issue_buyer_pack_snapshot` present and its body references `procurement_decisions_current` — i.e. the migration-23 definition is installed, not migration 10's client-trusting version. Prerequisites confirmed: `buyer_pack_snapshots` and `procurement_decisions` tables both present | `23_..._VERIFY.sql` Section B (behavioural: PK-HOLD / PK-REJECT / PK-NONE / stale-decision scenarios) was **not** executed. Applied but not behaviourally proven |
+| **24** Evidence Request & Resolution | On `main` (since 2026-07-23, PR #37 / `9496e1c`) | **`NOT_APPLIED`** | **`NOT_APPLIED`** | **Not applied to any hosted database.** Migration 24 only landed on `main` on 2026-07-23 (PR #37 merge `9496e1c`); no staging or Production apply has been performed, so there is no hosted catalog observation. Runtime evidence to date is **disposable-Postgres only**: HARDENING + STORAGE applied to a throwaway local PostgreSQL 18.4, then `24_..._VERIFY.sql` sections **A–M passed 13/13**, then STORAGE was rolled back to main — objects removed, pre-existing substrate intact; the destructive rollback guard **refused without explicit opt-in and succeeded with it**; teardown clean. **This is disposable-Postgres evidence only; it does not constitute hosted-Supabase (staging or Production) verification, and no parity with hosted Supabase is claimed.** | Staging apply + behavioural VERIFY on hosted Supabase **pending**. A reusable CI disposable-Postgres harness (PR-0) that would make this proof repeatable is **planned but not yet merged** |
 
 ### What changed relative to the previous revision
 
@@ -274,8 +275,15 @@ operation, not an improvisation. Recorded here for a decision.
    either environment.
 7. **Migration 20 has no rollback script.**
 
-## Out of scope
+## Migration 24 — landed on `main` since this audit
 
-**Migration 24** (Evidence Request & Resolution) is **not on `main`** — it exists only
-on draft PR #37 and has not been applied to any environment. It is deliberately absent
-from every table above and is not a prerequisite for anything here.
+**Migration 24** (Evidence Request & Resolution) **is now on `main`** — PR #37 merged on
+2026-07-23 (merge commit `9496e1c`), and the migration ledger now ends at 24. This
+corrects the earlier state of this document, which recorded migration 24 as "not on
+`main` … exists only on draft PR #37"; that is no longer true.
+
+It is **landed but not yet applied to any hosted database** — neither staging nor
+Production has been migrated. Its runtime status is tracked in the *Migrations 19–24
+status matrix* above; the only runtime evidence so far is against a disposable local
+PostgreSQL and does **not** establish hosted-Supabase parity. Migration 24 is not a
+prerequisite for the migration 10–23 status recorded elsewhere in this register.
