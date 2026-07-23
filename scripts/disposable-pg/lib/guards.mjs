@@ -26,6 +26,7 @@ export const FORBIDDEN_ENV_KEYS = Object.freeze([
   'DATABASE_URL',
   'PGHOST',
   'PGHOSTADDR',
+  'PGSERVICE',
   'SUPABASE_SERVICE_ROLE_KEY',
   'SUPABASE_ANON_KEY',
 ]);

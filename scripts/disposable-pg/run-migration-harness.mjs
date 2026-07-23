@@ -45,25 +45,34 @@ function gitSha() {
   return r.status === 0 ? r.stdout.trim() : (process.env.GITHUB_SHA || null);
 }
 
+// Run a scalar query and THROW on a non-zero psql exit. A failed/errored query
+// must never be silently read as "object absent" (that would be a false green in
+// the post-rollback removed-object checks). Callers get a trustworthy string.
+function scalar(cluster, sql) {
+  const r = cluster.query(sql);
+  if (r.status !== 0) {
+    throw new PhaseError(EXIT.ROLLBACK, `assertion query failed (exit ${r.status}): ${sql}\n${r.stderr || r.stdout}`);
+  }
+  return r.stdout.trim();
+}
 function regclassPresent(cluster, qualified) {
-  const r = cluster.query(`SELECT to_regclass('${qualified}') IS NOT NULL`);
-  return r.stdout.trim() === 't';
+  return scalar(cluster, `SELECT to_regclass('${qualified}') IS NOT NULL`) === 't';
 }
 function functionPresent(cluster, qualified) {
   const [schema, name] = qualified.split('.');
-  const r = cluster.query(
+  return Number(scalar(cluster,
     `SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='${schema}' AND p.proname='${name}'`,
-  );
-  return Number(r.stdout.trim() || '0') > 0;
+  )) > 0;
 }
 function policyPresent(cluster, name) {
   const esc = name.replace(/'/g, "''");
-  const r = cluster.query(`SELECT count(*) FROM pg_policies WHERE policyname='${esc}'`);
-  return Number(r.stdout.trim() || '0') > 0;
+  return Number(scalar(cluster, `SELECT count(*) FROM pg_policies WHERE policyname='${esc}'`)) > 0;
 }
 function bucketPresent(cluster, id) {
-  const r = cluster.query(`SELECT count(*) FROM storage.buckets WHERE id='${id}'`);
-  return Number(r.stdout.trim() || '0') > 0;
+  return Number(scalar(cluster, `SELECT count(*) FROM storage.buckets WHERE id='${id}'`)) > 0;
+}
+function countRows(cluster, table) {
+  return Number(scalar(cluster, `SELECT count(*) FROM ${table}`));
 }
 
 function assertPostRollback(cluster, fixture) {
@@ -81,8 +90,7 @@ function assertPostRollback(cluster, fixture) {
   for (const t of intact.tables || []) if (!regclassPresent(cluster, t)) problems.push(`substrate table missing after rollback: ${t}`);
   for (const f of intact.functions || []) if (!functionPresent(cluster, f)) problems.push(`substrate function missing after rollback: ${f}`);
   if (intact.authUsersMinRows != null) {
-    const r = cluster.query('SELECT count(*) FROM auth.users');
-    if (Number(r.stdout.trim() || '0') < intact.authUsersMinRows) {
+    if (Number(scalar(cluster, 'SELECT count(*) FROM auth.users')) < intact.authUsersMinRows) {
       problems.push(`auth.users lost rows (< ${intact.authUsersMinRows})`);
     }
   }
@@ -114,8 +122,16 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
   const phaseLine = (ok, label, detail = '') =>
     log(verbose, `  ${ok ? '✓' : '✗'} ${label}${detail ? ' — ' + detail : ''}`);
 
-  try {
+  // All work runs inside execute() so teardown can happen AFTER it and still
+  // escalate the exit code. A `return` value is snapshotted before a `finally`
+  // runs, so teardown residue could never amend it (brief §13 requires teardown
+  // failure to fail the run) — execute() + post-hoc teardown fixes that.
+  const execute = () => {
     log(verbose, `\n▶ fixture ${fixture.id} (run ${runId})`);
+
+    // Isolation guard for EVERY entry point, not just the CLI: a programmatic
+    // caller (e.g. a test) with a poisoned environment is refused before any SQL.
+    assertNoRemoteTargets(process.env);
 
     // ---- Static safety pre-checks (before any SQL touches a cluster) ----
     const applyTexts = fixture.applyStages.map((s) => ({ label: s.label, text: readFileSync(s.path, 'utf8') }));
@@ -136,6 +152,8 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
     ev.set('pgVersionActual', cluster.serverVersion);
     assertSocketOnlyConnection(conn, { tmpRoot: process.platform === 'win32' ? undefined : '/tmp' });
     const la = cluster.query('SHOW listen_addresses');
+    // Do not let an errored SHOW (empty stdout) pass the no-TCP guard vacuously.
+    if (la.status !== 0) throw new PhaseError(EXIT.ENV, `could not read listen_addresses (exit ${la.status}): ${la.stderr || la.stdout}`);
     assertListenAddressesEmpty(la.stdout);
     ev.set('isolation', {
       socketDir: cluster.socketDir,
@@ -163,9 +181,7 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
       if (!ok) {
         if (expectFailure && expectFailure.phase === 'apply') {
           phaseLine(true, `apply ${st.label} failed AS EXPECTED (negative scenario)`);
-          outcome = 'expected-failure';
-          ev.finalize({ finalExitCode: EXIT.OK, outcome });
-          return { code: EXIT.OK, ev, cluster };
+          return { code: EXIT.OK, outcome: 'expected-failure' };
         }
         throw new PhaseError(EXIT.APPLY, `apply stage ${st.label} failed:\n${res.stderr || res.stdout}`);
       }
@@ -177,6 +193,12 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
 
     // ---- VERIFY ----
     if (fixture.verify?.path) {
+      if (!Array.isArray(fixture.verify.expectedSections) || fixture.verify.expectedSections.length === 0 ||
+          fixture.verify.expectedPassCount == null) {
+        throw new PhaseError(EXIT.VERIFY,
+          `fixture ${fixture.id} has a VERIFY file but declares no expectedSections/expectedPassCount — ` +
+            `a VERIFY that asserts nothing must never pass (brief §8 non-vacuity)`);
+      }
       const res = cluster.runSqlFile(fixture.verify.path);
       rawLogs['verify.log'] = res.combined;
       const parsed = parseVerifyOutput(res.combined);
@@ -205,8 +227,8 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
       const seed = cluster.runInlineSql('guard-seed', dg.seedSql);
       rawLogs['guard-seed.log'] = seed.combined;
       if (seed.status !== 0) throw new PhaseError(EXIT.GUARD, `guard seed failed:\n${seed.stderr}`);
-      const liveBefore = Number(cluster.query('SELECT count(*) FROM public.evidence_requests').stdout.trim() || '0');
-      if (liveBefore < 1) throw new PhaseError(EXIT.GUARD, 'guard seed produced no live request (test would be vacuous)');
+      const liveBefore = countRows(cluster, dg.livenessTable);
+      if (liveBefore < 1) throw new PhaseError(EXIT.GUARD, `guard seed produced no live ${dg.livenessTable} row (test would be vacuous)`);
 
       // (a) REFUSAL branch: run the guarded stage WITHOUT opt-in — must fail closed.
       const refusalStage = fixture.rollbackStages.find((s) => s.label === dg.refusalStage);
@@ -214,8 +236,8 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
       const refusal = runRollbackStage(cluster, refusalStage, { optIn: null });
       rawLogs['guard-refusal.log'] = refusal.combined;
       const refused = refusal.status !== 0 && new RegExp(dg.expectRefusalMatch, 'i').test(refusal.combined);
-      const stillThere = regclassPresent(cluster, 'public.evidence_requests') &&
-        Number(cluster.query('SELECT count(*) FROM public.evidence_requests').stdout.trim() || '0') >= liveBefore;
+      const stillThere = regclassPresent(cluster, dg.livenessTable) &&
+        countRows(cluster, dg.livenessTable) >= liveBefore;
       ev.set('destructiveGuard', {
         seededRequests: liveBefore,
         refusal: { refused, dataPreserved: stillThere, matched: dg.expectRefusalMatch },
@@ -255,35 +277,45 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
       phaseLine(true, 'every migration object removed; bootstrap substrate intact');
     }
 
-    outcome = 'passed';
-    ev.finalize({ finalExitCode: EXIT.OK, outcome });
-    return { code: EXIT.OK, ev, cluster };
+    return { code: EXIT.OK, outcome: 'passed' };
+  };
+
+  let error = null;
+  try {
+    const r = execute();
+    code = r.code;
+    outcome = r.outcome;
   } catch (err) {
     code = err instanceof PhaseError ? err.code : EXIT.ENV;
     outcome = expectFailure ? 'unexpected' : 'failed';
-    ev.finalize({ finalExitCode: code, outcome });
+    error = err;
     ev.set('error', String(err.message || err));
     phaseLine(false, `FAILED (exit ${code})`, String(err.message || err).split('\n')[0]);
-    return { code, ev, cluster, error: err };
-  } finally {
-    // Deterministic teardown always.
-    if (!keep) {
-      const td = cluster.teardown();
-      ev.result.teardown = td;
-      if (!td.ok && code === EXIT.OK) code = EXIT.TEARDOWN;
-    } else {
-      ev.result.teardown = { ok: null, kept: true, runRoot: cluster.runRoot };
-      log(verbose, `  ! --keep: cluster NOT torn down at ${cluster.runRoot} (never use in CI)`);
-    }
-    // Persist evidence (retained even on failure).
-    try {
-      const written = ev.write({ rawLogs });
-      log(verbose, `  evidence: ${written.resultPath}`);
-      ev._artifactPath = written.resultPath;
-    } catch (e) {
-      log(verbose, `  ! evidence write failed: ${e.message}`);
-    }
   }
+
+  // Deterministic teardown ALWAYS — and BEFORE the exit code is finalized, so a
+  // failed stop or a leftover run dir escalates a would-be-green run to
+  // EXIT.TEARDOWN instead of being masked (brief §13; merge-gate items 12–15).
+  if (!keep) {
+    const td = cluster.teardown();
+    ev.result.teardown = td;
+    if (!td.ok && code === EXIT.OK) code = EXIT.TEARDOWN;
+  } else {
+    ev.result.teardown = { ok: null, kept: true, runRoot: cluster.runRoot };
+    log(verbose, `  ! --keep: cluster NOT torn down at ${cluster.runRoot} (never use in CI)`);
+  }
+
+  // Finalize evidence ONCE, with the true final exit code (post-teardown).
+  ev.finalize({ finalExitCode: code, outcome });
+  try {
+    const written = ev.write({ rawLogs });
+    log(verbose, `  evidence: ${written.resultPath}`);
+    ev._artifactPath = written.resultPath;
+  } catch (e) {
+    log(verbose, `  ! evidence write failed: ${e.message}`);
+  }
+
+  return { code, ev, cluster, error };
 }
 
 function parseArgs(argv) {
