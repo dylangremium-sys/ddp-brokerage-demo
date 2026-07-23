@@ -1283,8 +1283,9 @@ describe('migration 24 — FK cleanup is distinguishable from manual audit mutat
 describe('migration 24 — storage companion', () => {
   it('creates a PRIVATE bucket and never a public one', () => {
     expect(STO).toMatch(/'evidence-request-files'/)
-    expect(STO).toMatch(/public\)\s*VALUES \('evidence-request-files', 'evidence-request-files', false\)/)
-    expect(STO).toMatch(/DO UPDATE SET public = false/)
+    // v1.4: the INSERT now also sets file_size_limit; still private.
+    expect(STO).toMatch(/VALUES \('evidence-request-files', 'evidence-request-files', false, 104857600\)/)
+    expect(STO).toMatch(/DO UPDATE SET public = false, file_size_limit = 104857600/)
     expect(STO).not.toMatch(/public\s*=\s*true/)
   })
 
@@ -2332,5 +2333,57 @@ describe('migration 24 [v1.3] — internal helpers deny service_role', () => {
     expect(v).toMatch(/has_function_privilege\('service_role', sig, 'EXECUTE'\)/)
     expect(v).toMatch(/service_role can EXECUTE internal helper/)
     expect(v).toMatch(/public RPC % lost an intended grant/)
+  })
+})
+
+// ── Codex P2: evidence bucket upload size ceiling [v1.4] ────────────────────
+describe('migration 24 [v1.4] — evidence bucket has a 100 MiB size ceiling', () => {
+  const bucketStmt = STO.match(/INSERT INTO storage\.buckets[\s\S]*?;/)?.[0] ?? ''
+
+  it('the bucket INSERT configures file_size_limit = 104857600 (100 MiB)', () => {
+    expect(bucketStmt).toMatch(/INSERT INTO storage\.buckets \(id, name, public, file_size_limit\)/)
+    expect(bucketStmt).toMatch(/'evidence-request-files', false, 104857600/)
+  })
+
+  it('the ON CONFLICT path converges to private + 100 MiB (upgrade of an existing bucket)', () => {
+    expect(bucketStmt).toMatch(/ON CONFLICT \(id\) DO UPDATE SET public = false, file_size_limit = 104857600/)
+  })
+
+  it('the bucket stays private (no public regression)', () => {
+    expect(bucketStmt).not.toMatch(/public\s*=\s*true/)
+    expect(STO).not.toMatch(/public\)\s*VALUES\s*\([^)]*true/)
+  })
+
+  it('the ceiling matches the largest per-category limit (inventory_video)', () => {
+    expect(BODIES.get('evidence_max_size_bytes') ?? '')
+      .toMatch(/inventory_video' AND p_mime = 'video\/mp4' THEN 104857600/)
+  })
+
+  it('the per-category RPC limits remain stricter and authoritative', () => {
+    const maxSize = BODIES.get('evidence_max_size_bytes') ?? ''
+    expect(maxSize).toMatch(/ELSE 20971520/)           // 20 MiB for everything else
+    // reserve validates declared size; finalize validates actual stored size.
+    expect(BODIES.get('reserve_evidence_attachment') ?? '')
+      .toMatch(/evidence_max_size_bytes\(req\.category, p_mime_type\)/)
+    expect(BODIES.get('finalize_evidence_attachment') ?? '')
+      .toMatch(/evidence_max_size_bytes\(req\.category, effective_mime\)/)
+  })
+
+  it('the 150 MiB aggregate response limit is unchanged', () => {
+    expect(BODIES.get('fn_evidence_attachment_validate') ?? '').toMatch(/157286400/)
+  })
+
+  it('mutation guard: removing file_size_limit would fail these tests', () => {
+    const withoutLimit = bucketStmt.replace(/, file_size_limit = 104857600/g, '').replace(/, 104857600/g, '')
+    expect(withoutLimit).not.toMatch(/104857600/)
+  })
+
+  it('VERIFY R asserts the exact bucket configuration', () => {
+    const r = VER.match(/DO \$verify_r\$[\s\S]*?\$verify_r\$/)?.[0] ?? ''
+    expect(r).not.toBe('')
+    expect(r).toMatch(/file_size_limit is % \(expected 104857600/)
+    expect(r).toMatch(/has no file_size_limit/)
+    expect(r).toMatch(/is not private/)
+    expect(r).toMatch(/expected exactly 1 evidence-request-files bucket/)
   })
 })

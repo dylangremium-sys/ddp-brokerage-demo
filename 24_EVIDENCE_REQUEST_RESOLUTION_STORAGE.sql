@@ -54,12 +54,29 @@ END
 $precondition$;
 
 -- -----------------------------------------------------------------------------
--- 1. Private bucket (contract §7.1). public = false: no public URLs are ever
---    permitted; all reads go through short-lived signed URLs.
--- -----------------------------------------------------------------------------
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('evidence-request-files', 'evidence-request-files', false)
-ON CONFLICT (id) DO UPDATE SET public = false;
+-- 1. Private bucket (contract §7.1, §7.10 [v1.4]). public = false: no public URLs
+--    are ever permitted; all reads go through short-lived signed URLs.
+--
+--    file_size_limit is the ABSOLUTE storage-boundary ceiling, enforced by the
+--    Supabase Storage server BEFORE it accepts any bytes. Without it a farmer
+--    could reserve a valid path, upload an arbitrarily large object (the INSERT
+--    RLS policy checks the reservation, not the object size — object size is not
+--    known at policy-evaluation time), and abandon it unfinalized; the RPC size
+--    checks only run at reserve/finalize, after Storage already stored the bytes,
+--    so oversized pending objects would accumulate in the private bucket. 100 MiB
+--    (104857600 bytes) is the largest individual attachment the workflow allows
+--    (inventory_video / video/mp4, see evidence_max_size_bytes). This is a hard
+--    outer boundary and defense-in-depth ONLY — it is not evidence validation and
+--    does NOT replace the stricter per-category limits (20 MiB for everything
+--    else), the 150 MiB aggregate response limit, or the reserve/finalize checks,
+--    all of which remain authoritative underneath it.
+--
+--    The ON CONFLICT path converges an existing bucket to the authoritative state
+--    (private + 100 MiB) rather than preserving a stale/NULL/wrong limit, so an
+--    upgrade of a previously-created bucket is corrected too.
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('evidence-request-files', 'evidence-request-files', false, 104857600)
+ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = 104857600;
 
 -- -----------------------------------------------------------------------------
 -- 2. Object policies (contract §7.2, §8.3).

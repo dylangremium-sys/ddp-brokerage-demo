@@ -1471,4 +1471,36 @@ BEGIN
 END
 $verify_q$;
 
+-- -----------------------------------------------------------------------------
+-- VERIFY R — storage bucket size ceiling [v1.4]. Asserts the bucket row carries
+-- the authoritative private + 100 MiB configuration. NOTE: this proves the
+-- DATABASE configuration only; the Supabase Storage server's HTTP-layer rejection
+-- of an oversized upload is not exercisable here.
+-- -----------------------------------------------------------------------------
+DO $verify_r$
+DECLARE
+  n integer; v_public boolean; v_limit bigint;
+BEGIN
+  IF to_regclass('storage.buckets') IS NULL THEN
+    RAISE EXCEPTION 'VERIFY R FAILED: storage.buckets is unavailable';
+  END IF;
+  SELECT count(*) INTO n FROM storage.buckets WHERE id = 'evidence-request-files';
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'VERIFY R FAILED: expected exactly 1 evidence-request-files bucket, found %', n;
+  END IF;
+  SELECT public, file_size_limit INTO v_public, v_limit
+  FROM storage.buckets WHERE id = 'evidence-request-files';
+  IF v_public IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'VERIFY R FAILED: evidence bucket is not private (public=%)', v_public;
+  END IF;
+  IF v_limit IS NULL THEN
+    RAISE EXCEPTION 'VERIFY R FAILED: evidence bucket has no file_size_limit (oversized uploads uncapped)';
+  END IF;
+  IF v_limit <> 104857600 THEN
+    RAISE EXCEPTION 'VERIFY R FAILED: evidence bucket file_size_limit is % (expected 104857600 = 100 MiB)', v_limit;
+  END IF;
+  RAISE NOTICE 'VERIFY R PASSED: evidence bucket is private with a 100 MiB (104857600 byte) file_size_limit.';
+END
+$verify_r$;
+
 ROLLBACK;
