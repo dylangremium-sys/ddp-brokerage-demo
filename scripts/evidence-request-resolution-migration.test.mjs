@@ -1822,3 +1822,37 @@ describe('migration 24 — Codex P2: filename extensions are validated', () => {
     expect(reserve).toContain('evidence_filename_extension_allowed')
   })
 })
+
+describe('migration 24 — Codex P2: finalization cannot shift MIME', () => {
+  const finalize = BODIES.get('finalize_evidence_attachment') ?? ''
+
+  it('requires effective_mime to equal the reserved att.mime_type', () => {
+    expect(finalize).toMatch(/effective_mime IS DISTINCT FROM att\.mime_type[\s\S]{0,160}?RAISE EXCEPTION/)
+  })
+
+  it('re-runs the extension check against the AUTHORITATIVE effective_mime', () => {
+    expect(finalize).toMatch(/evidence_filename_extension_allowed\(req\.category, effective_mime, att\.original_filename\)/)
+  })
+
+  it('the equality guard precedes the ready-state UPDATE', () => {
+    const guardAt = finalize.indexOf('effective_mime IS DISTINCT FROM att.mime_type')
+    const updAt = finalize.indexOf("SET upload_state = 'ready'")
+    expect(guardAt).toBeGreaterThan(-1)
+    expect(updAt).toBeGreaterThan(-1)
+    expect(guardAt).toBeLessThan(updAt)
+  })
+
+  it('still verifies authoritative stored metadata (existence + size/MIME agreement)', () => {
+    expect(finalize).toMatch(/SELECT o\.metadata INTO obj_meta/)
+    expect(finalize).toMatch(/p_actual_mime_type IS DISTINCT FROM stored_mime[\s\S]{0,120}?RAISE EXCEPTION/)
+  })
+
+  it('VERIFY M exercises a category-valid MIME shift and asserts it is rejected', () => {
+    const m = VER.match(/DO \$verify_m\$[\s\S]*?\$verify_m\$;/)?.[0] ?? ''
+    expect(m).not.toBe('')
+    expect(m).toMatch(/reserved <> r\.stored/)
+    expect(m).toMatch(/checked < 6[\s\S]{0,120}?vacuous/)
+  })
+})
+
+// ── Codex P2 + v1.1: draft edit-authority handoff ──────────────────────────

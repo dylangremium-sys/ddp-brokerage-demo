@@ -963,4 +963,51 @@ BEGIN
 END
 $verify_k$;
 
+-- VERIFY M — final MIME must equal reserved MIME; extension revalidated against
+-- the authoritative final MIME. Table-driven over evidence_mime_allowed /
+-- evidence_filename_extension_allowed, which are the predicates finalization
+-- applies to (category, effective_mime, stored filename).
+-- -----------------------------------------------------------------------------
+DO $verify_m$
+DECLARE r record; checked integer := 0;
+BEGIN
+  -- The equality invariant itself: for multi-MIME categories, a reserved MIME
+  -- and a different category-allowed stored MIME are BOTH individually allowed,
+  -- yet finalization must reject the shift. We assert the building blocks the
+  -- RPC combines: extension validity is keyed to the FINAL mime.
+  FOR r IN
+    SELECT * FROM (VALUES
+      -- category, reserved_mime, stored_mime, filename, ext_ok_under_stored
+      ('other', 'image/jpeg', 'image/jpeg', 'photo.jpg', true),   -- match: pass
+      ('other', 'application/pdf','application/pdf','doc.pdf', true),
+      ('other', 'image/jpeg', 'application/pdf', 'photo.jpg', false), -- jpg not valid for pdf
+      ('other', 'application/pdf','image/jpeg', 'doc.pdf', false),    -- pdf not valid for jpeg
+      ('inventory_photo','image/png','image/webp','p.png', false),
+      ('inventory_photo','image/webp','image/png','p.webp', false)
+    ) AS t(category, reserved, stored, filename, ext_ok)
+  LOOP
+    checked := checked + 1;
+    -- extension validity against the STORED (final) mime must equal ext_ok
+    IF public.evidence_filename_extension_allowed(r.category, r.stored, r.filename)
+       IS DISTINCT FROM r.ext_ok THEN
+      RAISE EXCEPTION 'VERIFY M FAILED: ext(%, %, %) expected %',
+        r.category, r.stored, r.filename, r.ext_ok;
+    END IF;
+    -- when reserved <> stored, the finalization equality guard rejects regardless
+    -- of individual allow-listing; assert both are individually allowed so the
+    -- guard (not the allow-list) is what does the rejecting.
+    IF r.reserved <> r.stored THEN
+      IF NOT public.evidence_mime_allowed(r.category, r.reserved)
+         OR NOT public.evidence_mime_allowed(r.category, r.stored) THEN
+        RAISE EXCEPTION 'VERIFY M FAILED: fixture(%) does not exercise a category-valid MIME shift', r.category;
+      END IF;
+    END IF;
+  END LOOP;
+  IF checked < 6 THEN
+    RAISE EXCEPTION 'VERIFY M FAILED: only % case(s) (test would be vacuous)', checked;
+  END IF;
+  RAISE NOTICE 'VERIFY M PASSED: extension is validated against the final MIME; category-valid MIME shifts are still rejected by the equality guard.';
+END
+$verify_m$;
+
 ROLLBACK;

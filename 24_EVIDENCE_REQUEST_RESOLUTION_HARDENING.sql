@@ -1622,8 +1622,37 @@ BEGIN
   effective_size := COALESCE(stored_size, p_actual_size_bytes);
   effective_mime := COALESCE(stored_mime, p_actual_mime_type);
 
+  -- FINAL MIME MUST EQUAL THE RESERVED MIME.
+  --
+  -- A reservation is a security contract over (category, original filename,
+  -- canonical path, MIME, size ceiling). Finalization may PROVE the reservation
+  -- correct; it must not silently transform it into a different file type. The
+  -- previous code let effective_mime replace att.mime_type whenever both were
+  -- individually category-allowed, so on any multi-MIME category a reservation
+  -- of photo.jpg / image/jpeg could finalize as application/pdf while the stored
+  -- filename and canonical path still ended in .jpg — a row whose MIME and
+  -- extension disagree, which is exactly what the extension rule exists to stop.
+  --
+  -- The authoritative storage MIME remains authoritative EVIDENCE of what was
+  -- uploaded; a disagreement with the reservation is a rejection, not a coercion.
+  IF effective_mime IS DISTINCT FROM att.mime_type THEN
+    RAISE EXCEPTION
+      'FILE_TYPE_NOT_ALLOWED: uploaded object MIME % does not match the reserved MIME %',
+      effective_mime, att.mime_type USING ERRCODE = 'check_violation';
+  END IF;
+
   IF NOT public.evidence_mime_allowed(req.category, effective_mime) THEN
     RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED' USING ERRCODE = 'check_violation';
+  END IF;
+  -- Re-run the extension check against the AUTHORITATIVE final MIME, not merely
+  -- the reserved one. With the equality guard above these are the same MIME, so
+  -- this is belt-and-braces — but it means the extension guarantee is anchored
+  -- to effective_mime by construction and cannot silently drift if the equality
+  -- rule is ever relaxed.
+  IF NOT public.evidence_filename_extension_allowed(req.category, effective_mime, att.original_filename) THEN
+    RAISE EXCEPTION
+      'FILE_TYPE_NOT_ALLOWED: stored filename extension is not permitted for the final MIME %',
+      effective_mime USING ERRCODE = 'check_violation';
   END IF;
   IF effective_size IS NULL OR effective_size <= 0
      OR effective_size > public.evidence_max_size_bytes(req.category, effective_mime) THEN
