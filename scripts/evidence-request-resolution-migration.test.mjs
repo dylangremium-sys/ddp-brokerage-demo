@@ -1742,6 +1742,48 @@ describe('migration 24 — storage read authority is tied to a live attachment r
     expect(STO).not.toMatch(/CREATE POLICY[^;]*FOR UPDATE[^;]*storage\.objects/)
     expect(STO).not.toMatch(/public\s*=\s*true/)
   })
+
+  // Codex P2 (cid 3638240952): only finalized, not-being-removed evidence is
+  // readable by farmers. NOTE: these are structural guards over the policy text;
+  // the disposable-DB behavioural matrix (run under SET ROLE authenticated) is
+  // what actually proves RLS enforcement.
+  it('farmer read requires a FINALIZED upload (upload_state = ready)', () => {
+    expect(selectPolicy).toMatch(/a\.upload_state = 'ready'/)
+  })
+
+  it('farmer read excludes objects awaiting controlled removal', () => {
+    expect(selectPolicy).toMatch(/a\.removal_requested_at IS NULL/)
+  })
+
+  it('the farmer read policy keeps every authoritative attachment/path/farm gate', () => {
+    for (const req of [
+      /a\.origin = 'request_upload'/,
+      /a\.upload_state = 'ready'/,
+      /a\.removal_requested_at IS NULL/,
+      /a\.storage_object_path = storage\.objects\.name/,
+      /public\.can_operationally_access_farm\(er\.farm_id\)/,
+      /bucket_id = 'evidence-request-files'/,
+    ]) {
+      expect(selectPolicy, req.source).toMatch(req)
+    }
+    // Mutation guard: dropping either new predicate must break this test.
+    const withoutReady = selectPolicy.replace(/\s*AND a\.upload_state = 'ready'/, '')
+    const withoutRemoval = selectPolicy.replace(/\s*AND a\.removal_requested_at IS NULL/, '')
+    expect(withoutReady).not.toMatch(/a\.upload_state = 'ready'/)
+    expect(withoutRemoval).not.toMatch(/a\.removal_requested_at IS NULL/)
+  })
+
+  it('admin read remains unconditional per contract §7.6 (admins read all attachments)', () => {
+    const adminPolicy = STO.match(/CREATE POLICY "evidence-request-files: admin read"[\s\S]*?;/)?.[0] ?? ''
+    expect(adminPolicy).toMatch(/public\.is_ddp_admin\(\)/)
+    // deliberately NOT ready-gated — admins may inspect pending uploads
+    expect(adminPolicy).not.toMatch(/upload_state/)
+  })
+
+  it('no farmer storage UPDATE policy and no public SELECT policy exist', () => {
+    expect(STO).not.toMatch(/CREATE POLICY[^;]*FOR UPDATE/)
+    expect(STO).not.toMatch(/TO public\b/)
+  })
 })
 
 // ── Codex P2: filename extension allow-listing ─────────────────────────────

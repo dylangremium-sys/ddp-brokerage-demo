@@ -108,6 +108,15 @@ CREATE POLICY "evidence-request-files: farmer read own farm"
       WHERE a.storage_bucket = 'evidence-request-files'
         AND a.storage_object_path = storage.objects.name
         AND a.origin = 'request_upload'
+        -- Only FINALIZED evidence is readable. A pending_upload object holds bytes
+        -- the farmer uploaded but that finalize_evidence_attachment has not yet
+        -- measured (MIME/size/existence); exposing it lets farm members read
+        -- content finalization might still reject. And an object in the controlled
+        -- removal window (removal_requested_at set) is on its way out — it must not
+        -- be readable either. submit_evidence_response applies the same ready-only
+        -- rule, so the read policy matches it.
+        AND a.upload_state = 'ready'
+        AND a.removal_requested_at IS NULL
         AND public.can_operationally_access_farm(er.farm_id)
     )
   );
