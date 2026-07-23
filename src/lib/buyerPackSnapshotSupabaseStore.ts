@@ -128,6 +128,19 @@ function isSnapshotRow(v: unknown): v is SnapshotRow {
   return typeof r.pack_id === 'string' && typeof r.version === 'number'
 }
 
+function validateSnapshotForSave(snapshot: BuyerPackSnapshot): void {
+  const m = snapshot.manifest
+  if (typeof m.packId !== 'string' || m.packId.trim().length === 0) {
+    throw new Error('Buyer pack snapshot requires a non-empty pack id.')
+  }
+  if (typeof m.contentHash !== 'string' || m.contentHash.trim().length === 0) {
+    throw new Error('Buyer pack snapshot requires a content hash.')
+  }
+  if (typeof m.approvalId !== 'string' || m.approvalId.trim().length === 0) {
+    throw new Error('Buyer pack snapshot requires an approval id.')
+  }
+}
+
 export function createSupabaseBuyerPackSnapshotRepository(
   client: SnapshotClientLike,
 ): BuyerPackSnapshotRepository {
@@ -157,6 +170,8 @@ export function createSupabaseBuyerPackSnapshotRepository(
      * assigned server-side — the client never picks it.
      */
     async save(snapshot: BuyerPackSnapshot): Promise<void> {
+      validateSnapshotForSave(snapshot)
+
       const m = snapshot.manifest
       const { error } = await client.rpc(RPC, {
         // p_pack_id is the AUTHORITATIVE key: the server gate (migration 23) looks

@@ -62,7 +62,9 @@ describe('Buyer Pack output-gate wiring (source contract)', () => {
     expect(SRC).toMatch(/BUYER_PACK_OUTPUT_BLOCKED_TITLE/)
   })
 
-  it('leaves the server-authoritative issue button gated as before', () => {
-    expect(SRC).toMatch(/disabled=\{!isHumanApproved \|\| issuing\}/)
+  it('derives issue availability from the shared eligibility gate and authoritative decision state', () => {
+    expect(SRC).toMatch(/const issueEligibility = prepareBuyerPackSnapshotInput\(/)
+    expect(SRC).toMatch(/const canIssueBuyerPack = issueEligibility\.eligible && decisionSource !== 'unavailable' && !issuing/)
+    expect(SRC).toMatch(/disabled=\{!canIssueBuyerPack\}/)
   })
 })

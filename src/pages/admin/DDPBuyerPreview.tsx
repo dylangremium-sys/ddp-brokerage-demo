@@ -175,6 +175,21 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
 
   const approver = (approverName && approverName.trim()) || 'DDP Admin'
 
+  const issueEligibility = prepareBuyerPackSnapshotInput({
+    packId: item.id,
+    generatedBy: approver,
+    approvedBy: approver,
+    isHumanApproved,
+    storedDecision: storedDecision ?? null,
+    inventory: item,
+    coas: { hasCoaFile: !!item.coaStoragePath, certFileName: item.certFileName ?? null, coaStoragePath: item.coaStoragePath ?? null },
+    complianceSummary: { tier: farm ? deriveComplianceTier(farm, [item]) : 'CULTIVATOR_CLAIMED' },
+    documentChecks: CHECKLIST.map(c => ({ key: c.key, label: c.label, passed: c.pass(item) })),
+    risks: unresolvedRisks,
+    evidenceSummary: requirements,
+  })
+  const canIssueBuyerPack = issueEligibility.eligible && decisionSource !== 'unavailable' && !issuing
+
   // Load the latest persisted snapshot for this batch on mount / batch change.
   // Async because the repository contract is now Promise-based (Phase B step 1).
   //
@@ -257,31 +272,19 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   async function handleIssueBuyerPack() {
     setIssueError(null)
     setIssueNotice(null)
-    // Assemble the snapshot input from already-derived evidence and re-assert
-    // the human-approval gate. This never bypasses the gate — both this call
-    // and createBuyerPackSnapshot downstream reject anything not explicitly
-    // human-approved with a recorded "progress" decision.
-    const eligibility = prepareBuyerPackSnapshotInput({
-      packId: item.id,
-      generatedBy: approver,
-      approvedBy: approver,
-      isHumanApproved,
-      storedDecision: storedDecision ?? null,
-      inventory: item,
-      coas: { hasCoaFile: !!item.coaStoragePath, certFileName: item.certFileName ?? null, coaStoragePath: item.coaStoragePath ?? null },
-      complianceSummary: { tier: farm ? deriveComplianceTier(farm, [item]) : 'CULTIVATOR_CLAIMED' },
-      documentChecks: CHECKLIST.map(c => ({ key: c.key, label: c.label, passed: c.pass(item) })),
-      risks: unresolvedRisks,
-      evidenceSummary: requirements,
-    })
-    if (!eligibility.eligible) {
-      setIssueError(eligibility.reason)
+
+    if (!issueEligibility.eligible) {
+      setIssueError(issueEligibility.reason)
+      return
+    }
+    if (decisionSource === 'unavailable') {
+      setIssueError('The procurement decision could not be verified against the server, so issuing is blocked.')
       return
     }
 
     setIssuing(true)
     try {
-      const { snapshot, previousVersion } = await generateNextBuyerPackSnapshot(snapshotRepo, eligibility.input)
+      const { snapshot, previousVersion } = await generateNextBuyerPackSnapshot(snapshotRepo, issueEligibility.input)
       appendBuyerPackAuditEvent({ packId: item.id, snapshotVersion: snapshot.manifest.version, action: 'pack_generated', user: approver })
       if (previousVersion !== null) {
         appendBuyerPackAuditEvent({ packId: item.id, snapshotVersion: previousVersion, action: 'pack_superseded', user: approver })
@@ -758,12 +761,12 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
               type="button"
               className="btn btn-primary"
               onClick={() => { void handleIssueBuyerPack() }}
-              disabled={!isHumanApproved || issuing}
-              title={isHumanApproved ? undefined : 'Requires no blocking issues and a recorded "Progress" decision'}
+              disabled={!canIssueBuyerPack}
+              title={canIssueBuyerPack ? undefined : (decisionSource === 'unavailable' ? 'The authoritative procurement decision could not be verified, so issuing is blocked.' : 'Requires no blocking issues and a recorded "Progress" decision')}
             >
               {issuing ? 'Issuing…' : latestSnapshot ? 'Re-Issue Buyer Pack (new version)' : snapshotLoadError ? 'Issue Buyer Pack (history unavailable)' : 'Issue Buyer Pack'}
             </button>
-            {!isHumanApproved && (
+            {!canIssueBuyerPack && (
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                 Enabled only after this batch is human-approved for buyer discussion.
               </span>

@@ -116,6 +116,16 @@ describe('createSupabaseBuyerPackSnapshotRepository — save() calls the RPC', (
     expect(rpcCalls[0].args).not.toHaveProperty('version')
   })
 
+  it('rejects malformed snapshots before calling the RPC', async () => {
+    const { client, rpcCalls } = makeClient()
+    const repo = createSupabaseBuyerPackSnapshotRepository(client)
+    const malformed = snapshot()
+    malformed.manifest.packId = ''
+
+    await expect(repo.save(malformed)).rejects.toThrow(/pack id/i)
+    expect(rpcCalls).toHaveLength(0)
+  })
+
   it('translates a UNIQUE violation into the same "already exists" error the localStorage store throws', async () => {
     const { client } = makeClient({ rpcError: { code: '23505', message: 'duplicate key value' } })
     const repo = createSupabaseBuyerPackSnapshotRepository(client)

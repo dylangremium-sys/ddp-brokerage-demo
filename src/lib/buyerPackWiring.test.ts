@@ -97,6 +97,10 @@ describe('prepareBuyerPackSnapshotInput — the issue gate cannot be bypassed', 
     expect(prepareBuyerPackSnapshotInput(makeEvidence({ approvedBy: '   ' })).eligible).toBe(false)
   })
 
+  it('is ineligible when the progress decision has no timestamp', () => {
+    expect(prepareBuyerPackSnapshotInput(makeEvidence({ storedDecision: { decision: 'progress', decidedAt: '   ', notes: 'Cleared.' } })).eligible).toBe(false)
+  })
+
   it('is eligible when approved with a progress decision and a named approver, and assembles the document summary', () => {
     const result = prepareBuyerPackSnapshotInput(makeEvidence())
     expect(result.eligible).toBe(true)
