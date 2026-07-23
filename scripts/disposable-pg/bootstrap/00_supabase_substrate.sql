@@ -155,10 +155,13 @@ BEGIN RETURN NEW; END $$;
 
 -- -----------------------------------------------------------------------------
 -- RLS harness posture: enable RLS on storage.objects and grant the client roles
--- the table-level privileges Supabase grants them, so an eventual SET ROLE
--- authenticated actually evaluates the storage policies (grant AND RLS both
--- required). The migration under test owns its own policy set; here we only
--- reproduce the platform's baseline grants.
+-- the table-level privileges Supabase grants them. This is faithful to the hosted
+-- platform (Supabase ships storage.objects with RLS ON) and is a PRECONDITION for a
+-- future SET ROLE-based enforcement probe — but NOTE: no current fixture issues
+-- SET ROLE, so these policies are not yet exercised against a non-privileged caller
+-- (VERIFY runs as the owner, which bypasses RLS). See docs "Scope of the RLS claim".
+-- The migration under test owns its own policy set; here we only reproduce the
+-- platform's baseline grants.
 -- -----------------------------------------------------------------------------
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 GRANT USAGE ON SCHEMA storage, public, auth TO anon, authenticated, service_role;
