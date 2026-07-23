@@ -708,6 +708,17 @@ BEGIN
       OLD.id USING ERRCODE = 'check_violation';
   END IF;
 
+  -- removal_requested_at is IMMUTABLE ONCE SET (contract §7.8 [v1.2]): a tombstone
+  -- is irreversible. NULL -> timestamp is the one allowed transition (the removal
+  -- RPC). timestamp -> NULL, or timestamp -> a different timestamp, is denied, so
+  -- no path can resurrect a tombstoned upload as active evidence.
+  IF TG_OP = 'UPDATE'
+     AND OLD.removal_requested_at IS NOT NULL
+     AND NEW.removal_requested_at IS DISTINCT FROM OLD.removal_requested_at THEN
+    RAISE EXCEPTION 'evidence attachment %: removal_requested_at is immutable once set',
+      OLD.id USING ERRCODE = 'check_violation';
+  END IF;
+
   -- The attachment's request must equal the response's request.
   IF NEW.request_id IS DISTINCT FROM resp.request_id THEN
     RAISE EXCEPTION
@@ -774,6 +785,9 @@ BEGIN
   FROM public.evidence_request_attachments a
   WHERE a.response_id = NEW.response_id
     AND a.id <> NEW.id
+    -- Tombstones (removal_requested_at set) are logically removed and must not
+    -- count toward the 10-attachment / 150 MB limits (contract §7.8 [v1.2]).
+    AND a.removal_requested_at IS NULL
     AND (a.origin <> 'request_upload' OR a.upload_state = 'ready');
 
   IF NEW.origin <> 'request_upload' OR NEW.upload_state = 'ready' THEN
@@ -1202,7 +1216,6 @@ DECLARE
   resp          public.evidence_request_responses%ROWTYPE;
   pending_count integer;
   ready_count   integer;
-  removing_count integer;
   latest_sub_id uuid;
 BEGIN
   req := public.evidence_lock_visible_request(p_request_id, false);
@@ -1230,23 +1243,27 @@ BEGIN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
   END IF;
 
-  SELECT count(*) FILTER (WHERE origin = 'request_upload' AND upload_state = 'pending_upload'),
-         count(*) FILTER (WHERE origin <> 'request_upload' OR upload_state = 'ready'),
-         count(*) FILTER (WHERE removal_requested_at IS NOT NULL)
-    INTO pending_count, ready_count, removing_count
+  -- ACTIVE attachments only. A tombstone (removal_requested_at IS NOT NULL) is
+  -- logically removed from the draft (contract §7.8 [v1.2]): it neither blocks
+  -- submission as a pending upload nor counts as ready evidence. It is retained
+  -- solely for cleanup authority, so it must be invisible to submission logic.
+  SELECT count(*) FILTER (WHERE origin = 'request_upload' AND upload_state = 'pending_upload'
+                                AND removal_requested_at IS NULL),
+         count(*) FILTER (WHERE (origin <> 'request_upload' OR upload_state = 'ready')
+                                AND removal_requested_at IS NULL)
+    INTO pending_count, ready_count
   FROM public.evidence_request_attachments WHERE response_id = p_response_id;
 
   IF pending_count > 0 THEN
     RAISE EXCEPTION 'UPLOAD_NOT_READY' USING ERRCODE = 'check_violation';
   END IF;
 
-  -- Fail closed while any attachment is mid-removal: its object may already have
-  -- been deleted through the Storage API even though the row is still present.
-  -- Submitting now could produce evidence pointing at a missing object.
-  IF removing_count > 0 THEN
-    RAISE EXCEPTION 'UPLOAD_NOT_READY: an attachment is awaiting controlled removal'
-      USING ERRCODE = 'check_violation';
-  END IF;
+  -- NOTE: the previous "fail closed while any attachment is mid-removal" blocker
+  -- is gone. With durable tombstones that condition would be permanent — a
+  -- response could never be submitted after any removal. It is unnecessary:
+  -- tombstones are excluded from ready_count above, so they can never become
+  -- submitted evidence, and a late object on a tombstoned path is residue, not
+  -- evidence.
   IF COALESCE(btrim(resp.response_text), '') = '' AND ready_count = 0 THEN
     RAISE EXCEPTION 'VALIDATION_ERROR: a response requires text or at least one ready attachment'
       USING ERRCODE = 'check_violation';
@@ -1831,9 +1848,17 @@ BEGIN
 
   -- ── PHASE 2 — the marker is already committed by an earlier transaction ────
   --
-  -- Reached only on a later call, so "removal authorized" is durable and every
-  -- INSERT whose snapshot postdates it is refused. Only now is an absence
-  -- observation strong enough to justify deleting the row.
+  -- DURABLE TOMBSTONE (contract §7.8 [v1.2]). This row is NEVER hard-deleted
+  -- once removal_requested_at is set. A point-in-time absence from storage.objects
+  -- is NOT proof that no object can arrive: a Storage INSERT whose RLS policy was
+  -- evaluated while the marker was still NULL can be in flight (uncommitted, hence
+  -- invisible here under READ COMMITTED) and commit AFTER this call. If we deleted
+  -- the row on that absence, the late object would have no owning workflow row and
+  -- no DELETE-policy path — the exact orphan Codex identified. Keeping the row
+  -- permanently guarantees a late-committing object always has an authoritative
+  -- tombstone that authorizes controlled Storage deletion. We do NOT claim
+  -- atomicity between PostgreSQL and Supabase Storage transactions; the tombstone
+  -- is how the workflow stays correct without it.
   SELECT EXISTS (
     SELECT 1 FROM storage.objects o
     WHERE o.bucket_id = att.storage_bucket
@@ -1841,7 +1866,12 @@ BEGIN
   ) INTO object_exists;
 
   IF NOT object_exists THEN
-    DELETE FROM public.evidence_request_attachments WHERE id = p_attachment_id;
+    -- No object is CURRENTLY present, so the attachment is logically removed from
+    -- the draft. The row is retained as the tombstone (it is already excluded from
+    -- active evidence, counts, size and farmer reads by removal_requested_at). If
+    -- a late object arrives, a subsequent call returns STORAGE_DELETE_REQUIRED and
+    -- the same tombstone authorizes its deletion. REMOVED means "no object present
+    -- now", never "no object can ever arrive".
     RETURN jsonb_build_object(
       'result', 'REMOVED',
       'attachment_id', p_attachment_id,
@@ -1850,9 +1880,8 @@ BEGIN
     );
   END IF;
 
-  -- The object is still there. Keep the row: it is what authorizes the client's
-  -- Storage API delete, and what guarantees a late-landing object still has an
-  -- owner. Repeated calls are idempotent and deterministic.
+  -- The object is present. The tombstone authorizes the client's Storage API
+  -- delete; hand back the path. Repeated calls are idempotent and deterministic.
   RETURN jsonb_build_object(
     'result', 'STORAGE_DELETE_REQUIRED',
     'attachment_id', p_attachment_id,

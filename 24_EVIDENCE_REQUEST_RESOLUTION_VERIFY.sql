@@ -1224,4 +1224,88 @@ BEGIN
 END
 $verify_n$;
 
+-- -----------------------------------------------------------------------------
+-- VERIFY O — durable request-upload tombstones [v1.2].
+-- Proves the row survives removal, is excluded from active evidence, and that
+-- removal_requested_at is immutable once set. NOTE: the straddling-transaction
+-- race itself cannot be reproduced by this single-session script; the two-session
+-- concurrency harness proves that separately.
+-- -----------------------------------------------------------------------------
+DO $verify_o$
+DECLARE
+  actor uuid; farm_id_v uuid; profile_v uuid; req_id uuid; resp_id uuid;
+  att_id uuid; att2_id uuid; n integer; ok boolean; active_ready integer; active_pending integer;
+  p1 text; p2 text;
+BEGIN
+  SELECT id INTO actor FROM auth.users LIMIT 1;
+  IF actor IS NULL THEN RAISE EXCEPTION 'VERIFY O FAILED: no auth.users row'; END IF;
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor) RETURNING id INTO farm_id_v;
+  INSERT INTO public.farm_profiles (id, farm_id) VALUES (gen_random_uuid(), farm_id_v) RETURNING id INTO profile_v;
+  INSERT INTO public.evidence_requests (farm_id,target_type,farm_profile_id,category,title,explanation,created_by_user_id)
+  VALUES (farm_id_v,'farm_profile',profile_v,'farm_license','Licence','Please upload the licence document now.',actor)
+  RETURNING id INTO req_id;
+  INSERT INTO public.evidence_request_responses (request_id,response_number,state,created_by_user_id,draft_owner_user_id)
+  VALUES (req_id,1,'draft',actor,actor) RETURNING id INTO resp_id;
+
+  -- A READY request-upload attachment, then mark it for removal (phase-1 effect).
+  INSERT INTO public.evidence_request_attachments
+    (request_id,response_id,origin,storage_bucket,storage_object_path,upload_state,
+     original_filename,mime_type,size_bytes,sha256_hex,created_by_user_id,finalized_at)
+  VALUES (req_id,resp_id,'request_upload','evidence-request-files',
+          farm_id_v||'/'||req_id||'/'||resp_id||'/o/doc.pdf','ready','doc.pdf','application/pdf',
+          2048,repeat('e',64),actor,now())
+  RETURNING id, storage_object_path INTO att_id, p1;
+  UPDATE public.evidence_request_attachments SET removal_requested_at = now() WHERE id = att_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN RAISE EXCEPTION 'VERIFY O FAILED: marking removal affected % row(s)', n; END IF;
+
+  -- O1: the row PERSISTS (tombstone), even though we could delete it as superuser.
+  IF NOT EXISTS (SELECT 1 FROM public.evidence_request_attachments WHERE id = att_id) THEN
+    RAISE EXCEPTION 'VERIFY O FAILED: tombstone row is missing';
+  END IF;
+
+  -- O2: excluded from ACTIVE counts (mirrors submit_evidence_response predicates).
+  SELECT count(*) FILTER (WHERE (origin <> 'request_upload' OR upload_state='ready') AND removal_requested_at IS NULL),
+         count(*) FILTER (WHERE origin='request_upload' AND upload_state='pending_upload' AND removal_requested_at IS NULL)
+    INTO active_ready, active_pending
+  FROM public.evidence_request_attachments WHERE response_id = resp_id;
+  IF active_ready <> 0 THEN RAISE EXCEPTION 'VERIFY O FAILED: tombstone counts as active ready evidence (%)', active_ready; END IF;
+  IF active_pending <> 0 THEN RAISE EXCEPTION 'VERIFY O FAILED: tombstone counts as active pending (%)', active_pending; END IF;
+
+  -- O3: identity/path/creator preserved.
+  IF (SELECT created_by_user_id FROM public.evidence_request_attachments WHERE id = att_id) <> actor
+     OR (SELECT storage_object_path FROM public.evidence_request_attachments WHERE id = att_id) <> p1 THEN
+    RAISE EXCEPTION 'VERIFY O FAILED: tombstone provenance/path changed';
+  END IF;
+
+  -- O4: removal_requested_at is IMMUTABLE ONCE SET — clearing it is rejected.
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_attachments SET removal_requested_at = NULL WHERE id = att_id;
+  EXCEPTION WHEN check_violation THEN ok := true; END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY O FAILED: a tombstone could be resurrected (removal_requested_at cleared)'; END IF;
+
+  -- O5: changing it to a different timestamp is rejected too.
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_attachments SET removal_requested_at = now() + interval '1 day' WHERE id = att_id;
+  EXCEPTION WHEN check_violation THEN ok := true; END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY O FAILED: removal_requested_at was mutable to a new value'; END IF;
+
+  -- O6: a replacement reservation gets a DISTINCT attachment id and canonical path.
+  INSERT INTO public.evidence_request_attachments
+    (request_id,response_id,origin,storage_bucket,storage_object_path,upload_state,
+     original_filename,mime_type,size_bytes,created_by_user_id)
+  VALUES (req_id,resp_id,'request_upload','evidence-request-files',
+          farm_id_v||'/'||req_id||'/'||resp_id||'/o2/doc.pdf','pending_upload','doc.pdf','application/pdf',
+          1024,actor)
+  RETURNING id, storage_object_path INTO att2_id, p2;
+  IF att2_id = att_id OR p2 = p1 THEN
+    RAISE EXCEPTION 'VERIFY O FAILED: replacement reused the tombstoned id/path';
+  END IF;
+
+  RAISE NOTICE 'VERIFY O PASSED: request-upload tombstone persists, is excluded from active evidence, immutable once set, and paths are not reused.';
+END
+$verify_o$;
+
 ROLLBACK;

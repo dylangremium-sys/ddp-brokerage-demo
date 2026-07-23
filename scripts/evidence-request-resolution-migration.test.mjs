@@ -1068,10 +1068,14 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
     expect(b).toMatch(/IF att\.origin <> 'request_upload' THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments[\s\S]*?'REMOVED'/)
   })
 
-  it('stage 1 — an upload with no stored object is removed immediately', () => {
+  it('stage 1 — absence yields REMOVED but retains the tombstone row (no hard delete)', () => {
+    // TOMBSTONE (v1.2): a request_upload row is never hard-deleted once removal
+    // begins; absence means "no object now", not "no object can arrive".
     const b = fn()
     expect(b).toMatch(/SELECT EXISTS \([\s\S]*?FROM storage\.objects o[\s\S]*?\) INTO object_exists/)
-    expect(b).toMatch(/IF NOT object_exists THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments[\s\S]*?'REMOVED'/)
+    const absenceBlock = b.match(/IF NOT object_exists THEN[\s\S]*?END IF;/)?.[0] ?? ''
+    expect(absenceBlock).toMatch(/'REMOVED'/)
+    expect(absenceBlock).not.toMatch(/DELETE FROM public\.evidence_request_attachments/)
   })
 
   it('phase 1 — the first call authorizes removal and deletes nothing', () => {
@@ -1101,7 +1105,7 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
     expect(fn()).toMatch(/IF att\.removal_requested_at IS NULL THEN\s*UPDATE/)
   })
 
-  it('completion after an interrupted Storage API delete lands on REMOVED', () => {
+  it('the existence check runs only after the durable marker (phase 2)', () => {
     // REVISED with the orphan-race fix. This asserted the OLD ordering — that
     // the existence check ran BEFORE the removal marker — which is precisely
     // the racy sequence Codex reported: an absence result was trusted while the
@@ -1111,7 +1115,10 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
     const b = fn()
     expect(b.indexOf('IF att.removal_requested_at IS NULL THEN'))
       .toBeLessThan(b.indexOf('IF NOT object_exists THEN'))
-    expect(b).toMatch(/IF NOT object_exists THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments[\s\S]*?'REMOVED'/)
+    // TOMBSTONE (v1.2): absence yields REMOVED without deleting the row.
+    const absenceBlock = b.match(/IF NOT object_exists THEN[\s\S]*?END IF;/)?.[0] ?? ''
+    expect(absenceBlock).toMatch(/'REMOVED'/)
+    expect(absenceBlock).not.toMatch(/DELETE FROM public\.evidence_request_attachments/)
   })
 
   it('removal is denied on a submitted response, but allowed on a terminal request', () => {
@@ -1131,11 +1138,15 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
     expect(b).toMatch(/WHERE id = p_attachment_id AND response_id = p_response_id AND request_id = p_request_id/)
   })
 
-  it('submission fails closed while any attachment awaits removal', () => {
+  it('submission excludes tombstones from pending and ready counts (no permanent block)', () => {
+    // TOMBSTONE (v1.2): the old removing_count>0 blocker would be permanent once a
+    // tombstone exists. It is removed; instead pending/ready counts exclude
+    // tombstones so a tombstone neither blocks submission nor counts as evidence.
     const b = BODIES.get('submit_evidence_response') ?? ''
-    expect(b).toMatch(/count\(\*\) FILTER \(WHERE removal_requested_at IS NOT NULL\)/)
-    expect(b).toMatch(/removing_count > 0/)
-    expect(b).toMatch(/awaiting controlled removal/)
+    expect(b).not.toMatch(/removing_count/)
+    expect(b).not.toMatch(/awaiting controlled removal/)
+    expect(b).toMatch(/upload_state = 'pending_upload'[\s\S]{0,80}?AND removal_requested_at IS NULL/)
+    expect(b).toMatch(/upload_state = 'ready'\)[\s\S]{0,80}?AND removal_requested_at IS NULL/)
   })
 
   it('finalization fails closed while the attachment awaits removal', () => {
@@ -1560,7 +1571,10 @@ describe('migration 24 — Codex P2: removal cannot orphan an in-flight upload',
 
   it('the deleting DELETE is reachable only after an existence check', () => {
     const tail = body.slice(body.indexOf('SELECT EXISTS'))
-    expect(tail).toMatch(/IF NOT object_exists THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments/)
+    // TOMBSTONE (v1.2): absence no longer deletes the request_upload row.
+    const absenceBlock = tail.match(/IF NOT object_exists THEN[\s\S]*?END IF;/)?.[0] ?? ''
+    expect(absenceBlock).toMatch(/'REMOVED'/)
+    expect(absenceBlock).not.toMatch(/DELETE FROM public\.evidence_request_attachments/)
   })
 
   it('a still-present object keeps the row so the object always has an owner', () => {
@@ -1758,19 +1772,25 @@ describe('migration 24 — storage read authority is tied to a live attachment r
   it('the farmer read policy keeps every authoritative attachment/path/farm gate', () => {
     for (const req of [
       /a\.origin = 'request_upload'/,
-      /a\.upload_state = 'ready'/,
-      /a\.removal_requested_at IS NULL/,
       /a\.storage_object_path = storage\.objects\.name/,
       /public\.can_operationally_access_farm\(er\.farm_id\)/,
       /bucket_id = 'evidence-request-files'/,
     ]) {
       expect(selectPolicy, req.source).toMatch(req)
     }
-    // Mutation guard: dropping either new predicate must break this test.
-    const withoutReady = selectPolicy.replace(/\s*AND a\.upload_state = 'ready'/, '')
-    const withoutRemoval = selectPolicy.replace(/\s*AND a\.removal_requested_at IS NULL/, '')
-    expect(withoutReady).not.toMatch(/a\.upload_state = 'ready'/)
-    expect(withoutRemoval).not.toMatch(/a\.removal_requested_at IS NULL/)
+    // Branch (a): ACTIVE evidence readable by any operational farm member.
+    expect(selectPolicy).toMatch(/a\.upload_state = 'ready' AND a\.removal_requested_at IS NULL/)
+    // Branch (b): a TOMBSTONE readable ONLY by the current draft owner (v1.2), so
+    // the controlled cleanup DELETE can locate it. Pending stays hidden from all;
+    // tombstones stay hidden from other members.
+    expect(selectPolicy).toMatch(/a\.removal_requested_at IS NOT NULL/)
+    expect(selectPolicy).toMatch(/r\.state = 'draft'\s*\n?\s*AND r\.draft_owner_user_id = auth\.uid\(\)/)
+  })
+
+  it('a non-tombstoned pending object is readable by NO ONE (finding stays closed)', () => {
+    // The active branch requires ready+removal-NULL; the tombstone branch requires
+    // removal-NOT-NULL. A pending, non-removed object matches neither.
+    expect(selectPolicy).toMatch(/\(a\.upload_state = 'ready' AND a\.removal_requested_at IS NULL\)\s*\n?\s*OR/)
   })
 
   it('admin read remains unconditional per contract §7.6 (admins read all attachments)', () => {
@@ -2132,5 +2152,76 @@ describe('migration 24 — CoA links require a coa source document', () => {
     expect(nsec).toMatch(/GET DIAGNOSTICS n = ROW_COUNT/)
     expect(nsec).toMatch(/'coa', 'analysis\.pdf'/)      // coa fixture
     expect(nsec).toMatch(/'licence', 'permit\.pdf'/)    // licence fixture
+  })
+})
+
+// ── Codex P2: durable request-upload tombstones (straddling-upload race) ────
+describe('migration 24 [v1.2] — request-upload removal leaves a durable tombstone', () => {
+  const remove = BODIES.get('remove_draft_evidence_attachment') ?? ''
+  const submit = BODIES.get('submit_evidence_response') ?? ''
+  const finalize = BODIES.get('finalize_evidence_attachment') ?? ''
+  const validate = BODIES.get('fn_evidence_attachment_validate') ?? ''
+  const del = STO.match(/CREATE POLICY "evidence-request-files: farmer delete own draft"[\s\S]*?\);/)?.[0] ?? ''
+  const ins = STO.match(/CREATE POLICY "evidence-request-files: farmer insert reserved path"[\s\S]*?\);/)?.[0] ?? ''
+  const sel = STO.match(/CREATE POLICY "evidence-request-files: farmer read own farm"[\s\S]*?\);/)?.[0] ?? ''
+
+  it('phase 2 never hard-deletes a request_upload row on absence', () => {
+    const absence = remove.match(/IF NOT object_exists THEN[\s\S]*?END IF;/)?.[0] ?? ''
+    expect(absence).not.toBe('')
+    expect(absence).toMatch(/'REMOVED'/)
+    expect(absence).not.toMatch(/DELETE FROM public\.evidence_request_attachments/)
+  })
+
+  it('the only DELETE of an attachment row is the existing-document (non-upload) stage', () => {
+    // request_upload rows are tombstoned; the one row-delete path is for links.
+    const deletes = [...remove.matchAll(/DELETE FROM public\.evidence_request_attachments/g)]
+    expect(deletes.length).toBe(1)
+    expect(remove).toMatch(/att\.origin <> 'request_upload' THEN[\s\S]*?DELETE FROM public\.evidence_request_attachments/)
+  })
+
+  it('removal_requested_at remains the durable INSERT fence (unchanged)', () => {
+    expect(ins).toMatch(/a\.removal_requested_at IS NULL/)
+  })
+
+  it('a tombstone is never farmer-readable (SELECT excludes it)', () => {
+    expect(sel).toMatch(/a\.upload_state = 'ready'/)
+    expect(sel).toMatch(/a\.removal_requested_at IS NULL/)
+  })
+
+  it('a tombstone still authorizes controlled Storage DELETE', () => {
+    expect(del).toMatch(/a\.removal_requested_at IS NOT NULL/)
+  })
+
+  it('finalize rejects a tombstone independently of upload_state', () => {
+    expect(finalize).toMatch(/att\.removal_requested_at IS NOT NULL[\s\S]{0,200}?RAISE EXCEPTION/)
+  })
+
+  it('submission excludes tombstones from both pending and ready counts', () => {
+    expect(submit).not.toMatch(/removing_count/)
+    expect(submit).toMatch(/upload_state = 'pending_upload'[\s\S]{0,80}?AND removal_requested_at IS NULL/)
+    expect(submit).toMatch(/upload_state = 'ready'\)[\s\S]{0,80}?AND removal_requested_at IS NULL/)
+  })
+
+  it('the per-response attachment/size limits exclude tombstones', () => {
+    expect(validate).toMatch(/a\.removal_requested_at IS NULL[\s\S]{0,120}?a\.origin <> 'request_upload' OR a\.upload_state = 'ready'/)
+  })
+
+  it('removal_requested_at is immutable once set (no resurrection)', () => {
+    expect(validate).toMatch(/OLD\.removal_requested_at IS NOT NULL[\s\S]{0,140}?RAISE EXCEPTION 'evidence attachment %: removal_requested_at is immutable once set'/)
+  })
+
+  it('VERIFY O covers persistence, active-exclusion, immutability and path non-reuse', () => {
+    const o = VER.match(/DO \$verify_o\$[\s\S]*?\$verify_o\$/)?.[0] ?? ''
+    expect(o).not.toBe('')
+    expect(o).toMatch(/tombstone row is missing/)
+    expect(o).toMatch(/tombstone counts as active ready evidence/)
+    expect(o).toMatch(/could be resurrected/)
+    expect(o).toMatch(/replacement reused the tombstoned id\/path/)
+    expect(o).toMatch(/GET DIAGNOSTICS n = ROW_COUNT/)
+  })
+
+  it('rollback remains complete (no new object introduced needing a drop)', () => {
+    // The tombstone fix adds no new table/function; rollback is unchanged.
+    expect(RBK).toMatch(/DROP TABLE IF EXISTS public\.evidence_request_attachments/)
   })
 })

@@ -108,16 +108,32 @@ CREATE POLICY "evidence-request-files: farmer read own farm"
       WHERE a.storage_bucket = 'evidence-request-files'
         AND a.storage_object_path = storage.objects.name
         AND a.origin = 'request_upload'
-        -- Only FINALIZED evidence is readable. A pending_upload object holds bytes
-        -- the farmer uploaded but that finalize_evidence_attachment has not yet
-        -- measured (MIME/size/existence); exposing it lets farm members read
-        -- content finalization might still reject. And an object in the controlled
-        -- removal window (removal_requested_at set) is on its way out — it must not
-        -- be readable either. submit_evidence_response applies the same ready-only
-        -- rule, so the read policy matches it.
-        AND a.upload_state = 'ready'
-        AND a.removal_requested_at IS NULL
         AND public.can_operationally_access_farm(er.farm_id)
+        AND (
+          -- (a) ACTIVE, FINALIZED evidence: readable by any operational member of
+          -- the farm. A pending_upload object holds bytes finalize has not yet
+          -- measured (MIME/size/existence); exposing it would let farm members
+          -- read content finalization might still reject — so pending stays hidden
+          -- from everyone. submit_evidence_response applies the same ready-only rule.
+          (a.upload_state = 'ready' AND a.removal_requested_at IS NULL)
+          OR
+          -- (b) A TOMBSTONE (removal_requested_at set) is readable ONLY by the
+          -- CURRENT DRAFT OWNER, solely so the controlled cleanup can locate and
+          -- delete the object through the Storage API. PostgreSQL requires SELECT
+          -- visibility of a row to target it in a WHERE-clause DELETE, so without
+          -- this the cleanup DELETE the delete-policy authorizes could never run.
+          -- This does NOT re-open the pending-read finding: a tombstone stays
+          -- hidden from OTHER farm members, and a non-tombstoned pending object
+          -- stays hidden from everyone. The one reader is the person deleting their
+          -- own upload (contract §7.8 [v1.2]).
+          (a.removal_requested_at IS NOT NULL
+           AND EXISTS (
+             SELECT 1 FROM public.evidence_request_responses r
+             WHERE r.id = a.response_id
+               AND r.state = 'draft'
+               AND r.draft_owner_user_id = auth.uid()
+           ))
+        )
     )
   );
 
