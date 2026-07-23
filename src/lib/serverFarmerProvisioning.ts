@@ -57,6 +57,10 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // Fields a caller must never be able to set — they would let the caller choose
 // the resulting role or target an arbitrary profile row.
 const FORBIDDEN_BODY_KEYS = ['role', 'id', 'userId', 'user_id', 'profileId', 'profile_id']
+// Upper bounds on invited-user metadata. An over-length field is REJECTED (fail
+// closed), never silently truncated — oversized values must not be written to the
+// auth user record (DDP audit: no length bounds on farmer-invite metadata).
+const MAX_LENGTHS = { email: 254, displayName: 120, province: 85, phoneNumber: 32, lineId: 64 }
 
 export async function handleProvisionFarmer(
   deps: ProvisioningDeps,
@@ -82,14 +86,22 @@ export async function handleProvisionFarmer(
   }
   const email = typeof body.email === 'string' ? body.email.trim() : ''
   if (!EMAIL_RE.test(email)) return deny(400, 'A valid email address is required.')
+  if (email.length > MAX_LENGTHS.email) return deny(400, 'The email address is too long.')
 
-  const input: FarmerInviteInput = {
-    email,
-    displayName: optionalStr(body.display_name ?? body.displayName),
-    province: optionalStr(body.province),
-    phoneNumber: optionalStr(body.phone_number ?? body.phoneNumber),
-    lineId: optionalStr(body.line_id ?? body.lineId),
-  }
+  const displayName = optionalStr(body.display_name ?? body.displayName)
+  const province = optionalStr(body.province)
+  const phoneNumber = optionalStr(body.phone_number ?? body.phoneNumber)
+  const lineId = optionalStr(body.line_id ?? body.lineId)
+  const boundedFields: Array<[string, string | undefined, number]> = [
+    ['display name', displayName, MAX_LENGTHS.displayName],
+    ['province', province, MAX_LENGTHS.province],
+    ['phone number', phoneNumber, MAX_LENGTHS.phoneNumber],
+    ['LINE id', lineId, MAX_LENGTHS.lineId],
+  ]
+  const overLength = boundedFields.find(([, value, max]) => typeof value === 'string' && value.length > max)
+  if (overLength) return deny(400, `The ${overLength[0]} exceeds the ${overLength[2]}-character maximum.`)
+
+  const input: FarmerInviteInput = { email, displayName, province, phoneNumber, lineId }
 
   // 4. Invite the user via Admin Auth.
   const invite = await deps.inviteFarmer(input)
@@ -103,7 +115,14 @@ export async function handleProvisionFarmer(
     })
   }
   if (invite.kind === 'error') {
-    return { status: 502, body: { ok: false, stage: 'invite', reason: 'invite_failed', error: invite.message } }
+    // Do NOT return the raw Supabase Admin-Auth error to the client — it can leak
+    // internal auth-provider wording. Surface a coded, generic message; the raw
+    // `invite.message` stays server-side for the adapter's observability layer to
+    // log, consistent with the ai-summary route's generic-error discipline.
+    return {
+      status: 502,
+      body: { ok: false, stage: 'invite', reason: 'invite_failed', error: 'The invitation could not be sent. Please retry, or contact support if it persists.' },
+    }
   }
 
   // 5. Promote the resulting pending profile to farmer. This both confirms the
