@@ -6,10 +6,9 @@ import type { Lang } from '../../types'
 interface Props {
   lang?: Lang
   onSuccess: () => void
-  onGoSignup: () => void
 }
 
-export default function LoginPage({ lang = 'en', onSuccess, onGoSignup }: Props) {
+export default function LoginPage({ lang = 'en', onSuccess }: Props) {
   const t = T[lang]
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -75,13 +74,6 @@ export default function LoginPage({ lang = 'en', onSuccess, onGoSignup }: Props)
             {loading ? t.loginLoading : t.loginBtn}
           </button>
         </form>
-
-        <p className="auth-switch-text">
-          {t.loginSwitchPrompt}{' '}
-          <button className="link-btn" onClick={onGoSignup}>
-            {t.loginSwitchLink}
-          </button>
-        </p>
       </div>
     </div>
   )

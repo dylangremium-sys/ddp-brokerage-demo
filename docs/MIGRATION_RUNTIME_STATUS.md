@@ -1,55 +1,289 @@
 # Migration Runtime Status — by Environment
 
-**Last verified: 2026-07-14.** This file records where each migration actually is,
+**Last verified: 2026-07-21.** This file records where each migration actually is,
 per environment. A migration is never described as "applied" without naming the
-environment it was applied to.
+environment it was applied to and the runtime evidence that proves it.
 
-Contains no credentials, project URLs, or connection strings.
+> **This document is a status register, not an execution recipe.** It records what
+> was observed in a live database at a point in time. It does not tell you what to
+> run, in what order, or whether it is safe to do so — for that, read the migration
+> register in `README.md` ("Database setup and migration safety") and each
+> migration's own header and runbook.
 
-## Status table
+**No migration was applied, altered or rolled back during this audit.** The only
+statements executed against a database were read-only catalog `SELECT`s and the
+repository's own staging security harness (`npm run security:staging`), which
+applies no DDL.
+
+Contains no credentials, connection strings, keys or passwords.
+
+## Audit provenance
+
+| | |
+|---|---|
+| Audit date | 2026-07-21 |
+| Repository baseline | `origin/main` @ `329f05d1dff8126a6f600b899026d234493dda20` |
+| Staging project ref | `szqocdabwkjrggrddocx` |
+| Production project ref | `iihxjrfxmycjafbtjvvq` |
+| Environments inspected | **Staging only.** Production was not contacted. |
+| Method | Read-only `pg_catalog` / `information_schema` queries, plus `npm run security:staging` |
+
+Both project refs are already hardcoded in `scripts/run-staging-security-tests.mjs`
+as an allowlist; recording them here is not a disclosure. The harness refuses to run
+against the production ref, and refuses any ref that is not the approved staging one.
+
+## Status vocabulary
+
+| Value | Meaning |
+|---|---|
+| `APPLIED_AND_VERIFIED` | Objects observed present in the live catalog **and** behaviour confirmed at runtime. |
+| `APPLIED_NOT_VERIFIED` | Objects observed present in the live catalog; behavioural enforcement not exercised, or exercised only in part. Where coverage is partial, the evidence column names exactly what was and was not exercised. |
+| `PARTIALLY_APPLIED` | Some objects present, others absent. |
+| `NOT_APPLIED` | Positively observed absent, or stated absent by an operator record. |
+| `BLOCKED` | Cannot proceed until a prerequisite is resolved. |
+| `UNKNOWN` | No runtime evidence either way. **Not** a synonym for not-applied. |
+
+A merged PR, a green CI run, a passing static test, a successful deployment, or the
+presence of a `.sql` file in the repository is **not** evidence of application.
+
+---
+
+## Migrations 19–24 — status matrix
+
+| Migration | Repository | Staging | Production | Evidence (staging) | Unresolved |
+|---|---|---|---|---|---|
+| **19** Farm admin-field guard | On `main` | **`APPLIED_NOT_VERIFIED`** | **`UNKNOWN`** | Catalog (installed): `fn_protect_farm_admin_fields` present; body references `is_ddp_admin`; **no `= 'admin'` role literal**; non-internal trigger present on `public.farms`. Behavioural (**partial — UPDATE only, 4 of 7 protected columns**): harness group B2 — farmer A could not set `status`, `compliance_status`, `risk_level` or `partner_tier` on its own farm (write accepted, values reverted; `status` still `Submitted to DDP`) | **Behavioural coverage is incomplete.** The migration installs a `BEFORE INSERT OR UPDATE` trigger over seven admin-controlled columns (`19_..._HARDENING.sql:20-25`, `:187-190`): the four exercised above plus `export_readiness`, `reviewed_by` and `created_by`. The **INSERT** vector — which the migration's own header records as a second vector on the same authorization boundary, including `created_by` spoofing — and those three columns were **not** exercised. Production status also uncorroborated — see Conflicting evidence |
+| **20** Guard EXECUTE ACL fix | On `main` | **`APPLIED_AND_VERIFIED`** | **`UNKNOWN`** | Catalog: `authenticated` does **not** hold `EXECUTE` on `fn_protect_farm_admin_fields`. This ACL state is the migration's entire content, and is exactly what `19_..._VERIFY.sql` Section A asserts | No rollback script exists for this migration |
+| **21** DDP-controlled farmer provisioning | On `main` | **`APPLIED_AND_VERIFIED`** | **`UNKNOWN`** | Catalog: `profiles.role` CHECK admits `pending`; column default is `pending`; `handle_new_user` body assigns `pending`. Harness preflight: **"migrations 21 and 22 present"** (PASS). Behavioural: farmers A and B each denied self-elevation to `ddp_admin` by RLS (`SQLSTATE 42501`), role unchanged afterwards | Supabase Auth "allow new users to sign up" is a dashboard setting, not expressible in SQL, and was **not** inspected |
+| **22** Operational-farmer RLS overlay | On `main` | **`APPLIED_NOT_VERIFIED`** | **`UNKNOWN`** | Catalog (installed): `has_operational_farmer_access()` present; 12 RESTRICTIVE policies in `public`. Behavioural — **table overlay substantially covered**: 59 of 61 pending-matrix probes passed — a `pending` identity was denied SELECT/INSERT/UPDATE/DELETE across all 11 overlay tables, denied `market_price_benchmarks` read, and denied both storage buckets, while an operational farmer retained access on identical requests | **Storage verification is incomplete.** The migration's storage policy is `AS RESTRICTIVE FOR ALL` on `storage.objects` for both farmer buckets (`22_..._HARDENING.sql:157-163`), i.e. SELECT + INSERT + UPDATE + DELETE. Only **INSERT** was fully exercised; **SELECT/list only partially** — the pending list-control probe **failed**; there was **no pending-user storage UPDATE** enforcement probe and **no pending-user storage DELETE** enforcement probe. The `remove()` calls were cleanup attempts that silently matched zero objects and are **not** DELETE-enforcement evidence. Full `FOR ALL` behavioural verification is therefore incomplete. **This is a coverage gap, not evidence of an access-control failure** — every operation actually probed enforced correctly. 2 storage probes failed on cleanup, not on enforcement — see Harness result |
+| **23** Buyer Pack server-authoritative issuance | On `main` | **`APPLIED_NOT_VERIFIED`** | **`UNKNOWN`** | Catalog: `issue_buyer_pack_snapshot` present and its body references `procurement_decisions_current` — i.e. the migration-23 definition is installed, not migration 10's client-trusting version. Prerequisites confirmed: `buyer_pack_snapshots` and `procurement_decisions` tables both present | `23_..._VERIFY.sql` Section B (behavioural: PK-HOLD / PK-REJECT / PK-NONE / stale-decision scenarios) was **not** executed. Applied but not behaviourally proven |
+| **24** Evidence Request & Resolution | On `main` (since 2026-07-23, PR #37 / `9496e1c`) | **`NOT_APPLIED`** | **`NOT_APPLIED`** | **Not applied to any hosted database.** Migration 24 only landed on `main` on 2026-07-23 (PR #37 merge `9496e1c`); no staging or Production apply has been performed, so there is no hosted catalog observation. Runtime evidence to date is **disposable-Postgres only**: HARDENING + STORAGE applied to a throwaway local PostgreSQL 18.4, then `24_..._VERIFY.sql` sections **A–M passed 13/13**, then STORAGE was rolled back to main — objects removed, pre-existing substrate intact; the destructive rollback guard **refused without explicit opt-in and succeeded with it**; teardown clean. **This is disposable-Postgres evidence only; it does not constitute hosted-Supabase (staging or Production) verification, and no parity with hosted Supabase is claimed.** | Staging apply + behavioural VERIFY on hosted Supabase **pending**. A reusable CI disposable-Postgres harness (PR-0) that would make this proof repeatable is **planned but not yet merged** |
+
+### What changed relative to the previous revision
+
+The previous revision of this document covered **only migrations 10 and 17** and said
+nothing about 19–23. `README.md` and `docs/MASTER_DEVELOPMENT_ROADMAP.md` recorded
+19–22 as "unable to verify" — but for migration 23 they went further and made a
+**categorical not-applied claim**, which the staging evidence contradicts. That is a
+conflict, not a verification gap, and it is recorded as one below: see *Conflicting
+evidence — migration 23 in staging*.
+
+**That gap is now closed for staging.** Direct catalog inspection shows migrations 19,
+20, 21, 22 and 23 are all present in the staging database, and the security harness
+confirms 21 and 22 are enforcing at runtime and 19 partially (UPDATE path only). This
+corrects a documentation state that had understated staging's actual position.
+
+**It is not closed for production**, and nothing here should be read as saying so.
+
+### Conflicting evidence — migrations 19 and 20 in production
+
+Two repository documents assert that migration 19 was applied to **production** and
+that a manual `REVOKE EXECUTE ... FROM authenticated` was applied there:
+
+- `docs/FARM_ADMIN_FIELD_GUARD_APPLICATION.md` — "19_…VERIFY.sql Section A caught this
+  on the Production apply … Production is already corrected."
+- `20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql` header — "it has already been applied to
+  Production".
+
+Against that:
+
+- PR #19, merged the same day and earlier than PR #21, states "**No migration has been
+  run against any database.**"
+- `docs/SECURITY_TEST_LOG.md` — which does carry dated, project-attributed runtime
+  records for other migrations — contains **no entry** for migration 19 or 20.
+- The claims are undated, carry no operator name, and cite no VERIFY output or catalog
+  query.
+
+The claims are therefore recorded but **not** accepted as runtime evidence. Production
+status for 19 and 20 remains **`UNKNOWN`**. Resolving it requires a SELECT-only catalog
+check of the guard function and its EXECUTE ACL. `19_..._VERIFY.sql` **Section A** is the
+object-state section and is written to be read-only, but it must be re-read at the exact
+repository revision and independently confirmed SELECT-only before any production use;
+the script must never be run wholesale. **Section B must never be run against
+production** — it inserts into `auth.users`, `public.profiles`, `public.farms` and
+`public.farm_memberships`, and updates `public.farms`. Its closing `rollback` does **not**
+make it operationally safe: the statements still execute, fire triggers, take locks and
+consume sequence values.
+
+### Conflicting evidence — migration 23 in staging
+
+The merged baseline on `main` does not merely record migration 23 as unverified; it
+states categorically that it was never applied:
+
+- `README.md` — migration 23 is "Not applied anywhere", citing a runbook stating that it
+  "runs no SQL against any database".
+- `docs/MASTER_DEVELOPMENT_ROADMAP.md` — "the migration has never been executed", and
+  separately that it has "never been executed against any database".
+
+The staging catalog contradicts those claims. `issue_buyer_pack_snapshot` is present and
+its body reads `procurement_decisions_current` — the migration-23 definition, not
+migration 10's client-trusting version. Migration 23 **is** installed in staging.
+
+What this does and does not establish:
+
+- Staging status is **`APPLIED_NOT_VERIFIED`** — installed, but `23_..._VERIFY.sql`
+  Section B (PK-HOLD / PK-REJECT / PK-NONE / stale-decision) was **not** run, so issuance
+  behaviour is unproven.
+- Production remains **`UNKNOWN`**. Production was not contacted; nothing in this section
+  bears on it.
+- **No authoritative application record exists.** Nothing in this audit establishes who
+  applied migration 23 to staging, when it was applied, or through which operational
+  process. Origin, timing and execution record are all unknown.
+- The categorical baseline documentation was **wrong for staging**. It is corrected here
+  rather than silently superseded, and **`README.md` and
+  `docs/MASTER_DEVELOPMENT_ROADMAP.md` are corrected in this same PR** so that their
+  migration 19–23 runtime-status statements now agree with this register: the README
+  migration table was updated, and the roadmap's correction register, source-authority
+  table and execution sequence were updated. The historical migration-23 runbook
+  (`docs/BUYER_PACK_AUTHORITATIVE_ISSUANCE_APPLICATION.md`) remains **superseded** for
+  application status.
+
+---
+
+## Migrations 10 and 17 — carried forward
 
 | | Migration 10 — Buyer Pack snapshots | Migration 17 — Procurement decisions |
 |---|---|---|
-| **Repository** | Committed on `main`. Executable SQL unchanged since it was applied to staging. | Committed on `main`. Executable SQL unchanged since it was applied to staging. |
-| **Staging** | **APPLIED + VERIFIED** (2026-07-14) | **APPLIED + VERIFIED** (2026-07-14) |
-| **Production** | **NOT applied.** Not run, not deployed. | **NOT applied.** Not run, not deployed. |
-| **Runtime verification — staging** | V1–V6 executed and matched expectations. Behavioural checks run inside a **rolled-back** transaction. | `17_..._VERIFY.sql` returned `ok` for all 8 checks. Behavioural checks run inside a **rolled-back** transaction. |
+| **Repository** | Committed on `main`. | Committed on `main`. |
+| **Staging** | **`APPLIED_AND_VERIFIED`** (2026-07-14); table presence re-confirmed by catalog 2026-07-21 | **`APPLIED_AND_VERIFIED`** (2026-07-14); table presence re-confirmed by catalog 2026-07-21 |
+| **Production** | **`NOT_APPLIED`** per the 2026-07-14 operator record. **Not re-verified in this audit.** | **`NOT_APPLIED`** per the 2026-07-14 operator record. **Not re-verified in this audit.** |
 | **Runtime verification — production** | **None. Never executed.** | **None. Never executed.** |
-| **VERIFY script** | `10_..._VERIFY.sql` — V1–V6 are **active, read-only, and directly runnable**. V7 writes and is commented out, outside the default path. | `17_..._VERIFY.sql` — read-only, directly runnable, safe against any environment. |
-| **Rollback** | `10_..._ROLLBACK.sql` present. | `17_..._ROLLBACK.sql` present — **destructive**: dropping the table destroys the decision audit trail. Export first; prefer rolling back the app deploy. |
-| **Remaining blockers (production)** | Backup + explicit approval. Revisit the `ACL-TEST-EXEMPT` marker once these functions exist in production. | Depends on migration 10. No TRUNCATE guard of its own (covered in staging by migration 14's default privileges). |
+| **Rollback** | `10_..._ROLLBACK.sql` present. | `17_..._ROLLBACK.sql` present — **destructive**: dropping the table destroys the decision audit trail. Export first. |
 
-## What is true right now
+**Ordering — not optional.** Migration 10 MUST be applied before migration 17;
+migration 17 holds a hard FK to `public.buyer_pack_snapshots(snapshot_id)`. Migration
+23 depends on both.
 
-- **Staging has both migrations**, and staging verification **passed**.
-- **Production has neither migration.**
-- **Production therefore still uses the application's localStorage fallback.** The
-  server-side decision trail and server-side snapshot persistence exist in the
-  deployed code but are **not active in production**, because the schema is absent
-  and the app feature-detects that and degrades.
-- **No production SQL verification has occurred.** Not for migration 10, not for
-  migration 17, and not for `16_PRODUCTION_SAFETY_VERIFY.sql`.
+---
 
-## Ordering — not optional
+## Staging security harness — result
 
-**Migration 10 MUST be applied before migration 17.** Migration 17 holds a hard FK
-to `public.buyer_pack_snapshots(snapshot_id)`. Applying 17 first fails outright with
-`relation "public.buyer_pack_snapshots" does not exist`.
+| | |
+|---|---|
+| Command | `npm run security:staging` |
+| Target | staging ref `szqocdabwkjrggrddocx` (production ref blocked by the harness) |
+| Started / finished | 2026-07-21T18:39:01Z → 18:39:28Z |
+| Run id | `1784659142065-868ac4ea` |
+| Result | **107 PASS · 5 FAIL · 0 SKIP · 0 BLOCK** |
+| Exit code | **1** (non-zero because failures occurred). Derived from the script's documented `computeExitCode` contract — the value was not captured directly, owing to a shell-pipeline error by the operator running it |
+| Pending matrix | 61 total · 59 pass · 2 fail · 0 skip · 0 blocked — merge gate **NOT SATISFIED** |
+| DDL applied | **None.** The harness applies no schema change; its only file execution is a hardcoded allowlist of four SELECT-only VERIFY scripts |
 
-The coupling between 17 and 10 remains an **open review item** for production
-planning. It is not settled by this document.
+### The 5 failures
 
-## Before any production cutover
+**Three catalog VERIFY failures — migrations 12, 14, 15 (not 19–23):**
 
-1. Take a **pre-application backup** of production and confirm it restores.
-2. Obtain **explicit sign-off**. Application to staging does **not** imply production
-   readiness and must not be read as approval.
-3. Run **`16_PRODUCTION_SAFETY_VERIFY.sql`** (read-only) against production — it is
-   **still outstanding** and has never been executed.
-4. Apply **10 → 17**, in that order.
-5. Run **`10_..._VERIFY.sql`** and **`17_..._VERIFY.sql`** against production and
-   confirm every check. In particular, `17` V6 must report that `authenticated` holds
-   neither UPDATE nor DELETE.
-6. Do **not** run `10_..._VERIFY.sql` section **V7** as part of any pipeline. It
-   writes, and is safe only when run manually inside a transaction ending in
-   `rollback;`.
+| Script | Failing checks observed |
+|---|---|
+| `12_PUBLIC_FUNCTION_EXECUTE_VERIFY.sql` | `FAIL\|11` |
+| `14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_VERIFY.sql` | `existing table public.farms unchanged for anon`; `object counts`; `mig11 active & farm-resave absent` |
+| `15_EXISTING_TABLE_AND_AUDIT_LOG_VERIFY.sql` | `V2 crud_intact_non_audit`; `V6 counts_and_rls`; `V7 prior_migrations_and_absences`; `V8 functions_unchanged` |
+
+**Hypothesis, not a conclusion:** these VERIFY scripts predate migrations 19–23, and at
+least one failing check — `mig11 active & farm-resave absent` — asserts the **absence**
+of a farm trigger/function that migration 19 legitimately installs under the same name
+(`fn_protect_farm_admin_fields`). Several others assert fixed object counts and
+unchanged function sets, which later migrations would necessarily move. So these may be
+**stale expectations rather than live drift**. That has **not** been confirmed, and the
+alternative — genuine privilege drift on staging — is not excluded. **Status: `UNKNOWN`,
+investigation required.** Do not treat these failures as either benign or as a
+confirmed defect until each failing check is read individually.
+
+**Two storage failures — cleanup, not enforcement:**
+
+- `pending cannot list another user private objects` — the *control* object could not be removed
+- `cleanup verified for storage list-control object` — same root cause
+
+Both are cleanup failures. Neither indicates that a `pending` identity gained access:
+every enforcement probe in that group passed, including "pending cannot write beneath
+another user prefix" (403) on both buckets.
+
+---
+
+## Cleanup verification
+
+Baseline was captured immediately before the run and compared immediately after.
+
+| Measure | Before | After | Assessment |
+|---|---|---|---|
+| Synthetic farms (`farm_name ILIKE 'security-test-%'`) | 0 | **0** | Clean — farm cleanup worked |
+| Total farms | 0 | 0 | Unchanged |
+| Total profiles | 4 | 4 | Unchanged — no user or membership record damaged |
+| `compliance_audit_log` rows | 13 | **14** | +1, **intentional**: `STAGING_ALLOW_AUDIT_INSERT=true`; the append-only row is retained by design because its immutability is the property under test |
+| Storage objects | — | **36** | **Residue — see below** |
+| Migration catalog facts (19/21/22/23) | as recorded | **identical** | No schema change; no migration applied or altered |
+
+### Storage residue — a pre-existing, accumulating defect
+
+**Four objects from this run remain**, all tagged with the run id:
+
+```
+farmer-documents  <userB>/security-test-1784659142065-868ac4ea-listctl.txt
+farmer-documents  <userA>/security-test-1784659142065-868ac4ea-attrib.pdf
+farmer-documents  <userA>/security-test-1784659142065-868ac4ea.txt
+farmer-photos     <userA>/security-test-1784659142065-868ac4ea-attrib.jpg
+```
+
+Only the first was reported as a cleanup failure by the harness; the other three were
+**not** reported, yet also remain — so the storage residue check is itself incomplete.
+
+**This is not new.** Of 36 storage objects on staging, essentially all are synthetic
+test artefacts accumulated from earlier runs — dated 2026-07-12, 07-13, 07-19 (three
+separate runs), and 07-20. Storage cleanup has been silently failing across many runs.
+
+This mirrors a defect the harness already documents and fixed once for farms: an
+earlier version filtered on a non-existent column, so the delete matched nothing and
+the residue check then reported zero — "a false 'clean' that let 24 orphaned rows
+accumulate". The same class of bug now appears to exist on the storage path.
+
+**No ad hoc deletion was performed.** The harness has no documented, staging-scoped
+storage cleanup command, so removing these is a code fix plus a deliberate cleanup
+operation, not an improvisation. Recorded here for a decision.
+
+---
+
+## Remaining unknowns
+
+1. **Production status of migrations 19, 20, 21, 22, 23** — `UNKNOWN`. Production was
+   not contacted in this audit. **There is no blanket "read-only Section A" path across
+   these migrations, and no migration 19/21/22/23 VERIFY script may be run wholesale
+   against production:**
+   - **19** and **23** each carry an object-state Section A written to be read-only.
+     Either may be used only after that exact section has been re-read at the current
+     repository revision and independently confirmed SELECT-only.
+   - **21** and **22** have **no production-safe read-only section at all**. Migration
+     21's VERIFY inserts into `auth.users` and updates `public.profiles`; migration 22's
+     VERIFY is likewise behavioural and performs DML. A closing `rollback` does **not**
+     make either safe against production.
+   - **`16_PRODUCTION_SAFETY_VERIFY.sql`** contains no DML, but must still be reviewed at
+     the exact repository revision before execution.
+
+   Resolve production status instead with separately reviewed, purpose-built, SELECT-only
+   catalog queries that positively identify the production project reference before
+   connecting, run under an enforced read-only session, and perform no application-table
+   DML, no `auth.users` DML and no storage writes. This register records status; it is
+   not an execution recipe and deliberately carries no runnable production SQL.
+2. **Production status of migrations 10 and 17** — recorded `NOT_APPLIED` on the
+   2026-07-14 operator record; **not re-verified** on 2026-07-21.
+3. **Migration 23 behavioural enforcement on staging** — installed, but the decision-gate
+   scenarios in `23_..._VERIFY.sql` Section B were not exercised.
+4. **Catalog VERIFY failures for migrations 12, 14, 15 on staging** — cause not
+   established; stale-expectation vs genuine drift is unresolved.
+5. **Storage cleanup defect** — root cause not diagnosed; 36 residual objects on staging.
+6. **Supabase Auth signup setting** — migration 21's companion dashboard control
+   ("allow new users to sign up") is not expressible in SQL and was not inspected in
+   either environment.
+7. **Migration 20 has no rollback script.**
+
+## Migration 24 — landed on `main` since this audit
+
+**Migration 24** (Evidence Request & Resolution) **is now on `main`** — PR #37 merged on
+2026-07-23 (merge commit `9496e1c`), and the migration ledger now ends at 24. This
+corrects the earlier state of this document, which recorded migration 24 as "not on
+`main` … exists only on draft PR #37"; that is no longer true.
+
+It is **landed but not yet applied to any hosted database** — neither staging nor
+Production has been migrated. Its runtime status is tracked in the *Migrations 19–24
+status matrix* above; the only runtime evidence so far is against a disposable local
+PostgreSQL and does **not** establish hosted-Supabase parity. Migration 24 is not a
+prerequisite for the migration 10–23 status recorded elsewhere in this register.

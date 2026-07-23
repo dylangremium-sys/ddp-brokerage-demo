@@ -4748,3 +4748,166 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   border: 1px solid var(--ddp-success-700);
 }
 .ddp-wrap .btn-approve:hover { background: var(--ddp-green-900); border-color: var(--ddp-green-900); }
+
+/* ── Operations Desk ────────────────────────────────────────────────────────
+   Additive and entirely .ops-desk-scoped: every selector below is new, so no
+   existing rule changes and no farmer or public surface can be reached by it.
+   The page also carries .ddp-wrap, so it inherits the editorial token remap
+   above rather than defining a second palette. */
+.ops-desk { padding-bottom: 56px; }
+
+.ops-desk .sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+.ops-desk-head { padding: 8px 0 20px; border-bottom: 1px solid var(--ddp-line-strong); }
+.ops-desk-title {
+  font-family: var(--ddp-serif); font-size: 30px; line-height: 36px;
+  font-weight: 500; letter-spacing: -0.01em; color: var(--ddp-ink-950); margin: 0;
+}
+.ops-desk-standfirst {
+  margin: 8px 0 0; max-width: 62ch;
+  font-size: 15px; line-height: 23px; color: var(--ddp-ink-700);
+}
+
+/* Incomplete-view notice. Deliberately quiet in tone but never dismissible —
+   a partially loaded desk must keep saying so. */
+.ops-desk-notice {
+  margin: 20px 0 0; padding: 14px 16px;
+  background: var(--ddp-paper-strong);
+  border: 1px solid var(--ddp-risk-700); border-left-width: 3px;
+  color: var(--ddp-ink-950); font-size: 14px; line-height: 21px;
+}
+.ops-desk-notice ul { margin: 6px 0 0; padding-left: 18px; }
+.ops-desk-loading { margin: 16px 0 0; font-size: 14px; color: var(--ddp-ink-500); }
+
+/* Summary strip — counts only, no charts, no bubbles. */
+.ops-desk-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px; margin: 24px 0 0; padding: 0;
+  background: var(--ddp-line-soft); border: 1px solid var(--ddp-line-soft);
+}
+.ops-desk-summary-cell { background: var(--ddp-paper); padding: 14px 16px; }
+.ops-desk-summary-cell dt {
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ddp-ink-500);
+}
+.ops-desk-summary-cell dd {
+  margin: 6px 0 0; font-family: var(--ddp-serif);
+  font-size: 24px; line-height: 28px; color: var(--ddp-ink-950);
+}
+
+.ops-desk-controls {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;
+  margin: 28px 0 0; padding-bottom: 16px;
+}
+.ops-desk-field { display: flex; flex-direction: column; gap: 6px; min-width: 180px; }
+.ops-desk-field label {
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ddp-ink-500);
+}
+.ops-desk-field input, .ops-desk-field select {
+  padding: 9px 11px; font-size: 14px; font-family: var(--ddp-sans);
+  color: var(--ddp-ink-950); background: var(--ddp-paper-strong);
+  border: 1px solid var(--ddp-line-strong); border-radius: 0;
+}
+.ops-desk-field input { min-width: 260px; }
+
+.ops-desk-table {
+  width: 100%; border-collapse: collapse; margin-top: 4px;
+  background: var(--ddp-paper); font-size: 14px;
+}
+/* Bounded horizontal-scroll container for the table (wraps it in
+   DDPOperationsDesk.tsx). overflow-x:auto gives this box min-content 0, so the
+   table's nowrap width never widens the page; on desktop the table fits and no
+   scrollbar shows. contain:paint adds a paint-containment boundary: without it,
+   the scroll container's clipped horizontal overflow still leaks into the ROOT
+   element's scrollable-overflow region (documentElement.scrollWidth), which on
+   narrow viewports inflates the fixed demo strip and the reported page width even
+   though body never scrolls. Paint containment severs that leak so the page/root
+   width equals the viewport. Safe here — nothing needs to visually escape this
+   box (expandable detail rows render inside the table). Scoped to .ops-desk —
+   no global/other-page table is touched. */
+.ops-desk-table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; contain: paint; }
+.ops-desk-caption {
+  caption-side: top; text-align: left; padding: 0 0 12px;
+  font-size: 12px; line-height: 18px; color: var(--ddp-ink-500); max-width: 78ch;
+}
+.ops-desk-table th {
+  text-align: left; padding: 10px 12px;
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ddp-ink-500); font-weight: 600;
+  border-bottom: 1px solid var(--ddp-line-strong); white-space: nowrap;
+}
+.ops-desk-table td {
+  padding: 12px; vertical-align: top; color: var(--ddp-ink-950);
+  border-bottom: 1px solid var(--ddp-line-soft);
+}
+.ops-desk-reason { max-width: 42ch; line-height: 20px; color: var(--ddp-ink-700); }
+.ops-desk-muted { color: var(--ddp-ink-500); }
+.ops-desk-empty { padding: 36px 12px; text-align: center; color: var(--ddp-ink-500); }
+
+/* Priority is always a written word. The rule below only adds weight to the
+   label that is already there — colour never carries the meaning alone. */
+.ops-desk-priority {
+  display: inline-block; padding: 2px 8px;
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600;
+  border: 1px solid currentColor; color: var(--ddp-ink-700); white-space: nowrap;
+}
+.ops-desk-priority--critical { color: var(--ddp-risk-700); }
+.ops-desk-priority--high { color: var(--ddp-warning-700); }
+.ops-desk-priority--normal { color: var(--ddp-ink-500); }
+
+.ops-desk-category {
+  display: block; margin-top: 4px;
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ddp-ink-500);
+}
+.ops-desk-matter {
+  padding: 0; background: none; border: 0; text-align: left; cursor: pointer;
+  font-family: var(--ddp-sans); font-size: 14px; font-weight: 600;
+  color: var(--ddp-ink-950); text-decoration: underline; text-underline-offset: 3px;
+}
+.ops-desk-matter:hover { color: var(--ddp-green-900); }
+
+.ops-desk-action {
+  padding: 7px 14px; cursor: pointer; white-space: nowrap;
+  font-family: var(--ddp-sans); font-size: 13px; font-weight: 500;
+  color: var(--ddp-green-900); background: var(--ddp-paper-strong);
+  border: 1px solid var(--ddp-line-strong); border-radius: 0;
+}
+.ops-desk-action:hover { background: var(--ddp-green-900); color: #FFFFFF; border-color: var(--ddp-green-900); }
+/* Target record not loaded — action disabled, stated plainly and non-actionable. */
+.ops-desk-action:disabled {
+  cursor: not-allowed; opacity: 0.55; color: var(--ddp-ink-500);
+  background: var(--ddp-paper); border-color: var(--ddp-line);
+}
+.ops-desk-action:disabled:hover { background: var(--ddp-paper); color: var(--ddp-ink-500); border-color: var(--ddp-line); }
+
+.ops-desk :focus-visible { outline: 2px solid var(--ddp-gold-700); outline-offset: 2px; }
+
+.ops-desk-detail-row td { background: var(--ddp-paper-muted); }
+.ops-desk-detail { margin: 0; display: grid; grid-template-columns: 180px 1fr; gap: 6px 20px; }
+.ops-desk-detail dt {
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ddp-ink-500);
+}
+.ops-desk-detail dd { margin: 0; font-size: 14px; line-height: 20px; color: var(--ddp-ink-950); }
+
+.ops-desk-footnote {
+  margin: 24px 0 0; padding-top: 16px; max-width: 78ch;
+  border-top: 1px solid var(--ddp-line-soft);
+  font-size: 12px; line-height: 19px; color: var(--ddp-ink-500);
+}
+
+/* Narrow viewports: the table scrolls inside its own container so the page
+   body never scrolls sideways, and the detail grid stacks. */
+@media (max-width: 900px) {
+  /* The .ops-desk-table-scroll wrapper contains the horizontal scroll; the table
+     keeps a legible min-width and scrolls inside it, so the page/root stays at
+     viewport width and no column is hidden or truncated. */
+  .ops-desk-table { min-width: 760px; white-space: nowrap; }
+  .ops-desk-reason { white-space: normal; min-width: 28ch; }
+  .ops-desk-detail { grid-template-columns: 1fr; }
+  .ops-desk-field input { min-width: 0; width: 100%; }
+  .ops-desk-field { flex: 1 1 100%; }
+}

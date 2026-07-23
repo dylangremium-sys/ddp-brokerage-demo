@@ -478,28 +478,8 @@ export async function resolveReviewRequest(requestId: string): Promise<void> {
   )
 }
 
-export async function loadReviewRequestsFromDB(
-  userId: string,
-  _farmIds: Set<string>,
-  itemIds: Set<string>,
-): Promise<ReviewRequest[]> {
-  if (!supabase || !isValidUUID(userId)) return []
-
-  const batchIdList = [...itemIds].filter(isValidUUID)
-  if (batchIdList.length === 0) return []
-
-  const { data, error } = await supabase
-    .from('farmer_review_requests')
-    .select('*')
-    .in('inventory_batch_id', batchIdList)
-    .order('created_at', { ascending: false })
-
-  if (error) {
-    console.warn('loadReviewRequestsFromDB:', error.message)
-    return []
-  }
-
-  return (data ?? []).map(row => ({
+function mapReviewRequestRow(row: Record<string, unknown>): ReviewRequest {
+  return {
     id: row.id as string,
     stockItemId: row.inventory_batch_id as string | undefined,
     farmProfileId: row.farm_id as string | undefined,
@@ -511,7 +491,75 @@ export async function loadReviewRequestsFromDB(
     resolvedAt: row.resolved_at as string | undefined,
     productName: row.product_name as string | undefined,
     farmName: row.farm_name as string | undefined,
-  }))
+  }
+}
+
+export async function loadReviewRequestsFromDB(
+  userId: string,
+  farmIds: Set<string>,
+  itemIds: Set<string>,
+): Promise<ReviewRequest[]> {
+  if (!supabase || !isValidUUID(userId)) return []
+
+  const batchIdList = [...itemIds].filter(isValidUUID)
+  const farmIdList = [...farmIds].filter(isValidUUID)
+  // Neither scope → nothing this farmer can own; skip the query entirely.
+  if (batchIdList.length === 0 && farmIdList.length === 0) return []
+
+  // A farmer owns a request by EITHER its inventory batch OR its farm. The
+  // previous batch-only filter dropped farm-level requests (inventory_batch_id
+  // null, farm_id set) and returned early whenever the farmer had no batches,
+  // so those messages never reached the farmer's inbox even though RLS
+  // ("farmer_review_requests: farmer select own") authorizes them. RLS remains
+  // the server-side authority; this OR only narrows to the farmer's own scope.
+  // Mirrors loadFarmerInventoryFromDB's batch-or-farm union. A row matching both
+  // conditions is still returned once (OR yields distinct rows — no dedup).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase as any)
+    .from('farmer_review_requests')
+    .select('*')
+
+  if (batchIdList.length > 0 && farmIdList.length > 0) {
+    query = query.or(`inventory_batch_id.in.(${batchIdList.join(',')}),farm_id.in.(${farmIdList.join(',')})`)
+  } else if (batchIdList.length > 0) {
+    query = query.in('inventory_batch_id', batchIdList)
+  } else {
+    query = query.in('farm_id', farmIdList)
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false })
+  if (error) {
+    console.warn('loadReviewRequestsFromDB:', error.message)
+    return []
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((row: any) => mapReviewRequestRow(row))
+}
+
+// Read-only admin loader. Returns EVERY review request the caller may see; the
+// `farmer_review_requests: admin all` RLS policy (USING is_ddp_admin()) scopes
+// this to administrators server-side, so no client-side user/batch filter is
+// applied. Unlike loadReviewRequestsFromDB it is not batch-scoped, so it also
+// returns farm-level requests (inventory_batch_id IS NULL) and never depends on
+// the admin having first loaded inventory. This performs NO write.
+//
+// A rejected promise (thrown below) — not a silent [] — signals a genuine load
+// failure so the Operations Desk can report an unavailable source rather than a
+// confirmed zero. (A query error is distinct from "loaded, and legitimately
+// empty", which returns [].)
+export async function loadAllReviewRequestsFromDB(): Promise<ReviewRequest[]> {
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('farmer_review_requests')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(`loadAllReviewRequestsFromDB: ${error.message}`)
+  }
+
+  return (data ?? []).map(mapReviewRequestRow)
 }
 
 // ---------------------------------------------------------------------------
@@ -860,8 +908,9 @@ export async function loadFarmsFromDB(): Promise<FarmProfile[]> {
     `)
     .order('created_at', { ascending: false })
   if (error) {
-    console.warn('loadFarmsFromDB:', error.message)
-    return []
+    // Throw (not silent []) so a query failure is distinguishable from a
+    // legitimately empty farm table — the caller marks the source failed.
+    throw new Error(`loadFarmsFromDB: ${error.message}`)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((row: any) => farmRowToProfile(row))
@@ -875,8 +924,9 @@ export async function loadInventoryFromDB(): Promise<InventoryItem[]> {
     .select('*, farms(farm_name, trading_name)')
     .order('created_at', { ascending: false })
   if (error) {
-    console.warn('loadInventoryFromDB:', error.message)
-    return []
+    // Throw (not silent []) so a query failure is distinguishable from a
+    // legitimately empty inventory table — the caller marks the source failed.
+    throw new Error(`loadInventoryFromDB: ${error.message}`)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((row: any) => batchRowToInventoryItem(row))

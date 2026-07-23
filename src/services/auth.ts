@@ -1,7 +1,19 @@
 import { supabase } from '../lib/supabase'
 import { clearSensitiveDdpStorage } from '../lib/browserPersistence'
+import {
+  provisionFarmer as provisionFarmerImpl,
+  listPendingProfiles as listPendingProfilesImpl,
+  type ProvisioningClientLike,
+  type ProvisionResult,
+  type PendingProfile,
+} from '../lib/farmerProvisioning'
 
-export type UserRole = 'ddp_admin' | 'farmer'
+export type { ProvisionResult, PendingProfile }
+
+// 'pending' is a NON-operational role: a self-registered or admin-invited user
+// who has not yet been provisioned as a farmer by DDP. resolvePostLoginDecision
+// denies pending accounts, so they cannot reach any operator dashboard.
+export type UserRole = 'ddp_admin' | 'farmer' | 'pending'
 
 export interface UserProfile {
   id: string
@@ -34,49 +46,13 @@ export async function signIn(email: string, password: string) {
   return data
 }
 
-export async function signUpFarmer(
-  email: string,
-  password: string,
-  displayName: string,
-  extra?: {
-    phoneNumber?: string
-    lineId?: string
-    preferredLang?: string
-    farmerSubRole?: string
-    province?: string
-  },
-) {
-  if (!supabase) throw new Error('Supabase not configured')
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        display_name: displayName,
-        phone_number: extra?.phoneNumber ?? '',
-        line_id: extra?.lineId ?? '',
-        preferred_lang: extra?.preferredLang ?? 'th',
-        farmer_sub_role: extra?.farmerSubRole ?? 'Farmer',
-        province: extra?.province ?? '',
-      },
-    },
-  })
-  if (error) throw new Error(error.message)
-
-  if (data.user) {
-    const { error: profileError } = await supabase.from('profiles').upsert({
-      id: data.user.id,
-      email,
-      display_name: displayName,
-      role: 'farmer',
-    })
-    if (profileError) {
-      console.warn('profiles upsert after signup:', profileError.message)
-    }
-  }
-
-  return data
-}
+// NOTE: public self-registration has been removed. There is deliberately no
+// client wrapper around the Supabase Auth public sign-up endpoint — a public
+// caller must never be able to create an operational account. Farmers are
+// provisioned exclusively by a DDP admin via the server-side endpoint
+// (src/services/adminProvisioning.ts -> api/admin/provision-farmer.ts), which
+// invites the user with Admin Auth and then promotes the resulting 'pending'
+// profile to 'farmer'.
 
 /**
  * Signs the user out AND clears the DDP data left in this browser.
@@ -172,4 +148,29 @@ export function subscribeToAuthChanges(
   )
 
   return () => subscription.unsubscribe()
+}
+
+// ── DDP-controlled farmer provisioning ──────────────────────────────────────
+// The admin-only path to turn a 'pending' account into an operational farmer.
+// Both calls run as the caller's own session; RLS ("profiles: admin update
+// role") permits them only for a ddp_admin, so no service-role key is needed
+// or used on the client.
+
+export function provisionFarmer(userId: string): Promise<ProvisionResult> {
+  if (!supabase) {
+    return Promise.resolve({ ok: false, error: 'Supabase not configured' })
+  }
+
+  return provisionFarmerImpl(
+    supabase as unknown as ProvisioningClientLike,
+    userId,
+  )
+}
+
+export function listPendingProfiles(): Promise<PendingProfile[]> {
+  if (!supabase) return Promise.resolve([])
+
+  return listPendingProfilesImpl(
+    supabase as unknown as ProvisioningClientLike,
+  )
 }

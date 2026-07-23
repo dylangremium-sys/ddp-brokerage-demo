@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import './App.css'
 import {
   getFarmProfiles,
@@ -13,6 +13,7 @@ import {
   createReviewRequest,
   resolveReviewRequest,
   loadReviewRequestsFromDB,
+  loadAllReviewRequestsFromDB,
   loadMarketBenchmarksFromDB,
   loadFarmsFromDB,
   loadInventoryFromDB,
@@ -33,12 +34,17 @@ import {
   type UserProfile,
 } from './services/auth'
 import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
+import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer, deskReviewRequestsView } from './lib/reviewRequestScope'
+import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
+import { runGuardedLoad } from './lib/asyncLoadGuard'
+import { resolveAdminDataApply, deskAdminDataView } from './lib/adminDataLoad'
+import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
+import { complianceRefetchStarted } from './lib/complianceRefetch'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
 import LoginPage from './pages/public/LoginPage'
-import SignupPage from './pages/public/SignupPage'
 import FarmerRegister from './pages/farmer/FarmerRegister'
 import FarmerDashboard from './pages/farmer/FarmerDashboard'
 import FarmerOnboarding from './pages/farmer/FarmerOnboarding'
@@ -58,6 +64,7 @@ import DDPMissingDocuments from './pages/admin/DDPMissingDocuments'
 import DDPCoaIntelligence from './pages/admin/DDPCoaIntelligence'
 import DDPRiskRegister from './pages/admin/DDPRiskRegister'
 import DDPComplianceWatchtower from './pages/admin/DDPComplianceWatchtower'
+import DDPOperationsDesk from './pages/admin/DDPOperationsDesk'
 import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
@@ -67,13 +74,13 @@ import AdminShell from './components/admin/AdminShell'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 
 const FARMER_PAGES: Page[] = [
-  'landing', 'login', 'signup', 'farmer-register',
+  'landing', 'login', 'farmer-register',
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower']
+const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
-const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
+const PUBLIC_PAGES: Page[] = ['landing', 'login']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -108,6 +115,12 @@ export default function App() {
   // duplicate init) never yank the operator off a page they navigated to.
   const didBootstrapRoute = useRef(false)
 
+  // Identity+role key of the scope the shared reviewRequests state was loaded
+  // for. When it changes (sign-out, admin↔farmer, a different user), the state
+  // is dropped so the next role cannot inherit it. A repeat auth event for the
+  // same user+role leaves it untouched (no clear/refetch loop on token refresh).
+  const reviewScopeKeyRef = useRef<string | null>(null)
+
   // Farmer data scope — null until loaded, empty Sets if farmer has no data
   const [farmerScope, setFarmerScope] = useState<FarmerScope | null>(null)
 
@@ -116,6 +129,45 @@ export default function App() {
   const [marketBenchmarks, setMarketBenchmarks] = useState<MarketBenchmark[]>(() => loadMarketBenchmarks())
   const [complianceRules, setComplianceRules] = useState<ComplianceRule[]>([])
   const [complianceAlerts, setComplianceAlerts] = useState<ComplianceAlert[]>([])
+  // Load outcome for the compliance fetch below. The Operations Desk must be
+  // able to tell "loaded and empty" apart from "could not load" so it never
+  // presents a failed source as an all-clear. 'idle' means the fetch has not
+  // settled yet, which the desk reads as still loading rather than as empty.
+  const [complianceLoadState, setComplianceLoadState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  // The {profile, page} the compliance fetch was last (re)started for. Compared
+  // during render to mark an imminent refetch as loading (see below), since the
+  // fetch effect cannot set a loading flag synchronously without tripping
+  // set-state-in-effect. `profile` is compared by identity to mirror the effect's
+  // currentProfile dependency (so a token refresh is treated as a fresh fetch).
+  const [complianceFetchTrigger, setComplianceFetchTrigger] = useState<{ profile: unknown; page: string } | null>(null)
+  // Load outcome for the admin farm/inventory source, which feeds most desk
+  // queues (approvals, onboarding, documents, COA, inventory review, risk). The
+  // loaders now throw on error, so 'failed' is a real failure (not an empty DB).
+  // 'ready' only after BOTH settle successfully (including a legitimate empty
+  // result); the desk must not show an all-clear while this is idle/loading/failed.
+  const [adminDataLoadState, setAdminDataLoadState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  // Per-dataset freshness for the CURRENT admin load. Only data the current load
+  // fulfilled reaches the desk (see deskAdminDataView), so a stale farmer-scoped
+  // subset lingering in the shared farms/inventory (the farmer loader merges,
+  // never clears) cannot build desk rows/alerts while loading, and a rejected
+  // dataset never leaks its retained prior rows — while the fulfilled half of a
+  // partial failure still shows.
+  const [adminDataAvailability, setAdminDataAvailability] = useState<{ farms: boolean; inventory: boolean }>({ farms: false, inventory: false })
+  // The admin profile the farm/inventory load reflects — compared by identity
+  // during render to mark a fresh load as loading (mirrors the effect's
+  // currentProfile dependency) without a synchronous set-state-in-effect.
+  const [adminDataFetchProfile, setAdminDataFetchProfile] = useState<unknown>(null)
+  // Load outcome for the admin review-request fetch. Same three-state contract
+  // as compliance: 'idle' = not yet settled (the desk shows loading, never a
+  // premature zero), 'ready' = loaded (possibly empty), 'failed' = the desk
+  // reports the gap instead of an all-clear. Only meaningful in Supabase admin
+  // sessions — demo review requests live in memory and never load from a source.
+  const [reviewRequestsLoadState, setReviewRequestsLoadState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  // The admin profile the review-request load reflects — compared by identity
+  // during render to mark a refetch (e.g. a same-admin token refresh, which
+  // replaces currentProfile without changing the scope key) as loading, so a
+  // stale/hung refetch is never shown as a settled queue.
+  const [reviewRequestsFetchProfile, setReviewRequestsFetchProfile] = useState<unknown>(null)
   const [stockEditItemId, setStockEditItemId] = useState<string | null>(null)
   const [buyerPackItemId, setBuyerPackItemId] = useState<string | null>(null)
 
@@ -134,6 +186,30 @@ export default function App() {
       setAuthLoading(false)
       // Clear scope on sign-out or when a non-farmer profile appears
       if (!profile || profile.role !== 'farmer') setFarmerScope(null)
+      // Cross-role data isolation: drop review-request state loaded for a
+      // previous authenticated scope so the next role can never inherit it.
+      // Keyed on {userId, role}; a token refresh for the same user+role does
+      // not match, so it neither clears the farmer's own data nor loops. Runs
+      // only in Supabase mode (this effect early-returns in demo), so seeded
+      // demo review requests are never cleared.
+      const nextScopeKey = reviewRequestScopeKey(profile)
+      if (reviewRequestScopeChanged(reviewScopeKeyRef.current, nextScopeKey)) {
+        reviewScopeKeyRef.current = nextScopeKey
+        setReviewRequests([])
+        setReviewRequestsLoadState('idle')
+        // Fail closed on a {userId, role} scope change (farmer↔admin, admin A→B,
+        // sign-out): drop the shared farm/inventory arrays and their availability
+        // and selected detail ids so NO admin page — not just the Operations Desk
+        // — can render a previous scope's rows before this scope's load settles.
+        // A same-admin token refresh keeps the same key, so it is not cleared here
+        // (the loaders clear a rejected dataset themselves once it definitively
+        // fails). Runs only in Supabase mode (this effect early-returns in demo).
+        setFarms([])
+        setInventory([])
+        setAdminDataAvailability({ farms: false, inventory: false })
+        setReviewFarmId(null)
+        setReviewItemId(null)
+      }
       // Bootstrap routing: on the FIRST auth resolution after a (re)load, route a
       // restored session to its role page (a reload resets `page` to the public
       // landing). Guarded to run once so later events cannot override navigation.
@@ -150,14 +226,22 @@ export default function App() {
   // ── Load farmer scope + actual inventory rows when a farmer signs in ────────
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'farmer') return
+    // Stale-load guard: flipped false in cleanup when the session changes. Every
+    // continuation below checks it before touching shared state, so a farmer load
+    // still in flight when the operator switches to admin (or signs out) can never
+    // overwrite the now-active scope's reviewRequests — the account-switch race.
+    let active = true
     getFarmerScope(currentProfile.id)
       .then(async scope => {
-        setFarmerScope(scope)
+        if (!active) return
         const [dbFarms, dbInventory, dbRequests] = await Promise.all([
           loadFarmerFarmsFromDB(scope.farmIds),
           loadFarmerInventoryFromDB(scope.itemIds, scope.farmIds),
           loadReviewRequestsFromDB(currentProfile.id, scope.farmIds, scope.itemIds),
         ])
+        // Superseded while loading → drop every result; do not touch state.
+        if (!active) return
+        setFarmerScope(scope)
         // Populate farmer's farm profiles so Add Stock can resolve selectedFarm
         // and write farm_id correctly on every new batch submission.
         if (dbFarms.length > 0) {
@@ -173,23 +257,87 @@ export default function App() {
             return [...dbInventory, ...prev.filter(i => !sbIds.has(i.id))]
           })
         }
-        if (dbRequests.length > 0) setReviewRequests(dbRequests)
+        // Replace unconditionally — INCLUDING with []. A farmer with zero
+        // scoped requests must overwrite any prior state (e.g. an admin-wide
+        // list from earlier in the same SPA session), never retain it.
+        setReviewRequests(dbRequests)
       })
       .catch(err => {
+        if (!active) return
         console.warn('getFarmerScope / data load failed:', err)
         setFarmerScope({ farmIds: new Set(), itemIds: new Set() })
+        // Fail closed: a failed farmer load must not leave prior (possibly
+        // admin-wide) requests visible.
+        setReviewRequests([])
       })
+    return () => { active = false }
   }, [currentProfile])
 
   // ── Load all farms + inventory from Supabase when admin signs in ────────────
+  // Loaded with allSettled: the Operations Desk source is 'ready' only when BOTH
+  // succeed, and 'failed' if either loader throws (partial failure included), so
+  // the desk reports the gap rather than a false all-clear. The fulfilled half of
+  // a partial failure is still applied. A REJECTED dataset is CLEARED (not
+  // retained) once the load has definitively failed, and its selected detail id
+  // is dropped, so no admin page — Farm/Inventory Review included — can reuse a
+  // stale/prior-scope row. (A same-admin token refresh keeps prior rows only
+  // WHILE pending; this runs after the load settles.) The imminent 'loading'
+  // state is set during render (see the trigger below); the active guard drops a
+  // superseded or hung load after an account switch so it cannot repopulate.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
-    Promise.all([loadFarmsFromDB(), loadInventoryFromDB()])
-      .then(([dbFarms, dbInventory]) => {
-        setFarms(dbFarms)
-        setInventory(dbInventory)
-      })
-      .catch(err => console.warn('Admin Supabase data load failed:', err))
+    let active = true
+    runGuardedLoad(Promise.allSettled([loadFarmsFromDB(), loadInventoryFromDB()]), () => active, {
+      onSuccess: ([farmsResult, inventoryResult]) => {
+        const plan = resolveAdminDataApply(farmsResult, inventoryResult)
+        if (plan.farms.kind === 'set') setFarms(plan.farms.value)
+        else { console.warn('Admin farms load failed:', farmsResult.status === 'rejected' ? farmsResult.reason : ''); setFarms([]) }
+        if (plan.inventory.kind === 'set') setInventory(plan.inventory.value)
+        else { console.warn('Admin inventory load failed:', inventoryResult.status === 'rejected' ? inventoryResult.reason : ''); setInventory([]) }
+        if (plan.clearFarmDetail) setReviewFarmId(null)
+        if (plan.clearItemDetail) setReviewItemId(null)
+        setAdminDataLoadState(plan.state)
+        setAdminDataAvailability({ farms: plan.farmsAvailable, inventory: plan.inventoryAvailable })
+      },
+      onError: err => {
+        // Promise.allSettled does not reject; defensive fallback only.
+        console.warn('Admin Supabase data load failed:', err)
+        setAdminDataLoadState('failed')
+      },
+    })
+    return () => { active = false }
+  }, [currentProfile])
+
+  // ── Load all review requests from Supabase when admin signs in ──────────────
+  // The farmer effect above populates reviewRequests only within a farmer's own
+  // batch scope, and browser persistence is disabled outside demo mode — so
+  // without this effect an administrator's Operations Desk follow-up queue would
+  // be empty after a login or hard reload (or briefly reflect stale farmer-scoped
+  // state). The `farmer_review_requests: admin all` RLS policy lets an admin read
+  // every row; loadAllReviewRequestsFromDB performs no write. The result REPLACES
+  // state unconditionally — including [] — so no stale farmer-scoped request can
+  // survive into an admin view. A load failure is surfaced as an unavailable
+  // source (below), never as a confirmed zero.
+  // reviewRequestsLoadState starts 'idle' (its useState default), so the fetch
+  // for a fresh admin login or reload begins in the loading state without a
+  // synchronous reset here. Only this admin effect ever changes it, and it
+  // settles to 'ready'/'failed' in the async callbacks below.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
+    // Symmetric stale-load guard: a stale admin load must not overwrite the new
+    // farmer-scoped state after a switch, nor repopulate anything after sign-out.
+    let active = true
+    runGuardedLoad(loadAllReviewRequestsFromDB(), () => active, {
+      onSuccess: requests => {
+        setReviewRequests(requests)
+        setReviewRequestsLoadState('ready')
+      },
+      onError: err => {
+        console.warn('Admin review requests load failed:', err)
+        setReviewRequestsLoadState('failed')
+      },
+    })
+    return () => { active = false }
   }, [currentProfile])
 
   // ── Load market benchmarks from Supabase once a farmer session exists ────
@@ -215,13 +363,25 @@ export default function App() {
   // closes that staleness window without merging the two states.
   useEffect(() => {
     if (!isSupabaseConfigured || !currentProfile || currentProfile.role !== 'ddp_admin') return
-    if (!SUPPLY_LEDGER_PAGES.includes(page)) return
-    Promise.all([fetchComplianceRules(), fetchComplianceAlerts()])
-      .then(([rules, alerts]) => {
+    // The Operations Desk reads the same alert snapshot, so it refetches on
+    // entry for the same staleness reason the Supply Ledger pages do. The
+    // imminent 'loading' state is set during render (see the fetch-trigger block
+    // below), because it cannot be set synchronously here. The active guard drops
+    // a superseded or hung refetch so a stale result cannot overwrite a newer one.
+    if (!SUPPLY_LEDGER_PAGES.includes(page) && page !== 'ddp-operations-desk') return
+    let active = true
+    runGuardedLoad(Promise.all([fetchComplianceRules(), fetchComplianceAlerts()]), () => active, {
+      onSuccess: ([rules, alerts]) => {
         setComplianceRules(rules)
         setComplianceAlerts(alerts)
-      })
-      .catch(err => console.warn('Compliance rule impact data load failed:', err))
+        setComplianceLoadState('ready')
+      },
+      onError: err => {
+        console.warn('Compliance rule impact data load failed:', err)
+        setComplianceLoadState('failed')
+      },
+    })
+    return () => { active = false }
   }, [currentProfile, page])
 
   // ── Role helpers ─────────────────────────────────────────────────────────
@@ -233,6 +393,64 @@ export default function App() {
   const isFarmerPage = FARMER_PAGES.includes(page)
   // Derived — true while a farmer's scope is being fetched from Supabase
   const scopeLoading = isFarmerRole && farmerScope === null
+
+  // Mark the compliance queue as loading the moment a refetch becomes imminent.
+  // The fetch effect above re-runs whenever {currentProfile, page} changes onto
+  // the Operations Desk, but it cannot flip a loading flag synchronously (that is
+  // set-state-in-effect). We detect the same change here during render — React's
+  // supported "adjust state while rendering" — and move the load state to
+  // 'loading', so the desk never presents a stale 'ready' snapshot as an
+  // all-clear while a refetch (including a slow or hung one) is in flight.
+  // `profile` is compared by identity to mirror the effect's currentProfile dep,
+  // so a token-refresh refetch is also shown as loading; the trigger clears on
+  // leaving so a return to the desk is detected as a fresh entry.
+  const onOperationsDeskAsAdmin =
+    !isDemo && currentProfile?.role === 'ddp_admin' && page === 'ddp-operations-desk'
+  if (onOperationsDeskAsAdmin) {
+    if (complianceRefetchStarted(complianceFetchTrigger, { profile: currentProfile, page })) {
+      setComplianceFetchTrigger({ profile: currentProfile, page })
+      if (complianceLoadState !== 'loading') setComplianceLoadState('loading')
+    }
+  } else if (complianceFetchTrigger !== null) {
+    setComplianceFetchTrigger(null)
+  }
+
+  // Mark the admin farm/inventory source as loading the moment its load becomes
+  // imminent. The effect above keys on currentProfile, so the same render-time
+  // "adjust state" approach is used (a synchronous setState in that effect would
+  // trip set-state-in-effect). Keyed on the admin profile by identity, so a fresh
+  // admin login or a token refresh starts a new pending load; cleared on
+  // sign-out / farmer so a later admin re-login is detected as a fresh load.
+  const adminDataProfile = !isDemo && currentProfile?.role === 'ddp_admin' ? currentProfile : null
+  if (adminDataProfile !== null) {
+    if (adminDataFetchProfile !== adminDataProfile) {
+      setAdminDataFetchProfile(adminDataProfile)
+      if (adminDataLoadState !== 'loading') setAdminDataLoadState('loading')
+      // A new admin load starts with neither dataset fresh, so no stale array
+      // reaches the desk until this load fulfils each one.
+      if (adminDataAvailability.farms || adminDataAvailability.inventory) {
+        setAdminDataAvailability({ farms: false, inventory: false })
+      }
+    }
+  } else if (adminDataFetchProfile !== null) {
+    setAdminDataFetchProfile(null)
+  }
+
+  // Mark the admin review-request load pending the moment a (re)fetch becomes
+  // imminent — the effect keys on currentProfile, so a same-admin token refresh
+  // re-runs it while the scope-key guard leaves the state 'ready'. Detect the
+  // profile-identity change during render (like the compliance and farm/inventory
+  // loaders) and move to 'loading', so a slow/hung refetch is never presented as
+  // a settled queue and no all-clear is shown. Cleared on sign-out / farmer so an
+  // admin re-login is a fresh load.
+  if (adminDataProfile !== null) {
+    if (reviewRequestsFetchProfile !== adminDataProfile) {
+      setReviewRequestsFetchProfile(adminDataProfile)
+      if (reviewRequestsLoadState !== 'loading') setReviewRequestsLoadState('loading')
+    }
+  } else if (reviewRequestsFetchProfile !== null) {
+    setReviewRequestsFetchProfile(null)
+  }
 
   // ── Scoped data for farmer pages ─────────────────────────────────────────
   // In demo mode or for admin, pass everything through unchanged.
@@ -253,6 +471,79 @@ export default function App() {
           (i.farmId != null && farmerScope.farmIds.has(i.farmId))
         )
       : []
+
+  // Review requests, scoped for farmer pages the same way. The shared
+  // reviewRequests array also feeds the admin Operations Desk (all requests),
+  // so farmer pages must consume this fail-closed projection — never the raw
+  // state — to guarantee no admin-wide request is shown to a farmer before,
+  // during, or after their own scope loads (scopeReviewRequestsToFarmer returns
+  // [] while farmerScope is null).
+  const farmerReviewRequests: ReviewRequest[] = isDemo || !isFarmerRole
+    ? reviewRequests
+    : scopeReviewRequestsToFarmer(reviewRequests, farmerScope)
+
+  // What the admin Operations Desk receives for review requests: null on a
+  // failed fetch; [] + loading while still settling (first load or a refetch —
+  // including a same-admin token refresh — so a stale/empty queue is never shown
+  // as current and no all-clear appears); the loaded rows once ready.
+  const deskReviewRequests = useMemo(
+    () => deskReviewRequestsView(isDemo, reviewRequestsLoadState, reviewRequests),
+    [isDemo, reviewRequestsLoadState, reviewRequests],
+  )
+
+  // Demo-only compliance alerts for the Operations Desk. In demo mode the App's
+  // fetched `complianceAlerts` stays [] (the Supabase fetch effect early-returns),
+  // but the Compliance Watchtower persists manual alerts to a shared local store.
+  // Reading it here — recomputed on navigation (`page` dep) — lets a manual alert
+  // created in the Watchtower appear on the desk on entry without a full reload.
+  // Supabase mode is untouched: the desk keeps using the fetched `complianceAlerts`.
+  const demoComplianceAlerts = useMemo<ComplianceAlert[] | null>(
+    () => (isDemo && page === 'ddp-operations-desk' ? loadStoredComplianceAlerts() : null),
+    [isDemo, page],
+  )
+
+  // Demo rules for the desk's alert derivation: the SAME mutable store the
+  // Watchtower reads/writes (ddp_compliance_rules, baseline as fallback), read
+  // on desk entry (`page` dep) so a rule an operator approved/activated in the
+  // Watchtower is honoured in the same tab without a reload. Supabase mode uses
+  // the fetched rules instead.
+  const demoComplianceRules = useMemo<ComplianceRule[] | null>(
+    () => (isDemo && page === 'ddp-operations-desk' ? loadStoredComplianceRules() : null),
+    [isDemo, page],
+  )
+
+  // Farm/inventory the Operations Desk may safely consume: only data the CURRENT
+  // admin load fulfilled (demo passes its settled seeded data through). So a
+  // stale farmer-scoped subset lingering in the shared arrays, or a rejected
+  // dataset's retained rows, never build desk queue rows or rule-derived alerts —
+  // while the fulfilled half of a partial failure still shows. The shared arrays
+  // are untouched, so other admin pages keep any retained rows.
+  const deskData = useMemo(
+    () => deskAdminDataView(isDemo, farms, inventory, adminDataAvailability.farms, adminDataAvailability.inventory),
+    [isDemo, farms, inventory, adminDataAvailability],
+  )
+
+  // The compliance alerts the Operations Desk sees must match the Watchtower:
+  // rule-derived alerts (from ENFORCED rules) merged with the persisted/stored
+  // alerts, deduplicated by id — otherwise an enforced rule generating an
+  // unresolved auto alert (e.g. BATCH_COA_REQUIRED) is invisible and the queue
+  // shows a false all-clear. Rules: the demo store in demo mode, the fetched
+  // rules in Supabase mode. Rule-derived alerts use only the fresh desk farms/
+  // inventory (never stale), while persisted/manual alerts stay visible even when
+  // farm/inventory data is unavailable. Auto alerts are derived here for display,
+  // never persisted. Failure still passes null so the desk reports the gap.
+  const deskComplianceAlerts = useMemo<ComplianceAlert[] | null>(
+    () => resolveDeskComplianceAlerts(
+      !isDemo && complianceLoadState === 'failed',
+      deskData.farms,
+      // Unavailable inventory (null) derives no batch rule-alerts — rule-derived
+      // alerts use only current-load-fresh data; farm-rule alerts still derive.
+      deskData.inventory ?? [],
+      isDemo ? (demoComplianceRules ?? []) : complianceRules,
+      (isDemo ? demoComplianceAlerts : complianceAlerts) ?? [],
+    ),
+    [isDemo, complianceLoadState, deskData, demoComplianceRules, complianceRules, demoComplianceAlerts, complianceAlerts],
+  )
 
   // ── Error handler ────────────────────────────────────────────────────────
   function onDbError(err: unknown) {
@@ -535,7 +826,7 @@ export default function App() {
     <div className="app">
 
       {/* ── Navbar (all non-landing pages; the editorial shell draws its own) ── */}
-      {!useEditorialShell && page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (
+      {!useEditorialShell && page !== 'landing' && page !== 'login' && page !== 'farmer-register' && (
         <nav className="navbar">
           <div
             className="navbar-brand"
@@ -595,17 +886,6 @@ export default function App() {
           <LoginPage
             lang={lang}
             onSuccess={handleLoginSuccess}
-            onGoSignup={() => goTo('signup')}
-          />
-        </main>
-      )}
-
-      {page === 'signup' && (
-        <main className="main-content">
-          <SignupPage
-            lang={lang}
-            onSuccess={() => goTo('farmer-dashboard')}
-            onGoLogin={() => goTo('login')}
           />
         </main>
       )}
@@ -621,7 +901,7 @@ export default function App() {
       )}
 
       {/* ── App pages ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'signup' && page !== 'farmer-register' && (() => {
+      {page !== 'landing' && page !== 'login' && page !== 'farmer-register' && (() => {
         const appPages = (
           <>
 
@@ -635,7 +915,7 @@ export default function App() {
               onMyActivity={() => goTo('farmer-status')}
               onAdvancedProfile={() => goTo('farmer-advanced-profile')}
               onRequests={() => goTo('farmer-requests')}
-              openRequestsCount={reviewRequests.filter(r => r.status === 'open').length}
+              openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
             />
           )}
 
@@ -645,7 +925,7 @@ export default function App() {
               inventory={farmerInventory}
               onAddNew={() => { setStockEditItemId(null); goTo('farmer-stock-form') }}
               onEdit={handleEditStock}
-              openRequestCount={reviewRequests.filter(r => r.status === 'open').length}
+              openRequestCount={farmerReviewRequests.filter(r => r.status === 'open').length}
               onGoRequests={() => goTo('farmer-requests')}
               onCoaUpload={isFarmerRole && isSupabaseConfigured ? handleCoaUpload : undefined}
             />
@@ -662,14 +942,14 @@ export default function App() {
               }}
               onBack={() => goTo('farmer-my-stock')}
               marketBenchmarks={marketBenchmarks}
-              openRequests={reviewRequests}
+              openRequests={farmerReviewRequests}
             />
           )}
 
           {page === 'farmer-requests' && (
             <FarmerRequests
               lang={lang}
-              requests={reviewRequests}
+              requests={farmerReviewRequests}
               inventory={farmerInventory}
               onResolve={handleResolveRequest}
               onEditStock={handleEditStock}
@@ -816,6 +1096,40 @@ export default function App() {
             />
           )}
 
+          {/* Operations Desk — read-only index over existing records. The
+              `&& isAdminRole` conjunction is the guard, exactly as on every
+              other DDP page; the database's RLS remains the real boundary. */}
+          {page === 'ddp-operations-desk' && isAdminRole && (
+            <DDPOperationsDesk
+              // Only farm/inventory data confirmed fresh by the current admin
+              // load — never a stale farmer-scoped subset or a rejected dataset's
+              // retained rows (deskAdminDataView). Loading/failure notices below
+              // still hold; a partial failure keeps its fulfilled half actionable.
+              farms={deskData.farms}
+              inventory={deskData.inventory}
+              // Demo: the in-memory review requests are the honest value. Supabase
+              // admin: null on a failed fetch so the desk reports the gap; [] while
+              // still loading so a stale localStorage/farmer-scoped array is never
+              // shown as admin data (the loading flag below explains the empty count);
+              // the loaded rows once ready.
+              reviewRequests={deskReviewRequests.requests}
+              reviewRequestsLoading={deskReviewRequests.loading}
+              // The same merged view the Watchtower shows: rule-derived (enforced)
+              // alerts unioned with the persisted/stored alerts, deduped by id;
+              // null on a failed fetch so the desk reports the gap.
+              complianceAlerts={deskComplianceAlerts}
+              complianceLoading={!isDemo && (complianceLoadState === 'idle' || complianceLoadState === 'loading')}
+              // The farm/inventory source feeds most queues. In Supabase admin it
+              // is pending until BOTH loaders settle, and failed if either throws;
+              // demo data is settled locally (never pending/failed).
+              farmInventoryLoading={!isDemo && (adminDataLoadState === 'idle' || adminDataLoadState === 'loading')}
+              farmInventoryFailed={!isDemo && adminDataLoadState === 'failed'}
+              onOpenFarm={handleReviewFarm}
+              onOpenItem={handleReviewItem}
+              goTo={goTo}
+            />
+          )}
+
           {page === 'ddp-compliance-watchtower' && isAdminRole && (
             <DDPComplianceWatchtower
               farms={farms}
@@ -835,7 +1149,7 @@ export default function App() {
         ) : (
           // eo-farmer applies the editorial appearance to the farmer screens.
           // Class only — isFarmerPage is the app's existing value, and the
-          // public login/signup screens render through their own <main>.
+          // public login screen renders through its own <main>.
           <main className={`main-content${isFarmerPage ? ' eo-farmer' : ''}`}>{appPages}</main>
         )
       })()}
