@@ -37,6 +37,7 @@ import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginR
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer, deskReviewRequestsView } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
+import { useEvidenceScopeReset } from './lib/useEvidenceScopeReset'
 import { resolveAdminDataApply, deskAdminDataView } from './lib/adminDataLoad'
 import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
@@ -65,6 +66,13 @@ import DDPCoaIntelligence from './pages/admin/DDPCoaIntelligence'
 import DDPRiskRegister from './pages/admin/DDPRiskRegister'
 import DDPComplianceWatchtower from './pages/admin/DDPComplianceWatchtower'
 import DDPOperationsDesk from './pages/admin/DDPOperationsDesk'
+import AdminEvidenceRequests from './pages/admin/evidence/AdminEvidenceRequests'
+import AdminEvidenceRequestCreate from './pages/admin/evidence/AdminEvidenceRequestCreate'
+import AdminEvidenceRequestDetail from './pages/admin/evidence/AdminEvidenceRequestDetail'
+import FarmerEvidenceRequestList from './pages/farmer/evidence/FarmerEvidenceRequestList'
+import FarmerEvidenceRequestDetail from './pages/farmer/evidence/FarmerEvidenceRequestDetail'
+import { listAdminEvidenceRequests, resolveFarmProfileTargetId } from './lib/evidenceRequests'
+import type { EvidenceRequestListItem, EvidenceRequestTargetType } from './domain/evidenceRequests'
 import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
@@ -77,8 +85,12 @@ const FARMER_PAGES: Page[] = [
   'landing', 'login', 'farmer-register',
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
+  // Contract §10.6 — the farmer's own evidence-request detail page.
+  'farmer-evidence-request-detail',
 ]
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
+const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk',
+  // Contract §10.2–§10.4 — administrator evidence-request pages.
+  'admin-evidence-requests', 'admin-evidence-request-create', 'admin-evidence-request-detail']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 const PUBLIC_PAGES: Page[] = ['landing', 'login']
 
@@ -91,6 +103,18 @@ export default function App() {
   const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
   const [reviewFarmId, setReviewFarmId] = useState<string | null>(null)
   const [reviewItemId, setReviewItemId] = useState<string | null>(null)
+  // Evidence-request route payload (contract §10.1). Carried alongside `page`
+  // exactly like reviewFarmId/reviewItemId — no routing library is introduced.
+  const [evidenceRequestId, setEvidenceRequestId] = useState<string | null>(null)
+  const [evidenceCreateTarget, setEvidenceCreateTarget] =
+    useState<{ targetType: EvidenceRequestTargetType; targetId: string } | null>(null)
+  // Operations Desk source (contract §11.5). `null` = loading/failed/unavailable
+  // — which blocks the all-clear. `[]` = loaded and genuinely empty.
+  const [deskEvidenceRequests, setDeskEvidenceRequests] =
+    useState<EvidenceRequestListItem[] | null>(null)
+  const [deskEvidenceReason, setDeskEvidenceReason] = useState<string | undefined>(
+    'Evidence requests are still loading. This queue is incomplete.',
+  )
   const [dbError, setDbError] = useState<string | null>(null)
   const [buildVersion, setBuildVersion] = useState<string | null>(null)
 
@@ -384,6 +408,54 @@ export default function App() {
     return () => { active = false }
   }, [currentProfile, page])
 
+  // ── Operations Desk evidence-request source (contract §11.5) ─────────────
+  // Loaded only for a signed-in administrator viewing the desk. `null` means
+  // loading, failed or unavailable, and the desk records that as a failure so it
+  // can never show an all-clear on incomplete data. A failed load is NEVER
+  // turned into [] (§9.6, §17.15).
+  // The desk's evidence scope: which identity is looking, and whether the desk
+  // is even open. Leaving the desk or losing the admin role is a scope change,
+  // so the previous identity's rows are dropped during render rather than
+  // lingering for the next scope to inherit (§9.7).
+  const deskEvidenceActive =
+    isSupabaseConfigured && currentProfile?.role === 'ddp_admin' && page === 'ddp-operations-desk'
+  const deskEvidenceScopeKey = deskEvidenceActive
+    ? `desk-evidence|${currentProfile?.id ?? ''}`
+    : 'desk-evidence|inactive'
+
+  useEvidenceScopeReset(deskEvidenceScopeKey, () => {
+    setDeskEvidenceRequests(null)
+    setDeskEvidenceReason(
+      deskEvidenceActive
+        ? 'Evidence requests are still loading. This queue is incomplete.'
+        : undefined,
+    )
+  })
+
+  useEffect(() => {
+    if (!deskEvidenceActive) return
+
+    let active = true
+
+    void runGuardedLoad(listAdminEvidenceRequests({ scope: 'active' }), () => active, {
+      onSuccess: result => {
+        if (result.ok) {
+          setDeskEvidenceRequests(result.data)
+          setDeskEvidenceReason(undefined)
+        } else {
+          setDeskEvidenceRequests(null)
+          setDeskEvidenceReason(result.error.message)
+        }
+      },
+      onError: () => {
+        setDeskEvidenceRequests(null)
+        setDeskEvidenceReason('Evidence requests could not be loaded. This queue is incomplete.')
+      },
+    })
+
+    return () => { active = false }
+  }, [deskEvidenceActive, deskEvidenceScopeKey])
+
   // ── Role helpers ─────────────────────────────────────────────────────────
   // In demo mode (no Supabase), everything is open — preserve existing behaviour.
   const isDemo = !isSupabaseConfigured
@@ -570,9 +642,49 @@ export default function App() {
     window.scrollTo(0, 0)
   }
 
+  // ── Evidence-request navigation (contract §10.1) ─────────────────────────
+  // Each helper sets the payload BEFORE the page, so a detail page never renders
+  // for one instant against the previous request's id.
+  function openAdminEvidenceRequest(requestId: string) {
+    setEvidenceRequestId(requestId)
+    goTo('admin-evidence-request-detail')
+  }
+
+  function openFarmerEvidenceRequest(requestId: string) {
+    setEvidenceRequestId(requestId)
+    goTo('farmer-evidence-request-detail')
+  }
+
+  // Contract §10.7. The app's FarmProfile.id is a `farms.id`, but a
+  // farm-profile evidence request targets a row in the separate `farm_profiles`
+  // table. Resolve the real target id rather than passing the wrong one — the
+  // database would reject it, and a half-specified target is refused outright.
+  async function requestEvidenceForFarm(farmId: string) {
+    const resolved = await resolveFarmProfileTargetId(farmId)
+    if (!resolved.ok) {
+      setDbError(resolved.error.message)
+      return
+    }
+    openEvidenceRequestCreate({ targetType: 'farm_profile', targetId: resolved.data })
+  }
+
+  function openEvidenceRequestCreate(target?: {
+    targetType: EvidenceRequestTargetType
+    targetId: string
+  }) {
+    setEvidenceCreateTarget(target ?? null)
+    goTo('admin-evidence-request-create')
+  }
+
   async function handleSignOut() {
     await signOut()
     setCurrentProfile(null)
+    // §9.7: protected evidence state is cleared on account change, not merely
+    // left behind for the next identity to inherit.
+    setEvidenceRequestId(null)
+    setEvidenceCreateTarget(null)
+    setDeskEvidenceRequests(null)
+    setDeskEvidenceReason(undefined)
     setPage('landing')
     window.scrollTo(0, 0)
   }
@@ -947,13 +1059,37 @@ export default function App() {
           )}
 
           {page === 'farmer-requests' && (
-            <FarmerRequests
-              lang={lang}
-              requests={farmerReviewRequests}
-              inventory={farmerInventory}
-              onResolve={handleResolveRequest}
-              onEditStock={handleEditStock}
-              onGoMyStock={() => goTo('farmer-my-stock')}
+            <>
+              <FarmerRequests
+                lang={lang}
+                requests={farmerReviewRequests}
+                inventory={farmerInventory}
+                onResolve={handleResolveRequest}
+                onEditStock={handleEditStock}
+                onGoMyStock={() => goTo('farmer-my-stock')}
+              />
+              {/* Contract §10.5. Evidence requests are a SEPARATE workflow from
+                  the existing review requests above; their vocabularies are kept
+                  distinct and neither is rendered in the other's terms. Shown
+                  only against a configured backend, since there is no
+                  authoritative source in demo mode. */}
+              {isSupabaseConfigured && (
+                <FarmerEvidenceRequestList
+                  currentUserId={currentProfile?.id ?? null}
+                  currentRole={currentProfile?.role ?? null}
+                  onOpenRequest={openFarmerEvidenceRequest}
+                />
+              )}
+            </>
+          )}
+
+          {/* Contract §10.6 — farmer evidence-request detail. */}
+          {page === 'farmer-evidence-request-detail' && isFarmerRole && evidenceRequestId && (
+            <FarmerEvidenceRequestDetail
+              requestId={evidenceRequestId}
+              currentUserId={currentProfile?.id ?? null}
+              currentRole={currentProfile?.role ?? null}
+              onBack={() => { setEvidenceRequestId(null); goTo('farmer-requests') }}
             />
           )}
 
@@ -1017,6 +1153,9 @@ export default function App() {
               onBack={() => goTo('ddp-farms')}
               onAction={handleFarmAction}
               onCarbonAction={handleAdminCarbonAction}
+              // Contract §10.7 — only against a configured backend, since there
+              // is no authoritative evidence workflow in demo mode.
+              onRequestEvidence={isSupabaseConfigured ? (id => void requestEvidenceForFarm(id)) : undefined}
               carbonPersistenceAvailable={isDemo}
             />
           )}
@@ -1047,6 +1186,13 @@ export default function App() {
               onSendRequest={handleSendReviewRequest}
               onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
               onSaveNote={handleSaveOwnerNote}
+              // Contract §10.8. InventoryItem.id IS inventory_batches.id, so the
+              // batch is a valid target directly — no resolution step is needed.
+              onRequestEvidence={
+                isSupabaseConfigured
+                  ? (batchId => openEvidenceRequestCreate({ targetType: 'inventory_batch', targetId: batchId }))
+                  : undefined
+              }
             />
           )}
 
@@ -1096,6 +1242,39 @@ export default function App() {
             />
           )}
 
+          {/* Contract §10.2–§10.4 — administrator evidence-request pages. The
+              `&& isAdminRole` conjunction is the same guard every other DDP page
+              uses; the database's RLS remains the real boundary (§8.5). */}
+          {page === 'admin-evidence-requests' && isAdminRole && (
+            <AdminEvidenceRequests
+              currentUserId={currentProfile?.id ?? null}
+              currentRole={currentProfile?.role ?? null}
+              onOpenRequest={openAdminEvidenceRequest}
+              onCreateRequest={() => openEvidenceRequestCreate()}
+            />
+          )}
+
+          {page === 'admin-evidence-request-create' && isAdminRole && (
+            <AdminEvidenceRequestCreate
+              presetTargetType={evidenceCreateTarget?.targetType}
+              presetTargetId={evidenceCreateTarget?.targetId}
+              onCreated={requestId => {
+                setEvidenceCreateTarget(null)
+                openAdminEvidenceRequest(requestId)
+              }}
+              onCancel={() => { setEvidenceCreateTarget(null); goTo('admin-evidence-requests') }}
+            />
+          )}
+
+          {page === 'admin-evidence-request-detail' && isAdminRole && evidenceRequestId && (
+            <AdminEvidenceRequestDetail
+              requestId={evidenceRequestId}
+              currentUserId={currentProfile?.id ?? null}
+              currentRole={currentProfile?.role ?? null}
+              onBack={() => { setEvidenceRequestId(null); goTo('admin-evidence-requests') }}
+            />
+          )}
+
           {/* Operations Desk — read-only index over existing records. The
               `&& isAdminRole` conjunction is the guard, exactly as on every
               other DDP page; the database's RLS remains the real boundary. */}
@@ -1114,6 +1293,11 @@ export default function App() {
               // the loaded rows once ready.
               reviewRequests={deskReviewRequests.requests}
               reviewRequestsLoading={deskReviewRequests.loading}
+              // Contract §11: read-only aggregation over evidence requests.
+              // null = loading/failed/unavailable, which blocks the all-clear.
+              evidenceRequests={deskEvidenceRequests}
+              evidenceRequestsUnavailableReason={deskEvidenceReason}
+              onOpenEvidenceRequest={openAdminEvidenceRequest}
               // The same merged view the Watchtower shows: rule-derived (enforced)
               // alerts unioned with the persisted/stored alerts, deduped by id;
               // null on a failed fetch so the desk reports the gap.

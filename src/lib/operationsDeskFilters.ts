@@ -25,15 +25,23 @@ export const EMPTY_FILTERS: OperationsDeskFilterState = {
 }
 
 /**
- * Default ordering: priority first, then the oldest matter within each
- * priority. Items with no reliable date sort after dated ones rather than
- * being assigned a fabricated timestamp. `id` is the final tiebreak so the
+ * Default ordering: priority first, then `secondaryRank`, then the oldest matter
+ * within each group. Items with no reliable date sort after dated ones rather
+ * than being assigned a fabricated timestamp. `id` is the final tiebreak so the
  * order is fully deterministic and never depends on input order.
+ *
+ * `secondaryRank` defaults to 0. Every pre-existing queue leaves it unset, so
+ * their comparisons are all 0 - 0 and fall straight through to the age tiebreak
+ * exactly as before. It exists so evidence requests can express the eight-group
+ * order of contract §11.6, which three display priorities cannot encode alone.
  */
 export function sortOperationsDeskItems(items: OperationsDeskItem[]): OperationsDeskItem[] {
   return [...items].sort((a, b) => {
     const byPriority = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
     if (byPriority !== 0) return byPriority
+
+    const bySecondary = (a.secondaryRank ?? 0) - (b.secondaryRank ?? 0)
+    if (bySecondary !== 0) return bySecondary
 
     const aTime = timestamp(a.occurredAt)
     const bTime = timestamp(b.occurredAt)
@@ -110,6 +118,7 @@ export function summariseOperationsDeskItems(items: OperationsDeskItem[]): Opera
   const groups: Omit<OperationsDeskSummaryGroup, 'count'>[] = [
     { key: 'decision', label: 'Requires decision', categories: ['farmer-approval', 'inventory-review'] },
     { key: 'evidence', label: 'Document and COA evidence', categories: ['document', 'coa'] },
+    { key: 'evidence-requests', label: 'Evidence requests', categories: ['evidence-request'] },
     { key: 'compliance', label: 'Compliance review', categories: ['compliance'] },
     { key: 'onboarding', label: 'Onboarding', categories: ['onboarding'] },
     { key: 'followup', label: 'Follow-up', categories: ['follow-up'] },

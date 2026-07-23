@@ -16,6 +16,15 @@ interface Props {
   inventory?: InventoryItem[]
   onBack: () => void
   onAction: (farmId: string, action: string) => void
+  /**
+   * Contract §10.7. The ONE administrator-only evidence action on this page. It
+   * opens the create page with the farm profile preselected; Farm Review never
+   * writes an evidence-request record itself.
+   *
+   * Optional so the page still renders in demo mode and in existing tests,
+   * where there is no authoritative evidence backend to request against.
+   */
+  onRequestEvidence?: (farmId: string) => void
   onCarbonAction?: (farmId: string, status: CarbonProgrammeStatus) => void
   /** False when running against a configured Supabase backend without an approved
    *  persistence migration for carbon status — the control must not imply a save. */
@@ -77,7 +86,7 @@ function Section({ title, children, open = true }: { title: string; children: Re
   )
 }
 
-export default function DDPFarmReview({ farm, inventory = [], onBack, onAction, onCarbonAction, carbonPersistenceAvailable = true }: Props) {
+export default function DDPFarmReview({ farm, inventory = [], onBack, onAction, onCarbonAction, onRequestEvidence, carbonPersistenceAvailable = true }: Props) {
   const totalScore = farmTotalScore(farm)
   const [carbonStatus, setCarbonStatus] = useState<CarbonProgrammeStatus>(
     farm.carbonProgrammeStatus ?? 'not_reviewed'
@@ -114,6 +123,11 @@ export default function DDPFarmReview({ farm, inventory = [], onBack, onAction, 
           <p className="page-desc">{farm.province}{farm.district ? `, ${farm.district}` : ''} · {farm.farmType}</p>
         </div>
         <button className="btn btn-ghost" onClick={onBack}>← Back to Farm Profiles</button>
+        {onRequestEvidence && (
+          <button className="btn btn-ghost" onClick={() => onRequestEvidence(farm.id)}>
+            Request evidence
+          </button>
+        )}
       </div>
 
       <div className="review-layout">

@@ -316,6 +316,14 @@ export type Page =
   | 'ddp-risk-register'
   | 'ddp-compliance-watchtower'
   | 'ddp-operations-desk'
+  // Evidence Request & Resolution (contract v1.5 §10.1). The payload that
+  // travels with the detail/create pages lives in lib/evidenceRequestRoutes.ts,
+  // the same way reviewFarmId/reviewItemId already carry entity context.
+  // 'farmer-requests' is the fifth canonical page ID and already exists above.
+  | 'admin-evidence-requests'
+  | 'admin-evidence-request-create'
+  | 'admin-evidence-request-detail'
+  | 'farmer-evidence-request-detail'
 
 export type StockStatus =
   | 'draft'

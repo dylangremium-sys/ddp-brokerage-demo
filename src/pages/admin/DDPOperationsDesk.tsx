@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ComplianceAlert, FarmProfile, InventoryItem, Page, ReviewRequest } from '../../types'
+import type { EvidenceRequestListItem } from '../../domain/evidenceRequests'
 import {
   buildOperationsDeskItems,
   CATEGORY_LABEL,
@@ -42,8 +43,11 @@ export default function DDPOperationsDesk({
   complianceLoading,
   farmInventoryLoading,
   farmInventoryFailed,
+  evidenceRequests,
+  evidenceRequestsUnavailableReason,
   onOpenFarm,
   onOpenItem,
+  onOpenEvidenceRequest,
   goTo,
 }: {
   farms: FarmProfile[]
@@ -59,16 +63,34 @@ export default function DDPOperationsDesk({
   farmInventoryLoading: boolean
   /** The farm/inventory source failed — the desk must not show an all-clear. */
   farmInventoryFailed: boolean
+  /**
+   * Contract §11.5: `null` means the evidence-request source is loading, failed
+   * or unavailable, which is recorded as a failure and blocks the all-clear.
+   * `[]` means loaded and genuinely empty. `undefined` means this desk was
+   * mounted without the source at all.
+   */
+  evidenceRequests?: EvidenceRequestListItem[] | null
+  evidenceRequestsUnavailableReason?: string
   onOpenFarm: (farmId: string) => void
   onOpenItem: (itemId: string) => void
+  /** Contract §11.3: the row's only action — navigation, never mutation. */
+  onOpenEvidenceRequest: (requestId: string) => void
   goTo: (page: Page) => void
 }) {
   const [filters, setFilters] = useState<OperationsDeskFilterState>(EMPTY_FILTERS)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const result = useMemo(
-    () => buildOperationsDeskItems({ farms, inventory, reviewRequests, complianceAlerts }),
-    [farms, inventory, reviewRequests, complianceAlerts],
+    () =>
+      buildOperationsDeskItems({
+        farms,
+        inventory,
+        reviewRequests,
+        complianceAlerts,
+        evidenceRequests,
+        evidenceRequestsUnavailableReason,
+      }),
+    [farms, inventory, reviewRequests, complianceAlerts, evidenceRequests, evidenceRequestsUnavailableReason],
   )
 
   const visible = useMemo(
@@ -113,6 +135,7 @@ export default function DDPOperationsDesk({
     const route = resolveOperationsDeskRoute(item, loadedFarmIds, loadedItemIds)
     if (route.kind === 'open-farm') onOpenFarm(route.farmId)
     else if (route.kind === 'open-item') onOpenItem(route.itemId)
+    else if (route.kind === 'open-evidence-request') onOpenEvidenceRequest(route.requestId)
     else if (route.kind === 'go') goTo(route.page)
   }
 

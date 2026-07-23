@@ -155,7 +155,17 @@ describe('Operations Desk summary', () => {
   })
 
   it('reports zero counts rather than omitting a group', () => {
-    expect(summariseOperationsDeskItems([])).toHaveLength(5)
+    // Asserting the exact key set, not just a count, so a group can neither be
+    // dropped nor silently renamed. 'evidence-requests' is the contract §11
+    // queue, backed by real evidence_requests rows.
+    expect(summariseOperationsDeskItems([]).map(g => g.key)).toEqual([
+      'decision',
+      'evidence',
+      'evidence-requests',
+      'compliance',
+      'onboarding',
+      'followup',
+    ])
     expect(summariseOperationsDeskItems([]).every(g => g.count === 0)).toBe(true)
   })
 

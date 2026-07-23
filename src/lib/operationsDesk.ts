@@ -35,6 +35,8 @@ import {
   classifyOperationsDeskPriority,
   type OperationsDeskPriority,
 } from './operationsDeskPriority'
+import type { EvidenceRequestListItem } from '../domain/evidenceRequests'
+import { buildEvidenceRequestDeskItems } from './evidenceRequestDesk'
 
 /**
  * Operations Desk — read-only aggregation.
@@ -72,6 +74,7 @@ export type OperationsDeskCategory =
   | 'inventory-review'
   | 'compliance'
   | 'follow-up'
+  | 'evidence-request'
 
 export const OPERATIONS_DESK_CATEGORIES: OperationsDeskCategory[] = [
   'farmer-approval',
@@ -81,6 +84,7 @@ export const OPERATIONS_DESK_CATEGORIES: OperationsDeskCategory[] = [
   'inventory-review',
   'compliance',
   'follow-up',
+  'evidence-request',
 ]
 
 export const CATEGORY_LABEL: Record<OperationsDeskCategory, string> = {
@@ -91,6 +95,8 @@ export const CATEGORY_LABEL: Record<OperationsDeskCategory, string> = {
   'inventory-review': 'Inventory review',
   compliance: 'Compliance review',
   'follow-up': 'Follow-up',
+  // Contract §11.3: the queue category label is exactly "Evidence requests".
+  'evidence-request': 'Evidence requests',
 }
 
 export interface OperationsDeskItem {
@@ -98,6 +104,17 @@ export interface OperationsDeskItem {
   id: string
   category: OperationsDeskCategory
   priority: OperationsDeskPriority
+  /**
+   * Optional fine-grained order WITHIN a display priority, applied before the
+   * age tiebreak. Defaults to 0, so every queue that does not set it keeps its
+   * existing ordering exactly.
+   *
+   * Introduced for evidence requests, whose contract order (§11.6) has eight
+   * groups — Urgent overdue, Urgent, High overdue, High, Normal overdue,
+   * Normal, Low overdue, Low — that the desk's three display priorities cannot
+   * express on their own.
+   */
+  secondaryRank?: number
   title: string
   entityLabel: string
   /** Plain-language explanation of why this is in the queue. */
@@ -150,6 +167,22 @@ export interface OperationsDeskInput {
    * genuinely empty. Never collapse the two.
    */
   complianceAlerts: ComplianceAlert[] | null
+  /**
+   * `null` means the evidence-request source could not be loaded, or has not
+   * loaded yet — distinct from `[]`, which means loaded and genuinely empty.
+   * Never collapse the two: contract §11.5 forbids an all-clear while
+   * evidence-request data is loading, failed, partial or unavailable, and §9.6
+   * forbids turning a failed load into an empty list.
+   *
+   * A `null` here is reported as a FAILURE on the result, which is what blocks
+   * the all-clear state downstream.
+   */
+  evidenceRequests?: EvidenceRequestListItem[] | null
+  /**
+   * Why the evidence-request source is null, shown to the operator. Ignored
+   * when `evidenceRequests` is a real array.
+   */
+  evidenceRequestsUnavailableReason?: string
   /** Injected so ordering and age are deterministic under test. */
   now?: Date
 }
@@ -491,6 +524,33 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
         sourceEntityType: 'farm',
         sourceEntityId: farm.id,
       })), collected, failures)
+
+  // ── Evidence requests (contract §11) ─────────────────────────────────────
+  // Source: the evidence_requests table, read through RLS by the shared service.
+  // The desk aggregates and navigates only; every decision is taken on the
+  // authoritative evidence-request detail page (§11.1).
+  //
+  // `undefined` means this desk instance was built without the evidence source
+  // at all (e.g. an older call site or a unit test that predates the feature) —
+  // no queue and no failure. `null` means the source WAS expected and is
+  // loading, failed or unavailable, which is recorded as a failure so the desk
+  // can never claim all clear (§11.5).
+  if (input.evidenceRequests === null) {
+    failures.push({
+      category: 'evidence-request',
+      message:
+        input.evidenceRequestsUnavailableReason ??
+        'Evidence requests could not be loaded. This queue is incomplete.',
+    })
+  } else if (input.evidenceRequests !== undefined) {
+    const evidenceRequests = input.evidenceRequests
+    safeQueue(
+      'evidence-request',
+      () => buildEvidenceRequestDeskItems(evidenceRequests, now),
+      collected,
+      failures,
+    )
+  }
 
   // Dedup on the deterministic id — duplicate underlying records (e.g. the
   // same risk surfaced twice) must never produce two rows. First write wins.

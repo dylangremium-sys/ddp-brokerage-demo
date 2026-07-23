@@ -20,6 +20,16 @@ interface Props {
   farm: FarmProfile | undefined
   onBack: () => void
   onAction: (itemId: string, action: string) => void
+  /**
+   * Contract §10.8. The ONE administrator-only evidence action on this page. It
+   * opens the create page with this inventory batch preselected; Inventory
+   * Review never writes an evidence-request record itself.
+   *
+   * This is distinct from `onSendRequest` above, which creates a legacy review
+   * request — a different workflow with its own vocabulary. Neither is rendered
+   * in the other's terms.
+   */
+  onRequestEvidence?: (inventoryBatchId: string) => void
   onSendRequest?: (req: Omit<ReviewRequest, 'id' | 'createdAt'>) => void
   onGetCoaUrl?: (storagePath: string) => Promise<string | null>
   onSaveNote?: (itemId: string, note: string) => void
@@ -41,7 +51,7 @@ function CheckRow({ label, pass }: { label: string; pass: boolean }) {
   )
 }
 
-export default function DDPInventoryReview({ item, farm, onBack, onAction, onSendRequest, onGetCoaUrl, onSaveNote }: Props) {
+export default function DDPInventoryReview({ item, farm, onBack, onAction, onSendRequest, onGetCoaUrl, onSaveNote, onRequestEvidence }: Props) {
   const [reqType, setReqType] = useState<RequestType>('general')
   const [reqMsg, setReqMsg] = useState('')
   const [reqSent, setReqSent] = useState(false)
@@ -104,6 +114,11 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
           <button className="btn btn-ghost" onClick={onBack}>← Back to Inventory Dashboard</button>
+          {onRequestEvidence && (
+            <button className="btn btn-ghost" onClick={() => onRequestEvidence(item.id)}>
+              Request evidence
+            </button>
+          )}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <span className={`badge ${STATUS_CLASS[item.status]}`}>{item.status}</span>
             {item.clientVisible && (
