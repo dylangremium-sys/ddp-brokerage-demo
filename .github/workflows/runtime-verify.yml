@@ -1,0 +1,87 @@
+name: Runtime Verify
+
+# Repository-controlled REAL execution gate for database migrations (PR-0).
+#
+# This job provisions a pinned PostgreSQL 18 and runs the disposable-Postgres
+# migration harness against every registered fixture (migration 24 is the first).
+# It proves — on the exact PR head, not just locally — that the migration applies,
+# VERIFY passes on real Postgres, rollback is real, the destructive guard fires,
+# and teardown leaves zero residue. It NEVER connects to staging/Production and
+# uses no secrets (the harness builds its own throwaway, socket-only cluster).
+#
+# Static unit tests are necessary but NOT sufficient (owner decision): this job is
+# required and must genuinely execute Postgres. It is not continue-on-error.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-verify-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  runtime-verify:
+    name: Disposable PostgreSQL migration verification
+    runs-on: ubuntu-latest
+    env:
+      HARNESS_PG_MAJOR: '18'
+      PG_BIN: /usr/lib/postgresql/18/bin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies (deterministic)
+        run: npm ci
+
+      # Pin PostgreSQL major 18 from the PGDG apt repo. The manually proven
+      # reference run used 18.4; the harness records the exact patch it actually
+      # ran into result.json and fails fast on a major mismatch.
+      - name: Install PostgreSQL 18 (PGDG, pinned major)
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-18
+          "$PG_BIN/pg_ctl" --version
+          "$PG_BIN/initdb" --version
+
+      # Authoritative merge-gate proof: run the harness against ALL fixtures
+      # (migration-24 green path + the real-Postgres negative scenario). Any stage
+      # failure fails the job (brief §20 point 15).
+      - name: Disposable-Postgres migration harness (all fixtures)
+        run: npm run ci:runtime
+
+      # Harness self-tests that require real Postgres — HARNESS_REQUIRE_PG=1 turns a
+      # missing/skipped Postgres into a hard failure so the gate can never pass by
+      # silently skipping real execution.
+      - name: Harness real-Postgres self-tests
+        env:
+          HARNESS_REQUIRE_PG: '1'
+        run: npx vitest run scripts/disposable-pg/cluster.test.mjs scripts/disposable-pg/run-migration-harness.test.mjs
+
+      - name: Upload evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disposable-pg-evidence
+          path: scripts/disposable-pg/.artifacts/**/result.json
+          if-no-files-found: warn
+          retention-days: 14
