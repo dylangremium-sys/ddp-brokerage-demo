@@ -99,6 +99,11 @@ DROP FUNCTION IF EXISTS public.reserve_evidence_attachment(uuid,uuid,text,text,b
 DROP FUNCTION IF EXISTS public.finalize_evidence_attachment(uuid,uuid,uuid,text,bigint,text);
 DROP FUNCTION IF EXISTS public.remove_draft_evidence_attachment(uuid,uuid,uuid);
 DROP FUNCTION IF EXISTS public.link_existing_evidence_document(uuid,uuid,text,uuid,uuid);
+-- [v1.1] draft ownership handoff RPC. Dropped with the other RPCs, before the
+-- tables it reads. The draft_owner_user_id column and the new history event type
+-- go with DROP TABLE below; no separate column/constraint drop is needed because
+-- rollback removes the whole table.
+DROP FUNCTION IF EXISTS public.claim_evidence_response_draft(uuid,uuid,integer);
 
 DROP FUNCTION IF EXISTS public.evidence_apply_transition(uuid,integer,text,text,text,text,uuid,uuid);
 DROP FUNCTION IF EXISTS public.evidence_lock_visible_request(uuid,boolean);

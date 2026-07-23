@@ -177,7 +177,14 @@ CREATE POLICY "evidence-request-files: farmer delete own draft"
       JOIN public.evidence_requests er         ON er.id = a.request_id
       WHERE a.storage_bucket = 'evidence-request-files'
         AND a.storage_object_path = storage.objects.name
-        AND a.created_by_user_id = auth.uid()
+        -- [v1.1] Cleanup authority follows the CURRENT draft owner, not the
+        -- attachment creator. After an ownership handoff the new owner must be
+        -- able to clear a former owner's stranded reservation through the
+        -- controlled protocol; the former owner (no longer operational) cannot.
+        -- The attachment's created_by_user_id is untouched — this authorizes a
+        -- delete, it does not rewrite provenance. remove_draft_evidence_attachment
+        -- gates on the same draft owner before it ever sets removal_requested_at.
+        AND r.draft_owner_user_id = auth.uid()
         AND a.origin = 'request_upload'
         AND a.removal_requested_at IS NOT NULL
         AND r.state = 'draft'

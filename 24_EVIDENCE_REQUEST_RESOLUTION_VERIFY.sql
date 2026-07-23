@@ -963,6 +963,122 @@ BEGIN
 END
 $verify_k$;
 
+-- -----------------------------------------------------------------------------
+-- VERIFY L — draft edit-authority handoff [v1.1]. Non-vacuous: fixtures are
+-- created and every mutation asserts its affected-row count.
+-- -----------------------------------------------------------------------------
+DO $verify_l$
+DECLARE
+  actor_a uuid; actor_b uuid; farm_id_v uuid; profile_v uuid;
+  req_id uuid; resp_id uuid; n integer; ok boolean;
+  v_created uuid; v_owner uuid; v_num integer; v_drafts integer; v_events integer;
+BEGIN
+  -- Two distinct farmer users A and B.
+  SELECT id INTO actor_a FROM auth.users ORDER BY id LIMIT 1;
+  SELECT id INTO actor_b FROM auth.users WHERE id <> actor_a ORDER BY id LIMIT 1;
+  IF actor_a IS NULL OR actor_b IS NULL THEN
+    RAISE EXCEPTION 'VERIFY L FAILED: need two auth.users rows (test would be vacuous)';
+  END IF;
+  INSERT INTO public.profiles (id, email, role) VALUES (actor_a, 'a-'||actor_a||'@t.test','farmer')
+    ON CONFLICT (id) DO UPDATE SET role='farmer';
+  INSERT INTO public.profiles (id, email, role) VALUES (actor_b, 'b-'||actor_b||'@t.test','farmer')
+    ON CONFLICT (id) DO UPDATE SET role='farmer';
+
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor_a) RETURNING id INTO farm_id_v;
+  INSERT INTO public.farm_profiles (id, farm_id) VALUES (gen_random_uuid(), farm_id_v) RETURNING id INTO profile_v;
+  INSERT INTO public.farm_memberships (farm_id, user_id) VALUES (farm_id_v, actor_a);
+  INSERT INTO public.farm_memberships (farm_id, user_id) VALUES (farm_id_v, actor_b);
+
+  INSERT INTO public.evidence_requests
+    (farm_id, target_type, farm_profile_id, category, title, explanation, created_by_user_id)
+  VALUES (farm_id_v, 'farm_profile', profile_v, 'farm_license', 'Licence',
+          'Please upload the current cultivation licence document.', actor_a)
+  RETURNING id INTO req_id;
+
+  -- A creates the single draft; both IDs initialise to A.
+  INSERT INTO public.evidence_request_responses
+    (request_id, response_number, state, created_by_user_id, draft_owner_user_id)
+  VALUES (req_id, 1, 'draft', actor_a, actor_a) RETURNING id INTO resp_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 OR resp_id IS NULL THEN RAISE EXCEPTION 'VERIFY L FAILED: draft fixture affected % row(s)', n; END IF;
+
+  -- L1: while A is still an active member, B's claim predicate must be denied.
+  -- (owner_active = role farmer AND membership present)
+  SELECT (EXISTS (SELECT 1 FROM public.profiles WHERE id = actor_a AND role='farmer')
+          AND EXISTS (SELECT 1 FROM public.farm_memberships WHERE farm_id=farm_id_v AND user_id=actor_a))
+    INTO owner_active;
+  IF NOT owner_active THEN RAISE EXCEPTION 'VERIFY L FAILED: owner A should read as active here'; END IF;
+
+  -- L2: A becomes operationally abandoned (membership removed).
+  DELETE FROM public.farm_memberships WHERE farm_id=farm_id_v AND user_id=actor_a;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN RAISE EXCEPTION 'VERIFY L FAILED: removing A membership affected % row(s)', n; END IF;
+  SELECT (EXISTS (SELECT 1 FROM public.profiles WHERE id = actor_a AND role='farmer')
+          AND EXISTS (SELECT 1 FROM public.farm_memberships WHERE farm_id=farm_id_v AND user_id=actor_a))
+    INTO owner_active;
+  IF owner_active THEN RAISE EXCEPTION 'VERIFY L FAILED: owner A still reads as active (test would be vacuous)'; END IF;
+
+  -- L3: the handoff UPDATE (as the RPC performs it) changes exactly one row and
+  -- only draft_owner_user_id; the protect-submitted trigger permits it.
+  UPDATE public.evidence_request_responses
+  SET draft_owner_user_id = actor_b, updated_at = now()
+  WHERE id = resp_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN RAISE EXCEPTION 'VERIFY L FAILED: handoff affected % row(s)', n; END IF;
+
+  SELECT created_by_user_id, draft_owner_user_id, response_number
+    INTO v_created, v_owner, v_num
+  FROM public.evidence_request_responses WHERE id = resp_id;
+  IF v_created <> actor_a THEN RAISE EXCEPTION 'VERIFY L FAILED: created_by_user_id was rewritten'; END IF;
+  IF v_owner   <> actor_b THEN RAISE EXCEPTION 'VERIFY L FAILED: draft_owner_user_id did not transfer'; END IF;
+  IF v_num     <> 1        THEN RAISE EXCEPTION 'VERIFY L FAILED: response_number changed'; END IF;
+
+  -- L4: still exactly one draft for the request.
+  SELECT count(*) INTO v_drafts FROM public.evidence_request_responses
+  WHERE request_id = req_id AND state='draft';
+  IF v_drafts <> 1 THEN RAISE EXCEPTION 'VERIFY L FAILED: % drafts exist, expected 1', v_drafts; END IF;
+
+  -- L5: a bundled ownership+text change is rejected by the trigger.
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_responses
+    SET draft_owner_user_id = actor_a, response_text = 'sneaky' WHERE id = resp_id;
+  EXCEPTION WHEN others THEN ok := true; END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY L FAILED: ownership change bundled with an edit was accepted'; END IF;
+
+  -- L6: created_by_user_id is immutable even alone.
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_responses SET created_by_user_id = actor_b WHERE id = resp_id;
+  EXCEPTION WHEN others THEN ok := true; END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY L FAILED: created_by_user_id was mutable'; END IF;
+
+  -- L7: an audit event for the transfer, recording both owners.
+  INSERT INTO public.evidence_request_history
+    (request_id, previous_status, next_status, actor_user_id, actor_role,
+     event_type, response_id, event_data)
+  VALUES (req_id, 'open','open', actor_b, 'farmer', 'draft_ownership_transferred', resp_id,
+          jsonb_build_object('previous_owner_user_id', actor_a, 'new_owner_user_id', actor_b));
+  SELECT count(*) INTO v_events FROM public.evidence_request_history
+  WHERE response_id = resp_id AND event_type='draft_ownership_transferred'
+    AND event_data->>'previous_owner_user_id' = actor_a::text
+    AND event_data->>'new_owner_user_id' = actor_b::text;
+  IF v_events <> 1 THEN RAISE EXCEPTION 'VERIFY L FAILED: transfer audit event missing/incorrect'; END IF;
+
+  -- L8: a submitted response freezes ownership — the trigger rejects any change.
+  UPDATE public.evidence_request_responses
+  SET state='submitted', submitted_at=now(), response_text='final' WHERE id = resp_id;
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_responses SET draft_owner_user_id = actor_a WHERE id = resp_id;
+  EXCEPTION WHEN others THEN ok := true; END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY L FAILED: submitted response allowed an ownership change'; END IF;
+
+  RAISE NOTICE 'VERIFY L PASSED: handoff transfers edit authority, preserves provenance and the single draft, is audited, and is frozen at submission.';
+END
+$verify_l$;
+
+-- -----------------------------------------------------------------------------
 -- VERIFY M — final MIME must equal reserved MIME; extension revalidated against
 -- the authoritative final MIME. Table-driven over evidence_mime_allowed /
 -- evidence_filename_extension_allowed, which are the predicates finalization

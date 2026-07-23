@@ -325,7 +325,16 @@ CREATE TABLE IF NOT EXISTS public.evidence_request_responses (
   response_text           text,
   supersedes_response_id  uuid
                             REFERENCES public.evidence_request_responses(id) ON DELETE RESTRICT,
+  -- IMMUTABLE PROVENANCE (contract §6.3, §4.8 [v1.1]): the user who originally
+  -- created this response. Never rewritten — not by handoff, not by any RPC, not
+  -- by direct DML.
   created_by_user_id      uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+  -- MUTABLE EDIT AUTHORITY (contract §4.8 [v1.1]): the farmer currently permitted
+  -- to edit the single draft. Initialised = created_by_user_id; changes ONLY
+  -- through claim_evidence_response_draft() while state='draft'; frozen at
+  -- submission. This is what resolves the abandoned-draft deadlock without a
+  -- second draft and without rewriting provenance.
+  draft_owner_user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
   created_at              timestamptz NOT NULL DEFAULT now(),
   updated_at              timestamptz NOT NULL DEFAULT now(),
   submitted_at            timestamptz,
@@ -463,7 +472,8 @@ CREATE TABLE IF NOT EXISTS public.evidence_request_history (
     CHECK (event_type IN (
       'request_created','response_submitted','clarification_requested',
       'request_resolved','response_rejected','request_cancelled',
-      'attachment_uploaded','existing_document_linked')),
+      'attachment_uploaded','existing_document_linked',
+      'draft_ownership_transferred')),   -- [v1.1]
   CONSTRAINT evidence_history_next_status_check
     CHECK (next_status = ANY (public.evidence_request_statuses())),
   CONSTRAINT evidence_history_previous_status_check
@@ -621,6 +631,25 @@ BEGIN
   THEN
     RAISE EXCEPTION 'evidence response %: request, number, author and creation time are immutable',
       OLD.id USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- draft_owner_user_id (edit authority, contract §4.8 [v1.1]) may change ONLY
+  -- in isolation: a legitimate handoff touches this column and updated_at and
+  -- nothing else, on a still-draft row. Bundling an ownership flip into any
+  -- other edit — or changing it at submission — is rejected. Direct DML is
+  -- already revoked from every client role and service_role, so only the
+  -- SECURITY DEFINER handoff RPC can reach this path at all.
+  IF NEW.draft_owner_user_id IS DISTINCT FROM OLD.draft_owner_user_id THEN
+    IF NEW.state IS DISTINCT FROM OLD.state
+       OR NEW.state <> 'draft'
+       OR NEW.response_text          IS DISTINCT FROM OLD.response_text
+       OR NEW.supersedes_response_id IS DISTINCT FROM OLD.supersedes_response_id
+       OR NEW.submitted_at           IS DISTINCT FROM OLD.submitted_at
+    THEN
+      RAISE EXCEPTION 'evidence response %: draft ownership may change only via handoff on a draft row',
+        OLD.id USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
   END IF;
 
   -- A draft may only ever move forward to submitted.
@@ -1082,15 +1111,16 @@ BEGIN
     ORDER BY response_number DESC LIMIT 1;
 
     INSERT INTO public.evidence_request_responses (
-      request_id, response_number, state, supersedes_response_id, created_by_user_id
+      request_id, response_number, state, supersedes_response_id, created_by_user_id, draft_owner_user_id
     ) VALUES (
-      p_request_id, next_number, 'draft', prior_id, auth.uid()
+      p_request_id, next_number, 'draft', prior_id, auth.uid(), auth.uid()
     ) RETURNING id INTO draft_id;
   END IF;
 
   RETURN (SELECT to_jsonb(r) FROM (
     SELECT id, request_id, response_number, state, response_text,
-           supersedes_response_id, created_by_user_id, created_at, updated_at, submitted_at
+           supersedes_response_id, created_by_user_id, draft_owner_user_id,
+           created_at, updated_at, submitted_at
     FROM public.evidence_request_responses WHERE id = draft_id
   ) r);
 END
@@ -1128,7 +1158,7 @@ BEGIN
     RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
   END IF;
   -- Authorship cannot be forged: only the draft's author may edit it.
-  IF resp.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+  IF resp.draft_owner_user_id IS DISTINCT FROM auth.uid() THEN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
   END IF;
 
@@ -1183,7 +1213,7 @@ BEGIN
   IF resp.state <> 'draft' THEN
     RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
   END IF;
-  IF resp.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+  IF resp.draft_owner_user_id IS DISTINCT FROM auth.uid() THEN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
   END IF;
 
@@ -1452,7 +1482,7 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
   END IF;
-  IF resp.state <> 'draft' OR resp.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+  IF resp.state <> 'draft' OR resp.draft_owner_user_id IS DISTINCT FROM auth.uid() THEN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
   END IF;
 
@@ -1542,7 +1572,7 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
   END IF;
-  IF att.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+  IF att.created_by_user_id IS DISTINCT FROM auth.uid() THEN  -- [v1.1] provenance-scoped: only the reserving user finalizes
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
   END IF;
   IF att.origin <> 'request_upload' OR att.upload_state <> 'pending_upload' THEN
@@ -1736,7 +1766,7 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
   END IF;
-  IF att.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+  IF resp.draft_owner_user_id IS DISTINCT FROM auth.uid() THEN  -- [v1.1] current draft owner may clean up
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
   END IF;
 
@@ -1854,7 +1884,7 @@ BEGIN
   IF NOT FOUND OR resp.state <> 'draft' THEN
     RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
   END IF;
-  IF resp.created_by_user_id IS DISTINCT FROM auth.uid() THEN
+  IF resp.draft_owner_user_id IS DISTINCT FROM auth.uid() THEN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
   END IF;
 
@@ -1902,6 +1932,122 @@ BEGIN
            original_filename, mime_type, size_bytes, created_by_user_id, created_at
     FROM public.evidence_request_attachments WHERE id = new_id
   ) a);
+END
+$$;
+
+-- 7.13 claim_evidence_response_draft — transfer EDIT AUTHORITY for the single
+--      existing draft to the caller (contract §4.8 [v1.1]). It creates NO new
+--      response, never rewrites created_by_user_id, never touches attachment
+--      creators or history actors. It is the ONLY path that may change
+--      draft_owner_user_id.
+--
+--      Liveness problem it solves: the one draft per request may have been
+--      created by a farm member who is no longer operational (membership removed,
+--      role changed, access disabled). get_or_create returns that draft, but the
+--      mutating RPCs reject anyone but its owner and the one-draft unique index
+--      blocks creating another, so the request is stuck. Handoff moves authority
+--      over that one draft to a currently-authorised farmer.
+--
+--      Handoff is NOT theft: it is permitted ONLY when the current owner is no
+--      longer operational for the request farm. An active owner's draft cannot be
+--      taken. Concurrency is via the request revision (locked, incremented), so
+--      simultaneous claims resolve to one winner and stale edits are invalidated.
+CREATE OR REPLACE FUNCTION public.claim_evidence_response_draft(
+  p_request_id uuid, p_response_id uuid, p_expected_revision integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  req         public.evidence_requests%ROWTYPE;
+  resp        public.evidence_request_responses%ROWTYPE;
+  old_owner   uuid;
+  owner_active boolean;
+  n           integer;
+BEGIN
+  -- Visibility + lock first: a non-visible request is NOT_FOUND, so an
+  -- unauthorised or cross-farm probe learns nothing (contract §8.4).
+  req := public.evidence_lock_visible_request(p_request_id, false);
+
+  IF public.evidence_actor_role() IS DISTINCT FROM 'farmer'
+     OR NOT public.can_operationally_access_farm(req.farm_id) THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF req.revision IS DISTINCT FROM p_expected_revision THEN
+    RAISE EXCEPTION 'CONFLICT' USING ERRCODE = 'serialization_failure';
+  END IF;
+  -- Terminal requests are never reopened (contract §4.7).
+  IF req.status NOT IN ('open','clarification_requested') THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- Lock the response AFTER the request (documented order: request -> response)
+  -- so two concurrent claims cannot both proceed.
+  SELECT * INTO resp FROM public.evidence_request_responses
+  WHERE id = p_response_id AND request_id = p_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF resp.state <> 'draft' THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION: only a draft response can be claimed'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  old_owner := resp.draft_owner_user_id;
+  IF old_owner = auth.uid() THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION: caller already owns this draft'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- The current owner must be OPERATIONALLY ABANDONED for this farm. Evaluated by
+  -- id (the shared helpers use auth.uid()), mirroring can_operationally_access_farm:
+  -- role='farmer' AND active membership on the request farm.
+  owner_active := EXISTS (
+      SELECT 1 FROM public.profiles WHERE id = old_owner AND role = 'farmer'
+    ) AND EXISTS (
+      SELECT 1 FROM public.farm_memberships
+      WHERE farm_id = req.farm_id AND user_id = old_owner
+    );
+  IF owner_active THEN
+    RAISE EXCEPTION 'CONFLICT: the current draft owner is still operational'
+      USING ERRCODE = 'serialization_failure';
+  END IF;
+
+  -- Transfer authority. Only draft_owner_user_id + updated_at change; the
+  -- protect-submitted trigger enforces that isolation.
+  UPDATE public.evidence_request_responses
+  SET draft_owner_user_id = auth.uid(), updated_at = now()
+  WHERE id = p_response_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'INVALID_TRANSITION: ownership update affected % row(s)', n
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- Edit authority has materially changed: bump the request revision so stale
+  -- clients holding the old ownership state are invalidated on their next write.
+  UPDATE public.evidence_requests
+  SET revision = revision + 1, updated_at = now()
+  WHERE id = p_request_id;
+
+  -- Audit (append-only). Actor is the new owner; previous/new owners in event_data.
+  INSERT INTO public.evidence_request_history (
+    request_id, previous_status, next_status, actor_user_id, actor_role,
+    event_type, response_id, event_data
+  ) VALUES (
+    p_request_id, req.status, req.status, auth.uid(), 'farmer',
+    'draft_ownership_transferred', p_response_id,
+    jsonb_build_object('previous_owner_user_id', old_owner,
+                       'new_owner_user_id', auth.uid())
+  );
+
+  RETURN (SELECT to_jsonb(r) FROM (
+    SELECT id, request_id, response_number, state, response_text,
+           created_by_user_id, draft_owner_user_id, submitted_at
+    FROM public.evidence_request_responses WHERE id = p_response_id
+  ) r);
 END
 $$;
 
@@ -2044,6 +2190,12 @@ GRANT  EXECUTE ON FUNCTION public.remove_draft_evidence_attachment(uuid,uuid,uui
 
 REVOKE EXECUTE ON FUNCTION public.link_existing_evidence_document(uuid,uuid,text,uuid,uuid) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.link_existing_evidence_document(uuid,uuid,text,uuid,uuid) TO authenticated, service_role;
+
+-- [v1.1] Draft ownership handoff. Same posture as the other farmer RPCs: no
+-- PUBLIC/anon EXECUTE; authenticated + service_role only; role and operational
+-- access are re-checked inside the SECURITY DEFINER body.
+REVOKE EXECUTE ON FUNCTION public.claim_evidence_response_draft(uuid,uuid,integer) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.claim_evidence_response_draft(uuid,uuid,integer) TO authenticated, service_role;
 
 -- 10.2 Internal helpers. Never client-callable: they run inside the SECURITY
 --      DEFINER RPCs above, in the definer's privilege context, so no client role

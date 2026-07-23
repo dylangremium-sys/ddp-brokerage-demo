@@ -610,13 +610,15 @@ describe('migration 24 — atomic transition RPCs', () => {
     for (const rpc of ['save_evidence_response_draft', 'submit_evidence_response']) {
       const fn = BODIES.get(rpc) ?? ''
       expect(fn, `${rpc} does not verify the draft author`)
-        .toMatch(/resp\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
+        .toMatch(/resp\.draft_owner_user_id IS DISTINCT FROM auth\.uid\(\)/)  // [v1.1] edit authority
     }
-    for (const rpc of ['finalize_evidence_attachment', 'remove_draft_evidence_attachment']) {
-      const fn = BODIES.get(rpc) ?? ''
-      expect(fn, `${rpc} does not verify the attachment owner`)
-        .toMatch(/att\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
-    }
+    // [v1.1] finalize stays provenance-scoped (only the reserving user may
+    // finalize their own reservation); remove follows current edit authority so
+    // a new draft owner can clean up a former owner's stranded reservation.
+    expect(BODIES.get('finalize_evidence_attachment') ?? '', 'finalize must verify the attachment creator')
+      .toMatch(/att\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
+    expect(BODIES.get('remove_draft_evidence_attachment') ?? '', 'remove must verify the current draft owner')
+      .toMatch(/resp\.draft_owner_user_id IS DISTINCT FROM auth\.uid\(\)/)
   })
 
   it('submission refuses pending uploads and empty responses', () => {
@@ -899,7 +901,7 @@ describe('migration 24 — Codex F2: finalized objects cannot be deleted via sto
   it('an unauthorized pending upload is no longer casually deletable either', () => {
     const p = policy()
     expect(p).toMatch(/r\.state = 'draft'/)
-    expect(p).toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
+    expect(p).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)  // [v1.1] cleanup follows the draft owner
     // Being merely pending is not sufficient; removal must be authorized first.
     expect(p).not.toMatch(/a\.upload_state = 'pending_upload'/)
     expect(p).toMatch(/a\.removal_requested_at IS NOT NULL/)
@@ -1021,7 +1023,7 @@ describe('migration 24 — Codex F4: draft attachments removable, history preser
   it('the removal RPC is still draft-and-actionable scoped', () => {
     const fn = BODIES.get('remove_draft_evidence_attachment') ?? ''
     expect(fn).toMatch(/resp\.state <> 'draft'/)
-    expect(fn).toMatch(/att\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
+    expect(fn).toMatch(/resp\.draft_owner_user_id IS DISTINCT FROM auth\.uid\(\)/)  // [v1.1]
   })
 
   it('VERIFY proves removal of a READY draft attachment and history survival', () => {
@@ -1121,7 +1123,7 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
 
   it('removal is denied for the wrong user, path or farm', () => {
     const b = fn()
-    expect(b).toMatch(/att\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
+    expect(b).toMatch(/resp\.draft_owner_user_id IS DISTINCT FROM auth\.uid\(\)/)  // [v1.1]
     expect(b).toMatch(/can_operationally_access_farm\(req\.farm_id\)/)
     // The attachment must belong to this request AND response.
     expect(b).toMatch(/WHERE id = p_attachment_id AND response_id = p_response_id AND request_id = p_request_id/)
@@ -1145,10 +1147,11 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
     expect(p).toMatch(/a\.removal_requested_at IS NOT NULL/)
     // A ready object is no longer deletable merely because it is pending.
     expect(p).not.toMatch(/a\.upload_state = 'pending_upload'/)
-    // Every other condition is retained.
-    expect(p).toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
+    // Every other condition is retained; cleanup authority is the draft owner [v1.1].
+    expect(p).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)
     expect(p).toMatch(/a\.storage_object_path = storage\.objects\.name/)
     expect(p).toMatch(/r\.state = 'draft'/)
+    expect(p).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)  // [v1.1]
     // REVISED: deliberately NOT gated on request status — see the terminal
     // draft-cleanup fix. Farm access remains required.
     expect(p).not.toMatch(/er\.status IN \('open','clarification_requested'\)/)
@@ -1658,7 +1661,7 @@ describe('migration 24 — Codex P2: terminal draft cleanup', () => {
 
   it('cleanup still requires operational farm access and attachment ownership', () => {
     expect(remove).toMatch(/NOT public\.can_operationally_access_farm\(req\.farm_id\)/)
-    expect(remove).toMatch(/att\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
+    expect(remove).toMatch(/resp\.draft_owner_user_id IS DISTINCT FROM auth\.uid\(\)/)  // [v1.1]
   })
 
   it('the storage DELETE policy survives a terminal request but keeps every other gate', () => {
@@ -1667,7 +1670,7 @@ describe('migration 24 — Codex P2: terminal draft cleanup', () => {
     expect(deletePolicy).toMatch(/a\.removal_requested_at\s+IS NOT NULL/)
     expect(deletePolicy).toMatch(/r\.state = 'draft'/)
     expect(deletePolicy).toMatch(/a\.storage_object_path = storage\.objects\.name/)
-    expect(deletePolicy).toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
+    expect(deletePolicy).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)  // [v1.1]
     expect(deletePolicy).toMatch(/public\.can_operationally_access_farm\(er\.farm_id\)/)
   })
 
@@ -1823,6 +1826,7 @@ describe('migration 24 — Codex P2: filename extensions are validated', () => {
   })
 })
 
+// ── Codex P2: final MIME must equal reserved MIME ──────────────────────────
 describe('migration 24 — Codex P2: finalization cannot shift MIME', () => {
   const finalize = BODIES.get('finalize_evidence_attachment') ?? ''
 
@@ -1856,3 +1860,114 @@ describe('migration 24 — Codex P2: finalization cannot shift MIME', () => {
 })
 
 // ── Codex P2 + v1.1: draft edit-authority handoff ──────────────────────────
+describe('migration 24 [v1.1] — draft ownership model', () => {
+  const ddl = FWD.match(/CREATE TABLE IF NOT EXISTS public\.evidence_request_responses[\s\S]*?\n\);/)?.[0] ?? ''
+  const trig = BODIES.get('fn_evidence_response_protect_submitted') ?? ''
+  const claim = BODIES.get('claim_evidence_response_draft') ?? ''
+  const goc = BODIES.get('get_or_create_evidence_response_draft') ?? ''
+
+  it('adds draft_owner_user_id NOT NULL with an ON DELETE RESTRICT FK', () => {
+    expect(ddl).toMatch(/draft_owner_user_id\s+uuid NOT NULL REFERENCES auth\.users\(id\) ON DELETE RESTRICT/)
+  })
+
+  it('keeps exactly one draft per request — no per-member draft index introduced', () => {
+    expect(FWD).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS evidence_responses_one_draft_per_request_idx\s*\n\s*ON public\.evidence_request_responses \(request_id\)\s*\n\s*WHERE state = 'draft'/)
+    expect(FWD).not.toMatch(/\(request_id, (?:created_by_user_id|draft_owner_user_id)\)\s*\n?\s*WHERE state = 'draft'/)
+  })
+
+  it('created_by_user_id stays immutable and provenance-scoped', () => {
+    expect(trig).toMatch(/NEW\.created_by_user_id IS DISTINCT FROM OLD\.created_by_user_id/)
+  })
+
+  it('draft_owner_user_id may change only in isolation on a draft row', () => {
+    expect(trig).toMatch(/NEW\.draft_owner_user_id IS DISTINCT FROM OLD\.draft_owner_user_id/)
+    expect(trig).toMatch(/NEW\.state <> 'draft'/)
+    expect(trig).toMatch(/NEW\.response_text\s+IS DISTINCT FROM OLD\.response_text/)
+  })
+
+  it('new drafts initialise both IDs to the caller', () => {
+    expect(goc).toMatch(/created_by_user_id, draft_owner_user_id/)
+    expect(goc).toMatch(/prior_id, auth\.uid\(\), auth\.uid\(\)/)
+  })
+
+  it('get_or_create does NOT silently transfer ownership', () => {
+    expect(goc).not.toContain('claim_evidence_response_draft')
+    // it exposes ownership so the service layer can decide
+    expect(goc).toMatch(/draft_owner_user_id/)
+  })
+
+  it('edit-authority RPCs gate on draft_owner_user_id', () => {
+    for (const fn of ['save_evidence_response_draft', 'submit_evidence_response',
+      'reserve_evidence_attachment', 'link_existing_evidence_document']) {
+      expect(BODIES.get(fn) ?? '', fn).toMatch(/resp\.draft_owner_user_id IS DISTINCT FROM auth\.uid\(\)/)
+    }
+  })
+
+  it('finalize stays creator-scoped; removal follows the current draft owner', () => {
+    expect(BODIES.get('finalize_evidence_attachment') ?? '')
+      .toMatch(/att\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)/)
+    expect(BODIES.get('remove_draft_evidence_attachment') ?? '')
+      .toMatch(/resp\.draft_owner_user_id IS DISTINCT FROM auth\.uid\(\)/)
+  })
+
+  it('the handoff RPC exists, is SECURITY DEFINER, and only permits an abandoned owner', () => {
+    expect(claim).not.toBe('')
+    expect(FWD).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_evidence_response_draft\(\s*p_request_id uuid, p_response_id uuid, p_expected_revision integer\s*\)[\s\S]{0,120}?SECURITY DEFINER/)
+    // abandoned-owner rule + active-owner conflict
+    expect(claim).toMatch(/owner_active[\s\S]{0,120}?CONFLICT: the current draft owner is still operational/)
+    expect(claim).toMatch(/FROM public\.farm_memberships\s*\n\s*WHERE farm_id = req\.farm_id AND user_id = old_owner/)
+  })
+
+  it('handoff never rewrites provenance and self-claim is rejected', () => {
+    expect(claim).not.toMatch(/SET created_by_user_id/)
+    expect(claim).toMatch(/old_owner = auth\.uid\(\)[\s\S]{0,120}?caller already owns this draft/)
+  })
+
+  it('handoff is concurrency-safe: revision-gated, locks request then response, bumps revision', () => {
+    expect(claim).toMatch(/req\.revision IS DISTINCT FROM p_expected_revision[\s\S]{0,80}?CONFLICT/)
+    expect(claim).toMatch(/FOR UPDATE/)
+    expect(claim).toMatch(/UPDATE public\.evidence_requests\s*\n\s*SET revision = revision \+ 1/)
+  })
+
+  it('terminal requests and non-drafts cannot be claimed; cross-farm is NOT_FOUND', () => {
+    expect(claim).toMatch(/req\.status NOT IN \('open','clarification_requested'\)/)
+    expect(claim).toMatch(/resp\.state <> 'draft'[\s\S]{0,120}?only a draft response can be claimed/)
+    expect(claim).toMatch(/evidence_lock_visible_request\(p_request_id, false\)/)  // NOT_FOUND for non-visible
+  })
+
+  it('writes an audited draft_ownership_transferred event with both owners', () => {
+    expect(FWD).toMatch(/'draft_ownership_transferred'\)\),/)   // event-type CHECK
+    expect(claim).toMatch(/'draft_ownership_transferred'/)
+    expect(claim).toMatch(/'previous_owner_user_id', old_owner/)
+    expect(claim).toMatch(/'new_owner_user_id', auth\.uid\(\)/)
+  })
+
+  it('the handoff RPC has an explicit ACL: no PUBLIC/anon, authenticated+service_role only', () => {
+    expect(FWD).toMatch(/REVOKE EXECUTE ON FUNCTION public\.claim_evidence_response_draft\(uuid,uuid,integer\) FROM PUBLIC, anon;/)
+    expect(FWD).toMatch(/GRANT  EXECUTE ON FUNCTION public\.claim_evidence_response_draft\(uuid,uuid,integer\) TO authenticated, service_role;/)
+  })
+
+  it('the storage DELETE policy follows the draft owner for cleanup', () => {
+    const del = STO.match(/CREATE POLICY "evidence-request-files: farmer delete own draft"[\s\S]*?\);/)?.[0] ?? ''
+    expect(del).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)
+    expect(del).not.toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
+  })
+
+  it('the storage INSERT policy stays creator-scoped (only the reserving user uploads)', () => {
+    const ins = STO.match(/CREATE POLICY "evidence-request-files: farmer insert reserved path"[\s\S]*?\);/)?.[0] ?? ''
+    expect(ins).toMatch(/a\.created_by_user_id = auth\.uid\(\)/)
+  })
+
+  it('rollback drops the handoff RPC', () => {
+    expect(RBK).toMatch(/DROP FUNCTION IF EXISTS public\.claim_evidence_response_draft\(uuid,uuid,integer\);/)
+  })
+
+  it('VERIFY L is present and non-vacuous', () => {
+    const l = VER.match(/DO \$verify_l\$[\s\S]*?\$verify_l\$;/)?.[0] ?? ''
+    expect(l).not.toBe('')
+    expect(l).toMatch(/GET DIAGNOSTICS n = ROW_COUNT/)
+    expect(l).toMatch(/created_by_user_id was rewritten/)
+    expect(l).toMatch(/% drafts exist, expected 1/)
+    expect(l).toMatch(/submitted response allowed an ownership change/)
+  })
+})
