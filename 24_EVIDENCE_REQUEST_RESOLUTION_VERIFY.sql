@@ -297,8 +297,8 @@ BEGIN
 
   -- D5: a submitted response is immutable and undeletable.
   INSERT INTO public.evidence_request_responses
-    (request_id, response_number, state, response_text, created_by_user_id, submitted_at)
-  VALUES (req_id, 1, 'submitted', 'evidence text', actor, now())
+    (request_id, response_number, state, response_text, created_by_user_id, submitted_at, draft_owner_user_id)
+  VALUES (req_id, 1, 'submitted', 'evidence text', actor, now(), actor)
   RETURNING id INTO resp_id;
 
   ok := false;
@@ -317,14 +317,14 @@ BEGIN
 
   -- D6: only one draft may exist per request.
   INSERT INTO public.evidence_request_responses
-    (request_id, response_number, state, created_by_user_id)
-  VALUES (req_id, 2, 'draft', actor);
+    (request_id, response_number, state, created_by_user_id, draft_owner_user_id)
+  VALUES (req_id, 2, 'draft', actor, actor);
 
   ok := false;
   BEGIN
     INSERT INTO public.evidence_request_responses
-      (request_id, response_number, state, created_by_user_id)
-    VALUES (req_id, 3, 'draft', actor);
+      (request_id, response_number, state, created_by_user_id, draft_owner_user_id)
+    VALUES (req_id, 3, 'draft', actor, actor);
   EXCEPTION WHEN others THEN ok := true;
   END;
   IF NOT ok THEN RAISE EXCEPTION 'VERIFY D FAILED: a second draft was accepted for one request'; END IF;
@@ -409,8 +409,8 @@ BEGIN
   RETURNING id INTO req_id;
 
   INSERT INTO public.evidence_request_responses
-    (request_id, response_number, state, created_by_user_id)
-  VALUES (req_id, 1, 'draft', actor) RETURNING id INTO resp_id;
+    (request_id, response_number, state, created_by_user_id, draft_owner_user_id)
+  VALUES (req_id, 1, 'draft', actor, actor) RETURNING id INTO resp_id;
 
   -- A READY upload: exactly the case the old ON DELETE RESTRICT made unremovable.
   INSERT INTO public.evidence_request_attachments
@@ -509,8 +509,8 @@ BEGIN
           'Licence', 'Please upload the current cultivation licence document.', actor)
   RETURNING id INTO req_id;
   INSERT INTO public.evidence_request_responses
-    (request_id, response_number, state, created_by_user_id)
-  VALUES (req_id, 1, 'draft', actor) RETURNING id INTO resp_id;
+    (request_id, response_number, state, created_by_user_id, draft_owner_user_id)
+  VALUES (req_id, 1, 'draft', actor, actor) RETURNING id INTO resp_id;
   INSERT INTO public.evidence_request_attachments
     (request_id, response_id, origin, storage_bucket, storage_object_path,
      upload_state, original_filename, mime_type, size_bytes, sha256_hex,
@@ -592,8 +592,8 @@ BEGIN
           'Licence', 'Please upload the current cultivation licence document.', actor)
   RETURNING id INTO req_id;
   INSERT INTO public.evidence_request_responses
-    (request_id, response_number, state, created_by_user_id)
-  VALUES (req_id, 1, 'draft', actor) RETURNING id INTO resp_id;
+    (request_id, response_number, state, created_by_user_id, draft_owner_user_id)
+  VALUES (req_id, 1, 'draft', actor, actor) RETURNING id INTO resp_id;
 
   -- A ready upload marked for removal.
   INSERT INTO public.evidence_request_attachments
@@ -747,8 +747,8 @@ BEGIN
           'Licence', 'Please upload the current cultivation licence document.', actor)
   RETURNING id INTO req_id;
   INSERT INTO public.evidence_request_responses
-    (request_id, response_number, state, created_by_user_id)
-  VALUES (req_id, 1, 'draft', actor) RETURNING id INTO resp_id;
+    (request_id, response_number, state, created_by_user_id, draft_owner_user_id)
+  VALUES (req_id, 1, 'draft', actor, actor) RETURNING id INTO resp_id;
   IF req_id IS NULL OR resp_id IS NULL THEN
     RAISE EXCEPTION 'VERIFY J FAILED: fixture request/response not created (test would be vacuous)';
   END IF;
@@ -852,8 +852,8 @@ BEGIN
 
   -- J8: a SUBMITTED response is never cleanable, terminal request or not.
   INSERT INTO public.evidence_request_responses
-    (request_id, response_number, state, response_text, submitted_at, created_by_user_id)
-  VALUES (req_id, 2, 'submitted', 'Submitted evidence response text.', now(), actor)
+    (request_id, response_number, state, response_text, submitted_at, created_by_user_id, draft_owner_user_id)
+  VALUES (req_id, 2, 'submitted', 'Submitted evidence response text.', now(), actor, actor)
   RETURNING id INTO sub_resp_id;
   INSERT INTO public.evidence_request_attachments
     (request_id, response_id, origin, storage_bucket, storage_object_path,
@@ -970,7 +970,7 @@ $verify_k$;
 DO $verify_l$
 DECLARE
   actor_a uuid; actor_b uuid; farm_id_v uuid; profile_v uuid;
-  req_id uuid; resp_id uuid; n integer; ok boolean;
+  req_id uuid; resp_id uuid; n integer; ok boolean; owner_active boolean;
   v_created uuid; v_owner uuid; v_num integer; v_drafts integer; v_events integer;
 BEGIN
   -- Two distinct farmer users A and B.
@@ -1001,6 +1001,13 @@ BEGIN
   VALUES (req_id, 1, 'draft', actor_a, actor_a) RETURNING id INTO resp_id;
   GET DIAGNOSTICS n = ROW_COUNT;
   IF n <> 1 OR resp_id IS NULL THEN RAISE EXCEPTION 'VERIFY L FAILED: draft fixture affected % row(s)', n; END IF;
+
+  -- Semantics: a brand-new draft initialises creator and owner to the same user.
+  SELECT created_by_user_id, draft_owner_user_id INTO v_created, v_owner
+  FROM public.evidence_request_responses WHERE id = resp_id;
+  IF v_created <> actor_a OR v_owner <> actor_a THEN
+    RAISE EXCEPTION 'VERIFY L FAILED: new draft did not initialise creator=owner=A';
+  END IF;
 
   -- L1: while A is still an active member, B's claim predicate must be denied.
   -- (owner_active = role farmer AND membership present)

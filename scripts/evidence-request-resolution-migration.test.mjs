@@ -1971,3 +1971,83 @@ describe('migration 24 [v1.1] — draft ownership model', () => {
     expect(l).toMatch(/submitted response allowed an ownership change/)
   })
 })
+
+// ── Codex P2: VERIFY fixtures must satisfy the NOT NULL ownership column ────
+//
+// These are runtime defects the string-based suite can only guard structurally:
+// they prove the VERIFY script would not abort at fixture-insert time. They do
+// NOT claim to prove PostgreSQL execution — only the disposable DB does that.
+describe('migration 24 — VERIFY fixtures stay schema-consistent', () => {
+  // Parse every direct INSERT INTO evidence_request_responses in VERIFY: capture
+  // its column list. Prefer parsing over pinned line numbers.
+  const responseInserts = (() => {
+    const out = []
+    const needle = 'INSERT INTO public.evidence_request_responses'
+    let p = 0
+    while (true) {
+      const j = VER_RAW.indexOf(needle, p)
+      if (j < 0) break
+      const v = VER_RAW.indexOf('VALUES', j)
+      const cols = VER_RAW.slice(j + needle.length, v)
+      out.push({ at: VER_RAW.slice(0, j).split('\n').length, cols })
+      p = v + 1
+    }
+    return out
+  })()
+
+  it('every direct response fixture includes draft_owner_user_id (NOT NULL)', () => {
+    expect(responseInserts.length).toBeGreaterThanOrEqual(9)
+    const missing = responseInserts.filter((r) => !/\bdraft_owner_user_id\b/.test(r.cols))
+    expect(missing.map((r) => `line ${r.at}`)).toEqual([])
+  })
+
+  it('every direct response fixture also includes created_by_user_id', () => {
+    for (const r of responseInserts) {
+      expect(r.cols, `line ${r.at}`).toMatch(/\bcreated_by_user_id\b/)
+    }
+  })
+
+  it('VERIFY L declares owner_active boolean', () => {
+    const l = VER_RAW.match(/DO \$verify_l\$[\s\S]*?\$verify_l\$/)?.[0] ?? ''
+    const decl = l.match(/DECLARE([\s\S]*?)BEGIN/)?.[1] ?? ''
+    expect(decl).toMatch(/\bowner_active\s+boolean\b/)
+    // and it is actually used (guards against a dead declaration)
+    expect(l).toMatch(/INTO owner_active/)
+    expect(l).toMatch(/IF NOT owner_active THEN/)
+  })
+
+  it('VERIFY L asserts a new draft initialises creator = owner', () => {
+    const l = VER_RAW.match(/DO \$verify_l\$[\s\S]*?\$verify_l\$/)?.[0] ?? ''
+    expect(l).toMatch(/new draft did not initialise creator=owner=A/)
+    // and later asserts creator is unchanged while owner moved to B
+    expect(l).toMatch(/created_by_user_id was rewritten/)
+    expect(l).toMatch(/draft_owner_user_id did not transfer/)
+  })
+
+  it('every DO block declares every variable it assigns (no undeclared/renamed vars)', () => {
+    // Structural guard for the class of defect that broke VERIFY L.
+    const blocks = [...VER_RAW.matchAll(/DO \$(verify_[a-z])\$([\s\S]*?)\$\1\$/g)]
+    const offenders = []
+    for (const [, name, body] of blocks) {
+      const decl = (body.match(/\bDECLARE\b([\s\S]*?)\bBEGIN\b/) ?? [, ''])[1]
+      const declared = new Set(
+        [...decl.matchAll(/([a-z_][a-z0-9_]*)\s+(?:uuid|integer|boolean|text|timestamptz|record|jsonb|bigint|[a-z_.]+%ROWTYPE)/g)]
+          .map((m) => m[1]))
+      const loop = new Set([...body.matchAll(/\bFOR\s+([a-z_][a-z0-9_]*)\s+IN\b/g)].map((m) => m[1]))
+      const into = [...body.matchAll(/(?<!INSERT )\bINTO\s+([a-z_][a-z0-9_]*)/g)].map((m) => m[1]).filter((x) => x !== 'public')
+      const assign = [...body.matchAll(/(?:^|\n)\s*([a-z_][a-z0-9_]*)\s*:=/g)].map((m) => m[1])
+      for (const v of new Set([...into, ...assign])) {
+        if (!declared.has(v) && !loop.has(v)) offenders.push(`${name}:${v}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('affected-row guards on the corrected fixtures are preserved', () => {
+    // The response fixtures that feed a security assertion still assert ROW_COUNT
+    // or a NOT NULL id, so a zero-row insert cannot let a section pass.
+    const l = VER_RAW.match(/DO \$verify_l\$[\s\S]*?\$verify_l\$/)?.[0] ?? ''
+    expect(l).toMatch(/GET DIAGNOSTICS n = ROW_COUNT/)
+    expect(l).toMatch(/draft fixture affected % row\(s\)/)
+  })
+})
