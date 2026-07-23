@@ -14,6 +14,10 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { findUnexpectedGuardRedefinitions, findUnguardedHandleNewUserDowngrades } from './security-migrations/guardRedefinition.mjs'
+import { findMutableSearchPathDefiners } from './security-migrations/definerSearchPath.mjs'
+import { hasExecutablePendingGuard, findAnonAuditLogWriteGrants, hasRlsFullRollbackOptIn, findUnguardedTargetedRlsDisables, findUnguardedDestructiveRollbacks } from './security-migrations/rollbackSafety.mjs'
+import { findHardeningProblems as mig25Hardening, findVerifyProblems as mig25Verify, findRollbackProblems as mig25Rollback } from './security-migrations/auditLogActorMigration.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -509,6 +513,167 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
     check(`${label}: ROLLBACK restores migration 10's definition`,
       rp.length === 0, rp.join(' | '))
   }
+}
+
+// Check 13 — no unexpected redefinition of the farm admin-field guard (DDP audit
+// A1/F2). Check 10 validates the CANONICAL guard body and Check 11 scans for
+// EXECUTE re-grants, but NEITHER catches a SECOND file that CREATE-OR-REPLACEs the
+// guard with a weaker body (invalid role literal, INSERT-vector dropped). Such a
+// downgrade would previously have passed CI. The guard may be (re)defined ONLY in
+// the canonical file, or in an explicitly-quarantined draft carrying the exemption
+// token (itself confined to the known drafts by Check 1). A redefinition anywhere
+// else is a downgrade hazard.
+{
+  const files = rootSql.map((f) => ({ name: f, body: read(f) }))
+  const offenders = findUnexpectedGuardRedefinitions(files, {
+    canonicalFile: FARM_GUARD.forward,
+    exemptionToken: EXEMPTION_TOKEN,
+  })
+  check(
+    'No unexpected redefinition of fn_protect_farm_admin_fields (only the canonical migration or a token-exempt draft may define it)',
+    offenders.length === 0,
+    `guard redefined in non-canonical, non-exempt file(s): ${offenders.join(', ')} — a downgrade of the farm admin-field guard would otherwise pass CI`,
+  )
+}
+
+// Check 14 — Migration 25 compliance_audit_log actor is server-authoritative
+// (DDP audit client-authz #3). The audit log must stamp the actor from auth.uid(),
+// never from a client-supplied value. Fails if any companion is missing; the
+// trigger does not force NEW.actor_id := auth.uid(); it is not BEFORE INSERT on
+// compliance_audit_log; the function lacks a pinned search_path or is not revoked
+// from client roles; the migration widens scope (touches policies/other tables);
+// the VERIFY is not behavioural/rollback-safe or omits the forged-actor test; or
+// the ROLLBACK does not remove exactly the trigger + function.
+{
+  const AL = {
+    hardening: '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql',
+    verify: '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_VERIFY.sql',
+    rollback: '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_ROLLBACK.sql',
+  }
+  const label = 'Migration 25 audit-log actor authoritative'
+  const missing = ['hardening', 'verify', 'rollback'].filter((r) => !existsSync(join(ROOT, AL[r])))
+  if (missing.length) {
+    fail(`${label}: companion completeness`, `missing file(s): ${missing.map((r) => AL[r]).join(', ')}`)
+  } else {
+    pass(`${label}: companion completeness (HARDENING + VERIFY + ROLLBACK present)`)
+
+    const p = mig25Hardening(read(AL.hardening))
+    check(`${label}: HARDENING forces auth.uid(), BEFORE INSERT, pinned search_path, revoked from clients, narrow scope`, p.length === 0, p.join(' | '))
+
+    const vp = mig25Verify(read(AL.verify))
+    check(`${label}: VERIFY is behavioural (forged-actor override), rollback-safe (no COMMIT), non-vacuous`, vp.length === 0, vp.join(' | '))
+
+    const rp = mig25Rollback(read(AL.rollback))
+    check(`${label}: ROLLBACK removes exactly the trigger + function (no overreach)`, rp.length === 0, rp.join(' | '))
+  }
+}
+
+// Check 15 — no SECURITY DEFINER function with a mutable search_path (DDP audit
+// F1). A definer function whose search_path is not pinned lets a caller shadow an
+// unqualified name and run it as the function owner. The applied end-state is
+// hardened by migration 3, but replaying an unnumbered baseline file would strip
+// the pin and silently re-open the vector — so every definer definition in the
+// corpus (excluding throwaway *_VERIFY scaffolding and quarantined drafts) must
+// pin search_path.
+{
+  const files = rootSql.map((f) => ({ name: f, body: read(f) }))
+  const offenders = findMutableSearchPathDefiners(files, { exemptionToken: EXEMPTION_TOKEN })
+  check(
+    'No SECURITY DEFINER function with a mutable search_path (privilege-escalation vector)',
+    offenders.length === 0,
+    `definer function(s) without a pinned search_path: ${offenders.map((o) => `${o.file}:${o.fn}()`).join(', ')}`,
+  )
+}
+
+// Check 16 — rollback safety (DDP audit A3/A4).
+// (a) Migration 21's rollback must ENFORCE its no-pending-rows precondition with
+//     an executable guard, not merely document it — otherwise it fails late at
+//     ADD CONSTRAINT with an opaque constraint error.
+// (b) No rollback may restore a WRITE privilege on the append-only
+//     compliance_audit_log to the UNAUTHENTICATED `anon` role.
+{
+  const ROLLBACK_21 = '21_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql'
+  if (!existsSync(join(ROOT, ROLLBACK_21))) {
+    fail('Rollback safety: migration 21 rollback present', `missing ${ROLLBACK_21}`)
+  } else {
+    check(
+      'Rollback safety: migration 21 rollback ENFORCES the no-pending-rows precondition (executable guard, not a comment)',
+      hasExecutablePendingGuard(read(ROLLBACK_21)),
+      `${ROLLBACK_21} documents the pending-row precondition but does not enforce it; the rollback would fail late at ADD CONSTRAINT with an opaque error`,
+    )
+  }
+
+  const files = rootSql.map((f) => ({ name: f, body: read(f) }))
+  const anonGrants = findAnonAuditLogWriteGrants(files)
+  check(
+    'Rollback safety: no file grants a WRITE privilege on compliance_audit_log to anon',
+    anonGrants.length === 0,
+    `unauthenticated write path restored by: ${anonGrants.map((g) => `${g.file} (GRANT ${g.privileges})`).join(', ')}`,
+  )
+}
+
+// Check 17 — replay/rollback fail-closed guards (DDP audit A2 + RLS_ROLLBACK).
+// (a) Every file defining handle_new_user with the weaker 'farmer' default must
+//     refuse when migration 21's hardened 'pending' version is installed —
+//     otherwise an out-of-order replay silently re-opens anonymous
+//     self-provisioning. Migration 21's own rollback is exempt (restoring
+//     'farmer' is its purpose, and it carries its own guards).
+// (b) The RLS full rollback strips tenant isolation from every core table, so it
+//     must require an explicit session opt-in rather than running on paste.
+{
+  const files = rootSql.map((f) => ({ name: f, body: read(f) }))
+  const downgrades = findUnguardedHandleNewUserDowngrades(files, {
+    allowedRollbackFile: '21_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql',
+  })
+  check(
+    'Replay safety: every handle_new_user definition minting \'farmer\' refuses to downgrade the hardened migration-21 version',
+    downgrades.length === 0,
+    `unguarded downgrade path(s): ${downgrades.join(', ')} — replaying these after migration 21 re-opens anonymous self-provisioning`,
+  )
+
+  const RLS_RB = 'RLS_ROLLBACK.sql'
+  if (!existsSync(join(ROOT, RLS_RB))) {
+    fail('Rollback safety: RLS rollback present', `missing ${RLS_RB}`)
+  } else {
+    check(
+      'Rollback safety: RLS full rollback requires an explicit opt-in before stripping tenant isolation',
+      hasRlsFullRollbackOptIn(read(RLS_RB)),
+      `${RLS_RB} disables RLS on the core tables without an executable operator opt-in`,
+    )
+  }
+}
+
+// Check 18 — every dangerous rollback path is individually fail-closed.
+// (a) Each per-table block in RLS_ROLLBACK's TARGETED section is independently
+//     copy-pasteable, so each DISABLE ROW LEVEL SECURITY needs its OWN opt-in
+//     guard; a single top-of-file guard is bypassed by pasting one block.
+// (b) Rollbacks that DROP an append-only / audit-critical table must refuse while
+//     rows exist unless the operator opts in (the migration-24 pattern):
+//     10 = issued buyer packs, 17 = the procurement decision trail that migration
+//     23 reads to authorise issuance, 24 = evidence records.
+{
+  const RLS_RB = 'RLS_ROLLBACK.sql'
+  if (existsSync(join(ROOT, RLS_RB))) {
+    const unguarded = findUnguardedTargetedRlsDisables(read(RLS_RB))
+    check(
+      'Rollback safety: every targeted per-table RLS disable carries its own opt-in guard',
+      unguarded.length === 0,
+      `per-table DISABLE without an opt-in guard: ${unguarded.join(', ')} — pasting one block would strip that table's tenant isolation`,
+    )
+  }
+
+  const files = rootSql.map((f) => ({ name: f, body: read(f) }))
+  const DESTRUCTIVE = [
+    { file: '10_BUYER_PACK_SNAPSHOTS_ROLLBACK.sql', setting: 'buyer_pack.rollback_destructive' },
+    { file: '17_PROCUREMENT_DECISIONS_ROLLBACK.sql', setting: 'procurement.rollback_destructive' },
+    { file: '24_EVIDENCE_REQUEST_RESOLUTION_ROLLBACK.sql', setting: 'evidence.rollback_destructive' },
+  ]
+  const unguardedDestructive = findUnguardedDestructiveRollbacks(files, DESTRUCTIVE)
+  check(
+    'Rollback safety: every audit-critical DROP rollback refuses without an explicit destructive opt-in',
+    unguardedDestructive.length === 0,
+    `rollback(s) that destroy append-only records with no opt-in guard: ${unguardedDestructive.join(', ')}`,
+  )
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────

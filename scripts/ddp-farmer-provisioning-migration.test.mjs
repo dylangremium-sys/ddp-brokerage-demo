@@ -98,7 +98,38 @@ describe('migration 21 — rollback is a true inverse', () => {
   it('restores the two-value role CHECK and farmer default', () => {
     expect(norm(ROLLBACK)).toMatch(/role IN \('ddp_admin', 'farmer'\)/)
     expect(norm(ROLLBACK)).toMatch(/ALTER COLUMN role SET DEFAULT 'farmer'/)
-    expect(norm(ROLLBACK)).not.toMatch(/'pending'/)
+    // The RESTORED CHECK must not readmit 'pending'. This is asserted against the
+    // constraint clause specifically rather than by banning the substring
+    // repo-wide: the rollback now also contains an executable guard that REFUSES
+    // when pending rows exist (see below), which legitimately references
+    // role = 'pending' for the opposite purpose. A blanket substring ban could
+    // not tell "restores a CHECK permitting pending" (a broken inverse) apart
+    // from "refuses to run while pending rows exist" (fail-closed).
+    expect(norm(ROLLBACK)).not.toMatch(/CHECK \(role IN \([^)]*'pending'/i)
+  })
+
+  it('REFUSES to run while any profile is still pending — in executable SQL', () => {
+    // The narrowed CHECK cannot be re-applied while 'pending' rows exist. Without
+    // an executable guard the transaction fails LATE, at ADD CONSTRAINT, with an
+    // opaque "check constraint is violated by some row" error naming neither the
+    // cause nor the remedy. Asserted against comment-STRIPPED text so the header's
+    // documented PRECONDITION cannot satisfy it — only a real DO block can.
+    const guard = norm(ROLLBACK)
+    expect(guard).toMatch(/role = 'pending'/)
+    expect(guard).toMatch(/RAISE\s+EXCEPTION/i)
+    expect(guard).toMatch(/rollback 21 refused/)
+    // It must never silently reconcile: no auto-promotion, no deletion.
+    expect(guard).not.toMatch(/UPDATE\s+public\.profiles\s+SET\s+role/i)
+    expect(guard).not.toMatch(/DELETE\s+FROM\s+public\.profiles/i)
+  })
+
+  it('runs the pending guard before any destructive step', () => {
+    const at = (re) => norm(ROLLBACK).search(re)
+    const pendingGuardAt = at(/role = 'pending'/)
+    expect(pendingGuardAt).toBeGreaterThan(at(/\bBEGIN\s*;/))
+    // Before handle_new_user is reverted and before the CHECK is touched.
+    expect(pendingGuardAt).toBeLessThan(at(/CREATE OR REPLACE FUNCTION public\.handle_new_user/i))
+    expect(pendingGuardAt).toBeLessThan(at(/ADD CONSTRAINT profiles_role_check/i))
   })
 
   it('states that migration 22 must be rolled back FIRST', () => {
