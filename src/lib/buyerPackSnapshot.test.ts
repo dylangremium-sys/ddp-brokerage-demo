@@ -94,11 +94,41 @@ describe('createBuyerPackSnapshot — approval gating', () => {
     await expect(createBuyerPackSnapshot(makeInput({ approvedBy: '   ' }))).rejects.toThrow(/approver/i)
   })
 
+  // The approval timestamp is authoritative evidence — it is frozen onto the
+  // manifest AND folded into the content hash. A blank or malformed one must be
+  // rejected before a snapshot is created, never frozen as "unknown time".
+  it('rejects creation when approvalTimestamp is blank', async () => {
+    await expect(createBuyerPackSnapshot(makeInput({ approvalTimestamp: '' }))).rejects.toThrow(/timestamp/i)
+    await expect(createBuyerPackSnapshot(makeInput({ approvalTimestamp: '   ' }))).rejects.toThrow(/timestamp/i)
+  })
+
+  it('rejects creation when approvalTimestamp is not a real date', async () => {
+    await expect(createBuyerPackSnapshot(makeInput({ approvalTimestamp: 'not-a-date' }))).rejects.toThrow(/timestamp/i)
+  })
+
+  it('rejects creation when approvalId is blank', async () => {
+    await expect(createBuyerPackSnapshot(makeInput({ approvalId: '' }))).rejects.toThrow(/approval id/i)
+    await expect(createBuyerPackSnapshot(makeInput({ approvalId: '   ' }))).rejects.toThrow(/approval id/i)
+  })
+
+  it('rejects creation when packId is blank', async () => {
+    await expect(createBuyerPackSnapshot(makeInput({ packId: '' }))).rejects.toThrow(/pack/i)
+  })
+
+  it('rejects creation when generatedBy is blank (unattributed generation)', async () => {
+    await expect(createBuyerPackSnapshot(makeInput({ generatedBy: '   ' }))).rejects.toThrow(/generat/i)
+  })
+
   it('succeeds when procurementDecision is "progress" and approvedBy is a real name, and records both on the manifest', async () => {
     const snapshot = await createBuyerPackSnapshot(makeInput({ approvedBy: 'Jane Reviewer' }))
     expect(snapshot.manifest.procurementDecision).toBe('progress')
     expect(snapshot.manifest.approvedBy).toBe('Jane Reviewer')
     expect(snapshot.immutable).toBe(true)
+  })
+
+  it('preserves the real approval timestamp on the manifest as authoritative evidence', async () => {
+    const snapshot = await createBuyerPackSnapshot(makeInput({ approvalTimestamp: '2026-02-03T04:05:06.000Z' }))
+    expect(snapshot.manifest.approvalTimestamp).toBe('2026-02-03T04:05:06.000Z')
   })
 })
 

@@ -273,10 +273,13 @@ export async function recordDecision(
   // Writing the cache first — as this did — meant an insert refused by RLS still
   // left a 'progress' decision in localStorage, and the buyer-pack issue gate
   // reads that cache: a decision the SERVER REJECTED could authorise a release.
-  // The RPC cannot catch it either, because it trusts the client-supplied
-  // p_procurement_decision (10_BUYER_PACK_SNAPSHOTS_MVP.sql:262) rather than
-  // reading this table. So the cache must never record an unaccepted decision,
-  // and a failed attempt must leave any prior legitimate record untouched.
+  // Migration 23 (23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql) hardened the
+  // issue RPC so it now re-reads procurement_decisions_current server-side and
+  // ignores the client-supplied p_procurement_decision — so the DB is the last
+  // line of defence. This client-side discipline is therefore defence-in-depth,
+  // not the sole guard: the cache must never record an unaccepted decision, and a
+  // failed attempt must leave any prior legitimate record untouched, so the UI can
+  // never even present a server-rejected decision as approved.
   const { error } = await client.from(TABLE).insert({
     batch_id: input.batchId,
     decision: input.decision,

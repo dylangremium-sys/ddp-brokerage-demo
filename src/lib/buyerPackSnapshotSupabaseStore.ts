@@ -27,6 +27,7 @@
 // matching the localStorage store's explicit "already exists" throw.
 
 import { supabase as defaultClient } from './supabase'
+import { isRealApprovalTimestamp } from './buyerPackSnapshot'
 import type { BuyerPackSnapshot, BuyerPackSnapshotManifest, FrozenBuyerPackEvidence } from './buyerPackSnapshot'
 import type { BuyerPackSnapshotRepository } from './buyerPackSnapshotRepository'
 
@@ -122,6 +123,32 @@ function rowToSnapshot(row: SnapshotRow): BuyerPackSnapshot {
   }
 }
 
+/**
+ * Fail closed on a malformed manifest BEFORE the RPC. The server (migration 23)
+ * re-asserts its own gates, but a snapshot we already know is invalid — blank
+ * identity, or an unknown approval time — must never be sent down the release
+ * path: a refused RPC is a round-trip whose failure a caller then has to
+ * interpret, whereas an obviously-invalid payload should be rejected outright.
+ */
+function assertIssuableManifest(m: BuyerPackSnapshotManifest): void {
+  const requireNonBlank = (value: string, label: string) => {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new Error(`Buyer pack snapshot cannot be issued: ${label} is missing.`)
+    }
+  }
+  requireNonBlank(m.packId, 'pack id')
+  requireNonBlank(m.contentHash, 'content hash')
+  requireNonBlank(m.approvalId, 'approval id')
+  requireNonBlank(m.approvedBy, 'approver')
+  requireNonBlank(m.generatedBy, 'generating operator')
+  if (m.procurementDecision !== 'progress') {
+    throw new Error('Buyer pack snapshot cannot be issued: it is not backed by a recorded "progress" procurement decision.')
+  }
+  if (!isRealApprovalTimestamp(m.approvalTimestamp)) {
+    throw new Error('Buyer pack snapshot cannot be issued: the approval timestamp is blank or malformed.')
+  }
+}
+
 function isSnapshotRow(v: unknown): v is SnapshotRow {
   if (!v || typeof v !== 'object') return false
   const r = v as Record<string, unknown>
@@ -158,6 +185,8 @@ export function createSupabaseBuyerPackSnapshotRepository(
      */
     async save(snapshot: BuyerPackSnapshot): Promise<void> {
       const m = snapshot.manifest
+      // Reject a known-invalid payload before it can reach the server.
+      assertIssuableManifest(m)
       const { error } = await client.rpc(RPC, {
         // p_pack_id is the AUTHORITATIVE key: the server gate (migration 23) looks
         // up the current procurement decision for this pack. It must be sent.
