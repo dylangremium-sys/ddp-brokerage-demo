@@ -1,0 +1,131 @@
+{
+  "id": "24_evidence",
+  "title": "Migration 24 — Evidence Request & Resolution",
+  "description": "First reference fixture. Applies the migration-24 triplet, runs VERIFY A-R, rolls back STORAGE->main, and exercises the destructive-rollback guard on a disposable PostgreSQL 18 cluster.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "HARDENING", "file": "24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql" },
+    { "label": "STORAGE", "file": "24_EVIDENCE_REQUEST_RESOLUTION_STORAGE.sql" }
+  ],
+  "verify": {
+    "file": "24_EVIDENCE_REQUEST_RESOLUTION_VERIFY.sql",
+    "expectedSections": ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R"],
+    "expectedPassCount": 18,
+    "note": "The merged migration 24 VERIFY carries 18 sections A-R (13/A-M in the original PR-0 brief predates the N-R sections added by the final PR #37 fixes). The harness is data-driven off this list; see docs/DISPOSABLE_PG_HARNESS.md."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "STORAGE-rollback",
+        "source": "storage-companion-comment",
+        "file": "24_EVIDENCE_REQUEST_RESOLUTION_STORAGE.sql"
+      },
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "24_EVIDENCE_REQUEST_RESOLUTION_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role", "supabase_storage_admin"],
+    "schemas": ["auth", "storage", "extensions", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "storage.objects",
+      "storage.buckets",
+      "public.is_ddp_admin",
+      "public.has_operational_farmer_access",
+      "public.has_farm_membership",
+      "public.handle_new_user",
+      "public.profiles",
+      "public.farms",
+      "public.farm_profiles",
+      "public.inventory_batches",
+      "public.farm_memberships",
+      "public.farmer_documents",
+      "public.documents"
+    ]
+  },
+  "destructiveGuard": {
+    "seedSql": "fixtures/sql/24_evidence_guard_seed.sql",
+    "optInSetting": "evidence.rollback_destructive",
+    "optInValue": "true",
+    "refusalStage": "main-rollback",
+    "expectRefusalMatch": "rollback 24 refused"
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.evidence_requests",
+        "public.evidence_request_responses",
+        "public.evidence_request_attachments",
+        "public.evidence_request_history"
+      ],
+      "functions": [
+        "public.create_evidence_request",
+        "public.get_or_create_evidence_response_draft",
+        "public.save_evidence_response_draft",
+        "public.submit_evidence_response",
+        "public.request_evidence_clarification",
+        "public.resolve_evidence_request",
+        "public.reject_evidence_response",
+        "public.cancel_evidence_request",
+        "public.reserve_evidence_attachment",
+        "public.finalize_evidence_attachment",
+        "public.remove_draft_evidence_attachment",
+        "public.link_existing_evidence_document",
+        "public.claim_evidence_response_draft",
+        "public.evidence_apply_transition",
+        "public.evidence_lock_visible_request",
+        "public.evidence_request_as_json",
+        "public.evidence_actor_role",
+        "public.fn_evidence_request_validate_scope",
+        "public.fn_evidence_request_protect_immutable",
+        "public.fn_evidence_request_no_delete",
+        "public.fn_evidence_response_protect_submitted",
+        "public.fn_evidence_attachment_validate",
+        "public.fn_evidence_history_append_only",
+        "public.can_operationally_access_farm",
+        "public.evidence_filename_extension_allowed",
+        "public.evidence_document_mime",
+        "public.evidence_max_size_bytes",
+        "public.evidence_mime_allowed",
+        "public.evidence_category_allows_target",
+        "public.evidence_request_categories",
+        "public.evidence_request_priorities",
+        "public.evidence_request_terminal_statuses",
+        "public.evidence_request_statuses"
+      ],
+      "policies": [
+        "evidence-request-files: admin read",
+        "evidence-request-files: farmer read own farm",
+        "evidence-request-files: farmer insert reserved path",
+        "evidence-request-files: farmer delete own draft",
+        "evidence-request-files: operational farmer or admin"
+      ],
+      "buckets": ["evidence-request-files"]
+    },
+    "intact": {
+      "tables": [
+        "public.profiles",
+        "public.farms",
+        "public.farm_profiles",
+        "public.inventory_batches",
+        "public.farm_memberships",
+        "storage.objects",
+        "storage.buckets",
+        "auth.users"
+      ],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.has_operational_farmer_access",
+        "public.has_farm_membership",
+        "auth.uid"
+      ],
+      "authUsersMinRows": 2
+    }
+  }
+}
