@@ -10,8 +10,12 @@ function pgAvailable() {
     return false;
   }
 }
-const HAS_PG = pgAvailable();
 const REQUIRE_PG = process.env.HARNESS_REQUIRE_PG === '1';
+// Real-Postgres tests run ONLY when explicitly enabled — PG_BIN set (local/CI) or
+// HARNESS_REQUIRE_PG=1 (ci:runtime). This makes the static-job skip structural,
+// independent of whatever Postgres happens to be on the runner's PATH.
+const PG_ENABLED = !!(process.env.PG_BIN && process.env.PG_BIN.trim()) || REQUIRE_PG;
+const HAS_PG = PG_ENABLED && pgAvailable();
 
 // In ci:runtime (HARNESS_REQUIRE_PG=1) a missing Postgres is a HARD failure, not
 // a skip — the merge gate must never pass by silently skipping real execution.

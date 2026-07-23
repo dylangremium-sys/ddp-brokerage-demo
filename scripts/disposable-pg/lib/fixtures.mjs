@@ -123,6 +123,12 @@ export function loadFixture(idOrPath) {
   // Resolve destructive-guard seed SQL.
   let destructiveGuard = null;
   if (fixture.destructiveGuard) {
+    if (!fixture.destructiveGuard.livenessTable) {
+      throw new FixtureError(
+        `fixture ${fixture.id} destructiveGuard requires "livenessTable" ` +
+          `(the fully-qualified table whose rows the guard must protect) — the runner is not hardcoded to any migration`,
+      );
+    }
     const seedPath = fixtureAssetPath(fixture.destructiveGuard.seedSql);
     const seedSql = readFileSync(seedPath, 'utf8');
     destructiveGuard = { ...fixture.destructiveGuard, seedPath, seedSql };
