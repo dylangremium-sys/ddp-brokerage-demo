@@ -767,7 +767,11 @@ BEGIN
   END IF;
 
   -- J2: the request becomes terminal WITHOUT the draft ever being submitted.
-  UPDATE public.evidence_requests SET status = 'cancelled', closed_at = now() WHERE id = req_id;
+  -- Terminal status requires closed_at AND closed_by_user_id together
+  -- (evidence_requests_terminal_closure_check); set both, as the cancel RPC does.
+  UPDATE public.evidence_requests
+  SET status = 'cancelled', closed_at = now(), closed_by_user_id = actor
+  WHERE id = req_id;
   GET DIAGNOSTICS n = ROW_COUNT;
   IF n <> 1 THEN
     RAISE EXCEPTION 'VERIFY J FAILED: cancellation affected % row(s)', n;
