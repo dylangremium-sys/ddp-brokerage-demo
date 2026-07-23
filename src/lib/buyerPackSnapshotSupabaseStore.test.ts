@@ -109,6 +109,28 @@ describe('createSupabaseBuyerPackSnapshotRepository — save() calls the RPC', (
     expect(rpcCalls[0].args.p_frozen_evidence).toEqual({ inventory: { id: 'batch-1' } })
   })
 
+  it('refuses a malformed snapshot (blank approval timestamp) BEFORE the RPC is called', async () => {
+    // Defence-in-depth: the server would reject this too, but a known-invalid
+    // payload must never be sent — a refused RPC is a round-trip whose failure the
+    // caller then has to interpret, and a blank approval time must never reach the
+    // release path in the first place.
+    const { client, rpcCalls } = makeClient()
+    const repo = createSupabaseBuyerPackSnapshotRepository(client)
+    const bad = snapshot()
+    ;(bad.manifest as { approvalTimestamp: string }).approvalTimestamp = ''
+    await expect(repo.save(bad)).rejects.toThrow(/timestamp/i)
+    expect(rpcCalls.length, 'a known-invalid snapshot must never reach the server RPC').toBe(0)
+  })
+
+  it('refuses a snapshot with a blank pack id BEFORE the RPC is called', async () => {
+    const { client, rpcCalls } = makeClient()
+    const repo = createSupabaseBuyerPackSnapshotRepository(client)
+    const bad = snapshot()
+    ;(bad.manifest as { packId: string }).packId = ''
+    await expect(repo.save(bad)).rejects.toThrow(/pack id/i)
+    expect(rpcCalls.length).toBe(0)
+  })
+
   it('never sends a version — the server assigns it under an advisory lock', async () => {
     const { client, rpcCalls } = makeClient()
     await createSupabaseBuyerPackSnapshotRepository(client).save(snapshot(7))

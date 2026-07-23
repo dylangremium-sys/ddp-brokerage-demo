@@ -144,12 +144,38 @@ async function computeContentHash(
   return sha256Hex(canonical)
 }
 
+/**
+ * A real approval timestamp: a non-empty string that parses to a finite instant.
+ * The approval timestamp is authoritative evidence — it is frozen onto the
+ * manifest AND folded into the content hash — so a blank or unparseable value
+ * must never be accepted as the moment a release was approved.
+ */
+export function isRealApprovalTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && Number.isFinite(Date.parse(value))
+}
+
 export async function createBuyerPackSnapshot(input: CreateBuyerPackSnapshotInput): Promise<BuyerPackSnapshot> {
+  // FAIL CLOSED on missing/malformed approval metadata. These checks are the
+  // authoritative domain gate the UI (DDPBuyerPreview) explicitly relies on as
+  // defence-in-depth — a snapshot must never be frozen (and hashed) from blank
+  // identity or an unknown approval time, regardless of any upstream button state.
   if (input.procurementDecision !== 'progress') {
     throw new Error('A buyer pack snapshot may only be created for a recorded "progress" procurement decision.')
   }
   if (input.approvedBy.trim().length === 0) {
     throw new Error('A buyer pack snapshot requires an identified human approver.')
+  }
+  if (input.packId.trim().length === 0) {
+    throw new Error('A buyer pack snapshot requires a pack id.')
+  }
+  if (input.generatedBy.trim().length === 0) {
+    throw new Error('A buyer pack snapshot requires an identified generating operator.')
+  }
+  if (input.approvalId.trim().length === 0) {
+    throw new Error('A buyer pack snapshot requires an approval id.')
+  }
+  if (!isRealApprovalTimestamp(input.approvalTimestamp)) {
+    throw new Error('A buyer pack snapshot requires a real approval timestamp; a blank or malformed value cannot authorise a release.')
   }
 
   const frozenEvidence = deepFreeze(
@@ -253,6 +279,13 @@ export function prepareBuyerPackSnapshotInput(evidence: BuyerPackSnapshotEvidenc
   }
   if (!evidence.storedDecision || evidence.storedDecision.decision !== 'progress') {
     return { eligible: false, reason: 'A recorded "Progress" procurement decision is required before issuing a buyer pack.' }
+  }
+  // The decision's recorded time IS the approval timestamp that gets frozen into
+  // the immutable snapshot (approvalTimestamp / approvalId below). A "progress"
+  // decision with no real timestamp cannot authorise a release — fail closed
+  // rather than mint an approval whose moment is blank or unparseable.
+  if (!isRealApprovalTimestamp(evidence.storedDecision.decidedAt)) {
+    return { eligible: false, reason: 'The recorded procurement decision has no valid approval timestamp, so a buyer pack cannot be issued from it.' }
   }
   if (evidence.approvedBy.trim().length === 0) {
     return { eligible: false, reason: 'An identified human approver is required to issue a buyer pack.' }

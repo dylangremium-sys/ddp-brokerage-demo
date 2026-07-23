@@ -97,6 +97,22 @@ describe('prepareBuyerPackSnapshotInput — the issue gate cannot be bypassed', 
     expect(prepareBuyerPackSnapshotInput(makeEvidence({ approvedBy: '   ' })).eligible).toBe(false)
   })
 
+  // A recorded "progress" decision authorises a release only if it carries a REAL
+  // approval timestamp: that timestamp becomes the snapshot's authoritative
+  // approvalTimestamp and part of its content hash. A blank or malformed one would
+  // freeze a buyer pack whose approval time is unknown — fail closed instead.
+  it('is ineligible when the "progress" decision has a blank timestamp', () => {
+    expect(prepareBuyerPackSnapshotInput(makeEvidence({ storedDecision: { decision: 'progress', decidedAt: '' } })).eligible).toBe(false)
+    expect(prepareBuyerPackSnapshotInput(makeEvidence({ storedDecision: { decision: 'progress', decidedAt: '   ' } })).eligible).toBe(false)
+  })
+
+  it('is ineligible when the "progress" decision timestamp is not a real date', () => {
+    const result = prepareBuyerPackSnapshotInput(makeEvidence({ storedDecision: { decision: 'progress', decidedAt: 'not-a-date' } }))
+    expect(result.eligible).toBe(false)
+    if (result.eligible) throw new Error('expected ineligible')
+    expect(result.reason).toMatch(/timestamp/i)
+  })
+
   it('is eligible when approved with a progress decision and a named approver, and assembles the document summary', () => {
     const result = prepareBuyerPackSnapshotInput(makeEvidence())
     expect(result.eligible).toBe(true)
