@@ -1,11 +1,23 @@
 # Disposable-PostgreSQL Migration Verification Harness
 
 A committed, reviewable, CI-enforced tool that proves a migration's **runtime
-behaviour** — RLS, SECURITY DEFINER, VERIFY, rollback and destructive guards — by
+behaviour** — triggers, CHECK constraints, immutability, SECURITY DEFINER RPCs, the
+grant/REVOKE ACL posture, VERIFY, rollback and the destructive-rollback guard — by
 executing it against an **isolated, ephemeral, socket-only PostgreSQL 18** cluster
 it creates and destroys. It is the behavioural counterpart to the repo's *static*
 SQL-text suites: a trigger can exist in text and still not fire; this harness makes
 it fire.
+
+> **Scope of the RLS claim — read this.** The harness runs the migration's own
+> `*_VERIFY.sql` as the cluster **owner/superuser**, and that VERIFY does no
+> `SET ROLE`. PostgreSQL **bypasses row-level security for the owner/superuser**, so
+> the harness proves that RLS is *enabled*, that the policies *apply and roll back*,
+> and that the *trigger / CHECK / SECURITY DEFINER / grant-ACL* authorization logic
+> behaves — it does **not** prove that an RLS policy actually filters or denies rows
+> for a live non-privileged (`authenticated`/`anon`) caller. Row-level RLS
+> *enforcement* is not exercised here and remains the job of the live-staging
+> harness. (A future enhancement could add a `SET ROLE`-based enforcement probe; see
+> "Recommended follow-ups" below.)
 
 Migration 24 (Evidence Request & Resolution) is the first reference fixture. The
 harness is **general** over the repo's `NN_NAME_{...}.sql` convention — new
@@ -90,9 +102,11 @@ declares. Key fields:
   migration references an `auth.*`/`storage.*` symbol not declared here (and not
   created by the migration itself), the harness **fails loudly** (fail-on-undeclared
   substrate) rather than silently succeeding on an approximation.
-- `destructiveGuard` — `{seedSql, optInSetting, optInValue, refusalStage,
-  expectRefusalMatch}`: seed live data, prove the guarded stage **refuses** without
-  the opt-in, then **succeeds** with it.
+- `destructiveGuard` — `{livenessTable, seedSql, optInSetting, optInValue,
+  refusalStage, expectRefusalMatch}`: seed live data into `livenessTable` (the
+  fully-qualified table whose rows the guard protects — not hardcoded to any
+  migration), prove the guarded stage **refuses** without the opt-in, then
+  **succeeds** with it.
 - `postRollback` — `removed`/`intact` object lists asserted after rollback, proving
   the rollback is real (objects gone) and safe (substrate intact).
 
@@ -147,3 +161,23 @@ The harness statically asserts that no in-scope migration (or the bootstrap)
 enables `FORCE ROW LEVEL SECURITY`, and exercises SECURITY DEFINER helper/projection
 behaviour under the shim — the drift-protection anchor for owner decision K-10(e).
 It never introduces FORCE RLS.
+
+## Recommended follow-ups (known coverage boundaries)
+
+These are deliberate boundaries of the current harness, not defects — recorded so
+they are chosen, not forgotten:
+
+1. **RLS enforcement probe.** Add an optional fixture step that, after apply, runs a
+   short probe as a non-privileged role (`SET ROLE authenticated` / `anon` with a
+   `request.jwt.claim.sub` GUC) and asserts a representative storage/table policy
+   actually *allows* the authorized caller and *denies* the unauthorized one. This
+   would upgrade RLS coverage from "enabled + applies" to true row-level
+   enforcement. Until then, RLS enforcement stays a live-staging responsibility.
+2. **Negative-scenario breadth (brief §17).** Real-Postgres negative coverage
+   currently exercises the apply-failure path. Rollback-failure, a raising VERIFY,
+   and a guard that wrongly succeeds are covered only at the unit level (parser /
+   guard logic), not as end-to-end integration negatives. Adding expect-failure
+   fixtures for the `rollback`/`verify`/`guard` phases would close this.
+3. **Required-check enforcement.** That `runtime-verify` is a *required* status check
+   is a GitHub branch-protection setting, not expressible in-repo; confirm it in the
+   repository settings.

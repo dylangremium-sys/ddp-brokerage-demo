@@ -11,7 +11,11 @@ function pgAvailable() {
     return false;
   }
 }
-const HAS_PG = pgAvailable();
+// Real-Postgres tests run ONLY when explicitly enabled (PG_BIN set, or
+// HARNESS_REQUIRE_PG=1 in ci:runtime) — never merely because a Postgres binary is
+// on PATH. Keeps the static `npm test` job's skip structural, not environmental.
+const PG_ENABLED = !!(process.env.PG_BIN && process.env.PG_BIN.trim()) || process.env.HARNESS_REQUIRE_PG === '1';
+const HAS_PG = PG_ENABLED && pgAvailable();
 
 describe.skipIf(!HAS_PG)('run-migration-harness end-to-end (real PostgreSQL)', () => {
   it('runs the 24_evidence fixture fully green: apply -> VERIFY 18/18 -> guard -> rollback', { timeout: 120000 }, () => {

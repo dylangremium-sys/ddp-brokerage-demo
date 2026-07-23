@@ -50,6 +50,7 @@
     ]
   },
   "destructiveGuard": {
+    "livenessTable": "public.evidence_requests",
     "seedSql": "fixtures/sql/24_evidence_guard_seed.sql",
     "optInSetting": "evidence.rollback_destructive",
     "optInValue": "true",
