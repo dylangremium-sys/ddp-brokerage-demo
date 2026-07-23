@@ -250,8 +250,11 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.can_operationally_access_farm(uuid) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.can_operationally_access_farm(uuid) FROM anon;
+-- Keep EXECUTE for authenticated: the storage and table RLS policies invoke it
+-- in the caller's context. service_role bypasses RLS and never evaluates those
+-- policies, so it gets no direct EXECUTE (§8.6 [v1.3]).
+REVOKE EXECUTE ON FUNCTION public.can_operationally_access_farm(uuid) FROM service_role;
 GRANT  EXECUTE ON FUNCTION public.can_operationally_access_farm(uuid) TO authenticated;
-GRANT  EXECUTE ON FUNCTION public.can_operationally_access_farm(uuid) TO service_role;
 
 -- -----------------------------------------------------------------------------
 -- 3. Tables (contract §6.2 – §6.5).
@@ -1786,7 +1789,7 @@ BEGIN
   -- request: reserve, link, save, submit and finalize all keep that guard.
   SELECT * INTO resp FROM public.evidence_request_responses
   WHERE id = p_response_id AND request_id = p_request_id FOR UPDATE;
-  IF NOT FOUND OR resp.state <> 'draft' THEN
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
   END IF;
 
@@ -1796,8 +1799,26 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'NOT_FOUND' USING ERRCODE = 'no_data_found';
   END IF;
-  IF resp.draft_owner_user_id IS DISTINCT FROM auth.uid() THEN  -- [v1.1] current draft owner may clean up
+  -- The cleanup principal is the (possibly frozen) draft owner. After submission
+  -- draft_owner_user_id is frozen (§4.8 [v1.1]); for a pre-existing tombstone it
+  -- remains the final authorised cleanup principal (§7.9 [v1.3]).
+  IF resp.draft_owner_user_id IS DISTINCT FROM auth.uid() THEN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  -- BRANCH A vs BRANCH B (contract §7.9 [v1.3]).
+  --   BRANCH B — CONTINUE cleanup of an existing request_upload tombstone. A
+  --   tombstone was removed while the response was a draft and is NOT submitted
+  --   evidence, so its cleanup authority survives submission and terminal request
+  --   states. This branch never mutates the row; it only reports/continues
+  --   physical-object cleanup (phase 2 below).
+  --   BRANCH A — BEGIN removal (set the marker) or unlink an existing document.
+  --   This is the creation boundary: it may START only while the response is a
+  --   draft, so a submitted response can never be newly tombstoned.
+  IF NOT (att.origin = 'request_upload' AND att.removal_requested_at IS NOT NULL) THEN
+    IF resp.state <> 'draft' THEN
+      RAISE EXCEPTION 'INVALID_TRANSITION' USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
 
   -- Stage 0 — linked existing documents own no request-specific object. Nothing
@@ -2258,10 +2279,10 @@ GRANT  EXECUTE ON FUNCTION public.claim_evidence_response_draft(uuid,uuid,intege
 --        acl-no-grant: evidence_lock_visible_request
 --        acl-no-grant: evidence_request_as_json
 --        acl-no-grant: evidence_actor_role
-REVOKE EXECUTE ON FUNCTION public.evidence_apply_transition(uuid,integer,text,text,text,text,uuid,uuid) FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.evidence_lock_visible_request(uuid,boolean) FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.evidence_request_as_json(uuid) FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.evidence_actor_role() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.evidence_apply_transition(uuid,integer,text,text,text,text,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_lock_visible_request(uuid,boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_request_as_json(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_actor_role() FROM PUBLIC, anon, authenticated, service_role;
 
 -- 10.3 Canonical value helpers. Evaluated inside CHECK constraints and inside
 --      the SECURITY DEFINER RPCs, both of which run as the definer, so no
@@ -2275,15 +2296,15 @@ REVOKE EXECUTE ON FUNCTION public.evidence_actor_role() FROM PUBLIC, anon, authe
 --        acl-no-grant: evidence_max_size_bytes
 --        acl-no-grant: evidence_document_mime
 --        acl-no-grant: evidence_filename_extension_allowed
-REVOKE EXECUTE ON FUNCTION public.evidence_request_statuses() FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.evidence_request_terminal_statuses() FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.evidence_request_priorities() FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.evidence_request_categories() FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.evidence_category_allows_target(text,text) FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.evidence_mime_allowed(text,text) FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.evidence_max_size_bytes(text,text) FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.evidence_document_mime(text) FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.evidence_filename_extension_allowed(text,text,text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_request_statuses() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_request_terminal_statuses() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_request_priorities() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_request_categories() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_category_allows_target(text,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_mime_allowed(text,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_max_size_bytes(text,text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_document_mime(text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.evidence_filename_extension_allowed(text,text,text) FROM PUBLIC, anon, authenticated, service_role;
 
 -- 10.4 Trigger functions. Invoked only by the trigger machinery, never called
 --      directly. Deliberate no-grant decisions:
@@ -2293,11 +2314,11 @@ REVOKE EXECUTE ON FUNCTION public.evidence_filename_extension_allowed(text,text,
 --        acl-no-grant: fn_evidence_response_protect_submitted
 --        acl-no-grant: fn_evidence_attachment_validate
 --        acl-no-grant: fn_evidence_history_append_only
-REVOKE EXECUTE ON FUNCTION public.fn_evidence_request_validate_scope() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.fn_evidence_request_protect_immutable() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.fn_evidence_request_no_delete() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.fn_evidence_response_protect_submitted() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.fn_evidence_attachment_validate() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.fn_evidence_history_append_only() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_request_validate_scope() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_request_protect_immutable() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_request_no_delete() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_response_protect_submitted() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_attachment_validate() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.fn_evidence_history_append_only() FROM PUBLIC, anon, authenticated, service_role;
 
 COMMIT;

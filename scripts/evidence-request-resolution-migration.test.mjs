@@ -902,8 +902,11 @@ describe('migration 24 — Codex F2: finalized objects cannot be deleted via sto
 
   it('an unauthorized pending upload is no longer casually deletable either', () => {
     const p = policy()
-    expect(p).toMatch(/r\.state = 'draft'/)
-    expect(p).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)  // [v1.1] cleanup follows the draft owner
+    // v1.3: tombstone cleanup DELETE no longer requires a draft response (it must
+    // survive submission), but still keys on the frozen draft owner + tombstone.
+    expect(p).not.toMatch(/r\.state = 'draft'/)
+    expect(p).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)
+    expect(p).toMatch(/a\.removal_requested_at IS NOT NULL/)
     // Being merely pending is not sufficient; removal must be authorized first.
     expect(p).not.toMatch(/a\.upload_state = 'pending_upload'/)
     expect(p).toMatch(/a\.removal_requested_at IS NOT NULL/)
@@ -921,7 +924,8 @@ describe('migration 24 — Codex F2: finalized objects cannot be deleted via sto
     // removal RPC mutually gating, stranding unsubmitted draft uploads once a
     // request was cancelled/resolved/rejected. Draft-only is what matters.
     const p = policy()
-    expect(p).toMatch(/r\.state = 'draft'/)
+    // v1.3: cleanup DELETE authority is state-independent (tombstone + frozen owner).
+    expect(p).not.toMatch(/r\.state = 'draft'/)
     expect(p).not.toMatch(/er\.status IN \('open','clarification_requested'\)/)
   })
 
@@ -1163,8 +1167,8 @@ describe('migration 24 — controlled two-stage removal (no SQL object deletion)
     // Every other condition is retained; cleanup authority is the draft owner [v1.1].
     expect(p).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)
     expect(p).toMatch(/a\.storage_object_path = storage\.objects\.name/)
-    expect(p).toMatch(/r\.state = 'draft'/)
-    expect(p).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)  // [v1.1]
+    expect(p).not.toMatch(/r\.state = 'draft'/)  // v1.3: survives submission
+    expect(p).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)
     // REVISED: deliberately NOT gated on request status — see the terminal
     // draft-cleanup fix. Farm access remains required.
     expect(p).not.toMatch(/er\.status IN \('open','clarification_requested'\)/)
@@ -1693,9 +1697,10 @@ describe('migration 24 — Codex P2: terminal draft cleanup', () => {
     expect(deletePolicy).not.toBe('')
     expect(deletePolicy).not.toMatch(/er\.status IN \('open','clarification_requested'\)/)
     expect(deletePolicy).toMatch(/a\.removal_requested_at\s+IS NOT NULL/)
-    expect(deletePolicy).toMatch(/r\.state = 'draft'/)
+    // v1.3: no r.state='draft' — cleanup survives submission and terminal states.
+    expect(deletePolicy).not.toMatch(/r\.state = 'draft'/)
     expect(deletePolicy).toMatch(/a\.storage_object_path = storage\.objects\.name/)
-    expect(deletePolicy).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)  // [v1.1]
+    expect(deletePolicy).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)
     expect(deletePolicy).toMatch(/public\.can_operationally_access_farm\(er\.farm_id\)/)
   })
 
@@ -1780,11 +1785,14 @@ describe('migration 24 — storage read authority is tied to a live attachment r
     }
     // Branch (a): ACTIVE evidence readable by any operational farm member.
     expect(selectPolicy).toMatch(/a\.upload_state = 'ready' AND a\.removal_requested_at IS NULL/)
-    // Branch (b): a TOMBSTONE readable ONLY by the current draft owner (v1.2), so
-    // the controlled cleanup DELETE can locate it. Pending stays hidden from all;
-    // tombstones stay hidden from other members.
+    // Branch (b): a TOMBSTONE readable ONLY by the (frozen) draft owner so the
+    // cleanup DELETE can locate it. v1.3: no r.state='draft' — cleanup survives
+    // submission. Pending stays hidden from all; tombstones from other members.
     expect(selectPolicy).toMatch(/a\.removal_requested_at IS NOT NULL/)
-    expect(selectPolicy).toMatch(/r\.state = 'draft'\s*\n?\s*AND r\.draft_owner_user_id = auth\.uid\(\)/)
+    expect(selectPolicy).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)
+    // The tombstone branch must NOT re-introduce a draft-state gate.
+    const tombstoneBranch = selectPolicy.match(/a\.removal_requested_at IS NOT NULL[\s\S]*?\)\)/)?.[0] ?? ''
+    expect(tombstoneBranch).not.toMatch(/r\.state = 'draft'/)
   })
 
   it('a non-tombstoned pending object is readable by NO ONE (finding stays closed)', () => {
@@ -2223,5 +2231,106 @@ describe('migration 24 [v1.2] — request-upload removal leaves a durable tombst
   it('rollback remains complete (no new object introduced needing a drop)', () => {
     // The tombstone fix adds no new table/function; rollback is unchanged.
     expect(RBK).toMatch(/DROP TABLE IF EXISTS public\.evidence_request_attachments/)
+  })
+})
+
+// ── Codex P2: post-submission tombstone cleanup + internal-helper ACLs ──────
+describe('migration 24 [v1.3] — tombstone cleanup survives submission', () => {
+  const remove = BODIES.get('remove_draft_evidence_attachment') ?? ''
+  const del = STO.match(/CREATE POLICY "evidence-request-files: farmer delete own draft"[\s\S]*?\);/)?.[0] ?? ''
+  const sel = STO.match(/CREATE POLICY "evidence-request-files: farmer read own farm"[\s\S]*?\);/)?.[0] ?? ''
+
+  it('the remove RPC has a tombstone-continuation branch that does not require a draft', () => {
+    // Branch B: origin=request_upload AND removal_requested_at IS NOT NULL -> no draft gate.
+    expect(remove).toMatch(/NOT \(att\.origin = 'request_upload' AND att\.removal_requested_at IS NOT NULL\)/)
+    expect(remove).toMatch(/resp\.state <> 'draft'[\s\S]{0,120}?RAISE EXCEPTION 'INVALID_TRANSITION'/)
+  })
+
+  it('the initial response load no longer hard-gates on draft state', () => {
+    expect(remove).not.toMatch(/IF NOT FOUND OR resp\.state <> 'draft' THEN/)
+  })
+
+  it('BEGIN removal (creation boundary) still requires a draft response', () => {
+    // The draft check sits inside the "NOT (tombstone)" guard, so setting the
+    // marker (phase 1) and existing-doc unlink only happen on a draft.
+    const guard = remove.match(/IF NOT \(att\.origin = 'request_upload' AND att\.removal_requested_at IS NOT NULL\) THEN[\s\S]*?END IF;/)?.[0] ?? ''
+    expect(guard).toMatch(/resp\.state <> 'draft'/)
+  })
+
+  it('the storage DELETE policy no longer requires a draft response for tombstones', () => {
+    expect(del).toMatch(/a\.removal_requested_at IS NOT NULL/)
+    expect(del).not.toMatch(/r\.state = 'draft'/)
+    expect(del).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)
+  })
+
+  it('the storage SELECT tombstone branch no longer requires a draft response', () => {
+    const tomb = sel.match(/a\.removal_requested_at IS NOT NULL[\s\S]*?\)\)/)?.[0] ?? ''
+    expect(tomb).not.toBe('')
+    expect(tomb).not.toMatch(/r\.state = 'draft'/)
+    expect(tomb).toMatch(/r\.draft_owner_user_id = auth\.uid\(\)/)
+  })
+
+  it('active-evidence SELECT still requires ready AND removal NULL (submitted stays scoped)', () => {
+    expect(sel).toMatch(/a\.upload_state = 'ready' AND a\.removal_requested_at IS NULL/)
+  })
+
+  it('a submitted response attachment cannot enter removal (immutability trigger)', () => {
+    const trig = BODIES.get('fn_evidence_attachment_validate') ?? ''
+    expect(trig).toMatch(/TG_OP = 'UPDATE' AND resp\.state = 'submitted'[\s\S]{0,160}?immutable/)
+  })
+
+  it('VERIFY P proves persistence, submitted-evidence exclusion, boundary and terminal cleanup', () => {
+    const v = VER.match(/DO \$verify_p\$[\s\S]*?\$verify_p\$/)?.[0] ?? ''
+    expect(v).not.toBe('')
+    expect(v).toMatch(/tombstone row vanished at submission/)
+    expect(v).toMatch(/tombstone must not count/)
+    expect(v).toMatch(/tombstone cleanup authority lost after submission/)
+    expect(v).toMatch(/a submitted attachment could be newly tombstoned/)
+    expect(v).toMatch(/tombstone cleanup authority lost on a terminal request/)
+  })
+})
+
+describe('migration 24 [v1.3] — internal helpers deny service_role', () => {
+  const internal = [
+    'evidence_apply_transition\\(uuid,integer,text,text,text,text,uuid,uuid\\)',
+    'evidence_lock_visible_request\\(uuid,boolean\\)',
+    'evidence_request_as_json\\(uuid\\)',
+    'evidence_actor_role\\(\\)',
+    'evidence_request_statuses\\(\\)',
+    'evidence_mime_allowed\\(text,text\\)',
+    'evidence_filename_extension_allowed\\(text,text,text\\)',
+  ]
+
+  it('every internal helper revokes EXECUTE from service_role', () => {
+    for (const fn of internal) {
+      expect(FWD, fn).toMatch(new RegExp(`REVOKE EXECUTE ON FUNCTION public\\.${fn} FROM PUBLIC, anon, authenticated, service_role;`))
+    }
+  })
+
+  it('the policy helper keeps authenticated but drops service_role', () => {
+    expect(FWD).toMatch(/REVOKE EXECUTE ON FUNCTION public\.can_operationally_access_farm\(uuid\) FROM service_role;/)
+    // authenticated is NOT revoked (RLS policies invoke it as the caller)
+    expect(FWD).not.toMatch(/REVOKE EXECUTE ON FUNCTION public\.can_operationally_access_farm\(uuid\) FROM authenticated/)
+  })
+
+  it('public validated RPCs still GRANT service_role', () => {
+    for (const fn of ['submit_evidence_response\\(uuid,uuid,integer\\)',
+      'remove_draft_evidence_attachment\\(uuid,uuid,uuid\\)',
+      'claim_evidence_response_draft\\(uuid,uuid,integer\\)']) {
+      expect(FWD, fn).toMatch(new RegExp(`GRANT  EXECUTE ON FUNCTION public\\.${fn} TO authenticated, service_role;`))
+    }
+  })
+
+  it('mutation guard: removing a service_role revoke would fail this test', () => {
+    const line = 'REVOKE EXECUTE ON FUNCTION public.evidence_apply_transition(uuid,integer,text,text,text,text,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;'
+    expect(FWD).toContain(line)
+    expect(FWD.replace(line, '')).not.toContain(line)
+  })
+
+  it('VERIFY Q asserts effective privileges via has_function_privilege', () => {
+    const v = VER.match(/DO \$verify_q\$[\s\S]*?\$verify_q\$/)?.[0] ?? ''
+    expect(v).toMatch(/has_function_privilege\('service_role', sig, 'EXECUTE'\)/)
+    expect(v).toMatch(/service_role can EXECUTE internal helper/)
+    expect(v).toMatch(/public RPC % lost an intended grant/)
   })
 })

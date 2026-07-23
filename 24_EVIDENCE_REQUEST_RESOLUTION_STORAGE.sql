@@ -130,7 +130,11 @@ CREATE POLICY "evidence-request-files: farmer read own farm"
            AND EXISTS (
              SELECT 1 FROM public.evidence_request_responses r
              WHERE r.id = a.response_id
-               AND r.state = 'draft'
+               -- No r.state = 'draft' here: a tombstone's cleanup authority
+               -- survives submission and terminal request states (§7.9 [v1.3]).
+               -- The tombstone was removed while draft and is NOT submitted
+               -- evidence; the frozen draft_owner_user_id remains the cleanup
+               -- principal.
                AND r.draft_owner_user_id = auth.uid()
            ))
         )
@@ -212,7 +216,10 @@ CREATE POLICY "evidence-request-files: farmer delete own draft"
         AND r.draft_owner_user_id = auth.uid()
         AND a.origin = 'request_upload'
         AND a.removal_requested_at IS NOT NULL
-        AND r.state = 'draft'
+        -- No r.state = 'draft': a tombstone is never submitted evidence, so its
+        -- cleanup DELETE authority survives submission and terminal states
+        -- (§7.9 [v1.3]). removal_requested_at IS NOT NULL guarantees this can
+        -- never target an active (removal-NULL) submitted attachment.
         -- DELIBERATELY NOT gated on er.status. Requiring an actionable request
         -- here made this policy and remove_draft_evidence_attachment mutually
         -- gating: after an admin cancelled/resolved/rejected a request holding a

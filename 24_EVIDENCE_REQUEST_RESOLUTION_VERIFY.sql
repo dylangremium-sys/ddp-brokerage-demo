@@ -1308,4 +1308,167 @@ BEGIN
 END
 $verify_o$;
 
+-- -----------------------------------------------------------------------------
+-- VERIFY P — tombstone cleanup survives submission and terminal states [v1.3].
+-- Single-session state checks; the two-session late-commit race is proven by the
+-- concurrency harness.
+-- -----------------------------------------------------------------------------
+DO $verify_p$
+DECLARE
+  actor uuid; farm_id_v uuid; profile_v uuid; req_id uuid; resp_id uuid;
+  tomb_id uuid; live_id uuid; n integer; ok boolean; cleanup_ok boolean; active_ready integer;
+BEGIN
+  SELECT id INTO actor FROM auth.users LIMIT 1;
+  IF actor IS NULL THEN RAISE EXCEPTION 'VERIFY P FAILED: no auth.users row'; END IF;
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor) RETURNING id INTO farm_id_v;
+  INSERT INTO public.farm_profiles (id, farm_id) VALUES (gen_random_uuid(), farm_id_v) RETURNING id INTO profile_v;
+  INSERT INTO public.evidence_requests (farm_id,target_type,farm_profile_id,category,title,explanation,created_by_user_id)
+  VALUES (farm_id_v,'farm_profile',profile_v,'farm_license','Licence document request',
+          'Please upload the current cultivation licence document.',actor)
+  RETURNING id INTO req_id;
+  INSERT INTO public.evidence_request_responses (request_id,response_number,state,created_by_user_id,draft_owner_user_id)
+  VALUES (req_id,1,'draft',actor,actor) RETURNING id INTO resp_id;
+
+  -- A tombstoned request_upload (removed while draft) + a LIVE ready attachment
+  -- that will be the submitted evidence.
+  INSERT INTO public.evidence_request_attachments
+    (request_id,response_id,origin,storage_bucket,storage_object_path,upload_state,
+     original_filename,mime_type,size_bytes,sha256_hex,created_by_user_id,finalized_at,removal_requested_at)
+  VALUES (req_id,resp_id,'request_upload','evidence-request-files',
+          farm_id_v||'/'||req_id||'/'||resp_id||'/p/tomb.pdf','ready','tomb.pdf','application/pdf',
+          1024,repeat('a',64),actor,now(),now())
+  RETURNING id INTO tomb_id;
+  INSERT INTO public.evidence_request_attachments
+    (request_id,response_id,origin,storage_bucket,storage_object_path,upload_state,
+     original_filename,mime_type,size_bytes,sha256_hex,created_by_user_id,finalized_at)
+  VALUES (req_id,resp_id,'request_upload','evidence-request-files',
+          farm_id_v||'/'||req_id||'/'||resp_id||'/p/live.pdf','ready','live.pdf','application/pdf',
+          2048,repeat('b',64),actor,now())
+  RETURNING id INTO live_id;
+
+  -- Submit the response (tombstone excluded from counts; live attachment is evidence).
+  UPDATE public.evidence_request_responses SET state='submitted', submitted_at=now() WHERE id=resp_id;
+  UPDATE public.evidence_requests SET status='farmer_submitted', updated_at=now() WHERE id=req_id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF (SELECT state FROM public.evidence_request_responses WHERE id=resp_id) <> 'submitted' THEN
+    RAISE EXCEPTION 'VERIFY P FAILED: response did not submit (test would be vacuous)';
+  END IF;
+
+  -- P1: tombstone row SURVIVES submission.
+  IF NOT EXISTS (SELECT 1 FROM public.evidence_request_attachments WHERE id=tomb_id) THEN
+    RAISE EXCEPTION 'VERIFY P FAILED: tombstone row vanished at submission';
+  END IF;
+
+  -- P2: tombstone is NOT part of submitted evidence (submit's ready predicate).
+  SELECT count(*) FILTER (WHERE (origin<>'request_upload' OR upload_state='ready') AND removal_requested_at IS NULL)
+    INTO active_ready FROM public.evidence_request_attachments WHERE response_id=resp_id;
+  IF active_ready <> 1 THEN
+    RAISE EXCEPTION 'VERIFY P FAILED: submitted evidence count is % (expected 1 live; tombstone must not count)', active_ready;
+  END IF;
+
+  -- P3: the tombstone cleanup DELETE predicate still holds on a SUBMITTED response
+  -- (this is the exact condition set the storage DELETE policy evaluates).
+  SELECT EXISTS (
+    SELECT 1 FROM public.evidence_request_attachments a
+    JOIN public.evidence_request_responses r ON r.id=a.response_id
+    JOIN public.evidence_requests er ON er.id=a.request_id
+    WHERE a.id=tomb_id AND a.origin='request_upload' AND a.removal_requested_at IS NOT NULL
+      AND r.draft_owner_user_id=actor
+  ) INTO cleanup_ok;
+  IF NOT cleanup_ok THEN
+    RAISE EXCEPTION 'VERIFY P FAILED: tombstone cleanup authority lost after submission';
+  END IF;
+
+  -- P4: a LIVE submitted attachment (removal NULL) does NOT satisfy the cleanup
+  -- predicate, so cleanup can never delete genuine submitted evidence.
+  IF EXISTS (
+    SELECT 1 FROM public.evidence_request_attachments a
+    WHERE a.id=live_id AND a.removal_requested_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'VERIFY P FAILED: a live submitted attachment looks like a tombstone';
+  END IF;
+
+  -- P5: creation boundary — a submitted response cannot be NEWLY tombstoned. The
+  -- attachment immutability trigger rejects any UPDATE of a submitted attachment.
+  ok := false;
+  BEGIN
+    UPDATE public.evidence_request_attachments SET removal_requested_at = now() WHERE id = live_id;
+  EXCEPTION WHEN check_violation THEN ok := true; END;
+  IF NOT ok THEN
+    RAISE EXCEPTION 'VERIFY P FAILED: a submitted attachment could be newly tombstoned';
+  END IF;
+
+  -- P6: cleanup authority persists through a terminal request state too.
+  UPDATE public.evidence_requests SET status='cancelled', closed_at=now(), closed_by_user_id=actor WHERE id=req_id;
+  SELECT EXISTS (
+    SELECT 1 FROM public.evidence_request_attachments a
+    JOIN public.evidence_request_responses r ON r.id=a.response_id
+    WHERE a.id=tomb_id AND a.removal_requested_at IS NOT NULL AND r.draft_owner_user_id=actor
+  ) INTO cleanup_ok;
+  IF NOT cleanup_ok THEN
+    RAISE EXCEPTION 'VERIFY P FAILED: tombstone cleanup authority lost on a terminal request';
+  END IF;
+
+  RAISE NOTICE 'VERIFY P PASSED: tombstone cleanup survives submission and terminal states; submitted evidence stays immutable; no new tombstone post-submission.';
+END
+$verify_p$;
+
+-- -----------------------------------------------------------------------------
+-- VERIFY Q — internal helpers are not executable by service_role (or other client
+-- roles) [v1.3]. Effective-privilege checks via has_function_privilege.
+-- -----------------------------------------------------------------------------
+DO $verify_q$
+DECLARE
+  internal text[] := ARRAY[
+    'public.evidence_apply_transition(uuid,integer,text,text,text,text,uuid,uuid)',
+    'public.evidence_lock_visible_request(uuid,boolean)',
+    'public.evidence_request_as_json(uuid)',
+    'public.evidence_actor_role()',
+    'public.evidence_request_statuses()',
+    'public.evidence_mime_allowed(text,text)',
+    'public.evidence_filename_extension_allowed(text,text,text)',
+    'public.can_operationally_access_farm(uuid)'
+  ];
+  public_rpcs text[] := ARRAY[
+    'public.submit_evidence_response(uuid,uuid,integer)',
+    'public.remove_draft_evidence_attachment(uuid,uuid,uuid)',
+    'public.claim_evidence_response_draft(uuid,uuid,integer)'
+  ];
+  sig text;
+BEGIN
+  -- Internal helpers: NO role may directly EXECUTE (service_role included).
+  FOREACH sig IN ARRAY internal LOOP
+    IF has_function_privilege('service_role', sig, 'EXECUTE') THEN
+      RAISE EXCEPTION 'VERIFY Q FAILED: service_role can EXECUTE internal helper %', sig;
+    END IF;
+    IF has_function_privilege('anon', sig, 'EXECUTE') THEN
+      RAISE EXCEPTION 'VERIFY Q FAILED: anon can EXECUTE internal helper %', sig;
+    END IF;
+  END LOOP;
+  -- can_operationally_access_farm is policy-required for authenticated; all other
+  -- internal helpers must be non-executable by authenticated too.
+  FOREACH sig IN ARRAY internal LOOP
+    IF sig <> 'public.can_operationally_access_farm(uuid)'
+       AND has_function_privilege('authenticated', sig, 'EXECUTE') THEN
+      RAISE EXCEPTION 'VERIFY Q FAILED: authenticated can EXECUTE internal helper %', sig;
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('authenticated', 'public.can_operationally_access_farm(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'VERIFY Q FAILED: authenticated lost EXECUTE on the policy helper can_operationally_access_farm';
+  END IF;
+  -- Public validated RPCs remain executable by authenticated + service_role.
+  FOREACH sig IN ARRAY public_rpcs LOOP
+    IF NOT has_function_privilege('authenticated', sig, 'EXECUTE')
+       OR NOT has_function_privilege('service_role', sig, 'EXECUTE') THEN
+      RAISE EXCEPTION 'VERIFY Q FAILED: public RPC % lost an intended grant', sig;
+    END IF;
+    IF has_function_privilege('anon', sig, 'EXECUTE') THEN
+      RAISE EXCEPTION 'VERIFY Q FAILED: anon can EXECUTE public RPC %', sig;
+    END IF;
+  END LOOP;
+
+  RAISE NOTICE 'VERIFY Q PASSED: internal helpers deny all client roles incl. service_role; policy helper keeps authenticated; public RPCs keep intended grants.';
+END
+$verify_q$;
+
 ROLLBACK;
