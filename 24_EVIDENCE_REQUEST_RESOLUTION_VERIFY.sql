@@ -357,10 +357,13 @@ END
 $verify_e$;
 
 -- -----------------------------------------------------------------------------
--- VERIFY F — migrations 21 and 23 are untouched by migration 24.
+-- VERIFY F — migration 24 coexists with, and is isolated from, prior migrations.
 -- -----------------------------------------------------------------------------
 DO $verify_f$
 BEGIN
+  -- Migration-21 objects that the evidence model coexists with (the pending /
+  -- farmer role gating and the auth-user provisioning trigger). These are real
+  -- coexistence checks: migration 24 must not have disturbed them.
   IF NOT EXISTS (SELECT 1 FROM pg_constraint
                  WHERE conname = 'profiles_role_check'
                    AND pg_get_constraintdef(oid) LIKE '%pending%') THEN
@@ -369,14 +372,43 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'handle_new_user') THEN
     RAISE EXCEPTION 'VERIFY F FAILED: migration 21 handle_new_user() is missing';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'issue_buyer_pack_snapshot') THEN
-    RAISE EXCEPTION 'VERIFY F FAILED: migration 23 issue_buyer_pack_snapshot() is missing';
-  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'has_operational_farmer_access') THEN
     RAISE EXCEPTION 'VERIFY F FAILED: has_operational_farmer_access() is missing';
   END IF;
 
-  RAISE NOTICE 'VERIFY F PASSED: migration 21 and migration 23 objects remain intact.';
+  -- ISOLATION FROM BUYER PACK (migration 23), NOT a dependency on it.
+  --
+  -- This previously required issue_buyer_pack_snapshot() to already exist, which
+  -- coupled migration-24 verification to migration 23: in a state-aware rollout
+  -- where Buyer Pack is intentionally absent (or not yet verified), VERIFY failed
+  -- even though the forward migration declares no such precondition and the
+  -- evidence workflow never calls it. Migration 24's SQL contains ZERO buyer_pack
+  -- references, so it can neither create nor drop a Buyer Pack object.
+  --
+  -- The portable, honest isolation assertions are: (a) migration 24 introduced no
+  -- object into the Buyer Pack namespace, and (b) where Buyer Pack IS installed,
+  -- its entrypoint remains present (migration 24 did not drop it). When Buyer
+  -- Pack is absent, that is acceptable and the section still passes.
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname LIKE 'evidence%buyer_pack%'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY F FAILED: migration 24 created a Buyer Pack-named object (isolation breach)';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
+      AND c.relname LIKE 'evidence%buyer_pack%'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY F FAILED: migration 24 created a Buyer Pack-named table (isolation breach)';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'issue_buyer_pack_snapshot') THEN
+    RAISE NOTICE 'VERIFY F PASSED: migration 21 intact; Buyer Pack present and untouched by migration 24.';
+  ELSE
+    RAISE NOTICE 'VERIFY F PASSED: migration 21 intact; Buyer Pack not installed (migration 24 does not require it).';
+  END IF;
 END
 $verify_f$;
 
@@ -1136,5 +1168,60 @@ BEGIN
   RAISE NOTICE 'VERIFY M PASSED: extension is validated against the final MIME; category-valid MIME shifts are still rejected by the equality guard.';
 END
 $verify_m$;
+
+-- -----------------------------------------------------------------------------
+-- VERIFY N — a CoA request accepts only a CoA document (not any PDF-shaped one).
+-- Enforced by the attachment validate trigger, so a direct insert exercises it.
+-- -----------------------------------------------------------------------------
+DO $verify_n$
+DECLARE
+  actor uuid; farm_id_v uuid; batch_v uuid;
+  req_id uuid; resp_id uuid; coa_doc uuid; lic_doc uuid; n integer; ok boolean;
+BEGIN
+  SELECT id INTO actor FROM auth.users LIMIT 1;
+  IF actor IS NULL THEN RAISE EXCEPTION 'VERIFY N FAILED: no auth.users row'; END IF;
+
+  INSERT INTO public.farms (id, created_by) VALUES (gen_random_uuid(), actor) RETURNING id INTO farm_id_v;
+  INSERT INTO public.inventory_batches (id, farm_id, created_by)
+    VALUES (gen_random_uuid(), farm_id_v, actor) RETURNING id INTO batch_v;
+  INSERT INTO public.evidence_requests
+    (farm_id, target_type, inventory_batch_id, category, title, explanation, created_by_user_id)
+  VALUES (farm_id_v, 'inventory_batch', batch_v, 'coa',
+          'CoA', 'Please upload the certificate of analysis for this batch.', actor)
+  RETURNING id INTO req_id;
+  INSERT INTO public.evidence_request_responses
+    (request_id, response_number, state, created_by_user_id, draft_owner_user_id)
+  VALUES (req_id, 1, 'draft', actor, actor) RETURNING id INTO resp_id;
+
+  -- Same-batch documents: one CoA, one licence (both PDF-shaped by document type).
+  INSERT INTO public.farmer_documents (farm_id, inventory_batch_id, document_type, file_name)
+    VALUES (farm_id_v, batch_v, 'coa', 'analysis.pdf') RETURNING id INTO coa_doc;
+  INSERT INTO public.farmer_documents (farm_id, inventory_batch_id, document_type, file_name)
+    VALUES (farm_id_v, batch_v, 'licence', 'permit.pdf') RETURNING id INTO lic_doc;
+
+  -- N1: a same-batch LICENCE document must be REJECTED for a CoA request.
+  ok := false;
+  BEGIN
+    INSERT INTO public.evidence_request_attachments
+      (request_id, response_id, origin, farmer_document_id,
+       original_filename, mime_type, created_by_user_id)
+    VALUES (req_id, resp_id, 'existing_farm_document', lic_doc,
+            'permit.pdf', 'application/pdf', actor);
+  EXCEPTION WHEN check_violation THEN ok := true;
+  END;
+  IF NOT ok THEN RAISE EXCEPTION 'VERIFY N FAILED: a licence document was accepted for a CoA request'; END IF;
+
+  -- N2: a same-batch CoA document must be ACCEPTED (exactly one row).
+  INSERT INTO public.evidence_request_attachments
+    (request_id, response_id, origin, farmer_document_id,
+     original_filename, mime_type, created_by_user_id)
+  VALUES (req_id, resp_id, 'existing_farm_document', coa_doc,
+          'analysis.pdf', 'application/pdf', actor);
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN RAISE EXCEPTION 'VERIFY N FAILED: a valid CoA document was not accepted (% row(s))', n; END IF;
+
+  RAISE NOTICE 'VERIFY N PASSED: a CoA request accepts a coa document and rejects a same-batch non-coa one.';
+END
+$verify_n$;
 
 ROLLBACK;

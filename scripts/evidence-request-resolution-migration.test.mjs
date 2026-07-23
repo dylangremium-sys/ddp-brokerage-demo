@@ -701,16 +701,18 @@ describe('migration 24 — Codex P1: COA batch coupling covers BOTH linked origi
   it('resolves farm AND batch for a linked farmer document, not farm alone', () => {
     // The original defect: the farmer-document branch selected only fd.farm_id,
     // so the COA batch rule never applied to it.
-    expect(fn()).toMatch(/SELECT fd\.farm_id, fd\.inventory_batch_id INTO doc_farm_id, doc_batch_id/)
-    expect(fn()).toMatch(/SELECT d\.farm_id, d\.inventory_batch_id INTO doc_farm_id, doc_batch_id/)
+    expect(fn()).toMatch(/SELECT fd\.farm_id, fd\.inventory_batch_id, fd\.document_type INTO doc_farm_id, doc_batch_id, doc_doctype/)
+    expect(fn()).toMatch(/SELECT d\.farm_id, d\.inventory_batch_id, d\.document_type INTO doc_farm_id, doc_batch_id, doc_doctype/)
   })
 
   it('applies the farm and COA-batch checks once, to both linked origins', () => {
     const body = fn()
     expect(body).toMatch(/NEW\.origin IN \('existing_farm_document','existing_inventory_document'\)/)
     // Exactly one COA batch check exists, inside the shared branch.
-    expect((body.match(/req\.category = 'coa'/g) || []).length).toBe(1)
+    // Two coa-gated checks now: the batch check and the source-type check.
+    expect((body.match(/req\.category = 'coa'/g) || []).length).toBe(2)
     expect(body).toMatch(/doc_batch_id IS DISTINCT FROM req\.inventory_batch_id/)
+    expect(body).toMatch(/doc_doctype IS DISTINCT FROM 'coa'/)
   })
 
   it('the COA check is not nested inside an inventory-document-only branch', () => {
@@ -1438,12 +1440,21 @@ describe('migration 24 — VERIFY cannot pass vacuously', () => {
     expect(e).toMatch(/NULL farm id/)
   })
 
-  it('section F proves migrations 21 and 23 survive migration 24', () => {
+  it('section F keeps migration-21 coexistence checks', () => {
     const f = VERIFY_SECTIONS['F'] ?? ''
     expect(f).toMatch(/profiles_role_check/)
     expect(f).toMatch(/pending/)
-    expect(f).toMatch(/issue_buyer_pack_snapshot/)
     expect(f).toMatch(/has_operational_farmer_access/)
+  })
+
+  it('section F does NOT require Buyer Pack (migration 23) to be installed', () => {
+    // Requiring issue_buyer_pack_snapshot() to exist coupled VERIFY to migration
+    // 23 and broke mig-23-absent rollouts. It must not be a hard precondition.
+    const f = VERIFY_SECTIONS['F'] ?? ''
+    expect(f).not.toMatch(/issue_buyer_pack_snapshot\(\) is missing/)
+    // Isolation is asserted positively: migration 24 created no buyer_pack object.
+    expect(f).toMatch(/isolation breach/)
+    expect(f).toMatch(/Buyer Pack not installed \(migration 24 does not require it\)/)
   })
 
   it('every VERIFY denial assertion is guarded by an explicit ok flag', () => {
@@ -2049,5 +2060,35 @@ describe('migration 24 — VERIFY fixtures stay schema-consistent', () => {
     const l = VER_RAW.match(/DO \$verify_l\$[\s\S]*?\$verify_l\$/)?.[0] ?? ''
     expect(l).toMatch(/GET DIAGNOSTICS n = ROW_COUNT/)
     expect(l).toMatch(/draft fixture affected % row\(s\)/)
+  })
+})
+
+// ── Codex P2: a CoA request accepts only a CoA document ────────────────────
+describe('migration 24 — CoA links require a coa source document', () => {
+  const rpc = BODIES.get('link_existing_evidence_document') ?? ''
+  const trig = BODIES.get('fn_evidence_attachment_validate') ?? ''
+
+  it('the link RPC rejects a non-coa document for a coa request', () => {
+    expect(rpc).toMatch(/req\.category = 'coa' AND fdoctype IS DISTINCT FROM 'coa'/)
+    expect(rpc).toMatch(/FILE_TYPE_NOT_ALLOWED: a coa request requires a coa document/)
+  })
+
+  it('the validate trigger enforces the same rule (defense in depth on any insert path)', () => {
+    expect(trig).toMatch(/doc_doctype/)                              // it now fetches document_type
+    expect(trig).toMatch(/req\.category = 'coa' AND doc_doctype IS DISTINCT FROM 'coa'/)
+    expect(trig).toMatch(/COA request requires a coa document/)
+  })
+
+  it('the MIME-only check is retained (other categories keep MIME-class compatibility)', () => {
+    expect(rpc).toMatch(/evidence_mime_allowed\(req\.category, public\.evidence_document_mime\(fdoctype\)\)/)
+  })
+
+  it('VERIFY N proves rejection of a same-batch non-coa document and acceptance of a coa one', () => {
+    const nsec = VER.match(/DO \$verify_n\$[\s\S]*?\$verify_n\$/)?.[0] ?? ''
+    expect(nsec).not.toBe('')
+    expect(nsec).toMatch(/a licence document was accepted for a CoA request/)
+    expect(nsec).toMatch(/GET DIAGNOSTICS n = ROW_COUNT/)
+    expect(nsec).toMatch(/'coa', 'analysis\.pdf'/)      // coa fixture
+    expect(nsec).toMatch(/'licence', 'permit\.pdf'/)    // licence fixture
   })
 })

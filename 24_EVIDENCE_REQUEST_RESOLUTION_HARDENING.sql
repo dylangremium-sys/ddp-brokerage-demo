@@ -683,6 +683,7 @@ DECLARE
   resp           public.evidence_request_responses%ROWTYPE;
   doc_farm_id    uuid;
   doc_batch_id   uuid;
+  doc_doctype    text;
   doc_label      text;
   ready_count    integer;
   ready_bytes    bigint;
@@ -728,11 +729,11 @@ BEGIN
   -- silently applying to only one of them.
   IF NEW.origin IN ('existing_farm_document','existing_inventory_document') THEN
     IF NEW.origin = 'existing_farm_document' THEN
-      SELECT fd.farm_id, fd.inventory_batch_id INTO doc_farm_id, doc_batch_id
+      SELECT fd.farm_id, fd.inventory_batch_id, fd.document_type INTO doc_farm_id, doc_batch_id, doc_doctype
       FROM public.farmer_documents fd WHERE fd.id = NEW.farmer_document_id;
       doc_label := 'farmer document ' || COALESCE(NEW.farmer_document_id::text, 'null');
     ELSE
-      SELECT d.farm_id, d.inventory_batch_id INTO doc_farm_id, doc_batch_id
+      SELECT d.farm_id, d.inventory_batch_id, d.document_type INTO doc_farm_id, doc_batch_id, doc_doctype
       FROM public.documents d WHERE d.id = NEW.inventory_document_id;
       doc_label := 'document ' || COALESCE(NEW.inventory_document_id::text, 'null');
     END IF;
@@ -751,6 +752,18 @@ BEGIN
       RAISE EXCEPTION
         'evidence attachment: COA % does not belong to the targeted batch %',
         doc_label, COALESCE(req.inventory_batch_id::text, 'null')
+        USING ERRCODE = 'check_violation';
+    END IF;
+
+    -- A CoA request must be answered with a CoA document. Without this a
+    -- same-batch 'licence'/'other' document (both PDF-shaped) would satisfy a
+    -- CoA request, because MIME class alone cannot tell them apart. Enforced
+    -- here in the validate trigger (defense in depth for any insert path) as
+    -- well as in link_existing_evidence_document() for the client RPC path.
+    IF req.category = 'coa' AND doc_doctype IS DISTINCT FROM 'coa' THEN
+      RAISE EXCEPTION
+        'evidence attachment: COA request requires a coa document, but % is %',
+        doc_label, COALESCE(doc_doctype, 'null')
         USING ERRCODE = 'check_violation';
     END IF;
   END IF;
@@ -1909,6 +1922,18 @@ BEGIN
   -- The linked document type must be compatible with the request category.
   IF NOT public.evidence_mime_allowed(req.category, public.evidence_document_mime(fdoctype)) THEN
     RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED' USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- A Certificate of Analysis request must be answered with a CoA document, not
+  -- merely any PDF-shaped document. evidence_document_mime() maps every non-photo
+  -- source type to application/pdf, so the MIME check above cannot distinguish a
+  -- 'coa' source from a 'licence'/'other' one — a same-batch licence would
+  -- otherwise satisfy a CoA request. Assert the source's own document_type for
+  -- this category. (Other categories keep MIME-class compatibility; they do not
+  -- name a single required source type.)
+  IF req.category = 'coa' AND fdoctype IS DISTINCT FROM 'coa' THEN
+    RAISE EXCEPTION 'FILE_TYPE_NOT_ALLOWED: a coa request requires a coa document (source type is %)',
+      COALESCE(fdoctype, 'null') USING ERRCODE = 'check_violation';
   END IF;
 
   INSERT INTO public.evidence_request_attachments (
