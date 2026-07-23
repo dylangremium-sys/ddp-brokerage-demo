@@ -52,13 +52,11 @@ jobs:
       - name: Install PostgreSQL 18 (PGDG, pinned major)
         run: |
           set -euo pipefail
-          sudo install -d /usr/share/postgresql-common/pgdg
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-            | sudo gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
-          . /etc/os-release
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
-            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          # Use the official PGDG setup script (handles the repo + signing key
+          # non-interactively; avoids the gpg /dev/tty failure of a manual dearmor).
           sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y --no-install-recommends postgresql-18
           "$PG_BIN/pg_ctl" --version
           "$PG_BIN/initdb" --version
