@@ -15,6 +15,9 @@ dist-ssr
 # Generated at build time by scripts/generate-version.js — regenerated every build
 public/version.json
 
+# Disposable-Postgres harness runtime evidence — never committed; CI uploads it
+scripts/disposable-pg/.artifacts/
+
 # Environment — never commit real secrets
 .env
 .env.*
