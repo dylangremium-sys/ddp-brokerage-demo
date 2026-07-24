@@ -82,9 +82,10 @@ export const WATCHTOWER_STARTER_SOURCES: readonly CreateRegulatorySourceInput[] 
     jurisdiction: 'Czech Republic',
     sourceType: 'government_regulator',
     // Official SÚKL RSS (news/announcements). The authority migrated to the
-    // sukl.gov.cz domain; sukl.cz/rss 301-redirects here, so the final URL is
-    // recorded directly. Verified live (channel title "SÚKL").
-    url: 'https://sukl.gov.cz/rss',
+    // sukl.gov.cz domain; the canonical feed lives at /feed/ (the older /rss
+    // path 301-redirects there), so the canonical URL is recorded directly to
+    // avoid depending on that redirect. Verified live (channel title "SÚKL").
+    url: 'https://sukl.gov.cz/feed/',
     tier: 1,
     authorityType: 'primary_regulator',
     category: 'pharmaceutical',
