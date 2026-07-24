@@ -156,6 +156,41 @@ export type ExportReadinessStatus =
   | 'human_approved'
   | 'blocked'
 
+// ─── Source governance & tiering (Phase B) ──────────────────────────────────
+//
+// Authority tier of a regulatory source. Tier 3 is an intelligence SIGNAL only
+// and must never be treated as direct authority in downstream compliance state
+// — see src/lib/complianceSourceGovernance.ts for the enforced guard.
+export type RegulatorySourceTier = 1 | 2 | 3
+
+export type RegulatorySourceAuthorityType =
+  | 'primary_regulator'
+  | 'ministry'
+  | 'official_gazette'
+  | 'court'
+  | 'standards_body'
+  | 'industry_association'
+  | 'news_media'
+  | 'aggregator'
+  | 'other'
+
+export type RegulatorySourceCategory =
+  | 'cultivation'
+  | 'export_import'
+  | 'pharmaceutical'
+  | 'data_protection'
+  | 'licensing'
+  | 'testing_quality'
+  | 'general'
+
+export type RegulatorySourceMonitoringMethod =
+  | 'rss'
+  | 'atom'
+  | 'html'
+  | 'pdf'
+  | 'government_api'
+  | 'manual'
+
 export interface RegulatorySource {
   id: string
   name: string
@@ -164,6 +199,13 @@ export interface RegulatorySource {
   url: string
   isActive: boolean
   lastCheckedAt?: string | null
+  // Governance fields (Phase B). Optional on the type so pre-migration-26 rows
+  // and existing call sites keep compiling; the DB defaults them on write.
+  tier?: RegulatorySourceTier | null
+  authorityType?: RegulatorySourceAuthorityType | null
+  category?: RegulatorySourceCategory | null
+  monitoringMethod?: RegulatorySourceMonitoringMethod | null
+  priority?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -183,8 +225,63 @@ export interface LegalUpdate {
   aiRiskLevel?: ComplianceSeverity | null
   status: LegalUpdateStatus
   reviewerNotes: string
+  // Provenance (Phase A / migration 25). Optional so manually pasted updates,
+  // which carry none, keep compiling and reading cleanly.
+  contentHash?: string | null
+  canonicalUrl?: string | null
+  externalDocumentId?: string | null
+  sourceTier?: RegulatorySourceTier | null
+  ingestionRunId?: string | null
+  ingestionItemKey?: string | null
   createdAt: string
   updatedAt: string
+}
+
+// ─── Ingestion evidence (Phase A / migration 25, Phase C runner) ─────────────
+
+export type IngestionRunStatus = 'running' | 'succeeded' | 'partial' | 'failed' | 'skipped'
+export type IngestionRunTrigger = 'scheduled' | 'manual' | 'backfill'
+
+export interface WatchtowerIngestionRun {
+  id: string
+  sourceId: string | null
+  sourceNameSnapshot: string
+  sourceUrlSnapshot: string
+  sourceTierSnapshot: RegulatorySourceTier | null
+  connectorKind: string
+  triggerType: IngestionRunTrigger
+  actorType: 'admin' | 'system' | 'scheduler'
+  status: IngestionRunStatus
+  failureReason: string | null
+  errorDetail: string | null
+  startedAt: string
+  finishedAt: string | null
+  itemsSeen: number
+  itemsNew: number
+  itemsDuplicate: number
+  itemsUnchanged: number
+  itemsFailed: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WatchtowerIngestionItem {
+  id: string
+  runId: string
+  sourceId: string | null
+  itemKey: string
+  externalDocumentId: string | null
+  canonicalUrl: string | null
+  title: string
+  publishedAt: string | null
+  contentHash: string | null
+  normalizedLength: number | null
+  dedupDecision: string
+  dedupMatchedLegalUpdateId: string | null
+  legalUpdateId: string | null
+  failureReason: string | null
+  errorDetail: string | null
+  createdAt: string
 }
 
 export interface ComplianceReview {

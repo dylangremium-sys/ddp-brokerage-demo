@@ -8,7 +8,17 @@ import type {
   ComplianceRule,
   LegalUpdate,
   RegulatorySource,
+  WatchtowerIngestionItem,
+  WatchtowerIngestionRun,
 } from '../types'
+
+/** Postgres unique-violation SQLSTATE. Surfaced so the ingestion service can
+ *  treat a lost dedup race as a duplicate outcome rather than a hard failure. */
+export const PG_UNIQUE_VIOLATION = '23505'
+
+export function isUniqueViolation(error: unknown): boolean {
+  return !!error && typeof error === 'object' && (error as { code?: string }).code === PG_UNIQUE_VIOLATION
+}
 
 // Compliance Watchtower Supabase persistence.
 // All reads/writes go through the existing browser (anon-key) client from lib/supabase.
@@ -48,6 +58,13 @@ interface RegulatorySourceRow {
   url: string
   is_active: boolean
   last_checked_at: string | null
+  // Governance fields (Phase B / migration 26). Optional on the row so a read
+  // against a pre-migration-26 database still maps cleanly to null.
+  tier?: number | null
+  authority_type?: string | null
+  category?: string | null
+  monitoring_method?: string | null
+  priority?: number | null
   created_at: string
   updated_at: string
 }
@@ -61,6 +78,11 @@ function regulatorySourceFromRow(row: RegulatorySourceRow): RegulatorySource {
     url: row.url,
     isActive: row.is_active,
     lastCheckedAt: row.last_checked_at,
+    tier: (row.tier ?? null) as RegulatorySource['tier'],
+    authorityType: (row.authority_type ?? null) as RegulatorySource['authorityType'],
+    category: (row.category ?? null) as RegulatorySource['category'],
+    monitoringMethod: (row.monitoring_method ?? null) as RegulatorySource['monitoringMethod'],
+    priority: row.priority ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -88,6 +110,13 @@ export async function insertRegulatorySource(
       source_type: input.sourceType,
       url: input.url,
       is_active: input.isActive,
+      // Governance fields are written only when supplied; otherwise the DB
+      // defaults them to the conservative Tier-3 signal shape (migration 26).
+      ...(input.tier != null ? { tier: input.tier } : {}),
+      ...(input.authorityType != null ? { authority_type: input.authorityType } : {}),
+      ...(input.category != null ? { category: input.category } : {}),
+      ...(input.monitoringMethod != null ? { monitoring_method: input.monitoringMethod } : {}),
+      ...(input.priority != null ? { priority: input.priority } : {}),
     })
     .select('*')
     .single()
@@ -108,6 +137,11 @@ export async function updateRegulatorySource(
       ...(patch.sourceType !== undefined ? { source_type: patch.sourceType } : {}),
       ...(patch.url !== undefined ? { url: patch.url } : {}),
       ...(patch.isActive !== undefined ? { is_active: patch.isActive } : {}),
+      ...(patch.tier !== undefined ? { tier: patch.tier } : {}),
+      ...(patch.authorityType !== undefined ? { authority_type: patch.authorityType } : {}),
+      ...(patch.category !== undefined ? { category: patch.category } : {}),
+      ...(patch.monitoringMethod !== undefined ? { monitoring_method: patch.monitoringMethod } : {}),
+      ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
@@ -134,6 +168,12 @@ interface LegalUpdateRow {
   ai_risk_level: string | null
   status: string
   reviewer_notes: string
+  content_hash?: string | null
+  canonical_url?: string | null
+  external_document_id?: string | null
+  source_tier?: number | null
+  ingestion_run_id?: string | null
+  ingestion_item_key?: string | null
   created_at: string
   updated_at: string
 }
@@ -154,6 +194,12 @@ function legalUpdateFromRow(row: LegalUpdateRow): LegalUpdate {
     aiRiskLevel: row.ai_risk_level as LegalUpdate['aiRiskLevel'],
     status: row.status as LegalUpdate['status'],
     reviewerNotes: row.reviewer_notes,
+    contentHash: row.content_hash ?? null,
+    canonicalUrl: row.canonical_url ?? null,
+    externalDocumentId: row.external_document_id ?? null,
+    sourceTier: (row.source_tier ?? null) as LegalUpdate['sourceTier'],
+    ingestionRunId: row.ingestion_run_id ?? null,
+    ingestionItemKey: row.ingestion_item_key ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -632,4 +678,317 @@ export async function insertAuditLog(
     .single()
   raise('Writing audit log entry', error)
   return auditLogFromRow(data as ComplianceAuditLogRow, actorNameForId)
+}
+
+// ---------- legal_updates: candidate creation with provenance (Phase C) ----------
+// A candidate is always created in draft/new status only. Provenance columns
+// (migration 25) are populated so the record is deduplicable and reproducible.
+// This is a SEPARATE function from insertLegalUpdate so the manual-paste path is
+// untouched. The DB partial-unique indexes are the real dedup authority; a lost
+// race surfaces as a unique violation the caller reclassifies as a duplicate.
+
+export interface CandidateLegalUpdateInput {
+  sourceId: string | null
+  sourceName: string
+  sourceUrl: string
+  jurisdiction: string
+  title: string
+  rawText: string
+  contentHash: string
+  canonicalUrl: string | null
+  externalDocumentId: string | null
+  sourceTier: number | null
+  ingestionRunId: string | null
+  ingestionItemKey: string | null
+  publishedAt: string | null
+}
+
+export interface CandidateLegalUpdateResult {
+  ok: boolean
+  legalUpdate?: LegalUpdate
+  duplicate?: boolean
+  error?: string
+}
+
+export async function insertCandidateLegalUpdate(input: CandidateLegalUpdateInput): Promise<CandidateLegalUpdateResult> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('legal_updates')
+    .insert({
+      source_id: input.sourceId,
+      title: input.title,
+      jurisdiction: input.jurisdiction,
+      source_name: input.sourceName,
+      source_url: input.sourceUrl,
+      published_at: input.publishedAt,
+      raw_text: input.rawText,
+      summary: '',
+      affected_areas: [],
+      ai_risk_level: null,
+      // Structural guarantee: an ingested candidate can only ever be 'new'.
+      status: 'new',
+      reviewer_notes: '',
+      content_hash: input.contentHash,
+      canonical_url: input.canonicalUrl,
+      external_document_id: input.externalDocumentId,
+      source_tier: input.sourceTier,
+      ingestion_run_id: input.ingestionRunId,
+      ingestion_item_key: input.ingestionItemKey,
+    })
+    .select('*')
+    .single()
+
+  if (error) {
+    if (isUniqueViolation(error)) {
+      // Another record already carries this content hash / external id: this is
+      // a duplicate, not a failure. Report it so the item is recorded as such.
+      return { ok: false, duplicate: true }
+    }
+    return { ok: false, error: error.message }
+  }
+  return { ok: true, legalUpdate: legalUpdateFromRow(data as LegalUpdateRow) }
+}
+
+/** The already-persisted identity a run deduplicates against. Read once at run
+ *  start. Only reads columns migration 25 added; safe with RLS (admin-only). */
+export async function fetchKnownLegalUpdateIdentity(): Promise<{
+  contentHashes: string[]
+  sourceExternalIds: string[]
+}> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('legal_updates')
+    .select('source_id, content_hash, external_document_id')
+  raise('Loading known legal-update identity for dedup', error)
+  const rows = (data as { source_id: string | null; content_hash: string | null; external_document_id: string | null }[]) ?? []
+  const contentHashes: string[] = []
+  const sourceExternalIds: string[] = []
+  for (const r of rows) {
+    if (r.content_hash) contentHashes.push(r.content_hash)
+    if (r.source_id && r.external_document_id) sourceExternalIds.push(`${r.source_id}::${r.external_document_id}`)
+  }
+  return { contentHashes, sourceExternalIds }
+}
+
+// ---------- watchtower_ingestion_runs / _items (Phase C) ----------
+
+interface IngestionRunRow {
+  id: string
+  source_id: string | null
+  source_name_snapshot: string
+  source_url_snapshot: string
+  source_tier_snapshot: number | null
+  connector_kind: string
+  trigger_type: string
+  actor_type: string
+  status: string
+  failure_reason: string | null
+  error_detail: string | null
+  started_at: string
+  finished_at: string | null
+  items_seen: number
+  items_new: number
+  items_duplicate: number
+  items_unchanged: number
+  items_failed: number
+  created_at: string
+  updated_at: string
+}
+
+function ingestionRunFromRow(row: IngestionRunRow): WatchtowerIngestionRun {
+  return {
+    id: row.id,
+    sourceId: row.source_id,
+    sourceNameSnapshot: row.source_name_snapshot,
+    sourceUrlSnapshot: row.source_url_snapshot,
+    sourceTierSnapshot: row.source_tier_snapshot as WatchtowerIngestionRun['sourceTierSnapshot'],
+    connectorKind: row.connector_kind,
+    triggerType: row.trigger_type as WatchtowerIngestionRun['triggerType'],
+    actorType: row.actor_type as WatchtowerIngestionRun['actorType'],
+    status: row.status as WatchtowerIngestionRun['status'],
+    failureReason: row.failure_reason,
+    errorDetail: row.error_detail,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    itemsSeen: row.items_seen,
+    itemsNew: row.items_new,
+    itemsDuplicate: row.items_duplicate,
+    itemsUnchanged: row.items_unchanged,
+    itemsFailed: row.items_failed,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export interface OpenIngestionRunInput {
+  sourceId: string | null
+  sourceNameSnapshot: string
+  sourceUrlSnapshot: string
+  sourceTierSnapshot: number | null
+  connectorKind: string
+  triggerType: WatchtowerIngestionRun['triggerType']
+  actorType: WatchtowerIngestionRun['actorType']
+  actorId: string | null
+}
+
+/** Opens a run in status 'running'. finished_at/failure_reason stay NULL (the
+ *  migration-25 CHECK forbids them on a running row). */
+export async function openIngestionRun(input: OpenIngestionRunInput): Promise<WatchtowerIngestionRun> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('watchtower_ingestion_runs')
+    .insert({
+      source_id: input.sourceId,
+      source_name_snapshot: input.sourceNameSnapshot,
+      source_url_snapshot: input.sourceUrlSnapshot,
+      source_tier_snapshot: input.sourceTierSnapshot,
+      connector_kind: input.connectorKind,
+      trigger_type: input.triggerType,
+      actor_type: input.actorType,
+      actor_id: asUuidOrNull(input.actorId),
+      status: 'running',
+    })
+    .select('*')
+    .single()
+  raise('Opening ingestion run', error)
+  return ingestionRunFromRow(data as IngestionRunRow)
+}
+
+export interface CloseIngestionRunInput {
+  status: 'succeeded' | 'partial' | 'failed' | 'skipped'
+  failureReason: string | null
+  errorDetail: string | null
+  itemsSeen: number
+  itemsNew: number
+  itemsDuplicate: number
+  itemsUnchanged: number
+  itemsFailed: number
+  finishedAt?: string
+}
+
+/** Closes a running run exactly once. The migration-25 trigger enforces that a
+ *  terminal run can never be reopened or re-characterised. */
+export async function closeIngestionRun(id: string, input: CloseIngestionRunInput): Promise<WatchtowerIngestionRun> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('watchtower_ingestion_runs')
+    .update({
+      status: input.status,
+      failure_reason: input.failureReason,
+      error_detail: input.errorDetail,
+      finished_at: input.finishedAt ?? new Date().toISOString(),
+      items_seen: input.itemsSeen,
+      items_new: input.itemsNew,
+      items_duplicate: input.itemsDuplicate,
+      items_unchanged: input.itemsUnchanged,
+      items_failed: input.itemsFailed,
+    })
+    .eq('id', id)
+    .eq('status', 'running')
+    .select('*')
+    .single()
+  raise('Closing ingestion run', error)
+  return ingestionRunFromRow(data as IngestionRunRow)
+}
+
+export interface InsertIngestionItemInput {
+  runId: string
+  sourceId: string | null
+  itemKey: string
+  externalDocumentId: string | null
+  canonicalUrl: string | null
+  title: string
+  publishedAt: string | null
+  contentHash: string | null
+  normalizedLength: number | null
+  dedupDecision: string
+  dedupMatchedLegalUpdateId: string | null
+  legalUpdateId: string | null
+  failureReason: string | null
+  errorDetail: string | null
+}
+
+export async function insertIngestionItem(input: InsertIngestionItemInput): Promise<void> {
+  const client = requireClient()
+  const { error } = await client
+    .from('watchtower_ingestion_items')
+    .insert({
+      run_id: input.runId,
+      source_id: input.sourceId,
+      item_key: input.itemKey,
+      external_document_id: input.externalDocumentId,
+      canonical_url: input.canonicalUrl,
+      title: input.title,
+      published_at: input.publishedAt,
+      content_hash: input.contentHash,
+      normalized_length: input.normalizedLength,
+      dedup_decision: input.dedupDecision,
+      dedup_matched_legal_update_id: input.dedupMatchedLegalUpdateId,
+      legal_update_id: input.legalUpdateId,
+      failure_reason: input.failureReason,
+      error_detail: input.errorDetail,
+    })
+  raise('Recording ingestion item', error)
+}
+
+export async function fetchIngestionRuns(limit = 100): Promise<WatchtowerIngestionRun[]> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('watchtower_ingestion_runs')
+    .select('*')
+    .order('started_at', { ascending: false })
+    .limit(limit)
+  raise('Loading ingestion runs', error)
+  return (data as IngestionRunRow[] ?? []).map(ingestionRunFromRow)
+}
+
+interface IngestionItemRow {
+  id: string
+  run_id: string
+  source_id: string | null
+  item_key: string
+  external_document_id: string | null
+  canonical_url: string | null
+  title: string
+  published_at: string | null
+  content_hash: string | null
+  normalized_length: number | null
+  dedup_decision: string
+  dedup_matched_legal_update_id: string | null
+  legal_update_id: string | null
+  failure_reason: string | null
+  error_detail: string | null
+  created_at: string
+}
+
+function ingestionItemFromRow(row: IngestionItemRow): WatchtowerIngestionItem {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    sourceId: row.source_id,
+    itemKey: row.item_key,
+    externalDocumentId: row.external_document_id,
+    canonicalUrl: row.canonical_url,
+    title: row.title,
+    publishedAt: row.published_at,
+    contentHash: row.content_hash,
+    normalizedLength: row.normalized_length,
+    dedupDecision: row.dedup_decision,
+    dedupMatchedLegalUpdateId: row.dedup_matched_legal_update_id,
+    legalUpdateId: row.legal_update_id,
+    failureReason: row.failure_reason,
+    errorDetail: row.error_detail,
+    createdAt: row.created_at,
+  }
+}
+
+export async function fetchIngestionItems(runId: string): Promise<WatchtowerIngestionItem[]> {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('watchtower_ingestion_items')
+    .select('*')
+    .eq('run_id', runId)
+    .order('created_at', { ascending: true })
+  raise('Loading ingestion items', error)
+  return (data as IngestionItemRow[] ?? []).map(ingestionItemFromRow)
 }
