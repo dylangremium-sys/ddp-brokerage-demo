@@ -52,19 +52,28 @@ const REQUIRED_ENV = [
 ]
 
 // ── Env loading (no dependency) ─────────────────────────────────────────────
-// Fill any missing vars from an optional gitignored .env.staging.local file.
+// Fill any missing vars from optional local env files.
+// Precedence: existing process.env > .env.staging.local > .env.staging
+// This keeps fully explicit shell exports authoritative, while allowing a
+// standard .env.staging workflow without requiring manual `source`.
 function loadLocalEnvFile() {
-  const p = join(ROOT, '.env.staging.local')
-  if (!existsSync(p)) return
-  for (const line of readFileSync(p, 'utf8').split('\n')) {
-    const s = line.trim()
-    if (!s || s.startsWith('#')) continue
-    const eq = s.indexOf('=')
-    if (eq === -1) continue
-    const k = s.slice(0, eq).trim()
-    let v = s.slice(eq + 1).trim()
-    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1)
-    if (process.env[k] === undefined) process.env[k] = v
+  const candidates = [
+    join(ROOT, '.env.staging.local'),
+    join(ROOT, '.env.staging'),
+  ]
+
+  for (const p of candidates) {
+    if (!existsSync(p)) continue
+    for (const line of readFileSync(p, 'utf8').split('\n')) {
+      const s = line.trim()
+      if (!s || s.startsWith('#')) continue
+      const eq = s.indexOf('=')
+      if (eq === -1) continue
+      const k = s.slice(0, eq).trim()
+      let v = s.slice(eq + 1).trim()
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1)
+      if (process.env[k] === undefined) process.env[k] = v
+    }
   }
 }
 
@@ -1271,7 +1280,7 @@ async function main() {
     // Tag-scoped path: an untagged filename would escape the run-scoped residue
     // sweep entirely if this denial ever regressed into a success.
     const anonProbePath = `${TAG}-anon.txt`
-    const anonProbeUp = await anon.storage.from('farmer-documents').upload(anonProbePath, new Blob(['x']))
+    const anonProbeUp = await anon.storage.from('farmer-documents').upload(anonProbePath, new Blob([PDF_BYTES], { type: 'application/pdf' }), { contentType: 'application/pdf' })
     record('anon cannot upload to farmer-documents', !!anonProbeUp.error)
     if (!anonProbeUp.error) {
       registerStorageFixture(created.storageObjects,
@@ -1486,7 +1495,7 @@ async function main() {
     group('G. storage isolation')
     // Farmer A uploads only under its own userId prefix (intended path).
     const ownPath = `${a.userId}/${TAG}.txt`
-    const ownUp = await a.client.storage.from('farmer-documents').upload(ownPath, new Blob(['hello']))
+    const ownUp = await a.client.storage.from('farmer-documents').upload(ownPath, new Blob([PDF_BYTES], { type: 'application/pdf' }), { contentType: 'application/pdf' })
     const ownOk = !ownUp.error
     record('farmer A can upload to own prefix', ownOk, ownUp.error ? ownUp.error.message?.slice(0, 40) : '')
     if (ownOk) {
@@ -1497,7 +1506,7 @@ async function main() {
     // unexpectedly SUCCEEDS: that is a security failure, and the object it leaves
     // behind must still be torn down rather than orphaned.
     const crossOwnPath = `${b.userId}/${TAG}-cross.txt`
-    const crossOwnUp = await a.client.storage.from('farmer-documents').upload(crossOwnPath, new Blob(['x']))
+    const crossOwnUp = await a.client.storage.from('farmer-documents').upload(crossOwnPath, new Blob([PDF_BYTES], { type: 'application/pdf' }), { contentType: 'application/pdf' })
     record('farmer A cannot upload into farmer B prefix', !!crossOwnUp.error)
     if (!crossOwnUp.error) {
       registerStorageFixture(created.storageObjects,
@@ -1506,7 +1515,7 @@ async function main() {
     // The anon path carries the full run tag so a tag-scoped sweep can find it if
     // it ever lands; a bare-runId filename would be invisible to that sweep.
     const anonPath = `${a.userId}/${TAG}-anon2.txt`
-    const anonUp = await anon.storage.from('farmer-documents').upload(anonPath, new Blob(['x']))
+    const anonUp = await anon.storage.from('farmer-documents').upload(anonPath, new Blob([PDF_BYTES], { type: 'application/pdf' }), { contentType: 'application/pdf' })
     record('anon cannot upload to farmer-documents', !!anonUp.error)
     if (!anonUp.error) {
       registerStorageFixture(created.storageObjects,
@@ -1649,7 +1658,7 @@ async function main() {
         // Writing beneath another user's prefix must also be denied.
         const foreignPath = `${b.userId}/${TAG}-pending.txt`
         const foreign = await p.client.storage.from('farmer-documents')
-          .upload(foreignPath, new Blob(['x']))
+          .upload(foreignPath, new Blob([PDF_BYTES], { type: 'application/pdf' }), { contentType: 'application/pdf' })
         const foreignCls = classifyStorageOutcome(foreign)
         record('pending cannot upload beneath another user prefix',
           foreignCls.outcome === 'denied', redactSecrets(foreignCls.reason))
@@ -1671,7 +1680,7 @@ async function main() {
         const listControlName = `${TAG}-listctl.txt`
         const listControlPath = `${b.userId}/${listControlName}`
         const listCtlUp = await b.client.storage.from('farmer-documents')
-          .upload(listControlPath, new Blob(['list-control']), { contentType: 'text/plain' })
+          .upload(listControlPath, new Blob([PDF_BYTES], { type: 'application/pdf' }), { contentType: 'application/pdf' })
         const listControlCreated = !listCtlUp?.error
         if (listControlCreated) {
           registerStorageFixture(created.storageObjects,
