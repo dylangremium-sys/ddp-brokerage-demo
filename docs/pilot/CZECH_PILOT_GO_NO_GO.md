@@ -4,7 +4,7 @@
 
 ## Current decision: 🔴 NO-GO for first REAL farm today
 
-**Why:** Three of six launch safety gates cannot be marked PASS because they require the live/staging Supabase environment, which was not connected during this pass. Code is in good shape; the gap is **verification against a real DB**, not known defects. No gate will be marked PASS on unverified evidence.
+**Why:** The live/staging Supabase environment is still not connected — as of the 2026-07-24 verification pass, all 9 `STAGING_*` env vars are UNSET and no `.env.staging` exists — so SG-1, SG-2, SG-3(live), SG-4 and SG-6(live) cannot be marked PASS. Code is in good shape; the gap is **verification against a real DB**, not known defects. No gate will be marked PASS on unverified evidence.
 
 ---
 
@@ -15,9 +15,9 @@
 | A. Local CI (tests/type/lint/build) | ✅ PASS | `ci:verify` exit 0 — 1740 tests, security:sql, tsc, lint, build |
 | SG-1 Access control (RLS, admin-only status) | ⏸ NOT RUN | Needs `npm run security:staging` + staging creds. **Static-verified:** RLS/trigger guards exist in migrations 19/20/22 + INVENTORY_BATCHES patches; must confirm they are **applied** to the pilot DB |
 | SG-2 Audit trail | ⏸ NOT RUN | Same runner (group F psql facts + audit-insert probe). Status-history + `compliance_audit_log` writes exist in code |
-| SG-3 Upload smoke (happy+fail) | ⏸ NOT RUN | Needs staging app; HF-001 improves reliability. Static: PDF-only + size guards + throw/catch present |
+| SG-3 Upload smoke (happy+fail) | ⏸ NOT RUN | Needs staging app; HF-001 improves reliability. Static: PDF-only + size guards + throw/catch present. Onboarding **required-field floor added** (FarmerOnboarding.tsx, uncommitted) — blocks empty submit; tsc+1740 tests green |
 | SG-4 Backup/restore drill | ⏸ NOT RUN | Needs staging DB; run `RESET_A` counts + snapshot + rehearse restore |
-| SG-5 Incident mini-runbook | ⏸ NOT STARTED | One-page runbook to be written + dry-run once |
+| SG-5 Incident mini-runbook | 🟢 ARTIFACT PRESENT | `CZECH_PILOT_INCIDENT_RUNBOOK.md` present + operator-usable (severity/triggers/containment/diagnosis/recovery/comms/resolution). Dry-run walkthrough still pending |
 | SG-6 Human-approval fail-closed (export) | 🟢 STATIC-VERIFIED | `canEmitBuyerPackOutput` + print-CSS fail-closed + server-authoritative issuance (migration 23) confirmed in code; confirm live once app is up |
 
 Legend: ✅ passed · 🟢 static-verified (code) · ⏸ not run (needs env) · 🔴 fail
