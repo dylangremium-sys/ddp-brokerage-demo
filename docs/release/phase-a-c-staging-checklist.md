@@ -16,7 +16,9 @@ this doc). Apply with a role owning the `public` schema and `-v ON_ERROR_STOP=1`
   - `public.regulatory_sources`, `public.legal_updates` (migration 9)
   - `pgcrypto` extension
 - [ ] A recent staging backup / snapshot exists (or staging is disposable).
-- [ ] Branch `feature/watchtower-ingestion-phase-a-c` @ `5c5e32f` checked out.
+- [ ] Branch `feature/watchtower-ingestion-phase-a-c` checked out at its tip
+      (code commit `5c5e32f`; later commits on the branch are release docs only —
+      no SQL/code change, so any branch-tip checkout applies the same migrations).
 
 ```bash
 STAGING="postgresql://…"   # staging only
