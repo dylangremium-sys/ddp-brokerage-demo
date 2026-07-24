@@ -1,6 +1,6 @@
 # DDP Brokerage — Master Development Roadmap
 
-**Single source of truth for the full DDP Brokerage product plan.**
+**Single source of truth for the full DDP Brokerage product *plan*.** For **runtime application status** the authority is `docs/MIGRATION_RUNTIME_STATUS.md`; for **Evidence Request & Resolution behaviour** the authority is `docs/EVIDENCE_REQUEST_RESOLUTION_CONTRACT.md` (current binding contract, v1.5). These are complementary, not competing.
 
 **Status of this document:** Documentation only. No application code, SQL, migration, test, environment file, branch, commit, deployment, or external setting was created or changed to produce it. Nothing here was applied, migrated, pushed, or deployed.
 
@@ -41,7 +41,7 @@ DDP Brokerage is a **complete brokerage operations platform** for agricultural c
 
 **The dominant risk is no longer missing code — it is unverified *production* database state.** The repository's own runtime ledger (`docs/MIGRATION_RUNTIME_STATUS.md`, last verified 2026-07-21) is the current authority for runtime application status and now covers migrations 10, 17 and **19–23** — the farm admin-field guard, controlled farmer provisioning, the operational-farmer RLS overlay, and server-authoritative Buyer Pack issuance. **Staging installation state is now materially clearer, but staging is only partially confirmed:** 20 and 21 are `APPLIED_AND_VERIFIED`; 19, 22 and 23 are `APPLIED_NOT_VERIFIED` — installed, but behaviour not fully exercised (for 22 the 11-table overlay is substantially covered while its storage `FOR ALL` surface is not) — see *Migrations 19–23 — status matrix*. Migration 23 in particular **is** installed in staging, superseding its runbook's earlier "runs no SQL against any database" claim; see *Conflicting evidence — migration 23 in staging*. The qualification is material: the 2026-07-21 harness returned **107 PASS · 5 FAIL · 0 SKIP · 0 BLOCK**, the pending-matrix merge gate is **NOT SATISFIED** (61 total · 59 pass · 2 fail), and storage cleanup is defective — so the outstanding behavioural checks for the migration-19 farm guard and migration-23 Buyer Pack issuance must **not** be treated as closed. **Production remains `UNKNOWN` for all five and was not contacted**; that production gap is the largest unresolved release-state item in the programme.
 
-**Active work.** The Evidence Request & Resolution workflow — the next feature in the original sequence — exists only as the database phase on **draft PR #37**, which carries **83 unresolved review threads** and whose own description states migration 24 "has not been applied to any environment." It is **ACTIVE IMPLEMENTATION** and is not shipped (Section 7).
+**Active work.** The Evidence Request & Resolution workflow — the next feature in the original sequence — has landed its **database phase on `main`**: migration 24 was merged via **PR #37 (merge `9496e1c`)** on 2026-07-23. **It is not, however, applied to any hosted database** — `NOT_APPLIED` to staging and to production — so its security properties are asserted, not demonstrated, on hosted Supabase. The **application layer** (service, pages, Operations Desk) is **not integrated on `main`**: it is authored on branch `feature/evidence-request-workflow-v2` (commit `4fb72f7`) and is unmerged and unverified. The feature is therefore **not shipped** (Section 7). The current binding behaviour contract is `docs/EVIDENCE_REQUEST_RESOLUTION_CONTRACT.md` (v1.5).
 
 ---
 
@@ -137,7 +137,7 @@ Numbered migrations present on `main`: **3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 
 - Migration 17 has a hard FK dependency on migration 10; the ordering is enforced only by documentation convention, not by a migration runner (`docs/MIGRATION_RUNTIME_STATUS.md`, *Migrations 10 and 17 — carried forward*).
 - Migration 20 has **no rollback script**. Reversing it — re-granting EXECUTE to `authenticated` — is not scripted anywhere.
-- Migration 23's header records that its number was assigned around an already-reserved 21/22 held by a then-open PR. No actual collision resulted, but migration numbers are being allocated optimistically across parallel branches. Migration 24 is currently reserved the same way, on draft PR #37. This is a process hazard worth closing before the next parallel feature branch.
+- Migration 23's header records that its number was assigned around an already-reserved 21/22 held by a then-open PR. No actual collision resulted, but migration numbers are being allocated optimistically across parallel branches. Migration 24 has since merged to `main` (PR #37, `9496e1c`); the same optimistic-reservation pattern now applies to **migration 25** (Watchtower ingestion), which exists only on a feature branch. This remains a process hazard worth closing before the next parallel feature branch.
 
 ### 4.6 Static and live security tooling
 
@@ -271,31 +271,29 @@ Covered in 4.2 and Section 5 rows 12–13.
 
 ## 7. Active Implementation
 
-### Evidence Request & Resolution — **ACTIVE IMPLEMENTATION**
+### Evidence Request & Resolution — **DATABASE MERGED, APPLICATION NOT INTEGRATED**
 
-**This feature is not shipped. No part of it is merged into `main`.**
+**This feature is not shipped.** Its **database phase is merged into `main`**; its **application layer is not**, and migration 24 is **not applied to any hosted database**. Binding behaviour is defined by `docs/EVIDENCE_REQUEST_RESOLUTION_CONTRACT.md` (v1.5); release control is `docs/EVIDENCE_RELEASE_READINESS_CHECKLIST.md`.
 
-The work exists as **draft PR #37** (`feature/evidence-request-resolution-v2`), based on `afbe59e`, adding **five new files and modifying none**: `24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql`, `..._VERIFY.sql`, `..._ROLLBACK.sql`, `..._STORAGE.sql`, and `scripts/evidence-request-resolution-migration.test.mjs`.
+The **database phase** — `24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql`, `..._VERIFY.sql`, `..._ROLLBACK.sql`, `..._STORAGE.sql` (plus `scripts/evidence-request-resolution-migration.test.mjs`) — was merged to `main` by **PR #37 (merge commit `9496e1c`, reviewed head `fd57135`)** on 2026-07-23. The earlier "draft PR #37 / no part merged" state recorded here is superseded. The **application layer** (`src/lib/evidenceRequests*.ts`, `src/domain/evidenceRequests*.ts`, `src/pages/**/evidence/**`, `src/components/shared/EvidenceThread.tsx`) is authored on branch `feature/evidence-request-workflow-v2` (commit `4fb72f7`) and is **NOT on `main`** — do not describe it as delivered.
 
 Design properties claimed and asserted by that PR's tests: authorization via `can_operationally_access_farm(uuid)` ANDing farmer role, `has_operational_farmer_access()`, and an active `farm_memberships` row, reading the role from `profiles` and never from JWT metadata; non-disclosure by returning `NOT_FOUND` rather than `FORBIDDEN` for unauthorized ids; direct-DML denial with no INSERT/UPDATE/DELETE policy on any workflow table; optimistic concurrency via `expected_revision` under `FOR UPDATE`; an unconditional append-only history trigger; server-derived `farm_id` never accepted as an RPC parameter; and a private storage bucket with farm-scoped paths.
 
 **Two documented contract deviations** are flagged in the SQL itself and are the points most warranting reviewer attention: `size_bytes` is nullable for linked existing documents (contract §6.4 requires NOT NULL, but `farmer_documents`/`documents` carry no size column and fabricating a byte count was rejected), and storage policies live in a companion file because `CREATE POLICY` on `storage.objects` requires `supabase_storage_admin` ownership.
 
-**Blocking state as at 2026-07-21:**
+**State as at 2026-07-24:**
 
 | Signal | Value |
 |---|---|
-| Draft | Yes |
-| Unresolved review threads | **83 of 83** |
-| Behind `origin/main` | 0 |
-| CI `verify` | SUCCESS |
-| Merge state | UNSTABLE |
-| Migration 24 applied anywhere | **No** — "not production, not staging, not a local database", per the PR's own description |
+| Database phase merged to `main` | **Yes** — PR #37, merge `9496e1c`, reviewed head `fd57135`, landed 2026-07-23 |
+| Migration 24 applied to a hosted database | **No** — `NOT_APPLIED` to staging and production; only runtime evidence is disposable local PostgreSQL (VERIFY A–M, 13/13) |
+| Application layer on `main` | **No** — authored on `feature/evidence-request-workflow-v2` (`4fb72f7`), unmerged |
+| Contract | **v1.5**, `docs/EVIDENCE_REQUEST_RESOLUTION_CONTRACT.md` (current, binding) |
 
 **Remaining phases, in order:**
 
-1. **Database review closeout** — resolve all 83 open review threads and settle the two contract deviations.
-2. **Runtime database verification** — execute migration 24 and its VERIFY against a real database (staging first). This is the phase that converts the security properties from *asserted* to *demonstrated*, and it currently gates everything below.
+1. **~~Database review closeout~~ — DONE.** PR #37 review closed out and merged to `main` (`9496e1c`); the two documented contract deviations are ratified in contract §6.9 [v1.5].
+2. **Runtime database verification** — apply migration 24 and run its VERIFY (sections A–R) against a real hosted database (staging first), under non-owner principals. This converts the security properties from *asserted* to *demonstrated* and gates everything below. See release checklist **G2**. Migration 24 is **not applied to any hosted database yet**.
 3. **Admin interface** — request creation, tracking, and resolution surfaces for DDP staff.
 4. **Farmer interface** — inbound request visibility, response drafting, and submission.
 5. **Storage orchestration** — reserved-path upload, finalization, size measurement, and the 150 MB aggregate limit.
@@ -303,9 +301,9 @@ Design properties claimed and asserted by that PR's tests: authorization via `ca
 7. **Operations Desk integration** — surfacing outstanding evidence requests in the desk queue.
 8. **End-to-end and adversarial validation** — full-flow testing plus deliberate attempts to defeat the authorization, non-disclosure, and append-only properties.
 
-**Do not describe any part of Evidence Request & Resolution as available.** Phases 3–8 have no code on any branch.
+**Do not describe any part of Evidence Request & Resolution as available.** Phases 3–7 have code **only on the unmerged branch `feature/evidence-request-workflow-v2` (`4fb72f7`)** — none is on `main` and none is hosted-verified; phase 8 (end-to-end/adversarial validation on a hosted database) is not done. Nothing here is deployed.
 
-**Related branches carrying earlier attempts:** `feature/evidence-request-workflow` (contract and Phase-0 audit commits; **SUPERSEDED** by v2) and `feature/evidence-intelligence-phase-a` (single commit, 67 behind `main`; **SUPERSEDED / stale**).
+**Related branches:** `feature/evidence-request-workflow-v2` (commit `4fb72f7`) carries the **unmerged application layer** built on top of the merged migration 24 — this is the branch a future agent integrates from, against contract v1.5. `feature/evidence-request-workflow` (contract and Phase-0 audit commits; **SUPERSEDED**) and `feature/evidence-intelligence-phase-a` (single commit, far behind `main`; **SUPERSEDED / stale**) are earlier attempts.
 
 ---
 
@@ -319,7 +317,7 @@ The full brokerage plan, preserved in its original order. Feature 1 is in active
 - **Major capabilities** — request creation against a farm or batch; typed request categories; farmer response drafting and submission; attachment upload and linking of existing documents; state transitions with optimistic concurrency; append-only history.
 - **Dependencies** — controlled farmer provisioning and the operational-farmer RLS overlay (migrations 21, 22); farm memberships; private storage.
 - **Security boundaries** — farm-scoped authorization ANDed across role, operational access, and membership; non-disclosure of foreign request ids; no direct DML on workflow tables; append-only history with no bypass; server-derived scope.
-- **Status** — **ACTIVE IMPLEMENTATION** (draft PR #37, database phase only, 83 unresolved threads, migration unapplied).
+- **Status** — **DATABASE MERGED, APPLICATION NOT INTEGRATED.** Migration 24 merged to `main` (PR #37, `9496e1c`) but **not applied to any hosted database**; application layer authored on `feature/evidence-request-workflow-v2` (`4fb72f7`), unmerged. Binding contract: `docs/EVIDENCE_REQUEST_RESOLUTION_CONTRACT.md` (v1.5).
 - **Sequencing** — next. Phases per Section 7.
 - **Must not claim** — that evidence requests are available to farmers or staff; that migration 24's properties are proven at runtime; that any evidence has been collected through this workflow.
 
@@ -441,7 +439,7 @@ The full brokerage plan, preserved in its original order. Feature 1 is in active
 Controlled Farmer Provisioning  [IMPLEMENTED — runtime verification required]
         │   (migrations 21 + 22; api/admin/provision-farmer.ts)
         ▼
-Evidence Request and Resolution  [ACTIVE IMPLEMENTATION — draft PR #37, DB phase only]
+Evidence Request and Resolution  [DB MERGED (mig 24, PR #37) — NOT hosted-applied; app layer NOT on main]
         │
         ▼
 Notification and Communications System  [PLANNED]
@@ -492,7 +490,7 @@ The Evidence and Document Platform generalises the working COA upload pattern to
 
 | PR | Title | State | Merge state | Threads | Assessment |
 |---|---|---|---|---|---|
-| **#37** | Evidence Request & Resolution — database phase (migration 24) | Draft | UNSTABLE, 0 behind | **83 unresolved** | **Still relevant — the critical path.** Section 7. Awaiting review closeout, then runtime verification |
+| **#37** | Evidence Request & Resolution — database phase (migration 24) | **MERGED** | Merged `9496e1c` (2026-07-23) | 0 (closed out) | **MERGED to `main`.** No longer an open PR. Next step is hosted runtime verification (checklist G2), not review. Section 7 |
 | **#35** | Fail closed on missing hosted Supabase config | Draft | BEHIND by 2 | 0 | **Still relevant.** Addresses a real exposure: a hosted build missing `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` silently enters demo mode, where `isDemo` grants signed-in admin treatment on a public domain. Scope is a `prebuild` validator plus tests; no runtime, auth, or SQL change. Needs a rebase and a product decision |
 | **#33** | Fix demo admin entry routing | Draft | **CONFLICTING**, 2 behind | 0 | **Awaiting a product decision.** Restores demo admin entry lost in the homepage redesign (#17). Its own security review produced #35. Question to settle: is a publicly reachable demo mode still wanted at all? If not, close both #33 and the demo-entry concern. Conflicts must be resolved either way |
 | **#26** | Gate and harden Buyer Pack printing | Open, not draft | **CONFLICTING**, 6 behind | 3 unresolved | **Partly superseded.** Merged PR #32 delivered the browser-output gate, including a print-block overlay outside `.no-print` (`DDPBuyerPreview.tsx:405-419`). #26 additionally contains a `data-print-authorized` CSS-specificity mechanism, `beforeprint` provenance stamping, and substantial print-legibility fixes (contrast, page-break rules, A4/Letter measure) **not** present on `main`. Decide explicitly: harvest the print-presentation work, or close as superseded. Do not leave it open by default |
@@ -541,7 +539,7 @@ Consolidated; evidence cited once above is not repeated.
 4. The claim that migration 19 was applied to production (`docs/FARM_ADMIN_FIELD_GUARD_APPLICATION.md:31-40`) is undated, uncommitted prose with no corroborating entry in the dated `docs/SECURITY_TEST_LOG.md`. **UNABLE TO VERIFY.**
 5. Migration 20 has **no rollback script**.
 6. Migration ordering (10 before 17) is enforced by convention only — there is no migration runner.
-7. Migration numbers are reserved optimistically across parallel branches (documented in migration 23's own header; migration 24 currently reserved by draft PR #37).
+7. Migration numbers are reserved optimistically across parallel branches (documented in migration 23's own header). Migration 24 is now merged to `main`; migration 25 (Watchtower ingestion) is the current branch-only reservation.
 
 **Application**
 

@@ -103,6 +103,38 @@ jobs:
       - name: Install dependencies (deterministic)
         run: npm ci
 
+      # G4 — Evidence schema-readiness gate (release checklist G4).
+      #
+      # FAIL-CLOSED DEPLOYMENT PRECONDITION. If this commit's src/ tree contains
+      # the Evidence application layer, the target (Production) database MUST
+      # already hold the migration-24 objects that layer depends on. The gate
+      # reads the deployed code to decide whether it applies (auditable, hard to
+      # bypass accidentally) and BLOCKS the deploy on NOT_READY or
+      # UNABLE_TO_DETERMINE (missing credential, unreachable DB, partial schema,
+      # ambiguous target). It runs BEFORE build/deploy so nothing ships when the
+      # target is not structurally ready.
+      #
+      # It proves STRUCTURAL readiness ONLY — not the hosted behavioural
+      # verification of G2. See docs/EVIDENCE_RELEASE_READINESS_CHECKLIST.md (G4)
+      # and docs/EVIDENCE_MIGRATION_24_STAGING_VERIFICATION_RUNBOOK.md.
+      #
+      # Today the Evidence app layer is not on main, so the gate is NOT APPLICABLE
+      # and passes without needing the secret; it self-activates when the feature
+      # lands, at which point EVIDENCE_SCHEMA_CHECK_DATABASE_URL becomes mandatory.
+      - name: Install PostgreSQL client (schema-readiness gate)
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: G4 evidence schema-readiness gate (blocking)
+        env:
+          # Production ENVIRONMENT secret — read-only role, same trust boundary as
+          # VERCEL_TOKEN (protected-branch runs only). SELECT-only catalog checks.
+          EVIDENCE_SCHEMA_CHECK_DATABASE_URL: ${{ secrets.EVIDENCE_SCHEMA_CHECK_DATABASE_URL }}
+          # Required-when-applicable non-secret guard: the target project ref the
+          # connection MUST contain. If unset, the gate fails closed (UNABLE), so a
+          # mis-pointed check can never report a false READY for the wrong database.
+          EVIDENCE_SCHEMA_CHECK_EXPECTED_REF: ${{ vars.EVIDENCE_SCHEMA_CHECK_EXPECTED_REF }}
+        run: npm run security:evidence-readiness
+
       - name: Install Vercel CLI (pinned)
         run: npm install --global vercel@56.2.0
 

@@ -141,3 +141,105 @@ Point 3 is not a formality. A green `ci:verify` once shipped a serverless functi
 | Automation deploy tokens | — | ⚠️ One exists: the team-scoped CI token (`VERCEL_TOKEN`). It reaches all seven team projects, not only this one — see §3. |
 
 The single remaining ungated principal is the Vercel account owner. Closing that would require Vercel Enterprise RBAC, which is a separate commercial decision.
+
+---
+
+## 8. Evidence schema-readiness gate (G4)
+
+A **fail-closed deployment precondition** that stops Evidence application-layer code
+from shipping into a Production database that does not yet contain the migration-24
+objects it depends on. This is release-readiness gate **G4** in
+`docs/EVIDENCE_RELEASE_READINESS_CHECKLIST.md`.
+
+### 8.1 Where it runs and what it blocks
+
+- **Job/step:** `deploy-production` → step **"G4 evidence schema-readiness gate
+  (blocking)"** in `.github/workflows/security-ci.yml`, positioned **after
+  `npm ci` and before the Vercel build/deploy steps**.
+- **Blocking:** it runs `npm run security:evidence-readiness`
+  (`scripts/check-evidence-schema-readiness.mjs`). A non-zero exit fails the step,
+  which fails the job, so `vercel deploy --prebuilt --prod` never runs. This is the
+  same mechanical model as `needs: verify` — nothing advisory.
+- **Scope:** it governs the **authorised CI path to Production** (§1). It does **not**
+  govern Vercel Git **preview** deployments of PR branches (those bypass this
+  workflow entirely — see §2); that is a documented residual gap, not something this
+  gate enforces. Do not describe preview environments as G4-protected.
+
+### 8.2 When it applies (conditional, auditable, self-activating)
+
+The gate reads the **deployed `src/` tree**. It is **APPLICABLE** only when that tree
+references a migration-24 evidence RPC or the evidence storage bucket id
+(`evidence-request-files`) — the ground-truth token list in the script. Functional
+Evidence code cannot avoid these references, so:
+
+- **Today** (Evidence app layer not on `main`): **NOT APPLICABLE** → the gate passes
+  and requires no secret.
+- **When the feature lands on `main`:** **APPLICABLE** → the readiness check becomes
+  mandatory and a missing credential blocks the deploy.
+
+There is deliberately **no skip/override environment variable**. Bypassing the gate
+requires a git-visible edit to the script or workflow.
+
+### 8.3 The three states (only READY ships)
+
+| Verdict | Exit | Deploy | Meaning |
+|---|:--:|---|---|
+| `READY` (or `NOT APPLICABLE`) | 0 | proceeds | All required objects present with the required shape, or no Evidence code deployed. |
+| `NOT_READY` | 1 | **blocked** | At least one required migration-24 object is absent or wrong in the target DB. |
+| `UNABLE_TO_DETERMINE` | 2 | **blocked** | Missing credential, unreachable/timed-out DB, absent storage schema, query error, or a target that fails the expected-ref guard. |
+
+**"Unable to determine" blocks.** The gate never treats an unknown as a pass.
+
+### 8.4 What it checks (structural surface)
+
+Read-only catalog checks (`SELECT`-only, run with
+`default_transaction_read_only=on`; no DDL/DML; connection string never printed):
+
+- The 4 evidence tables exist **with RLS enabled**.
+- The 14 client-invoked RPCs (13 workflow RPCs + `can_operationally_access_farm`)
+  exist, are **`SECURITY DEFINER`**, and **pin `search_path`**.
+- The `evidence-request-files` bucket exists, is **private**, and has
+  `file_size_limit = 104857600` (100 MiB).
+- The **5 named `storage.objects` policies** for that bucket exist.
+
+### 8.5 What it does NOT prove
+
+It proves **structural presence and shape only**. It does **not** prove RLS actually
+denies cross-farm/non-disclosure access, that triggers enforce append-only history
+and submitted-evidence immutability, that reserve/finalize size-MIME-extension
+validation works, tombstone/post-submission-cleanup behaviour, or signed-URL
+authorization. **Presence ≠ enforcement.** Those are hosted **behavioural**
+properties proven by `24_EVIDENCE_REQUEST_RESOLUTION_VERIFY.sql` (A–R) and the role
+matrix in `docs/EVIDENCE_MIGRATION_24_STAGING_VERIFICATION_RUNBOOK.md`. **G4 is not a
+substitute for G2.**
+
+### 8.6 Required secret / variable and where they belong
+
+| Name | Kind | Location | Purpose |
+|---|---|---|---|
+| `EVIDENCE_SCHEMA_CHECK_DATABASE_URL` | **Secret** | GitHub **`Production` environment** (protected-branch runs only — same boundary as `VERCEL_TOKEN`) | Read-only Postgres connection string for the **target Production** database. Use a read-only role. |
+| `EVIDENCE_SCHEMA_CHECK_EXPECTED_REF` | Variable (non-secret) | Repo/environment **variable** | **Required whenever the gate applies:** substring (target Supabase project ref) the connection string must contain. If unset, the gate fails closed (`UNABLE_TO_DETERMINE`) — target identity cannot be confirmed, so a `READY` could describe the wrong database. Both this and the secret must be provisioned before Evidence app code merges to `main`. |
+
+The `Production` environment is restricted to protected branches, so a run from any
+other ref cannot read the secret — consistent with §3. Provision the read-only DB
+role and this secret **before** the Evidence application layer merges to `main`;
+until then the gate is inert and neither is required.
+
+### 8.7 Break-glass
+
+There is no in-band override. If the gate is wrong (e.g. a false `UNABLE` from a
+transient DB outage) and Production must change urgently, the only path is the
+documented **emergency manual Vercel deployment** (§5), which bypasses GitHub Actions
+entirely and must be recorded and reconciled afterward. Prefer fixing the underlying
+cause (apply migration 24 to the target, or repair the credential) over manual
+deployment.
+
+### 8.8 Relationship to the release checklist and staging verification
+
+- **G2** (hosted staging apply + behavioural verification) and **G4** are distinct.
+  G2 proves the security/behaviour model live on staging under non-owner principals;
+  G4 is a per-deploy structural precondition on the Production target. A green G4 with
+  no G2 evidence means "the objects are present," **not** "the model is proven."
+- Run order in the programme: reconcile contract (G1) → verify on staging (G2) → this
+  deploy-time gate (G4) protects the Production ship → production rollout
+  authorization (G6). See the checklist for the full gate sequence.

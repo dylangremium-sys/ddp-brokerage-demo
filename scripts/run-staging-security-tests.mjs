@@ -131,10 +131,15 @@ function skip(name, reason) { results.push({ group: currentGroup, name, status: 
 // BLOCK: the probe could not be executed under conditions that would make its
 // result meaningful. Unlike SKIP it is never a pass and always fails the run —
 // a pending probe that cannot run must not leave the suite green.
-function block(name, reason) {
-  results.push({ group: currentGroup, name, status: 'BLOCK', detail: reason, pendingMatrix: true })
+// `pendingMatrix` defaults true so every existing caller (group H) keeps feeding
+// the pending-matrix aggregate unchanged. The evidence group passes false: its
+// BLOCKs still fail the run (the exit rule counts every BLOCK), but they are
+// migration-24 probes and must not be miscounted into migration 22's pending
+// matrix summary line.
+function block(name, reason, { pendingMatrix = true } = {}) {
+  results.push({ group: currentGroup, name, status: 'BLOCK', detail: reason, pendingMatrix })
 }
-function blockAll(names, reason) { for (const n of names) block(n, reason) }
+function blockAll(names, reason, opts) { for (const n of names) block(n, reason, opts) }
 
 // Assert that a Supabase write/rpc was DENIED (error present, or zero rows).
 function isDenied(res) {
@@ -251,6 +256,146 @@ export function evaluatePendingPreflight(facts) {
       ? 'migrations 21 and 22 present'
       : `PENDING PREFLIGHT FAILED — MIGRATIONS 21/22 NOT PRESENT (${blockers.length} missing: ${blockers.slice(0, 4).join(', ')}${blockers.length > 4 ? ', …' : ''})`,
   }
+}
+
+// ── Evidence Request & Resolution (migration 24) preflight ──────────────────
+//
+// The evidence group (group I) is only meaningful when migration 24 is actually
+// applied to the target. Without it, an anon SELECT on an evidence table returns
+// "relation does not exist" — a schema error, NOT a denial — and every probe
+// would be inconclusive. These facts are the same migration-24 structural surface
+// the CI G4 gate (scripts/check-evidence-schema-readiness.mjs) checks; a
+// regression test asserts the two stay in step with the merged SQL.
+export const EVIDENCE_TABLES = Object.freeze([
+  'evidence_requests',
+  'evidence_request_responses',
+  'evidence_request_attachments',
+  'evidence_request_history',
+])
+// The client-invoked RPC surface plus the authorization helper (VERIFY A's set).
+export const EVIDENCE_RPCS = Object.freeze([
+  'can_operationally_access_farm',
+  'create_evidence_request',
+  'get_or_create_evidence_response_draft',
+  'save_evidence_response_draft',
+  'submit_evidence_response',
+  'request_evidence_clarification',
+  'resolve_evidence_request',
+  'reject_evidence_response',
+  'cancel_evidence_request',
+  'reserve_evidence_attachment',
+  'finalize_evidence_attachment',
+  'remove_draft_evidence_attachment',
+  'link_existing_evidence_document',
+  'claim_evidence_response_draft',
+])
+export const EVIDENCE_BUCKET_ID = 'evidence-request-files'
+export const EVIDENCE_BUCKET_SIZE_LIMIT = 104857600 // 100 MiB — STORAGE §7.10 [v1.4]
+export const EVIDENCE_STORAGE_POLICIES = Object.freeze([
+  'evidence-request-files: admin read',
+  'evidence-request-files: farmer read own farm',
+  'evidence-request-files: farmer insert reserved path',
+  'evidence-request-files: farmer delete own draft',
+  'evidence-request-files: operational farmer or admin',
+])
+
+export const EVIDENCE_PREFLIGHT_FACTS = Object.freeze([
+  ...EVIDENCE_TABLES.map((t) => `table_present:${t}`),
+  ...EVIDENCE_TABLES.map((t) => `rls_enabled:${t}`),
+  ...EVIDENCE_RPCS.map((f) => `rpc_present:${f}`),
+  'bucket_present',
+  'bucket_private',
+  'bucket_size_ok',
+  ...EVIDENCE_STORAGE_POLICIES.map((_, i) => `policy_present:${i}`),
+])
+
+// Read-only catalog SQL emitting one `fact=true|false` line per required fact.
+// SELECT-only; touches pg_catalog / storage.buckets / pg_policies only.
+export function buildEvidencePreflightSql() {
+  const lines = []
+  for (const t of EVIDENCE_TABLES) {
+    lines.push(
+      `select 'table_present:${t}=' || (count(*) > 0)::text from pg_class c` +
+      ` join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='${t}' and c.relkind='r';`)
+    lines.push(
+      `select 'rls_enabled:${t}=' || coalesce(bool_or(c.relrowsecurity), false)::text from pg_class c` +
+      ` join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='${t}' and c.relkind='r';`)
+  }
+  for (const f of EVIDENCE_RPCS) {
+    lines.push(
+      `select 'rpc_present:${f}=' || (count(*) > 0)::text from pg_proc p` +
+      ` join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='${f}';`)
+  }
+  lines.push(`select 'bucket_present=' || (count(*) > 0)::text from storage.buckets where id='${EVIDENCE_BUCKET_ID}';`)
+  lines.push(`select 'bucket_private=' || coalesce(bool_and(public is false), false)::text from storage.buckets where id='${EVIDENCE_BUCKET_ID}';`)
+  lines.push(`select 'bucket_size_ok=' || coalesce(bool_and(file_size_limit = ${EVIDENCE_BUCKET_SIZE_LIMIT}), false)::text from storage.buckets where id='${EVIDENCE_BUCKET_ID}';`)
+  EVIDENCE_STORAGE_POLICIES.forEach((name, i) => {
+    lines.push(
+      `select 'policy_present:${i}=' || (count(*) > 0)::text from pg_policies` +
+      ` where schemaname='storage' and tablename='objects' and policyname='${name.replace(/'/g, "''")}';`)
+  })
+  return lines.join('\n')
+}
+
+export function evaluateEvidencePreflight(facts) {
+  const f = facts || {}
+  const blockers = EVIDENCE_PREFLIGHT_FACTS.filter((k) => f[k] !== true)
+  return {
+    ok: blockers.length === 0,
+    blockers,
+    summary: blockers.length === 0
+      ? 'migration 24 present (tables + RLS, RPCs, private bucket, storage policies)'
+      : `EVIDENCE PREFLIGHT FAILED — MIGRATION 24 NOT FULLY PRESENT (${blockers.length} missing: ${blockers.slice(0, 4).join(', ')}${blockers.length > 4 ? ', …' : ''})`,
+  }
+}
+
+// The evidence group's probe names, exported so the block/skip lists in main()
+// and the offline test are the SAME source of truth (a name drift between the
+// "blocked" branch and the "run" branch would otherwise be invisible).
+export function evidenceProbeNames() {
+  const tier1 = [
+    ...EVIDENCE_TABLES.map((t) => `anon cannot SELECT ${t}`),
+    'anon cannot EXECUTE create_evidence_request',
+    'anon cannot EXECUTE get_or_create_evidence_response_draft',
+    'anon cannot EXECUTE reserve_evidence_attachment',
+    'anon cannot EXECUTE claim_evidence_response_draft',
+    'farmer A cannot create evidence request (admin-only)',
+    'farmer A: get_or_create draft on unknown request id is refused',
+    'farmer A: submit response on unknown request id is refused',
+    'farmer A: reserve attachment on unknown request id is refused',
+    'farmer A: claim draft on unknown request id is refused',
+    'farmer B: get_or_create draft on unknown request id is refused',
+  ]
+  const pending = [
+    'pending cannot create evidence request',
+    'pending cannot get_or_create evidence draft',
+    'pending cannot reserve evidence attachment',
+    'pending cannot claim evidence draft',
+  ]
+  // Behavioural checks that require a PERSISTENT, non-deletable evidence fixture
+  // (or state the harness must not create). Left to the operator role matrix in
+  // docs/EVIDENCE_MIGRATION_24_STAGING_VERIFICATION_RUNBOOK.md and recorded as
+  // SKIP — never BLOCK (a documented coverage boundary must not fail the run) and
+  // never PASS (it is not automated here).
+  const operatorOnly = [
+    ['evidence behavioural: affirmative own-farm request visibility (farmer A sees a real request)',
+      'operator-only: requires a persistent, non-deletable evidence request fixture — runbook §5 / §6.1'],
+    ['evidence behavioural: real cross-farm request-id non-disclosure (farmer B vs a real farm-A request)',
+      'operator-only: the fabricated-id non-disclosure case is automated above; the real-but-unauthorized case needs a persistent request — runbook §5 / §6.2'],
+    ['evidence behavioural: draft ownership claim / transfer',
+      'operator-only: needs a second operational member on the same farm whose access is then revoked — not safely establishable or reversible in-harness — runbook §5 / §6.3'],
+    ['evidence behavioural: attachment reserve / finalize / list / read / remove lifecycle',
+      'operator-only: creates storage objects and non-deletable attachment rows — runbook §5 / §6.4'],
+    ['evidence behavioural: removal_requested_at tombstone two-phase behaviour',
+      'operator-only: a tombstone is immutable and non-deletable by contract — runbook §5 / §6.5'],
+    ['evidence behavioural: post-submission / terminal-state cleanup semantics',
+      'operator-only: requires a persistent submitted response and tombstone — runbook §5 / §6.6'],
+    ['evidence behavioural: signed-read authorization (authorized vs unauthorized principals)',
+      'operator-only: requires a real finalized object to sign — runbook §5 / §6.7'],
+    ['evidence behavioural: terminal-state restriction on a real request',
+      'operator-only: requires a persistent request driven to a terminal status — runbook §5 / §6.8'],
+  ]
+  return { tier1, pending, operatorOnly }
 }
 
 // ── Pending probe registry ──────────────────────────────────────────────────
@@ -1106,6 +1251,30 @@ async function signedInClient(cfg, creds, label) {
   return { client: c, userId: data.user.id, label }
 }
 
+// ── Evidence (migration 24) preflight driver (live) ─────────────────────────
+// Records one PASS/FAIL line naming exactly which structural fact is missing.
+// Refuses a production connection string, exactly like the pending preflight.
+function runEvidencePreflight(databaseUrl) {
+  if (databaseUrl.includes(PRODUCTION_REF)) {
+    record('evidence preflight refused (production connection string)', false,
+      'STAGING_DATABASE_URL contains the production ref')
+    return false
+  }
+  let facts
+  try {
+    const out = execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-X', '-A', '-t', '-c', buildEvidencePreflightSql()],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    facts = parsePreflightFacts(out)
+  } catch (e) {
+    record('evidence preflight (migration 24 present)', false,
+      redactSecrets(`psql error: ${String(e?.message || e).split('\n')[0].slice(0, 80)}`))
+    return false
+  }
+  const verdict = evaluateEvidencePreflight(facts)
+  record('evidence preflight (migration 24 present)', verdict.ok, redactSecrets(verdict.summary))
+  return verdict.ok
+}
+
 // ── Pending preflight + matrix drivers (live) ───────────────────────────────
 
 // Run the catalog preflight. Returns true only when every required migration
@@ -1710,6 +1879,128 @@ async function main() {
             await admin.client.from('farms').select('id').eq('id', farmA ?? ''), farmA))
         },
       })
+    }
+
+    // ── I. Evidence Request & Resolution (migration 24) ──────────────────────
+    // Non-owner behavioural DENIAL surface for the evidence workflow, exercised
+    // through the same anon / pending / farmer principals as the rest of the suite.
+    //
+    // ZERO-RESIDUE BY CONSTRUCTION. Every probe here is a call the database MUST
+    // reject, and each rejection happens BEFORE any row is written:
+    //   * anon has no grant on the evidence tables (REVOKE ALL) or the RPCs
+    //     (EXECUTE revoked);
+    //   * create_evidence_request checks is_ddp_admin() before its INSERT, so a
+    //     non-admin caller is refused with nothing created;
+    //   * every other RPC calls evidence_lock_visible_request() first, so a
+    //     fabricated request id raises NOT_FOUND before any write.
+    // Migration-24 evidence rows are NON-DELETABLE by contract (no-delete trigger,
+    // immutable submitted rows, append-only history — service_role is revoked too),
+    // so this group deliberately creates NONE. The behavioural checks that require
+    // a persistent request/response/attachment fixture are OPERATOR-ONLY and are
+    // recorded as SKIP with a pointer to the staging runbook's role matrix —
+    // precisely to preserve the suite's zero-residue rule. This group therefore
+    // supports G2, it does not complete it.
+    group('I. evidence request & resolution (migration 24)')
+    {
+      const evNames = evidenceProbeNames()
+      if (!cfg.databaseUrl) {
+        blockAll([...evNames.tier1, ...evNames.pending],
+          'set STAGING_DATABASE_URL — the evidence group requires a catalog preflight proving migration 24 is applied to the target',
+          { pendingMatrix: false })
+        for (const [n, why] of evNames.operatorOnly) skip(n, why)
+      } else if (!runEvidencePreflight(cfg.databaseUrl)) {
+        blockAll([...evNames.tier1, ...evNames.pending],
+          'evidence preflight failed — migration 24 is not fully present on the target; apply it first (docs/EVIDENCE_MIGRATION_24_STAGING_VERIFICATION_RUNBOOK.md)',
+          { pendingMatrix: false })
+        for (const [n, why] of evNames.operatorOnly) skip(n, why)
+      } else {
+        // Fabricated ids: no such request/response exists, so every mutating RPC
+        // fails closed (NOT_FOUND / FORBIDDEN) before writing anything.
+        const FAB = randomUUID()
+        const FAB2 = randomUUID()
+        const coaReq = (who) => ({
+          p_target_type: 'inventory_batch', p_target_id: FAB, p_category: 'coa',
+          p_title: `${TAG} ${who}`, p_explanation: `${TAG} ${who} must be denied — no row may be created`,
+        })
+        const reserveArgs = { p_request_id: FAB, p_response_id: FAB2, p_original_filename: 'x.pdf', p_mime_type: 'application/pdf', p_size_bytes: 1 }
+
+        // anon: no grant on the evidence tables (REVOKE ALL) → hard denial.
+        for (const t of EVIDENCE_TABLES) {
+          record(`anon cannot SELECT ${t}`, isDenied(await anon.from(t).select('id').limit(1)))
+        }
+        // anon: no EXECUTE on the evidence RPCs.
+        record('anon cannot EXECUTE create_evidence_request',
+          isDenied(await anon.rpc('create_evidence_request', coaReq('anon'))))
+        record('anon cannot EXECUTE get_or_create_evidence_response_draft',
+          isDenied(await anon.rpc('get_or_create_evidence_response_draft', { p_request_id: FAB, p_expected_revision: 0 })))
+        record('anon cannot EXECUTE reserve_evidence_attachment',
+          isDenied(await anon.rpc('reserve_evidence_attachment', reserveArgs)))
+        record('anon cannot EXECUTE claim_evidence_response_draft',
+          isDenied(await anon.rpc('claim_evidence_response_draft', { p_request_id: FAB, p_response_id: FAB2, p_expected_revision: 0 })))
+
+        // farmer A: admin-only create is refused (FORBIDDEN before INSERT → zero residue).
+        record('farmer A cannot create evidence request (admin-only)',
+          isDenied(await a.client.rpc('create_evidence_request', coaReq('farmerA'))))
+        // farmer A: unknown/foreign request id fails closed on every workflow RPC.
+        record('farmer A: get_or_create draft on unknown request id is refused',
+          isDenied(await a.client.rpc('get_or_create_evidence_response_draft', { p_request_id: FAB, p_expected_revision: 0 })))
+        record('farmer A: submit response on unknown request id is refused',
+          isDenied(await a.client.rpc('submit_evidence_response', { p_request_id: FAB, p_response_id: FAB2, p_expected_revision: 0 })))
+        record('farmer A: reserve attachment on unknown request id is refused',
+          isDenied(await a.client.rpc('reserve_evidence_attachment', reserveArgs)))
+        record('farmer A: claim draft on unknown request id is refused',
+          isDenied(await a.client.rpc('claim_evidence_response_draft', { p_request_id: FAB, p_response_id: FAB2, p_expected_revision: 0 })))
+        record('farmer B: get_or_create draft on unknown request id is refused',
+          isDenied(await b.client.rpc('get_or_create_evidence_response_draft', { p_request_id: FAB, p_expected_revision: 0 })))
+
+        // pending: authenticated but not a farmer — every evidence RPC refuses it.
+        // Gated exactly like group H: absent creds or an unproven-pending role
+        // BLOCKs (never a silent pass), because a farmer/admin credential mislabelled
+        // here would produce false "denied" via ordinary role rules.
+        if (!cfg.pending) {
+          blockAll(evNames.pending,
+            'set STAGING_PENDING_EMAIL/STAGING_PENDING_PASSWORD to a staging user whose profiles.role = pending',
+            { pendingMatrix: false })
+        } else {
+          const pe = await signedInClient(cfg, cfg.pending, 'pending')
+          const roleRow = await pe.client.from('profiles').select('role').eq('id', pe.userId).maybeSingle()
+          const gate = resolvePendingRoleGate(roleRow)
+          if (!gate.proven) {
+            blockAll(evNames.pending, redactSecrets(gate.detail), { pendingMatrix: false })
+          } else {
+            record('pending cannot create evidence request',
+              isDenied(await pe.client.rpc('create_evidence_request', coaReq('pending'))))
+            record('pending cannot get_or_create evidence draft',
+              isDenied(await pe.client.rpc('get_or_create_evidence_response_draft', { p_request_id: FAB, p_expected_revision: 0 })))
+            record('pending cannot reserve evidence attachment',
+              isDenied(await pe.client.rpc('reserve_evidence_attachment', reserveArgs)))
+            record('pending cannot claim evidence draft',
+              isDenied(await pe.client.rpc('claim_evidence_response_draft', { p_request_id: FAB, p_response_id: FAB2, p_expected_revision: 0 })))
+          }
+          try { await pe.client.auth.signOut() } catch { /* ignore */ }
+        }
+
+        // Behavioural surface that needs persistent, non-deletable fixtures:
+        // documented, recorded as SKIP, and covered by the operator role matrix.
+        for (const [n, why] of evNames.operatorOnly) skip(n, why)
+
+        // Zero-residue assertion. The create_evidence_request probes carry the run
+        // TAG in their title; none should have persisted (all were refused before
+        // INSERT). A leaked request is BOTH a security failure AND non-deletable
+        // residue, so it is surfaced explicitly. Read as admin (sees all requests).
+        try {
+          const leak = await admin.client.from('evidence_requests').select('id').ilike('title', `${TAG}%`)
+          const leaked = leak?.data?.length ?? 0
+          recordCleanup('evidence group left zero residue (no tagged request created)',
+            !leak?.error && leaked === 0,
+            leak?.error
+              ? redactSecrets(String(leak.error.message || leak.error).slice(0, 60))
+              : (leaked ? `${leaked} tagged evidence request(s) were created and are NON-DELETABLE by contract` : ''))
+        } catch (e) {
+          recordCleanup('evidence group left zero residue (no tagged request created)', false,
+            redactSecrets(String(e?.message || e).slice(0, 60)))
+        }
+      }
     }
   } finally {
     // ── Cleanup (reverse dependency order; run-id scoped only) ────────────────

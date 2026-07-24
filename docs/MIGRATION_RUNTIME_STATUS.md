@@ -287,3 +287,14 @@ Production has been migrated. Its runtime status is tracked in the *Migrations 1
 status matrix* above; the only runtime evidence so far is against a disposable local
 PostgreSQL and does **not** establish hosted-Supabase parity. Migration 24 is not a
 prerequisite for the migration 10–23 status recorded elsewhere in this register.
+
+**Scope boundary — database only.** "Landed on `main`" here means the migration 24
+**SQL family** (`24_EVIDENCE_REQUEST_RESOLUTION_{HARDENING,VERIFY,ROLLBACK,STORAGE}.sql`).
+The Evidence **application layer** (TypeScript service, pages, Operations Desk) is
+**not on `main`** — it is authored on branch `feature/evidence-request-workflow-v2`
+(commit `4fb72f7`) and is unmerged and unverified. The binding behaviour contract for
+this migration family is `docs/EVIDENCE_REQUEST_RESOLUTION_CONTRACT.md` (v1.5); the
+hosted-verification acceptance criteria are `24_EVIDENCE_REQUEST_RESOLUTION_VERIFY.sql`
+sections **A–R** run under non-owner principals (release checklist **G2**). The
+step-by-step apply + verify + record procedure, and the record template for this row,
+is `docs/EVIDENCE_MIGRATION_24_STAGING_VERIFICATION_RUNBOOK.md`.
