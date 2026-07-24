@@ -8,7 +8,7 @@ handles with your real ones.
 ## Full ping
 
 > @backend @security @ops — review please on the **Watchtower ingestion &
-> provenance foundation** (`feature/watchtower-ingestion-phase-a-c`). **Scope is
+> provenance foundation** (`feature/watchtower-phase-a-c`). **Scope is
 > locked to Phases A–C only** — provenance/dedup schema, source governance &
 > tiering, and a *triggerable* ingestion runner that produces **draft** candidate
 > legal updates; **no AI, no review decisions, no rule enforcement, no impact

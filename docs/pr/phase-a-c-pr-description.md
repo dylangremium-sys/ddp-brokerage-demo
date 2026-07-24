@@ -1,7 +1,7 @@
 # PR: Watchtower ingestion & provenance foundation (Phases A–C)
 
-**Branch:** `feature/watchtower-ingestion-phase-a-c` → `main`
-**Code commit:** `5c5e32f0a67e57eb2790a6767e262d8ee05b0b05` (later branch commits
+**Branch:** `feature/watchtower-phase-a-c` → `main`
+**Code commit:** `3f8af9b9f110b699c1edc9290d01b9b4ceef3b2a` (later branch commits
 are release docs only — no SQL/code change).
 
 ---
@@ -101,7 +101,7 @@ run in one transaction ending in ROLLBACK):
 **Pre-existing failures (not introduced by this PR):**
 `scripts/sensitive-storage-registry.test.mjs` and `scripts/deploy-workflow.test.mjs`
 (3 tests). Verified: this commit touches neither test file, adds no `ddp_`
-localStorage key, and both fail identically on the parent commit `4fb72f7`.
+localStorage key, and both fail identically on this branch's base `origin/main`.
 
 ### Rollback plan
 
@@ -152,10 +152,10 @@ no redirect-follow). Bounded/validated inputs at both app and DB layers.
 
 This description is prepared for you to paste; no PR was opened automatically.
 
-- Web: https://github.com/dylangremium-sys/ddp-brokerage-demo/pull/new/feature/watchtower-ingestion-phase-a-c
+- Web: https://github.com/dylangremium-sys/ddp-brokerage-demo/pull/new/feature/watchtower-phase-a-c
 - CLI:
   ```bash
-  gh pr create --base main --head feature/watchtower-ingestion-phase-a-c \
+  gh pr create --base main --head feature/watchtower-phase-a-c \
     --title "feat(watchtower): ingestion & provenance foundation (Phases A–C, internal-only, no AI)" \
     --body-file docs/pr/phase-a-c-pr-description.md
   ```

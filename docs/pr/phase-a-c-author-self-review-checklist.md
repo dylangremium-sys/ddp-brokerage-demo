@@ -1,7 +1,7 @@
 # PR Self-Review Checklist (Author) — Watchtower Phases A–C
 
 Tick these before requesting review on
-`feature/watchtower-ingestion-phase-a-c`.
+`feature/watchtower-phase-a-c`.
 
 - [ ] Scope is locked to Phases A–C only (no AI, no review decisions, no rule
       activation, no impact engine, no alert generation).

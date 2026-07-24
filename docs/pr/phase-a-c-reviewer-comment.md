@@ -61,7 +61,7 @@ absence):
 ### ⚠️ Known pre-existing test failures (NOT from this PR)
 
 3 tests fail (`sensitive-storage-registry`, `deploy-workflow`). They reproduce on
-the parent commit `4fb72f7`, this branch touches neither, and the root cause is an
+this branch's base `origin/main`, this branch touches neither, and the root cause is an
 environment path-encoding artifact (this working copy lives under a directory with
 a space). Tracked separately — see the linked issue. **Please don't conflate them
 with this PR.**

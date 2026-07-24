@@ -1,6 +1,6 @@
 # Merge Commit Message — Watchtower Phases A–C (for maintainer)
 
-Use when squash/merging `feature/watchtower-ingestion-phase-a-c` → `main`.
+Use when squash/merging `feature/watchtower-phase-a-c` → `main`.
 
 ---
 

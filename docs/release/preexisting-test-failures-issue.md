@@ -22,7 +22,7 @@ Two test suites fail when the repo path contains a space (%20 path decoding)
 Three tests across two suites fail when the working copy lives in a directory
 whose path contains a **space**. The failures are **environmental**, not code
 defects in the tested source, and are **unrelated to the Watchtower Phase A–C
-work** — they reproduce on commit `4fb72f7` (the parent of that branch).
+work** — they reproduce on this branch's base `origin/main`.
 
 ### Affected tests
 
@@ -53,7 +53,7 @@ URL to a filesystem path.
 - CI checks out into a space-free path, so the encoding never appears — these
   suites pass there.
 - The Phase A–C branch touches **neither** test file and adds no `ddp_`
-  localStorage key; the failures reproduce on the parent commit `4fb72f7`.
+  localStorage key; the failures reproduce on this branch's base `origin/main`.
 
 ### Fix (suggested)
 
