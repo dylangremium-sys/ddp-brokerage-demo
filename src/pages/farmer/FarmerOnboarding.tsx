@@ -111,6 +111,7 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
   const t = T[lang]
   const [step, setStep] = useState(1)
   const [draftSavedMsg, setDraftSavedMsg] = useState(false)
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   // Load draft from localStorage on mount, pre-fill contact info from profile
   const [form, setForm] = useState<Draft>(() => {
@@ -185,6 +186,21 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
   }
 
   function handleFinalSubmit() {
+    const missingRequiredFields = [
+      { value: form.tradingName, label: t.tradingName },
+      { value: form.farmType, label: t.farmType },
+      { value: form.province, label: t.province },
+      { value: form.primaryContact, label: t.primaryContact },
+      { value: form.mobileNumber, label: t.mobileNumber },
+      { value: form.email, label: t.email },
+    ].filter(field => !field.value?.toString().trim())
+
+    if (missingRequiredFields.length > 0) {
+      setSubmitAttempted(true)
+      return
+    }
+
+    setSubmitAttempted(false)
     clearFarmDraft()
     const now = new Date().toISOString()
     const complete = calcCompletion(form)
@@ -201,6 +217,16 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
   }
 
   const completionPct = calcCompletion(form)
+  const missingRequiredLabels = [
+    { value: form.tradingName, label: t.tradingName },
+    { value: form.farmType, label: t.farmType },
+    { value: form.province, label: t.province },
+    { value: form.primaryContact, label: t.primaryContact },
+    { value: form.mobileNumber, label: t.mobileNumber },
+    { value: form.email, label: t.email },
+  ]
+    .filter(field => !field.value?.toString().trim())
+    .map(field => field.label)
   const stepTitles = t.wizardStepTitles
 
   const hints: Record<number, string> = {
@@ -510,6 +536,36 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
           <p style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 16 }}>
             {t.wizardStep9Hint}
           </p>
+
+          {missingRequiredLabels.length > 0 && (
+            <div
+              role="alert"
+              aria-live="polite"
+              style={{
+                marginTop: 12,
+                border: '1px solid #b42318',
+                background: '#fef3f2',
+                borderRadius: 10,
+                padding: '12px 14px',
+              }}
+            >
+              <div style={{ fontWeight: 700, color: '#7a271a', marginBottom: 6 }}>
+                {lang === 'th'
+                  ? 'ก่อนส่งให้ DDP กรุณากรอกข้อมูลขั้นต่ำต่อไปนี้:'
+                  : 'Before sending to DDP, please complete these required fields:'}
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: '#7a271a' }}>
+                {missingRequiredLabels.map(label => <li key={label}>{label}</li>)}
+              </ul>
+              {submitAttempted && (
+                <div style={{ marginTop: 8, fontSize: 13, color: '#7a271a' }}>
+                  {lang === 'th'
+                    ? 'ยังไม่สามารถส่งได้จนกว่าจะกรอกข้อมูลด้านบนครบ'
+                    : 'Submission is blocked until the fields above are filled.'}
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             className="btn btn-primary btn-lg"
