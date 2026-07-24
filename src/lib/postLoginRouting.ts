@@ -33,6 +33,20 @@ export function resolvePostLoginDecision(profile: UserProfile | null): PostLogin
 }
 
 /**
+ * Where a brand/home click should land. A signed-in operator goes to their own
+ * role home (not the public marketing landing); public, demo, and
+ * unresolved/pending sessions fall through to the landing page. Pure and
+ * side-effect-free so it can be unit-tested without React.
+ */
+export function resolveBrandHomePage(profile: UserProfile | null, isDemo: boolean): Page {
+  if (!isDemo && profile) {
+    if (profile.role === 'ddp_admin') return 'ddp-overview'
+    if (profile.role === 'farmer') return 'farmer-dashboard'
+  }
+  return 'landing'
+}
+
+/**
  * Outcome of the one-time auth bootstrap that runs when the app (re)loads.
  *
  * A page reload resets the in-memory page state to the public landing, but the

@@ -36,19 +36,23 @@ const AREA_LABEL: Partial<Record<Page, string>> = {
  * exists for admin routes today, and adding one would imply behaviour that is
  * not there.
  */
-export default function AdminShell({ page, goTo, profile, onSignOut, children }: {
+export default function AdminShell({ page, goTo, profile, onSignOut, children, onBrandClick }: {
   page: Page
   goTo: (p: Page) => void
   profile: UserProfile | null
   onSignOut: () => void
   children: ReactNode
+  // Brand/home click. Optional so the shell keeps its previous behaviour if a
+  // caller does not pass it; App supplies a handler that routes a signed-in
+  // admin to their dashboard rather than the public landing.
+  onBrandClick?: () => void
 }) {
   return (
     <div className="eo-shell">
       <a className="eo-skip" href="#eo-content">Skip to content</a>
 
       <aside className="eo-nav">
-        <button className="eo-nav-brand" onClick={() => goTo('landing')} aria-label="Go to home">
+        <button className="eo-nav-brand" onClick={onBrandClick ?? (() => goTo('landing'))} aria-label="Go to home">
           <DDPMonogramLogo height={32} />
           <span>DDP Brokerage</span>
         </button>

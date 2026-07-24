@@ -33,7 +33,7 @@ import {
   getCurrentProfile,
   type UserProfile,
 } from './services/auth'
-import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
+import { resolvePostLoginDecision, nextBootstrapRouting, resolveBrandHomePage } from './lib/postLoginRouting'
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer, deskReviewRequestsView } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
@@ -808,6 +808,13 @@ export default function App() {
     goTo('landing')
   }
 
+  // Brand/home click target: a signed-in operator returns to their own role
+  // dashboard, not the public marketing landing. Public/demo sessions still go
+  // to landing. (Routing decision only — no data or auth change.)
+  function goHome() {
+    goTo(resolveBrandHomePage(currentProfile, isDemo))
+  }
+
   const reviewFarm = farms.find(f => f.id === reviewFarmId)
   const reviewItem = inventory.find(i => i.id === reviewItemId)
   const reviewItemFarm = reviewItem
@@ -842,8 +849,8 @@ export default function App() {
         <nav className="navbar">
           <div
             className="navbar-brand"
-            onClick={() => goTo('landing')}
-            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo('landing') } }}
+            onClick={goHome}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome() } }}
             role="button"
             tabIndex={0}
             aria-label="Go to home"
@@ -1161,7 +1168,7 @@ export default function App() {
         // Identical routed content in both frames — only the surrounding chrome
         // differs, so no page's behaviour depends on which one is drawn.
         return useEditorialShell ? (
-          <AdminShell page={page} goTo={goTo} profile={currentProfile} onSignOut={handleSignOut}>
+          <AdminShell page={page} goTo={goTo} profile={currentProfile} onSignOut={handleSignOut} onBrandClick={goHome}>
             {appPages}
           </AdminShell>
         ) : (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolvePostLoginDecision, resolveBootstrap, nextBootstrapRouting } from './postLoginRouting'
+import { resolvePostLoginDecision, resolveBootstrap, nextBootstrapRouting, resolveBrandHomePage } from './postLoginRouting'
 import type { UserProfile } from '../services/auth'
 import type { Page } from '../types'
 
@@ -11,6 +11,28 @@ const baseProfile: UserProfile = {
   displayName: 'Operator',
   role: 'farmer',
 }
+
+describe('resolveBrandHomePage', () => {
+  it('routes a signed-in admin to their operations dashboard, not landing', () => {
+    expect(resolveBrandHomePage({ ...baseProfile, role: 'ddp_admin' }, false)).toBe('ddp-overview')
+  })
+
+  it('routes a signed-in farmer to their dashboard, not landing', () => {
+    expect(resolveBrandHomePage({ ...baseProfile, role: 'farmer' }, false)).toBe('farmer-dashboard')
+  })
+
+  it('sends public (no profile) sessions to landing', () => {
+    expect(resolveBrandHomePage(null, false)).toBe('landing')
+  })
+
+  it('sends demo sessions to landing even with a profile', () => {
+    expect(resolveBrandHomePage({ ...baseProfile, role: 'ddp_admin' }, true)).toBe('landing')
+  })
+
+  it('sends a pending/unresolved signed-in session to landing (fail-safe)', () => {
+    expect(resolveBrandHomePage({ ...baseProfile, role: 'pending' }, false)).toBe('landing')
+  })
+})
 
 describe('resolvePostLoginDecision', () => {
   it('routes a ddp_admin to the existing DDP/admin overview', () => {
