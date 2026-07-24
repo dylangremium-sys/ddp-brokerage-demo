@@ -12,9 +12,14 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 
-const ROOT = new URL('..', import.meta.url).pathname
+// fileURLToPath decodes percent-encoding (e.g. a space in the workspace path
+// becomes %20 in a file: URL) and applies platform-correct conversion. Using
+// `new URL(...).pathname` here would leave %20 in the path and break fs calls on
+// any checkout whose absolute path contains a space.
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 function walk(dir) {
   const out = []
