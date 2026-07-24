@@ -70,6 +70,7 @@ import {
   SOURCE_TIER_LABELS,
 } from '../../lib/complianceSourceGovernance'
 import { WatchtowerIngestionPanel } from '../../components/admin/WatchtowerIngestionPanel'
+import { listMissingStarterSources } from '../../lib/watchtowerStarterSources'
 
 // Phase 2I — manual AI draft-summary integration, wired to the secure HTTP
 // client adapter. This component holds NO vendor SDK, endpoint, or credential:
@@ -159,6 +160,30 @@ function saveStored<T>(key: string, value: T): void {
   localStorage.setItem(key, JSON.stringify(value))
 }
 
+function hydrateLocalSourcesWithStarterSeed(existingSources: RegulatorySource[]): RegulatorySource[] {
+  const missing = listMissingStarterSources(existingSources)
+  if (missing.length === 0) return existingSources
+
+  const now = new Date().toISOString()
+  const seeded: RegulatorySource[] = missing.map((source, index) => ({
+    id: makeId(`source-seed-${index}`),
+    name: source.name,
+    jurisdiction: source.jurisdiction,
+    sourceType: source.sourceType,
+    url: source.url,
+    isActive: source.isActive ?? true,
+    lastCheckedAt: null,
+    tier: source.tier,
+    authorityType: source.authorityType,
+    category: source.category,
+    monitoringMethod: source.monitoringMethod,
+    priority: source.priority,
+    createdAt: now,
+    updatedAt: now,
+  }))
+  return [...seeded, ...existingSources]
+}
+
 function riskFromAreas(areas: LegalUpdateAffectedArea[]): ComplianceSeverity {
   if (areas.some(area => area === 'Thai export' || area === 'Czech import' || area === 'EU pharmaceutical standards')) return 'high'
   if (areas.some(area => area === 'COA/testing' || area === 'Farm licensing' || area === 'Buyer licensing')) return 'medium'
@@ -229,7 +254,9 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const [rules, setRules] = useState<ComplianceRule[]>(() => (repo.isSupabaseConfigured ? [] : loadStoredComplianceRules()))
   const [storedAlerts, setStoredAlerts] = useState<ComplianceAlert[]>(() => (repo.isSupabaseConfigured ? [] : loadStoredComplianceAlerts()))
   const [auditLog, setAuditLog] = useState<ComplianceAuditLog[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.audit, [])))
-  const [sources, setSources] = useState<RegulatorySource[]>(() => (repo.isSupabaseConfigured ? [] : loadStored(STORAGE.sources, [])))
+  const [sources, setSources] = useState<RegulatorySource[]>(() => (
+    repo.isSupabaseConfigured ? [] : hydrateLocalSourcesWithStarterSeed(loadStored(STORAGE.sources, []))
+  ))
   const [openReadinessId, setOpenReadinessId] = useState<string | null>(null)
 
   const [initialLoading, setInitialLoading] = useState(repo.isSupabaseConfigured)
@@ -314,6 +341,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const [aiGeneratingUpdateId, setAiGeneratingUpdateId] = useState<string | null>(null)
   const [aiDraftMessage, setAiDraftMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const aiRequestUpdateIdRef = useRef<string | null>(null)
+  const starterSeedAttemptedRef = useRef(false)
 
   const actorName = currentUser?.displayName || currentUser?.email || 'DDP Admin'
   const actorId = currentUser?.id ?? 'local-admin'
@@ -355,9 +383,23 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   useEffect(() => {
     if (!isSupabaseAdmin) return
     let cancelled = false
-    sourceRegistry.listRegulatorySources().then(list => {
+    sourceRegistry.listRegulatorySources().then(async list => {
       if (cancelled) return
-      setSources(list)
+      const missing = listMissingStarterSources(list)
+      if (missing.length === 0 || starterSeedAttemptedRef.current) {
+        setSources(list)
+        return
+      }
+
+      starterSeedAttemptedRef.current = true
+      for (const source of missing) {
+        await sourceRegistry.createRegulatorySource(source)
+      }
+      if (cancelled) return
+      const updated = await sourceRegistry.listRegulatorySources()
+      if (cancelled) return
+      setSources(updated)
+      setActionMessage({ type: 'success', text: `Linked ${missing.length} starter source${missing.length === 1 ? '' : 's'} automatically.` })
     }).catch(err => {
       if (cancelled) return
       setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to load regulatory sources.' })
@@ -572,13 +614,82 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       return
     }
     if (isEditing && current) {
-      persistSourcesLocal(sources.map(s => (s.id === editingSourceId ? { ...s, ...candidate, updatedAt: now } : s)))
+      persistSourcesLocal(sources.map(s => (s.id === editingSourceId ? {
+        ...s,
+        ...candidate,
+        tier: sourceForm.tier,
+        authorityType: sourceForm.authorityType,
+        category: sourceForm.category,
+        monitoringMethod: sourceForm.monitoringMethod,
+        priority: sourceForm.priority,
+        updatedAt: now,
+      } : s)))
     } else {
-      const created: RegulatorySource = { id: makeId('source'), ...candidate, lastCheckedAt: null, createdAt: now, updatedAt: now }
+      const created: RegulatorySource = {
+        id: makeId('source'),
+        ...candidate,
+        lastCheckedAt: null,
+        tier: sourceForm.tier,
+        authorityType: sourceForm.authorityType,
+        category: sourceForm.category,
+        monitoringMethod: sourceForm.monitoringMethod,
+        priority: sourceForm.priority,
+        createdAt: now,
+        updatedAt: now,
+      }
       persistSourcesLocal([created, ...sources])
     }
     setActionMessage({ type: 'success', text: `Regulatory source ${isEditing ? 'updated' : 'added'} (local/demo mode).` })
     resetSourceForm()
+  }
+
+  async function seedStarterSources(): Promise<void> {
+    setActionMessage(null)
+    const missing = listMissingStarterSources(sources)
+    if (missing.length === 0) {
+      setActionMessage({ type: 'success', text: 'Starter sources already linked.' })
+      return
+    }
+
+    if (repo.isSupabaseConfigured) {
+      if (!isSupabaseAdmin) {
+        setActionMessage({ type: 'error', text: 'Admin access required to seed regulatory sources.' })
+        return
+      }
+      setBusy(true)
+      try {
+        for (const source of missing) {
+          await sourceRegistry.createRegulatorySource(source)
+        }
+        setSources(await sourceRegistry.listRegulatorySources())
+        setActionMessage({ type: 'success', text: `Linked ${missing.length} starter source${missing.length === 1 ? '' : 's'}.` })
+      } catch (err) {
+        setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to seed starter sources.' })
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
+    const now = new Date().toISOString()
+    const seeded: RegulatorySource[] = missing.map((source, index) => ({
+      id: makeId(`source-seed-${index}`),
+      name: source.name,
+      jurisdiction: source.jurisdiction,
+      sourceType: source.sourceType,
+      url: source.url,
+      isActive: source.isActive ?? true,
+      lastCheckedAt: null,
+      tier: source.tier,
+      authorityType: source.authorityType,
+      category: source.category,
+      monitoringMethod: source.monitoringMethod,
+      priority: source.priority,
+      createdAt: now,
+      updatedAt: now,
+    }))
+    persistSourcesLocal([...seeded, ...sources])
+    setActionMessage({ type: 'success', text: `Linked ${seeded.length} starter source${seeded.length === 1 ? '' : 's'} (local/demo mode).` })
   }
 
   async function deactivateSource(source: RegulatorySource): Promise<void> {
@@ -1813,6 +1924,14 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
               does not fetch, check, or summarise anything, and does not create a legal update, a compliance rule,
               or any buyer-visible claim.
             </p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+              <button className="btn btn-review" disabled={busy} onClick={() => { void seedStarterSources() }}>
+                {busy ? 'Working…' : 'Link Starter Sources'}
+              </button>
+              <span className="td-muted" style={{ alignSelf: 'center' }}>
+                Adds a curated Tier 1-heavy starter registry and skips any source already linked by URL.
+              </span>
+            </div>
             <div className="form-grid-3">
               <label className="field">
                 <span>Name</span>
