@@ -711,13 +711,24 @@ export default function App() {
     goTo('farmer-stock-form')
   }
 
-  function handleFarmSubmit(farm: FarmProfile) {
+  async function handleFarmSubmit(farm: FarmProfile) {
+    // Snapshot for rollback: the DB write must succeed before we tell the
+    // farmer their farm reached DDP. Previously this was fire-and-forget and
+    // navigated to the "Submitted to DDP" screen even when the write failed,
+    // so a farm silently never reached DDP while the farmer saw success.
+    const prevFarms = farms
     setFarms(prev => {
       // If a farm with this ID already exists (e.g. advanced profile update), replace it
       const exists = prev.some(f => f.id === farm.id)
       return exists ? prev.map(f => f.id === farm.id ? farm : f) : [farm, ...prev]
     })
-    createFarmProfile(farm, currentProfile?.id).catch(onDbError)
+    try {
+      await createFarmProfile(farm, currentProfile?.id)
+    } catch (err) {
+      setFarms(prevFarms)   // roll back optimistic insert; stay on the form
+      onDbError(err)
+      return                // do NOT show the "submitted" screen on failure
+    }
     // Optimistically expand scope so the farmer sees their new farm immediately
     if (isFarmerRole) {
       setFarmerScope(prev => {
@@ -728,7 +739,7 @@ export default function App() {
     goTo('farmer-status')
   }
 
-  function handleFarmAction(farmId: string, action: string) {
+  async function handleFarmAction(farmId: string, action: string) {
     const statusMap: Record<string, FarmStatus> = {
       'approve': 'Approved',
       'request-info': 'More Information Required',
@@ -738,9 +749,20 @@ export default function App() {
     }
     const newStatus = statusMap[action]
     if (newStatus) {
+      // Snapshot for rollback: a compliance status action must not appear
+      // applied in the UI if the DB write failed. Previously this was
+      // fire-and-forget, so a failed write left the badge showing the new
+      // status until the next reload silently reverted it.
+      const prevFarms = farms
       const oldStatus = farms.find(f => f.id === farmId)?.status
       setFarms(prev => prev.map(f => f.id === farmId ? { ...f, status: newStatus } : f))
-      updateFarmProfileStatus(farmId, newStatus, oldStatus, currentProfile?.id).catch(onDbError)
+      try {
+        await updateFarmProfileStatus(farmId, newStatus, oldStatus, currentProfile?.id)
+      } catch (err) {
+        setFarms(prevFarms)   // revert the optimistic status change
+        onDbError(err)
+        return                // stay put; do not imply the action succeeded
+      }
     }
     goTo('ddp-farms')
   }
@@ -759,7 +781,7 @@ export default function App() {
     }
   }
 
-  function handleInventoryAction(itemId: string, action: string) {
+  async function handleInventoryAction(itemId: string, action: string) {
     const statusMap: Record<string, InventoryStatus> = {
       'approve': 'Approved',
       'missing': 'Missing Document',
@@ -767,9 +789,19 @@ export default function App() {
     }
     const newStatus = statusMap[action]
     if (newStatus) {
+      // Snapshot for rollback — see handleFarmAction. An "Approve Batch" that
+      // failed to persist must not leave the batch shown as Approved (which
+      // also unlocks the buyer-visible control) until a reload reverts it.
+      const prevInventory = inventory
       const oldStatus = inventory.find(i => i.id === itemId)?.status
       setInventory(prev => prev.map(i => i.id === itemId ? { ...i, status: newStatus } : i))
-      updateInventoryStatus(itemId, newStatus, oldStatus, currentProfile?.id).catch(onDbError)
+      try {
+        await updateInventoryStatus(itemId, newStatus, oldStatus, currentProfile?.id)
+      } catch (err) {
+        setInventory(prevInventory)   // revert the optimistic status change
+        onDbError(err)
+        return
+      }
     }
     goTo('ddp-inventory')
   }
