@@ -112,6 +112,24 @@ describe('validateRegulatorySource — duplicate URL', () => {
     expect(result.valid).toBe(false)
   })
 
+  // Semantic-equivalence duplicates the old trim+lowercase key let through.
+  it.each([
+    ['trailing slash', 'https://www.fda.moph.go.th/narcotics/'],
+    ['default https port', 'https://www.fda.moph.go.th:443/narcotics'],
+    ['hash fragment', 'https://www.fda.moph.go.th/narcotics#latest'],
+  ])('flags a canonically-equivalent URL as a duplicate (%s)', (_label, candidateUrl) => {
+    const existing = [makeSource({ url: 'https://www.fda.moph.go.th/narcotics' })]
+    const result = validateRegulatorySource(makeCandidate({ url: candidateUrl }), existing)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(e => e.toLowerCase().includes('duplicate'))).toBe(true)
+  })
+
+  it('does NOT flag genuinely different paths as duplicates', () => {
+    const existing = [makeSource({ url: 'https://www.fda.moph.go.th/narcotics' })]
+    const result = validateRegulatorySource(makeCandidate({ url: 'https://www.fda.moph.go.th/cosmetics' }), existing)
+    expect(result.valid).toBe(true)
+  })
+
   it('does not flag a duplicate against itself when excludeId matches', () => {
     const existing = [makeSource({ id: 'source-1', url: 'https://www.fda.moph.go.th/narcotics' })]
     const result = validateRegulatorySource(makeCandidate({ url: 'https://www.fda.moph.go.th/narcotics' }), existing, 'source-1')

@@ -1,5 +1,5 @@
 import type { RegulatorySource } from '../types'
-import type { CreateRegulatorySourceInput } from './complianceSourceRegistry'
+import { canonicalizeSourceUrl, type CreateRegulatorySourceInput } from './complianceSourceRegistry'
 
 // Starter monitoring targets. Where an OFFICIAL RSS/notices endpoint has been
 // verified live, the url points at that endpoint (not the org homepage) and
@@ -84,7 +84,7 @@ export const WATCHTOWER_STARTER_SOURCES: readonly CreateRegulatorySourceInput[] 
     // Official SÚKL RSS (news/announcements). The authority migrated to the
     // sukl.gov.cz domain; sukl.cz/rss 301-redirects here, so the final URL is
     // recorded directly. Verified live (channel title "SÚKL").
-    url: 'https://sukl.gov.cz/rss',
+    url: 'https://sukl.gov.cz/feed/',
     tier: 1,
     authorityType: 'primary_regulator',
     category: 'pharmaceutical',
@@ -106,11 +106,11 @@ export const WATCHTOWER_STARTER_SOURCES: readonly CreateRegulatorySourceInput[] 
   },
 ] as const
 
-function normalizeUrl(url: string): string {
-  return url.trim().toLowerCase()
-}
-
 export function listMissingStarterSources(existingSources: RegulatorySource[]): CreateRegulatorySourceInput[] {
-  const existingUrls = new Set(existingSources.map(source => normalizeUrl(source.url)))
-  return WATCHTOWER_STARTER_SOURCES.filter(source => !existingUrls.has(normalizeUrl(source.url)))
+  // Uses the SAME canonical key as registry duplicate detection
+  // (canonicalizeSourceUrl) so a starter source is never re-inserted when an
+  // equivalent-URL source already exists (e.g. trailing-slash or default-port
+  // variants).
+  const existingUrls = new Set(existingSources.map(source => canonicalizeSourceUrl(source.url)))
+  return WATCHTOWER_STARTER_SOURCES.filter(source => !existingUrls.has(canonicalizeSourceUrl(source.url)))
 }

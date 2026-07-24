@@ -89,13 +89,35 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
-// Case-insensitive, trimmed comparison. Regulatory source URLs are typically
-// a single official domain; treating "HTTPS://Example.GOV/" and
-// "https://example.gov/" as the same source is the conservative choice for
-// duplicate detection (fewer accidental duplicates slipping through), even
-// though URLs are technically case-sensitive in path/query segments.
-function normalizeUrlForComparison(value: string): string {
-  return value.trim().toLowerCase()
+// Canonical comparison key for a source URL — the SINGLE source of truth for
+// "are these the same source?", shared by registry duplicate detection and
+// starter-source missing detection so the two never drift apart.
+//
+// Regulatory source URLs are a single official domain, so the conservative
+// choice (fewer accidental duplicates) is case-insensitive comparison. On top
+// of that this collapses the semantic equivalents that the previous
+// trim+lowercase key missed and that caused duplicate insertions:
+//   - default ports          (https://x.gov:443 == https://x.gov)
+//   - trailing-slash paths    (/feed == /feed/, and / == root)
+//   - hash fragments          (…/feed#top == …/feed — hash never identifies a source)
+// Query strings are preserved (they can be semantically significant, e.g.
+// ?rssId=222). Deterministic; a non-parseable input falls back to the prior
+// trim+lowercase behaviour rather than throwing.
+export function canonicalizeSourceUrl(value: string): string {
+  const trimmed = value.trim()
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return trimmed.toLowerCase()
+  }
+  const isDefaultPort =
+    (parsed.protocol === 'http:' && parsed.port === '80') ||
+    (parsed.protocol === 'https:' && parsed.port === '443')
+  const host = isDefaultPort ? parsed.hostname : parsed.host
+  const path = parsed.pathname.replace(/\/+$/, '')
+  // hash intentionally excluded from the key
+  return `${parsed.protocol}//${host}${path}${parsed.search}`.toLowerCase()
 }
 
 /**
@@ -130,9 +152,9 @@ export function validateRegulatorySource(
   if (!isValidHttpUrl(candidate.url)) {
     errors.push('url must be a valid absolute http(s) URL (e.g. https://example.gov)')
   } else {
-    const normalized = normalizeUrlForComparison(candidate.url)
+    const normalized = canonicalizeSourceUrl(candidate.url)
     const isDuplicate = existingSources.some(
-      source => source.id !== excludeId && normalizeUrlForComparison(source.url) === normalized,
+      source => source.id !== excludeId && canonicalizeSourceUrl(source.url) === normalized,
     )
     if (isDuplicate) {
       errors.push('url already exists in the registry (duplicate source)')
