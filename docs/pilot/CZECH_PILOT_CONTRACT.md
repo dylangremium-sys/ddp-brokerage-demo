@@ -27,20 +27,19 @@ Only three roles exist in code: `ddp_admin | farmer | pending`. There is **no** 
 
 ## 2. Required Farm Fields (minimal onboarding set)
 
-Full profile has 50+ fields across 9 optional steps. Pilot **requires only** the following to reach *Submitted to DDP*; all other fields are optional / add-later.
+Full profile has 50+ fields across 9 optional steps. Pilot **requires only** the following to reach *Submitted to DDP*; all other fields are optional / add-later. This set is **enforced in code** by the onboarding submit floor (`FarmerOnboarding.tsx` `handleFinalSubmit`), which blocks submission and lists any missing field.
 
 | Field (app / DB) | Required | Notes |
 |---|---|---|
-| `legalBusinessName` | ✅ | Legal entity name |
-| `registrationNumber` | ✅ | Company / business reg. no. |
+| `tradingName` | ✅ | Farm/trading display name (used as `farm_name`) |
+| `farmType` | ✅ | Operation type |
 | `province` | ✅ | Region |
-| `district` | ✅ | Locality |
-| `registeredAddress` **or** `gpsCoordinates` | ✅ | At least one location anchor |
 | `primaryContact` | ✅ | Named responsible contact |
 | `mobileNumber` | ✅ | Reachable phone |
 | `email` | ✅ | Reachable email |
-| ≥1 production licence (`cultivationLicence` / `processingLicence` / `medicalCannabisLicence` / `exportLicence`) | ✅ | At least one licence identifier |
-| `tradingName`, `dateEstablished`, ownership, facility areas, strains, scores, socials | ⬜ Optional | Deferred; "can be added later" |
+| `legalBusinessName`, `registrationNumber`, `district`, address/GPS, licences, ownership, facility areas, strains, scores, socials | ⬜ Optional | Deferred; "can be added later" per the app's step-9 note |
+
+> **Decision (2026-07-24):** the pilot floor is the 6 fields above (ratified — "keep the implemented floor"). `legalBusinessName` / `registrationNumber` / `≥1 licence` are collected during compliance review (flow 3) rather than gated at submit, to minimise onboarding friction. Revisit if the Czech client requires a licence identifier at intake.
 
 ---
 
