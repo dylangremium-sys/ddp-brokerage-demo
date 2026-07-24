@@ -2,9 +2,9 @@
 
 **Date:** 2026-07-24 · **Decision owner:** DDP Operator (Controller)
 
-## Current decision: 🔴 NO-GO for first REAL farm today
+## Current decision: 🔴 NO-GO for first REAL farm — but one narrow, one-line blocker from GO
 
-**Why (updated 2026-07-24, staging pass #2):** Staging DB is now connected and the **hardening migrations are verified APPLIED and PASSING** (19/21/22 verify scripts — see evidence below). However the **staging auth test users do not authenticate** (admin + both farmers return `invalid_credentials` on `szqocdabwkjrggrddocx`), so `security:staging` refused and the **runtime** access-control (SG-1 auth-level), audit (SG-2), and live smoke (SG-3/SG-6) could not run. Blocker is now **staging test-user provisioning**, not code and not migration-apply.
+**Why (updated 2026-07-24, staging pass #3 — final gate closure):** SG-1, SG-2, SG-4, SG-5 all **PASS with hard staging evidence** and SG-6 is code-verified. The **only** thing keeping this from GO is **SG-3**: the `farmer-documents` storage bucket on staging has **no server-side type/size enforcement** (`allowed_mime_types` and `file_size_limit` are null), so a non-PDF uploads successfully at the API level (HTTP 200). Client-side validation still rejects it and RLS still confines each farmer to their own prefix, so this is a **P2 defense-in-depth gap, not a tenant hole** — but it fails SG-3's server-side failure-path check. **One-line fix** applies migration 8's bucket config; after that + a live SG-6 export check, this flips to **GO**.
 
 ---
 
@@ -13,14 +13,14 @@
 | Gate | Status | Evidence / blocker |
 |------|--------|--------------------|
 | A. Local CI (tests/type/lint/build) | ✅ PASS | `ci:verify` exit 0 — 1740 tests, security:sql, tsc, lint, build |
-| SG-1 Access control (RLS, admin-only status) | 🟡 DB-LEVEL PASS / auth NOT RUN | **PASS (structural):** staging psql verify 19 (B3–B7), 21 (A–C), 22 (A–G) all PASSED on `szqocdabwkjrggrddocx` — RLS applied, farmer can't write admin fields / non-member farms, storage policy guards read+write, pending denied. **NOT RUN (runtime):** farmer-A-can't-read-farmer-B cross-tenant test blocked — staging test users don't authenticate |
-| SG-2 Audit trail | ⏸ NOT RUN | `security:staging` refused before the audit-insert probe (needs a staging login). Status-history + `compliance_audit_log` writes exist in code |
-| SG-3 Upload smoke (happy+fail) | ⏸ NOT RUN | Needs staging app; HF-001 improves reliability. Static: PDF-only + size guards + throw/catch present. Onboarding **required-field floor added** (FarmerOnboarding.tsx, uncommitted) — blocks empty submit; tsc+1740 tests green |
-| SG-4 Backup/restore drill | ⏸ NOT RUN | Needs staging DB; run `RESET_A` counts + snapshot + rehearse restore |
-| SG-5 Incident mini-runbook | 🟢 ARTIFACT PRESENT | `CZECH_PILOT_INCIDENT_RUNBOOK.md` present + operator-usable (severity/triggers/containment/diagnosis/recovery/comms/resolution). Dry-run walkthrough still pending |
-| SG-6 Human-approval fail-closed (export) | 🟢 STATIC-VERIFIED | `canEmitBuyerPackOutput` + print-CSS fail-closed + server-authoritative issuance (migration 23) confirmed in code; confirm live once app is up |
+| SG-1 Access control (RLS, admin-only status) | ✅ PASS | `security:staging` **111 PASS · 0 FAIL · 0 BLOCK** (pending matrix SATISFIED, 58/58) + psql verify 19 (8 passed), 21 (3), 22 (8), all exit 0. Proven live on `szqocdabwkjrggrddocx`: farmer A can't read/update/delete farmer B farms or storage prefix; farmer can't set status/compliance_status/risk_level/partner_tier on own farm; farmer can't self-elevate to ddp_admin (SQLSTATE 42501) |
+| SG-2 Audit trail | ✅ PASS | Within the 111: admin can INSERT `compliance_audit_log` (append-only, retained) but admin UPDATE and DELETE of that row are **blocked**; authenticated farmer and anon **cannot** INSERT; catalog VERIFY 11 (truncate hardening) passed |
+| SG-3 Upload smoke (happy+fail) | 🔴 FAIL (P2) | **Happy path PASS:** Farmer-A PDF upload HTTP 200, signed-URL retrieval HTTP 200, RLS confines to own prefix. **Failure path FAIL:** non-PDF upload accepted (HTTP 200) — bucket `farmer-documents` has `allowed_mime_types=null`, `file_size_limit=null`; server does not enforce PDF-only/10MB (client-only). Fix: `update storage.buckets set file_size_limit=10485760, allowed_mime_types=array['application/pdf'] where id='farmer-documents';` (migration 8) |
+| SG-4 Backup/restore drill | ✅ PASS | `pg_dump` of `public.farms` (exit 0, valid 143-line dump); restore rehearsed into throwaway `_restore_drill` schema — table + 5 RLS policies + trigger recreated, row parity (0=0), scratch schema dropped & verified gone. Caveat: `farms` had 0 live rows at drill time (structure/policy restore fully exercised; data-parity trivial) |
+| SG-5 Incident mini-runbook | ✅ PASS | Tabletop **exercised** 2026-07-24 (not just read) — walked the "status shows success but didn't persist" scenario end-to-end through the runbook to the HF-003 fix; record appended to `CZECH_PILOT_INCIDENT_RUNBOOK.md` |
+| SG-6 Human-approval fail-closed (export) | 🟢 CODE-VERIFIED | `canEmitBuyerPackOutput` + print-CSS fail-closed + server-authoritative issuance (migration 23) confirmed in code. Not exercised via live UI this run — recommend one live export click-through before real farms |
 
-Legend: ✅ passed · 🟢 static-verified (code) · ⏸ not run (needs env) · 🔴 fail
+Legend: ✅ passed (live evidence) · 🟢 code-verified · ⏸ not run · 🔴 fail
 
 ## What flipped GREEN this pass
 - Local CI fully green (A-suite).
