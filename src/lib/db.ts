@@ -336,6 +336,10 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
   // Filter out data URLs — they can be 500 KB+ and don't belong in the DB.
   // In production, replace with Supabase Storage URLs.
   const storablePhotoUrls = (item.photoUrls ?? []).filter(u => !u.startsWith('data:'))
+  // Same rule for the scalar photo_url: a mobile camera capture is a multi-MB
+  // data: URL that bloats the row and can exceed the API body limit, failing
+  // the whole batch insert. Only persist an already-hosted (http/https) URL.
+  const storablePhotoUrl = item.photoUrl && !item.photoUrl.startsWith('data:') ? item.photoUrl : null
 
   await sbUpsert('inventory_batches', {
     id: item.id,
@@ -354,7 +358,7 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
     quality_grade: item.qualityGrade,
     price_per_kg: item.pricePerKg,
     coa_file_name: item.certFileName || null,
-    photo_url: item.photoUrl || null,
+    photo_url: storablePhotoUrl,
     storage_conditions: item.storageConditions,
     notes: item.notes || null,
     status: item.status,
