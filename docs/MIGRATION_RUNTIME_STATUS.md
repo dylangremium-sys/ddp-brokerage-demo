@@ -217,7 +217,7 @@ Baseline was captured immediately before the run and compared immediately after.
 
 **Four objects from this run remain**, all tagged with the run id:
 
-```
+```text
 farmer-documents  <userB>/security-test-1784659142065-868ac4ea-listctl.txt
 farmer-documents  <userA>/security-test-1784659142065-868ac4ea-attrib.pdf
 farmer-documents  <userA>/security-test-1784659142065-868ac4ea.txt

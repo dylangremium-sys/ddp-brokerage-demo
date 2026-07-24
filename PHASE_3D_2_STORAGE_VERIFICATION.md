@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-02  
 **Branch:** auth-rls-mvp  
-**Live URL:** https://ddp-brokerage-demo.onrender.com  
+**Live URL:** <https://ddp-brokerage-demo.onrender.com>  
 **Code commit validated:** `737427c` — Feat: upload COA PDF during inventory submission  
 **Current docs commit / live deploy lineage:** `cb157f4` — DOCS: validate Phase 3C-2 submit-time COA upload
 
