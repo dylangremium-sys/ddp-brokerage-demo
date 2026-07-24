@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import './App.css'
 import {
   getFarmProfiles,
@@ -43,28 +43,32 @@ import { complianceRefetchStarted } from './lib/complianceRefetch'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
-import LandingPage from './pages/public/LandingPage'
-import LoginPage from './pages/public/LoginPage'
-import FarmerRegister from './pages/farmer/FarmerRegister'
-import FarmerDashboard from './pages/farmer/FarmerDashboard'
-import FarmerOnboarding from './pages/farmer/FarmerOnboarding'
-import FarmerAdvancedProfile from './pages/farmer/FarmerAdvancedProfile'
-import FarmerMyStock from './pages/farmer/FarmerMyStock'
-import FarmerSubmitInventory from './pages/farmer/FarmerSubmitInventory'
-import FarmerRequests from './pages/farmer/FarmerRequests'
-import FarmerStatus from './pages/farmer/FarmerStatus'
-import DDPOverview from './pages/admin/DDPOverview'
-import DDPFarmProfiles from './pages/admin/DDPFarmProfiles'
-import DDPFarmReview from './pages/admin/DDPFarmReview'
-import DDPInventoryDashboard from './pages/admin/DDPInventoryDashboard'
-import DDPInventoryReview from './pages/admin/DDPInventoryReview'
-import DDPMasterInventory from './pages/admin/DDPMasterInventory'
-import DDPBuyerPreview from './pages/admin/DDPBuyerPreview'
-import DDPMissingDocuments from './pages/admin/DDPMissingDocuments'
-import DDPCoaIntelligence from './pages/admin/DDPCoaIntelligence'
-import DDPRiskRegister from './pages/admin/DDPRiskRegister'
-import DDPComplianceWatchtower from './pages/admin/DDPComplianceWatchtower'
-import DDPOperationsDesk from './pages/admin/DDPOperationsDesk'
+// Route/page-level code splitting: each page is its own lazy chunk so the
+// initial bundle no longer ships every farmer + admin screen up front. Auth
+// guards, role routing, and page logic are unchanged — only *loading* is
+// deferred, behind the <Suspense> boundaries in the render tree below.
+const LandingPage = lazy(() => import('./pages/public/LandingPage'))
+const LoginPage = lazy(() => import('./pages/public/LoginPage'))
+const FarmerRegister = lazy(() => import('./pages/farmer/FarmerRegister'))
+const FarmerDashboard = lazy(() => import('./pages/farmer/FarmerDashboard'))
+const FarmerOnboarding = lazy(() => import('./pages/farmer/FarmerOnboarding'))
+const FarmerAdvancedProfile = lazy(() => import('./pages/farmer/FarmerAdvancedProfile'))
+const FarmerMyStock = lazy(() => import('./pages/farmer/FarmerMyStock'))
+const FarmerSubmitInventory = lazy(() => import('./pages/farmer/FarmerSubmitInventory'))
+const FarmerRequests = lazy(() => import('./pages/farmer/FarmerRequests'))
+const FarmerStatus = lazy(() => import('./pages/farmer/FarmerStatus'))
+const DDPOverview = lazy(() => import('./pages/admin/DDPOverview'))
+const DDPFarmProfiles = lazy(() => import('./pages/admin/DDPFarmProfiles'))
+const DDPFarmReview = lazy(() => import('./pages/admin/DDPFarmReview'))
+const DDPInventoryDashboard = lazy(() => import('./pages/admin/DDPInventoryDashboard'))
+const DDPInventoryReview = lazy(() => import('./pages/admin/DDPInventoryReview'))
+const DDPMasterInventory = lazy(() => import('./pages/admin/DDPMasterInventory'))
+const DDPBuyerPreview = lazy(() => import('./pages/admin/DDPBuyerPreview'))
+const DDPMissingDocuments = lazy(() => import('./pages/admin/DDPMissingDocuments'))
+const DDPCoaIntelligence = lazy(() => import('./pages/admin/DDPCoaIntelligence'))
+const DDPRiskRegister = lazy(() => import('./pages/admin/DDPRiskRegister'))
+const DDPComplianceWatchtower = lazy(() => import('./pages/admin/DDPComplianceWatchtower'))
+const DDPOperationsDesk = lazy(() => import('./pages/admin/DDPOperationsDesk'))
 import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
@@ -72,6 +76,11 @@ import FarmerNav from './components/farmer/FarmerNav'
 import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
+
+// Lightweight fallback shown only for the brief moment a page chunk is being
+// fetched. Reuses the same quiet "Loading…" tone as the auth/scope screens so a
+// route transition never flashes anything jarring.
+const pageLoadingFallback = <div className="page-loading" role="status" aria-live="polite">Loading…</div>
 
 const FARMER_PAGES: Page[] = [
   'landing', 'login', 'farmer-register',
@@ -97,7 +106,10 @@ export default function App() {
   // Build/version identifier for release traceability — static file regenerated
   // every build by scripts/generate-version.js, no git dependency.
   useEffect(() => {
-    fetch('/version.json')
+    // no-store: /version.json is the build-freshness signal, so it must never
+    // be served from HTTP/bfcache — a stale copy would mislabel the running
+    // build. Non-blocking: any failure is swallowed below, behaviour unchanged.
+    fetch('/version.json', { cache: 'no-store' })
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
         if (data?.version && data?.builtAt) {
@@ -865,11 +877,13 @@ export default function App() {
 
       {/* ── Landing page (approved LandPage.png redesign — owns its own nav) ── */}
       {page === 'landing' && (
-        <LandingPage
-          lang={lang}
-          setLang={setLang}
-          onSecureLogin={() => goTo('login')}
-        />
+        <Suspense fallback={pageLoadingFallback}>
+          <LandingPage
+            lang={lang}
+            setLang={setLang}
+            onSecureLogin={() => goTo('login')}
+          />
+        </Suspense>
       )}
 
       {/* ── Error banner ── */}
@@ -883,27 +897,31 @@ export default function App() {
       {/* ── Auth pages (no navbar) ── */}
       {page === 'login' && (
         <main className="main-content">
-          <LoginPage
-            lang={lang}
-            onSuccess={handleLoginSuccess}
-          />
+          <Suspense fallback={pageLoadingFallback}>
+            <LoginPage
+              lang={lang}
+              onSuccess={handleLoginSuccess}
+            />
+          </Suspense>
         </main>
       )}
 
       {/* ── Demo registration (no navbar) ── */}
       {page === 'farmer-register' && (
         <main className="main-content">
-          <FarmerRegister
-            lang={lang}
-            onComplete={() => goTo('farmer-dashboard')}
-          />
+          <Suspense fallback={pageLoadingFallback}>
+            <FarmerRegister
+              lang={lang}
+              onComplete={() => goTo('farmer-dashboard')}
+            />
+          </Suspense>
         </main>
       )}
 
       {/* ── App pages ── */}
       {page !== 'landing' && page !== 'login' && page !== 'farmer-register' && (() => {
         const appPages = (
-          <>
+          <Suspense fallback={pageLoadingFallback}>
 
           {page === 'farmer-dashboard' && (
             <FarmerDashboard
@@ -1137,7 +1155,7 @@ export default function App() {
               currentUser={isDemo ? null : currentProfile}
             />
           )}
-          </>
+          </Suspense>
         )
 
         // Identical routed content in both frames — only the surrounding chrome
