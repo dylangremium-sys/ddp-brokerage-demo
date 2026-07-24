@@ -1,7 +1,8 @@
 # PR: Watchtower ingestion & provenance foundation (Phases A–C)
 
 **Branch:** `feature/watchtower-ingestion-phase-a-c` → `main`
-**Commit:** `5c5e32f0a67e57eb2790a6767e262d8ee05b0b05`
+**Code commit:** `5c5e32f0a67e57eb2790a6767e262d8ee05b0b05` (later branch commits
+are release docs only — no SQL/code change).
 
 ---
 
