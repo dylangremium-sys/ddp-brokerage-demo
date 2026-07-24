@@ -31,6 +31,8 @@
 // value, and never contacts Supabase — a build must not be able to leak config,
 // and a network probe would make builds fail for unrelated reasons.
 
+import { fileURLToPath } from 'node:url'
+
 /** Env var names the application requires in a hosted environment. */
 export const REQUIRED_VARS = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']
 
@@ -109,7 +111,12 @@ export function evaluateHostedSupabaseConfig(env) {
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 // Guarded so importing this module in tests never exits the test runner.
-const invokedDirectly = process.argv[1] && import.meta.url === `file://${process.argv[1]}`
+// Compare decoded filesystem paths: process.argv[1] is already a decoded path,
+// while import.meta.url is a percent-encoded file: URL, so hand-building
+// `file://${process.argv[1]}` mismatches whenever the path contains characters
+// that get encoded (e.g. a space -> %20). fileURLToPath decodes import.meta.url
+// to the same form as process.argv[1].
+const invokedDirectly = process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url)
 
 if (invokedDirectly) {
   const result = evaluateHostedSupabaseConfig(process.env)

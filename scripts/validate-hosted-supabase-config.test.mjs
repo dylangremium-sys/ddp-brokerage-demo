@@ -9,6 +9,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 import {
   ENFORCE_FLAG,
@@ -19,7 +20,9 @@ import {
   missingVars,
 } from './validate-hosted-supabase-config.mjs'
 
-const ROOT = new URL('..', import.meta.url).pathname
+// fileURLToPath decodes percent-encoding (a space in the path becomes %20 in a
+// file: URL) so fs calls work on any checkout whose path contains a space.
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SCRIPT = join(ROOT, 'scripts/validate-hosted-supabase-config.mjs')
 const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 
