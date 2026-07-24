@@ -1,5 +1,12 @@
-import type { RegulatorySource } from '../types'
+import type {
+  RegulatorySource,
+  RegulatorySourceAuthorityType,
+  RegulatorySourceCategory,
+  RegulatorySourceMonitoringMethod,
+  RegulatorySourceTier,
+} from '../types'
 import * as repo from './complianceRepository'
+import { validateSourceGovernance } from './complianceSourceGovernance'
 
 // ─── Compliance Source Registry — service layer ─────────────────────────────
 //
@@ -182,7 +189,57 @@ export async function getRegulatorySource(id: string): Promise<RegulatorySource 
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 
-export interface CreateRegulatorySourceInput {
+// Governance fields a caller may supply on create/update. All optional: when
+// omitted the database applies the conservative Tier-3 signal default. When any
+// ONE is supplied, the FULL set must be supplied and valid — a half-classified
+// source is refused rather than silently defaulted, so a mistaken partial edit
+// cannot leave a source in an ambiguous authority state.
+export interface SourceGovernanceInput {
+  tier?: RegulatorySourceTier
+  authorityType?: RegulatorySourceAuthorityType
+  category?: RegulatorySourceCategory
+  monitoringMethod?: RegulatorySourceMonitoringMethod
+  priority?: number
+}
+
+function hasAnyGovernanceField(g: SourceGovernanceInput): boolean {
+  return (
+    g.tier !== undefined ||
+    g.authorityType !== undefined ||
+    g.category !== undefined ||
+    g.monitoringMethod !== undefined ||
+    g.priority !== undefined
+  )
+}
+
+/**
+ * Validates governance fields when the caller supplied any. Returns the errors
+ * (empty when valid, or when the caller supplied none and is happy to accept the
+ * DB default). Mirrors the DB CHECK constraints so the UI fails closed early.
+ */
+export function validateGovernanceInputForWrite(g: SourceGovernanceInput): string[] {
+  if (!hasAnyGovernanceField(g)) return []
+  const result = validateSourceGovernance({
+    tier: g.tier,
+    authorityType: g.authorityType,
+    category: g.category,
+    monitoringMethod: g.monitoringMethod,
+    priority: g.priority,
+  })
+  return result.errors
+}
+
+function governancePayload(g: SourceGovernanceInput): SourceGovernanceInput {
+  return {
+    ...(g.tier !== undefined ? { tier: g.tier } : {}),
+    ...(g.authorityType !== undefined ? { authorityType: g.authorityType } : {}),
+    ...(g.category !== undefined ? { category: g.category } : {}),
+    ...(g.monitoringMethod !== undefined ? { monitoringMethod: g.monitoringMethod } : {}),
+    ...(g.priority !== undefined ? { priority: g.priority } : {}),
+  }
+}
+
+export interface CreateRegulatorySourceInput extends SourceGovernanceInput {
   name: string
   jurisdiction: string
   sourceType: string
@@ -203,10 +260,17 @@ export async function createRegulatorySource(input: CreateRegulatorySourceInput)
   if (decision.action === 'reject') {
     throw new Error(`Cannot create regulatory source: ${decision.errors.join('; ')}`)
   }
-  return repo.insertRegulatorySource(decision.payload as RegulatorySourceCandidate)
+  const governanceErrors = validateGovernanceInputForWrite(input)
+  if (governanceErrors.length > 0) {
+    throw new Error(`Cannot create regulatory source: ${governanceErrors.join('; ')}`)
+  }
+  return repo.insertRegulatorySource({
+    ...(decision.payload as RegulatorySourceCandidate),
+    ...governancePayload(input),
+  })
 }
 
-export interface UpdateRegulatorySourceInput {
+export interface UpdateRegulatorySourceInput extends SourceGovernanceInput {
   name?: string
   jurisdiction?: string
   sourceType?: string
@@ -232,7 +296,27 @@ export async function updateRegulatorySource(id: string, patch: UpdateRegulatory
   if (decision.action === 'reject') {
     throw new Error(`Cannot update regulatory source: ${decision.errors.join('; ')}`)
   }
-  return repo.updateRegulatorySource(id, decision.payload as RegulatorySourceCandidate)
+  // A governance edit must classify the source completely against its resulting
+  // state — validate the merge of the current classification and the patch, so
+  // e.g. re-tiering a source to 1 while it is still an aggregator is refused.
+  const governancePatch: SourceGovernanceInput = governancePayload(patch)
+  if (hasAnyGovernanceField(governancePatch)) {
+    const merged: SourceGovernanceInput = {
+      tier: patch.tier ?? current.tier ?? undefined,
+      authorityType: patch.authorityType ?? current.authorityType ?? undefined,
+      category: patch.category ?? current.category ?? undefined,
+      monitoringMethod: patch.monitoringMethod ?? current.monitoringMethod ?? undefined,
+      priority: patch.priority ?? current.priority ?? undefined,
+    }
+    const governanceErrors = validateGovernanceInputForWrite(merged)
+    if (governanceErrors.length > 0) {
+      throw new Error(`Cannot update regulatory source: ${governanceErrors.join('; ')}`)
+    }
+  }
+  return repo.updateRegulatorySource(id, {
+    ...(decision.payload as RegulatorySourceCandidate),
+    ...governancePatch,
+  })
 }
 
 export async function deactivateRegulatorySource(id: string): Promise<RegulatorySource> {

@@ -62,6 +62,14 @@ import {
 import { createComplianceAiSummaryHttpClient } from '../../lib/complianceAiSummaryClient'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getSession } from '../../services/auth'
+import {
+  SUPPORTED_SOURCE_TIERS,
+  SUPPORTED_AUTHORITY_TYPES,
+  SUPPORTED_SOURCE_CATEGORIES,
+  SUPPORTED_MONITORING_METHODS,
+  SOURCE_TIER_LABELS,
+} from '../../lib/complianceSourceGovernance'
+import { WatchtowerIngestionPanel } from '../../components/admin/WatchtowerIngestionPanel'
 
 // Phase 2I — manual AI draft-summary integration, wired to the secure HTTP
 // client adapter. This component holds NO vendor SDK, endpoint, or credential:
@@ -84,7 +92,7 @@ interface Props {
   currentUser?: UserProfile | null
 }
 
-type WatchtowerTab = 'monitor' | 'monitoring-queue' | 'sources' | 'queue' | 'rules' | 'readiness' | 'alerts' | 'audit'
+type WatchtowerTab = 'monitor' | 'monitoring-queue' | 'sources' | 'ingestion' | 'queue' | 'rules' | 'readiness' | 'alerts' | 'audit'
 
 const STORAGE = {
   legalUpdates: 'ddp_compliance_legal_updates',
@@ -100,6 +108,7 @@ const TABS: Array<{ id: WatchtowerTab; label: string }> = [
   { id: 'monitor', label: 'Legal Change Monitor' },
   { id: 'monitoring-queue', label: 'Monitoring Queue' },
   { id: 'sources', label: 'Source Registry' },
+  { id: 'ingestion', label: 'Ingestion Runs' },
   { id: 'queue', label: 'Review Queue' },
   { id: 'rules', label: 'Compliance Rules' },
   { id: 'readiness', label: 'Export Readiness' },
@@ -254,6 +263,13 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     jurisdiction: '',
     sourceType: SUPPORTED_SOURCE_TYPES[0] as string,
     url: '',
+    // Governance (Phase B). Defaults mirror the conservative DB default
+    // (Tier-3 signal): a source is never authoritative unless promoted here.
+    tier: 3 as (typeof SUPPORTED_SOURCE_TIERS)[number],
+    authorityType: 'aggregator' as (typeof SUPPORTED_AUTHORITY_TYPES)[number],
+    category: 'general' as (typeof SUPPORTED_SOURCE_CATEGORIES)[number],
+    monitoringMethod: 'manual' as (typeof SUPPORTED_MONITORING_METHODS)[number],
+    priority: 100,
   })
   const [editingSourceId, setEditingSourceId] = useState<string | null>(null)
 
@@ -460,13 +476,27 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   }
 
   function resetSourceForm(): void {
-    setSourceForm({ name: '', jurisdiction: '', sourceType: SUPPORTED_SOURCE_TYPES[0], url: '' })
+    setSourceForm({
+      name: '', jurisdiction: '', sourceType: SUPPORTED_SOURCE_TYPES[0], url: '',
+      tier: 3, authorityType: 'aggregator', category: 'general', monitoringMethod: 'manual', priority: 100,
+    })
     setEditingSourceId(null)
   }
 
   function startEditSource(source: RegulatorySource): void {
     setEditingSourceId(source.id)
-    setSourceForm({ name: source.name, jurisdiction: source.jurisdiction, sourceType: source.sourceType, url: source.url })
+    setSourceForm({
+      name: source.name,
+      jurisdiction: source.jurisdiction,
+      sourceType: source.sourceType,
+      url: source.url,
+      // Fall back to the conservative Tier-3 signal shape for a pre-governance row.
+      tier: source.tier ?? 3,
+      authorityType: source.authorityType ?? 'aggregator',
+      category: source.category ?? 'general',
+      monitoringMethod: source.monitoringMethod ?? 'manual',
+      priority: source.priority ?? 100,
+    })
     setActionMessage(null)
   }
 
@@ -494,18 +524,27 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       }
       setBusy(true)
       try {
+        const governance = {
+          tier: sourceForm.tier,
+          authorityType: sourceForm.authorityType,
+          category: sourceForm.category,
+          monitoringMethod: sourceForm.monitoringMethod,
+          priority: sourceForm.priority,
+        }
         const saved = isEditing
           ? await sourceRegistry.updateRegulatorySource(editingSourceId as string, {
               name: sourceForm.name,
               jurisdiction: sourceForm.jurisdiction,
               sourceType: sourceForm.sourceType,
               url: sourceForm.url,
+              ...governance,
             })
           : await sourceRegistry.createRegulatorySource({
               name: sourceForm.name,
               jurisdiction: sourceForm.jurisdiction,
               sourceType: sourceForm.sourceType,
               url: sourceForm.url,
+              ...governance,
             })
         setSources(prev => (isEditing ? prev.map(s => (s.id === saved.id ? saved : s)) : [saved, ...prev]))
         setActionMessage({ type: 'success', text: `Regulatory source ${isEditing ? 'updated' : 'added'}.` })
@@ -1757,6 +1796,14 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
         </div>
       )}
 
+      {tab === 'ingestion' && (
+        <WatchtowerIngestionPanel
+          sources={sources}
+          isSupabaseConfigured={repo.isSupabaseConfigured}
+          isAdmin={isSupabaseAdmin}
+        />
+      )}
+
       {tab === 'sources' && (
         <>
           <div className="card" style={{ padding: 20, marginTop: 16 }}>
@@ -1785,7 +1832,42 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                 <span>Official URL</span>
                 <input value={sourceForm.url} onChange={e => setSourceForm({ ...sourceForm, url: e.target.value })} placeholder="https://…" />
               </label>
+              <label className="field">
+                <span>Authority tier</span>
+                <select value={sourceForm.tier} onChange={e => setSourceForm({ ...sourceForm, tier: Number(e.target.value) as (typeof SUPPORTED_SOURCE_TIERS)[number] })}>
+                  {SUPPORTED_SOURCE_TIERS.map(t => <option key={t} value={t}>{SOURCE_TIER_LABELS[t]}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Authority type</span>
+                <select value={sourceForm.authorityType} onChange={e => setSourceForm({ ...sourceForm, authorityType: e.target.value as (typeof SUPPORTED_AUTHORITY_TYPES)[number] })}>
+                  {SUPPORTED_AUTHORITY_TYPES.map(a => <option key={a} value={a}>{statusText(a)}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Category</span>
+                <select value={sourceForm.category} onChange={e => setSourceForm({ ...sourceForm, category: e.target.value as (typeof SUPPORTED_SOURCE_CATEGORIES)[number] })}>
+                  {SUPPORTED_SOURCE_CATEGORIES.map(c => <option key={c} value={c}>{statusText(c)}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Monitoring method</span>
+                <select value={sourceForm.monitoringMethod} onChange={e => setSourceForm({ ...sourceForm, monitoringMethod: e.target.value as (typeof SUPPORTED_MONITORING_METHODS)[number] })}>
+                  {SUPPORTED_MONITORING_METHODS.map(m => <option key={m} value={m}>{statusText(m)}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Priority (1 urgent – 100)</span>
+                <input
+                  type="number" min={1} max={100} value={sourceForm.priority}
+                  onChange={e => setSourceForm({ ...sourceForm, priority: Math.max(1, Math.min(100, Number(e.target.value) || 100)) })}
+                />
+              </label>
             </div>
+            <p className="td-muted" style={{ marginTop: 8, fontSize: 12 }}>
+              Tier 3 (intelligence signal) sources can raise an item for human review but never act as a
+              direct authority for an enforced rule — this is enforced in the database, not just here.
+            </p>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button className="btn btn-primary" disabled={busy} onClick={() => { void submitRegulatorySource() }}>
                 {busy ? 'Saving…' : editingSourceId ? 'Save Changes' : 'Add Source'}
@@ -1798,7 +1880,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
           <div className="card table-card" style={{ marginTop: 16 }}>
             <div className="table-scroll">
               <table className="inv-table inv-table--cards">
-                <thead><tr><th>Name</th><th>Jurisdiction</th><th>Type</th><th>Status</th><th>Last checked</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Name</th><th>Jurisdiction</th><th>Type</th><th>Tier</th><th>Status</th><th>Last checked</th><th>Actions</th></tr></thead>
                 <tbody>
                   {sources.map(source => {
                     const status = deriveRegulatorySourceStatus(source)
@@ -1847,6 +1929,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                         </td>
                         <td>{source.jurisdiction}</td>
                         <td>{statusText(source.sourceType)}</td>
+                        <td>{source.tier ? `Tier ${source.tier}` : '—'}</td>
                         <td><span className={`status-pill ${SOURCE_STATUS_CLASS[status]}`}>{status}</span></td>
                         <td>{source.lastCheckedAt || 'Never checked'}</td>
                         <td>
@@ -1868,7 +1951,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                       </tr>
                     )
                   })}
-                  {sources.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 28 }}>No regulatory sources registered yet.</td></tr>}
+                  {sources.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 28 }}>No regulatory sources registered yet.</td></tr>}
                 </tbody>
               </table>
             </div>
