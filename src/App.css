@@ -4414,8 +4414,14 @@ a.ln-channel-value:hover { color: #FFFFFF; }
    and leave those screens navy. .ddp-wrap is admin-only — .page-wrap is shared
    with the farmer and public screens, so it cannot carry this.
 
+   .auth-page carries the same remap so the sign-in screen is continuous with the
+   landing flow instead of painting navy from the legacy tokens. It is added by
+   class, not by widening the scope to .page-wrap, so no public or farmer surface
+   is reached — .auth-page is used only by the login screen.
+
    Appearance only: no page's markup, routing, data or behaviour is touched. */
-.ddp-wrap {
+.ddp-wrap,
+.auth-page {
   --bg:            var(--ddp-canvas);
   --bg-card:       var(--ddp-paper);
   --bg-elevated:   var(--ddp-paper-muted);

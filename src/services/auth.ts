@@ -77,11 +77,18 @@ export async function signOut(): Promise<void> {
 
 export async function getCurrentProfile(): Promise<UserProfile | null> {
   if (!supabase) return null
-  const { data: { user } } = await supabase.auth.getUser()
+  // getSession() reads the session that signInWithPassword persisted synchronously
+  // before it resolved — no network round-trip, and no race in which a token that
+  // was just issued is not yet visible to /auth/v1/user (that race made the first
+  // post-login profile read return null and forced a manual refresh).
+  // Authorization is unchanged: the profiles row below is still read under RLS,
+  // which validates the JWT server-side. This only removes a redundant hop.
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user
   if (!user) return null
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id,email,display_name,role')
     .eq('id', user.id)
     .single()
   if (error || !data) return null
