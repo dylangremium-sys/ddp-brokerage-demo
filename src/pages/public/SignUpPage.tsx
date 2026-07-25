@@ -9,6 +9,28 @@ interface Props {
   onSignIn: () => void
 }
 
+interface FieldProps {
+  label: string
+  type: 'text' | 'email' | 'password'
+  value: string
+  onChange: (next: string) => void
+  required?: boolean
+  minLength?: number
+  autoComplete?: string
+  placeholder?: string
+  marginTop?: boolean
+}
+
+/** One labelled input. Extracted so the form's JSX tree stays shallow. */
+function Field({ label, type, value, onChange, marginTop, ...rest }: FieldProps) {
+  return (
+    <label className="field" style={marginTop ? { marginTop: 14 } : undefined}>
+      <span>{label}</span>
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} {...rest} />
+    </label>
+  )
+}
+
 /**
  * Public self-registration.
  *
@@ -19,7 +41,7 @@ interface Props {
  * The success state says so explicitly rather than implying access was granted.
  */
 export default function SignUpPage({ lang = 'en', onSignIn }: Props) {
-  const t = T[lang]
+  const copy = T[lang]
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -47,14 +69,14 @@ export default function SignUpPage({ lang = 'en', onSignIn }: Props) {
         <div className="card form-card auth-card">
           <div className="auth-card-brand">
             <div className="page-eyebrow">DDP Brokerage</div>
-            <h1 className="auth-card-title">{t.signupDoneHeading}</h1>
+            <h1 className="auth-card-title">{copy.signupDoneHeading}</h1>
           </div>
           <div className="alert alert-info" style={{ marginTop: 0 }}>
-            <strong>{t.signupPendingTitle}</strong>
-            <p style={{ margin: '6px 0 0' }}>{t.signupPendingDetail}</p>
+            <strong>{copy.signupPendingTitle}</strong>
+            <p style={{ margin: '6px 0 0' }}>{copy.signupPendingDetail}</p>
           </div>
           {done.needsEmailConfirmation && (
-            <p className="page-desc" style={{ marginTop: 14 }}>{t.signupConfirmEmail}</p>
+            <p className="page-desc" style={{ marginTop: 14 }}>{copy.signupConfirmEmail}</p>
           )}
           <button
             type="button"
@@ -62,7 +84,7 @@ export default function SignUpPage({ lang = 'en', onSignIn }: Props) {
             style={{ width: '100%', marginTop: 22 }}
             onClick={onSignIn}
           >
-            {t.loginBtn}
+            {copy.loginBtn}
           </button>
         </div>
       </div>
@@ -74,8 +96,8 @@ export default function SignUpPage({ lang = 'en', onSignIn }: Props) {
       <div className="card form-card auth-card">
         <div className="auth-card-brand">
           <div className="page-eyebrow">DDP Brokerage</div>
-          <h1 className="auth-card-title">{t.signupHeading}</h1>
-          <p className="page-desc">{t.signupDesc}</p>
+          <h1 className="auth-card-title">{copy.signupHeading}</h1>
+          <p className="page-desc">{copy.signupDesc}</p>
         </div>
 
         {error && (
@@ -84,39 +106,35 @@ export default function SignUpPage({ lang = 'en', onSignIn }: Props) {
           </div>
         )}
         <form onSubmit={handleSubmit}>
-          <label className="field">
-            <span>{t.signupNameLabel}</span>
-            <input
-              type="text"
-              value={displayName}
-              onChange={e => setDisplayName(e.target.value)}
-              autoComplete="name"
-            />
-          </label>
-          <label className="field" style={{ marginTop: 14 }}>
-            <span>{t.loginEmailLabel}</span>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-              placeholder="you@example.com"
-            />
-          </label>
-          <label className="field" style={{ marginTop: 14 }}>
-            <span>{t.loginPasswordLabel}</span>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              minLength={8}
-              autoComplete="new-password"
-            />
-          </label>
+          <Field
+            label={copy.signupNameLabel}
+            type="text"
+            value={displayName}
+            onChange={setDisplayName}
+            autoComplete="name"
+          />
+          <Field
+            label={copy.loginEmailLabel}
+            type="email"
+            value={email}
+            onChange={setEmail}
+            required
+            autoComplete="email"
+            placeholder="you@example.com"
+            marginTop
+          />
+          <Field
+            label={copy.loginPasswordLabel}
+            type="password"
+            value={password}
+            onChange={setPassword}
+            required
+            minLength={8}
+            autoComplete="new-password"
+            marginTop
+          />
           <p className="page-desc" style={{ marginTop: 14, fontSize: 12.5 }}>
-            {t.signupApprovalNote}
+            {copy.signupApprovalNote}
           </p>
           <button
             type="submit"
@@ -124,14 +142,14 @@ export default function SignUpPage({ lang = 'en', onSignIn }: Props) {
             style={{ width: '100%', marginTop: 18 }}
             disabled={loading}
           >
-            {loading ? t.signingUp : t.signupBtn}
+            {loading ? copy.signingUp : copy.signupBtn}
           </button>
         </form>
 
         <p className="page-desc" style={{ marginTop: 18 }}>
-          {t.signupSwitchPrompt}{' '}
+          {copy.signupSwitchPrompt}{' '}
           <button type="button" className="btn-link" onClick={onSignIn}>
-            {t.signupSwitchLink}
+            {copy.signupSwitchLink}
           </button>
         </p>
       </div>
