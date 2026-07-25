@@ -38,9 +38,8 @@ export function findMutableSearchPathDefiners(files, { exemptionToken } = {}) {
     if (exemptionToken && body.includes(exemptionToken)) continue
     const sql = stripSqlComments(body)
     FUNCTION_HEADER_RE.lastIndex = 0
-    let m
-    while ((m = FUNCTION_HEADER_RE.exec(sql)) !== null) {
-      const header = m[1]
+    for (let match = FUNCTION_HEADER_RE.exec(sql); match !== null; match = FUNCTION_HEADER_RE.exec(sql)) {
+      const header = match[1]
       if (!/security\s+definer/i.test(header)) continue
       if (/set\s+search_path/i.test(header)) continue
       const fn = (header.match(/^\s*(?:public\.)?([a-z0-9_]+)\s*\(/i) || [])[1] || '<unnamed>'

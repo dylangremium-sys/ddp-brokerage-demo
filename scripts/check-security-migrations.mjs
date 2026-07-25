@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { findUnexpectedGuardRedefinitions, findUnguardedHandleNewUserDowngrades } from './security-migrations/guardRedefinition.mjs'
 import { findMutableSearchPathDefiners } from './security-migrations/definerSearchPath.mjs'
 import { hasExecutablePendingGuard, findAnonAuditLogWriteGrants, hasRlsFullRollbackOptIn, findUnguardedTargetedRlsDisables, findUnguardedDestructiveRollbacks } from './security-migrations/rollbackSafety.mjs'
-import { findHardeningProblems as mig25Hardening, findVerifyProblems as mig25Verify, findRollbackProblems as mig25Rollback } from './security-migrations/auditLogActorMigration.mjs'
+import { findHardeningProblems as mig27Hardening, findVerifyProblems as mig27Verify, findRollbackProblems as mig27Rollback } from './security-migrations/auditLogActorMigration.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -536,7 +536,7 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
   )
 }
 
-// Check 14 — Migration 25 compliance_audit_log actor is server-authoritative
+// Check 14 — Migration 27 compliance_audit_log actor is server-authoritative
 // (DDP audit client-authz #3). The audit log must stamp the actor from auth.uid(),
 // never from a client-supplied value. Fails if any companion is missing; the
 // trigger does not force NEW.actor_id := auth.uid(); it is not BEFORE INSERT on
@@ -546,25 +546,25 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
 // the ROLLBACK does not remove exactly the trigger + function.
 {
   const AL = {
-    hardening: '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql',
-    verify: '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_VERIFY.sql',
-    rollback: '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_ROLLBACK.sql',
+    hardening: '27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql',
+    verify: '27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_VERIFY.sql',
+    rollback: '27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_ROLLBACK.sql',
   }
-  const label = 'Migration 25 audit-log actor authoritative'
+  const label = 'Migration 27 audit-log actor authoritative'
   const missing = ['hardening', 'verify', 'rollback'].filter((r) => !existsSync(join(ROOT, AL[r])))
   if (missing.length) {
     fail(`${label}: companion completeness`, `missing file(s): ${missing.map((r) => AL[r]).join(', ')}`)
   } else {
     pass(`${label}: companion completeness (HARDENING + VERIFY + ROLLBACK present)`)
 
-    const p = mig25Hardening(read(AL.hardening))
-    check(`${label}: HARDENING forces auth.uid(), BEFORE INSERT, pinned search_path, revoked from clients, narrow scope`, p.length === 0, p.join(' | '))
+    const hardeningProblems = mig27Hardening(read(AL.hardening))
+    check(`${label}: HARDENING forces auth.uid(), BEFORE INSERT, pinned search_path, revoked from clients, narrow scope`, hardeningProblems.length === 0, hardeningProblems.join(' | '))
 
-    const vp = mig25Verify(read(AL.verify))
-    check(`${label}: VERIFY is behavioural (forged-actor override), rollback-safe (no COMMIT), non-vacuous`, vp.length === 0, vp.join(' | '))
+    const verifyProblems = mig27Verify(read(AL.verify))
+    check(`${label}: VERIFY is behavioural (forged-actor override), rollback-safe (no COMMIT), non-vacuous`, verifyProblems.length === 0, verifyProblems.join(' | '))
 
-    const rp = mig25Rollback(read(AL.rollback))
-    check(`${label}: ROLLBACK removes exactly the trigger + function (no overreach)`, rp.length === 0, rp.join(' | '))
+    const rollbackProblems = mig27Rollback(read(AL.rollback))
+    check(`${label}: ROLLBACK removes exactly the trigger + function (no overreach)`, rollbackProblems.length === 0, rollbackProblems.join(' | '))
   }
 }
 

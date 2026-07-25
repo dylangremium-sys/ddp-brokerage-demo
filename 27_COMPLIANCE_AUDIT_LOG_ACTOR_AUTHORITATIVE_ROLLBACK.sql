@@ -1,7 +1,7 @@
 -- =============================================================================
--- 25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_ROLLBACK.sql
+-- 27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_ROLLBACK.sql
 -- =============================================================================
--- Reverses ONLY migration 25. It removes the BEFORE INSERT actor-stamp trigger
+-- Reverses ONLY migration 27. It removes the BEFORE INSERT actor-stamp trigger
 -- and its function, restoring the pre-migration behaviour (client-supplied
 -- actor_id). It touches no other object: the append-only trigger, the RLS
 -- policies and the table itself all belong to migration 9 and are untouched.

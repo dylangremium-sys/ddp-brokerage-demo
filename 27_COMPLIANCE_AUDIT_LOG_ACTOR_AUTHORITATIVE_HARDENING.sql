@@ -1,5 +1,5 @@
 -- =============================================================================
--- 25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql
+-- 27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql
 -- =============================================================================
 -- DDP audit finding (client-authz #3): the compliance audit log accepts a
 -- CLIENT-SUPPLIED actor_id.

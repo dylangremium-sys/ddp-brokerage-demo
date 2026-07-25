@@ -1,7 +1,7 @@
 -- =============================================================================
--- 25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_VERIFY.sql
+-- 27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_VERIFY.sql
 -- =============================================================================
--- Verification for 25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql.
+-- Verification for 27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql.
 --
 -- SECTION A (object state) is read-only and safe to run anywhere, including
 -- production: it only inspects catalogs and RAISEs if the guard is wrong.

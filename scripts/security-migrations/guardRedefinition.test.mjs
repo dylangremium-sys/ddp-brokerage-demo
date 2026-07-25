@@ -41,9 +41,9 @@ describe('findUnexpectedGuardRedefinitions', () => {
   it('FLAGS a non-canonical file that redefines the guard WITHOUT the exemption token (the downgrade the audit exposed)', () => {
     const files = [
       { name: CANONICAL, body: 'CREATE OR REPLACE FUNCTION public.fn_protect_farm_admin_fields() -- hardened' },
-      { name: '25_SNEAKY_DOWNGRADE.sql', body: "CREATE OR REPLACE FUNCTION public.fn_protect_farm_admin_fields() ... role = 'admin' ... BEFORE UPDATE" },
+      { name: '99_SYNTHETIC_SNEAKY_DOWNGRADE.sql', body: "CREATE OR REPLACE FUNCTION public.fn_protect_farm_admin_fields() ... role = 'admin' ... BEFORE UPDATE" },
     ]
-    expect(findUnexpectedGuardRedefinitions(files, opts)).toEqual(['25_SNEAKY_DOWNGRADE.sql'])
+    expect(findUnexpectedGuardRedefinitions(files, opts)).toEqual(['99_SYNTHETIC_SNEAKY_DOWNGRADE.sql'])
   })
 
   it('does not flag files that only reference the guard', () => {
@@ -67,32 +67,32 @@ describe('check-security-migrations gate (integration, real corpus)', () => {
 
 describe('findUnguardedHandleNewUserDowngrades (DDP audit A2)', () => {
   const ROLLBACK_21 = '21_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql'
-  const o = { allowedRollbackFile: ROLLBACK_21 }
-  const GUARD = `DO $g$ BEGIN IF EXISTS (SELECT 1 FROM pg_proc p WHERE p.proname = 'handle_new_user' AND p.prosrc LIKE '%''pending''%') THEN RAISE EXCEPTION 'refused'; END IF; END $g$;`
+  const downgradeOpts = { allowedRollbackFile: ROLLBACK_21 }
+  const GUARD = "DO $g$ BEGIN IF EXISTS (SELECT 1 FROM pg_proc p WHERE p.proname = 'handle_new_user' AND p.prosrc LIKE '%''pending''%') THEN RAISE EXCEPTION 'refused'; END IF; END $g$;"
 
   it('FLAGS a farmer-minting definition with no downgrade guard', () => {
-    const files = [{ name: 'BASELINE.sql', body: `CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.profiles(id, role) VALUES (NEW.id, 'farmer'); RETURN NEW; END $$;` }]
-    expect(findUnguardedHandleNewUserDowngrades(files, o)).toEqual(['BASELINE.sql'])
+    const files = [{ name: 'BASELINE.sql', body: "CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.profiles(id, role) VALUES (NEW.id, 'farmer'); RETURN NEW; END $$;" }]
+    expect(findUnguardedHandleNewUserDowngrades(files, downgradeOpts)).toEqual(['BASELINE.sql'])
   })
 
   it('does NOT flag the same definition once it carries the downgrade guard', () => {
     const files = [{ name: 'BASELINE.sql', body: `${GUARD}\nCREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.profiles(id, role) VALUES (NEW.id, 'farmer'); RETURN NEW; END $$;` }]
-    expect(findUnguardedHandleNewUserDowngrades(files, o)).toEqual([])
+    expect(findUnguardedHandleNewUserDowngrades(files, downgradeOpts)).toEqual([])
   })
 
   it('does NOT flag the hardened pending-minting definition', () => {
-    const files = [{ name: '21_HARDENING.sql', body: `CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.profiles(id, role) VALUES (NEW.id, 'pending'); RETURN NEW; END $$;\nALTER TABLE public.profiles ADD CONSTRAINT c CHECK (role IN ('ddp_admin','farmer','pending'));` }]
-    expect(findUnguardedHandleNewUserDowngrades(files, o)).toEqual([])
+    const files = [{ name: '21_HARDENING.sql', body: "CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.profiles(id, role) VALUES (NEW.id, 'pending'); RETURN NEW; END $$;\nALTER TABLE public.profiles ADD CONSTRAINT c CHECK (role IN ('ddp_admin','farmer','pending'));" }]
+    expect(findUnguardedHandleNewUserDowngrades(files, downgradeOpts)).toEqual([])
   })
 
   it('exempts migration 21 own rollback (restoring farmer is its documented purpose)', () => {
-    const files = [{ name: ROLLBACK_21, body: `CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.profiles(id, role) VALUES (NEW.id, 'farmer'); RETURN NEW; END $$;` }]
-    expect(findUnguardedHandleNewUserDowngrades(files, o)).toEqual([])
+    const files = [{ name: ROLLBACK_21, body: "CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.profiles(id, role) VALUES (NEW.id, 'farmer'); RETURN NEW; END $$;" }]
+    expect(findUnguardedHandleNewUserDowngrades(files, downgradeOpts)).toEqual([])
   })
 
   it('the real corpus has no unguarded downgrade path', () => {
     const files = readdirSync(REPO_ROOT).filter((f) => f.endsWith('.sql'))
       .map((f) => ({ name: f, body: readFileSync(join(REPO_ROOT, f), 'utf8') }))
-    expect(findUnguardedHandleNewUserDowngrades(files, o)).toEqual([])
+    expect(findUnguardedHandleNewUserDowngrades(files, downgradeOpts)).toEqual([])
   })
 })

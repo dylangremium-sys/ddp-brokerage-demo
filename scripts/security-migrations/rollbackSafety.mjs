@@ -65,11 +65,10 @@ export function findUnguardedTargetedRlsDisables(sql) {
 
   const unguarded = []
   let lastIndex = 0
-  let m
   DISABLE.lastIndex = 0
-  while ((m = DISABLE.exec(targeted)) !== null) {
-    const preceding = targeted.slice(lastIndex, m.index)
-    if (!OPT_IN.test(preceding)) unguarded.push(m[1])
+  for (let match = DISABLE.exec(targeted); match !== null; match = DISABLE.exec(targeted)) {
+    const preceding = targeted.slice(lastIndex, match.index)
+    if (!OPT_IN.test(preceding)) unguarded.push(match[1])
     lastIndex = DISABLE.lastIndex
   }
   return unguarded
@@ -112,10 +111,9 @@ export function findAnonAuditLogWriteGrants(files) {
   for (const { name, body } of files) {
     const code = stripSqlComments(body).replace(/\s+/g, ' ')
     AUDIT_GRANT_RE.lastIndex = 0
-    let m
-    while ((m = AUDIT_GRANT_RE.exec(code)) !== null) {
-      const privileges = m[1].trim()
-      const roles = m[2].split(',').map((r) => r.trim().replace(/^"|"$/g, '').toLowerCase())
+    for (let match = AUDIT_GRANT_RE.exec(code); match !== null; match = AUDIT_GRANT_RE.exec(code)) {
+      const privileges = match[1].trim()
+      const roles = match[2].split(',').map((r) => r.trim().replace(/^"|"$/g, '').toLowerCase())
       if (roles.includes('anon') && WRITE_PRIVS.test(privileges)) {
         offenders.push({ file: name, privileges })
       }
