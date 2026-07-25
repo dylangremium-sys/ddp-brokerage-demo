@@ -73,7 +73,7 @@ jobs:
       - name: Harness real-Postgres self-tests
         env:
           HARNESS_REQUIRE_PG: '1'
-        run: npx vitest run scripts/disposable-pg/cluster.test.mjs scripts/disposable-pg/run-migration-harness.test.mjs
+        run: npx vitest run scripts/disposable-pg/cluster.test.mjs scripts/disposable-pg/run-migration-harness.test.mjs scripts/disposable-pg/migration-numbering.test.mjs
 
       - name: Upload evidence bundle
         if: always()

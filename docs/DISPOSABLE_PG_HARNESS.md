@@ -162,6 +162,47 @@ enables `FORCE ROW LEVEL SECURITY`, and exercises SECURITY DEFINER helper/projec
 behaviour under the shim — the drift-protection anchor for owner decision K-10(e).
 It never introduces FORCE RLS.
 
+## Migration-number collision guard
+
+Root migrations are ordered by a leading integer (`NN_STEM_STAGE.sql`). A
+migration is the SET of files sharing one number and one stem.
+
+The failure this guards against is a **number collision**: two unrelated
+migrations independently claiming the same number on different branches. Each
+branch is internally consistent and individually green, so nothing surfaces
+until both land — at which point apply ordering is undefined and the runtime
+register becomes ambiguous ("is 25 applied?" has two answers).
+
+This is not hypothetical. PR #48 landed `25_WATCHTOWER_INGESTION_PROVENANCE_*`
+on `main` while PR #44 carried `25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_*`.
+Both passed every check. Nothing noticed.
+
+Two enforcement points:
+
+```bash
+# Standalone gate — no PostgreSQL needed, runs on EVERY pull request in
+# Security CI ("Static security & build checks"), before the SQL checks.
+npm run verify:migration-numbers
+```
+
+and a **harness preflight**: `npm run ci:runtime` refuses to certify any
+migration while a collision exists, exiting with the environment code before a
+cluster is started.
+
+Rule (`scripts/disposable-pg/lib/migration-numbering.mjs`): group numbered root
+`.sql` files by number; within a group, strip one recognised trailing stage
+token (`HARDENING`, `ROLLBACK`, `VERIFY`, `STORAGE`, `MVP`) to obtain the stem.
+More than one distinct stem at a number is a collision. Files alone at a number
+never collide, so the stage list only has to cover numbers carrying several
+files. Unnumbered schema files (`AUTH_RLS_SCHEMA.sql`, `SUPABASE_SCHEMA.sql`,
+`FARMER_MVP_MIGRATION.sql`) sit outside the ordering contract and are ignored.
+
+Negative coverage in `scripts/disposable-pg/migration-numbering.test.mjs`
+reconstructs the real 25/25 collision and asserts it is caught, and asserts the
+legitimate shapes are NOT flagged: multi-stage sets (26), a four-stage set (24),
+an unsuffixed forward file (23), `MVP`-suffixed forward files (10, 17), and one
+stem legitimately reused at two numbers (19 guard, 20 ACL fix).
+
 ## Recommended follow-ups (known coverage boundaries)
 
 These are deliberate boundaries of the current harness, not defects — recorded so

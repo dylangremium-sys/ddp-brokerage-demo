@@ -18,6 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { assertNoRemoteTargets, assertSocketOnlyConnection, assertListenAddressesEmpty } from './lib/guards.mjs';
 import { loadFixture, FIXTURES_DIR, REPO_ROOT } from './lib/fixtures.mjs';
+import { assertNoNumberCollisions } from './lib/migration-numbering.mjs';
 import { DisposableCluster, DEFAULT_PG_MAJOR } from './lib/cluster.mjs';
 import {
   applyBootstrap,
@@ -338,6 +339,16 @@ async function main() {
   // Startup isolation guard — before ANY SQL, before any cluster.
   try {
     assertNoRemoteTargets(process.env);
+  } catch (err) {
+    process.stderr.write(`${err.message}\n`);
+    process.exit(EXIT.ENV);
+  }
+
+  // Migration-number governance — a collision makes apply ORDER and the runtime
+  // register ambiguous, so refuse to certify any migration until it is resolved.
+  try {
+    assertNoNumberCollisions(REPO_ROOT);
+    process.stdout.write('✓ migration numbering: no collisions\n');
   } catch (err) {
     process.stderr.write(`${err.message}\n`);
     process.exit(EXIT.ENV);
