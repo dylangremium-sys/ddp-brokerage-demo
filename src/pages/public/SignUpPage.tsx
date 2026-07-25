@@ -21,6 +21,32 @@ interface FieldProps {
   marginTop?: boolean
 }
 
+/**
+ * The auth card shell (page wrapper + card + branded header).
+ *
+ * Extracted purely so each caller's JSX tree stays shallow — it emits exactly
+ * the same DOM as the inline markup it replaces, with the same class names in
+ * the same order. No behaviour, state, or conditional depends on it.
+ */
+function AuthCard({ title, desc, children }: {
+  title: string
+  desc?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="page-wrap auth-page">
+      <div className="card form-card auth-card">
+        <div className="auth-card-brand">
+          <div className="page-eyebrow">DDP Brokerage</div>
+          <h1 className="auth-card-title">{title}</h1>
+          {desc && <p className="page-desc">{desc}</p>}
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 /** One labelled input. Extracted so the form's JSX tree stays shallow. */
 function Field({ label, type, value, onChange, marginTop, ...rest }: FieldProps) {
   return (
@@ -65,94 +91,80 @@ export default function SignUpPage({ lang = 'en', onSignIn }: Props) {
 
   if (done) {
     return (
-      <div className="page-wrap auth-page">
-        <div className="card form-card auth-card">
-          <div className="auth-card-brand">
-            <div className="page-eyebrow">DDP Brokerage</div>
-            <h1 className="auth-card-title">{copy.signupDoneHeading}</h1>
-          </div>
-          <div className="alert alert-info" style={{ marginTop: 0 }}>
-            <strong>{copy.signupPendingTitle}</strong>
-            <p style={{ margin: '6px 0 0' }}>{copy.signupPendingDetail}</p>
-          </div>
-          {done.needsEmailConfirmation && (
-            <p className="page-desc" style={{ marginTop: 14 }}>{copy.signupConfirmEmail}</p>
-          )}
-          <button
-            type="button"
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%', marginTop: 22 }}
-            onClick={onSignIn}
-          >
-            {copy.loginBtn}
-          </button>
+      <AuthCard title={copy.signupDoneHeading}>
+        <div className="alert alert-info" style={{ marginTop: 0 }}>
+          <strong>{copy.signupPendingTitle}</strong>
+          <p style={{ margin: '6px 0 0' }}>{copy.signupPendingDetail}</p>
         </div>
-      </div>
+        {done.needsEmailConfirmation && (
+          <p className="page-desc" style={{ marginTop: 14 }}>{copy.signupConfirmEmail}</p>
+        )}
+        <button
+          type="button"
+          className="btn btn-primary btn-lg"
+          style={{ width: '100%', marginTop: 22 }}
+          onClick={onSignIn}
+        >
+          {copy.loginBtn}
+        </button>
+      </AuthCard>
     )
   }
 
   return (
-    <div className="page-wrap auth-page">
-      <div className="card form-card auth-card">
-        <div className="auth-card-brand">
-          <div className="page-eyebrow">DDP Brokerage</div>
-          <h1 className="auth-card-title">{copy.signupHeading}</h1>
-          <p className="page-desc">{copy.signupDesc}</p>
+    <AuthCard title={copy.signupHeading} desc={copy.signupDesc}>
+      {error && (
+        <div className="alert alert-danger" style={{ marginTop: 0, marginBottom: 16 }}>
+          {error}
         </div>
-
-        {error && (
-          <div className="alert alert-danger" style={{ marginTop: 0, marginBottom: 16 }}>
-            {error}
-          </div>
-        )}
-        <form onSubmit={handleSubmit}>
-          <Field
-            label={copy.signupNameLabel}
-            type="text"
-            value={displayName}
-            onChange={setDisplayName}
-            autoComplete="name"
-          />
-          <Field
-            label={copy.loginEmailLabel}
-            type="email"
-            value={email}
-            onChange={setEmail}
-            required
-            autoComplete="email"
-            placeholder="you@example.com"
-            marginTop
-          />
-          <Field
-            label={copy.loginPasswordLabel}
-            type="password"
-            value={password}
-            onChange={setPassword}
-            required
-            minLength={8}
-            autoComplete="new-password"
-            marginTop
-          />
-          <p className="page-desc" style={{ marginTop: 14, fontSize: 12.5 }}>
-            {copy.signupApprovalNote}
-          </p>
-          <button
-            type="submit"
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%', marginTop: 18 }}
-            disabled={loading}
-          >
-            {loading ? copy.signingUp : copy.signupBtn}
-          </button>
-        </form>
-
-        <p className="page-desc" style={{ marginTop: 18 }}>
-          {copy.signupSwitchPrompt}{' '}
-          <button type="button" className="btn-link" onClick={onSignIn}>
-            {copy.signupSwitchLink}
-          </button>
+      )}
+      <form onSubmit={handleSubmit}>
+        <Field
+          label={copy.signupNameLabel}
+          type="text"
+          value={displayName}
+          onChange={setDisplayName}
+          autoComplete="name"
+        />
+        <Field
+          label={copy.loginEmailLabel}
+          type="email"
+          value={email}
+          onChange={setEmail}
+          required
+          autoComplete="email"
+          placeholder="you@example.com"
+          marginTop
+        />
+        <Field
+          label={copy.loginPasswordLabel}
+          type="password"
+          value={password}
+          onChange={setPassword}
+          required
+          minLength={8}
+          autoComplete="new-password"
+          marginTop
+        />
+        <p className="page-desc" style={{ marginTop: 14, fontSize: 12.5 }}>
+          {copy.signupApprovalNote}
         </p>
-      </div>
-    </div>
+        <button
+          type="submit"
+          className="btn btn-primary btn-lg"
+          style={{ width: '100%', marginTop: 18 }}
+          disabled={loading}
+        >
+          {loading ? copy.signingUp : copy.signupBtn}
+        </button>
+      </form>
+
+      <p className="page-desc" style={{ marginTop: 18 }}>
+        {copy.signupSwitchPrompt}{' '}
+        <button type="button" className="btn-link" onClick={onSignIn}>
+          {copy.signupSwitchLink}
+        </button>
+      </p>
+    </AuthCard>
   )
 }
