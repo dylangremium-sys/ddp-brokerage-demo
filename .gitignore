@@ -32,3 +32,6 @@ public/version.json
 *.sw?
 .vercel
 .env*
+
+# Local database dumps — never commit
+backups/

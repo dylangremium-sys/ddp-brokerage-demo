@@ -568,6 +568,18 @@ export const T = {
     loginSwitchPrompt: 'New farmer?',
     loginSwitchLink: 'Create a farmer account',
     loginAdminNote: 'DDP Admin accounts are created by the DDP team — see README for setup instructions.',
+    // Sign up (public self-registration; grants no operational access)
+    signupHeading: 'Create an account',
+    signupDesc: 'Register with DDP Brokerage. A DDP administrator reviews and approves every account before it becomes operational.',
+    signupNameLabel: 'Full name (optional)',
+    signupApprovalNote: 'Creating an account does not grant access to inventory or trading. DDP must approve your account first.',
+    signupDoneHeading: 'Account created',
+    signupPendingTitle: 'Awaiting DDP approval',
+    signupPendingDetail: 'Your account has been created and is pending approval by the DDP team. You will not be able to access inventory or farm records until it is approved.',
+    signupConfirmEmail: 'Please confirm your email address using the link we just sent, then sign in.',
+    signupSwitchPrompt: 'Already have an account?',
+    signupSwitchLink: 'Sign in',
+    loginPendingApproval: 'Your account is awaiting DDP approval. You will be able to sign in once a DDP administrator has approved it.',
   },
   th: {
     // Nav
@@ -1030,7 +1042,6 @@ export const T = {
     emailOptionalLabel: 'อีเมล (ไม่บังคับ — ใช้สำหรับเข้าสู่ระบบ)',
     emailOptionalPlaceholder: 'you@example.com',
     passwordLabel: 'รหัสผ่าน',
-    signupBtn: 'สร้างบัญชี',
     signingUp: 'กำลังสร้างบัญชี…',
     signupSuccessEmail: 'ตรวจสอบอีเมลของคุณเพื่อยืนยันลิงก์ แล้วเข้าสู่ระบบ',
 
@@ -1112,6 +1123,19 @@ export const T = {
     loginSwitchPrompt: 'เกษตรกรรายใหม่?',
     loginSwitchLink: 'สร้างบัญชีเกษตรกร',
     loginAdminNote: 'บัญชี DDP Admin สร้างโดยทีม DDP — ดูรายละเอียดในเอกสาร README',
+    // Sign up
+    signupHeading: 'สร้างบัญชี',
+    signupDesc: 'ลงทะเบียนกับ DDP Brokerage ผู้ดูแลระบบ DDP จะตรวจสอบและอนุมัติทุกบัญชีก่อนเริ่มใช้งาน',
+    signupNameLabel: 'ชื่อ-นามสกุล (ไม่บังคับ)',
+    signupBtn: 'สร้างบัญชี',
+    signupApprovalNote: 'การสร้างบัญชีไม่ได้ให้สิทธิ์เข้าถึงสินค้าคงคลังหรือการซื้อขาย DDP ต้องอนุมัติบัญชีของคุณก่อน',
+    signupDoneHeading: 'สร้างบัญชีแล้ว',
+    signupPendingTitle: 'รอการอนุมัติจาก DDP',
+    signupPendingDetail: 'บัญชีของคุณถูกสร้างแล้วและอยู่ระหว่างรอการอนุมัติจากทีม DDP คุณจะยังไม่สามารถเข้าถึงสินค้าคงคลังหรือข้อมูลฟาร์มได้จนกว่าจะได้รับการอนุมัติ',
+    signupConfirmEmail: 'กรุณายืนยันอีเมลของคุณผ่านลิงก์ที่เราเพิ่งส่งไป จากนั้นเข้าสู่ระบบ',
+    signupSwitchPrompt: 'มีบัญชีอยู่แล้ว?',
+    signupSwitchLink: 'เข้าสู่ระบบ',
+    loginPendingApproval: 'บัญชีของคุณกำลังรอการอนุมัติจาก DDP คุณจะเข้าสู่ระบบได้เมื่อผู้ดูแลระบบ DDP อนุมัติแล้ว',
   },
 }
 

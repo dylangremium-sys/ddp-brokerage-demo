@@ -46,13 +46,43 @@ export async function signIn(email: string, password: string) {
   return data
 }
 
-// NOTE: public self-registration has been removed. There is deliberately no
-// client wrapper around the Supabase Auth public sign-up endpoint — a public
-// caller must never be able to create an operational account. Farmers are
-// provisioned exclusively by a DDP admin via the server-side endpoint
-// (src/services/adminProvisioning.ts -> api/admin/provision-farmer.ts), which
-// invites the user with Admin Auth and then promotes the resulting 'pending'
-// profile to 'farmer'.
+/**
+ * Public self-registration.
+ *
+ * A public caller may create an ACCOUNT. It must never be able to create an
+ * OPERATIONAL account, and this wrapper does not give it one:
+ *
+ *   - No role is sent. The role is assigned server-side by the
+ *     on_auth_user_created trigger (public.handle_new_user), which stamps every
+ *     brand-new auth user 'pending' — never 'farmer'
+ *     (21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql).
+ *   - A 'pending' account cannot self-promote: RLS ("profiles: admin update
+ *     role") permits a role change only for a ddp_admin.
+ *   - resolvePostLoginDecision() denies 'pending' with reason
+ *     'pending-approval', so the account reaches no dashboard until a DDP admin
+ *     provisions it via provisionFarmer().
+ *
+ * So the approval gate is unchanged by this function: it is enforced in the
+ * database and in routing, not by withholding the signup endpoint. Anything
+ * passed here as metadata is untrusted display data only and is never read for
+ * an authorization decision.
+ */
+export async function signUp(
+  email: string,
+  password: string,
+  displayName?: string,
+): Promise<{ needsEmailConfirmation: boolean }> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: displayName ? { data: { display_name: displayName } } : undefined,
+  })
+  if (error) throw new Error(error.message)
+  // With "Confirm email" enabled Supabase returns a user but no session; the
+  // account exists and is 'pending' either way.
+  return { needsEmailConfirmation: !data.session }
+}
 
 /**
  * Signs the user out AND clears the DDP data left in this browser.

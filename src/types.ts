@@ -393,6 +393,7 @@ export interface RiskRegisterEntry {
 export type Page =
   | 'landing'
   | 'login'
+  | 'signup'
   | 'farmer-register'
   | 'farmer-dashboard'
   | 'farmer-onboarding'

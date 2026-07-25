@@ -44,7 +44,9 @@ import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatu
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
+import { T } from './translations'
 import LoginPage from './pages/public/LoginPage'
+import SignUpPage from './pages/public/SignUpPage'
 import FarmerRegister from './pages/farmer/FarmerRegister'
 import FarmerDashboard from './pages/farmer/FarmerDashboard'
 import FarmerOnboarding from './pages/farmer/FarmerOnboarding'
@@ -80,7 +82,7 @@ const FARMER_PAGES: Page[] = [
 ]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
-const PUBLIC_PAGES: Page[] = ['landing', 'login']
+const PUBLIC_PAGES: Page[] = ['landing', 'login', 'signup']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -592,11 +594,17 @@ export default function App() {
       window.scrollTo(0, 0)
       return
     }
-    // Fail closed: authenticated but no known operator role — revoke the session
-    // and send the user back to login with a clear message.
+    // Fail closed: authenticated but not operational — revoke the session and
+    // send the user back to login. A self-registered 'pending' account is a
+    // normal, expected state awaiting DDP approval, so it gets its own message
+    // rather than the "contact support" one used for an unresolved role.
     await signOut()
     setCurrentProfile(null)
-    setDbError('Your account does not have an assigned DDP role. Please contact DDP support.')
+    setDbError(
+      decision.reason === 'pending-approval'
+        ? T[lang].loginPendingApproval
+        : 'Your account does not have an assigned DDP role. Please contact DDP support.',
+    )
     setPage('login')
     window.scrollTo(0, 0)
   }
@@ -886,6 +894,16 @@ export default function App() {
           <LoginPage
             lang={lang}
             onSuccess={handleLoginSuccess}
+            onSignUp={() => goTo('signup')}
+          />
+        </main>
+      )}
+
+      {page === 'signup' && (
+        <main className="main-content">
+          <SignUpPage
+            lang={lang}
+            onSignIn={() => goTo('login')}
           />
         </main>
       )}

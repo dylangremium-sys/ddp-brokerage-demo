@@ -6,9 +6,11 @@ import type { Lang } from '../../types'
 interface Props {
   lang?: Lang
   onSuccess: () => void
+  /** Public self-registration. Creating an account grants no operational access. */
+  onSignUp?: () => void
 }
 
-export default function LoginPage({ lang = 'en', onSuccess }: Props) {
+export default function LoginPage({ lang = 'en', onSuccess, onSignUp }: Props) {
   const t = T[lang]
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -74,6 +76,15 @@ export default function LoginPage({ lang = 'en', onSuccess }: Props) {
             {loading ? t.loginLoading : t.loginBtn}
           </button>
         </form>
+
+        {onSignUp && (
+          <p className="page-desc" style={{ marginTop: 18 }}>
+            {t.loginSwitchPrompt}{' '}
+            <button type="button" className="btn-link" onClick={onSignUp}>
+              {t.signupHeading}
+            </button>
+          </p>
+        )}
       </div>
     </div>
   )

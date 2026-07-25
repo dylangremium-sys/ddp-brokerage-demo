@@ -34,9 +34,30 @@ function walk(relDir) {
 const clientFiles = walk('src').filter((f) => !/\.test\.(ts|tsx)$/.test(f))
 const clientText = clientFiles.map((f) => readFileSync(f, 'utf8')).join('\n')
 
-describe('client source carries no public signup path', () => {
-  it('has no supabase.auth.signUp() call', () => {
-    expect(clientText).not.toMatch(/supabase\.auth\.signUp\b/)
+describe('public signup can create an account but never an operational one', () => {
+  // Public self-registration is permitted: a signup mints a NON-operational
+  // 'pending' profile, because public.handle_new_user() assigns the role
+  // server-side (21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql) and RLS
+  // permits a role change only for a ddp_admin. The invariant this file guards
+  // is therefore no longer "the client cannot call signUp" but the stronger,
+  // more accurate "the client cannot influence the role it is assigned".
+  const authSrc = readFileSync(fileURLToPath(new URL('src/services/auth.ts', root)), 'utf8')
+  const signUpBody = authSrc.slice(
+    authSrc.indexOf('export async function signUp('),
+    authSrc.indexOf('export async function getCurrentProfile('),
+  )
+
+  it('has a signUp wrapper at all (public registration is enabled)', () => {
+    expect(signUpBody).toMatch(/supabase\.auth\.signUp\b/)
+  })
+
+  it('never sends a role, so the server assigns pending', () => {
+    expect(signUpBody).not.toMatch(/\brole\b\s*:/)
+  })
+
+  it('is the only signUp call in the shipped client', () => {
+    const calls = clientText.match(/supabase\.auth\.signUp\b/g) ?? []
+    expect(calls).toHaveLength(1)
   })
 
   it('has no signUpFarmer symbol', () => {
