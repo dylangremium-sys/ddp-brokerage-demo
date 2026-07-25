@@ -53,12 +53,12 @@ begin
   if position('procurement_decisions_current' in v_code) = 0 then
     raise exception 'VERIFY A FAILED: function does not read procurement_decisions_current (server trail)';
   end if;
-  if v_code !~ 'batch_id\s*=\s*p_pack_id' then
+  if v_code !~* 'batch_id\s*=\s*p_pack_id' then
     raise exception 'VERIFY A FAILED: function does not join the decision to the SAME pack (batch_id = p_pack_id)';
   end if;
 
   -- (b) server value must be the gate, not the client argument
-  if v_code !~ 'v_decision\s*<>\s*''progress''' then
+  if v_code !~* 'v_decision\s*<>\s*''progress''' then
     raise exception 'VERIFY A FAILED: function does not require the SERVER decision to be progress (v_decision <> ''progress'')';
   end if;
   -- The executable body must NOT reference the client argument at all — proves it is
@@ -71,7 +71,11 @@ begin
   end if;
 
   -- (c) actor + reason re-asserted
-  if v_code !~ 'v_decided_by\s+is\s+null' then
+  -- Case-INsensitive (!~*): SQL keywords are case-free, and the body installed by
+  -- 23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql writes "IF v_decided_by IS NULL".
+  -- A case-SENSITIVE '~' here made this VERIFY unpassable against the very function
+  -- its own migration installs, so the issuance gate could never be evidenced.
+  if v_code !~* 'v_decided_by\s+is\s+null' then
     raise exception 'VERIFY A FAILED: function does not re-assert a non-null decision actor';
   end if;
   if position('v_reason' in v_code) = 0 then
