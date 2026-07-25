@@ -44,7 +44,7 @@ describe('migration 27 — checks catch a weakened migration (negative coverage)
   })
 
   it('catches scope creep into RLS policies', () => {
-    const weakened = hardening + '\nCREATE POLICY "sneaky" ON public.compliance_audit_log FOR SELECT USING (true);'
+    const weakened = `${hardening}\nCREATE POLICY "sneaky" ON public.compliance_audit_log FOR SELECT USING (true);`
     expect(findHardeningProblems(weakened)).toContain('changes an RLS policy (out of scope)')
   })
 
@@ -64,7 +64,7 @@ describe('migration 27 — checks catch a weakened migration (negative coverage)
   })
 
   it('catches a ROLLBACK that overreaches into migration 9 objects', () => {
-    const weakened = read(ROLLBACK) + '\nDROP TABLE public.compliance_audit_log;'
+    const weakened = `${read(ROLLBACK)}\nDROP TABLE public.compliance_audit_log;`
     expect(findRollbackProblems(weakened)).toContain('drops the table/policy/append-only trigger (overreach)')
   })
 })

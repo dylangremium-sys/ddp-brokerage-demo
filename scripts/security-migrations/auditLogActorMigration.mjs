@@ -14,17 +14,17 @@ export function stripSqlComments(sql) {
 /** Problems with the forward migration. Empty array = sound. */
 export function findHardeningProblems(sql) {
   const fwd = stripSqlComments(sql)
-  const p = []
-  if (!/create\s+or\s+replace\s+function\s+public\.fn_compliance_audit_log_set_actor/i.test(fwd)) p.push('does not create fn_compliance_audit_log_set_actor')
-  if (!/new\.actor_id\s*:=\s*auth\.uid\s*\(\s*\)/i.test(fwd)) p.push('does not force NEW.actor_id := auth.uid() (client value not overridden)')
-  if (!/set\s+search_path\s*=/i.test(fwd)) p.push('trigger function has no pinned search_path')
-  if (!/create\s+trigger\s+compliance_audit_log_set_actor\s+before\s+insert\s+on\s+public\.compliance_audit_log/is.test(fwd)) p.push('trigger is not BEFORE INSERT on public.compliance_audit_log')
-  if (!/revoke\s+execute\s+on\s+function\s+public\.fn_compliance_audit_log_set_actor[\s\S]*\bauthenticated\b/i.test(fwd)) p.push('does not revoke EXECUTE from authenticated (client-callable)')
+  const problems = []
+  if (!/create\s+or\s+replace\s+function\s+public\.fn_compliance_audit_log_set_actor/i.test(fwd)) problems.push('does not create fn_compliance_audit_log_set_actor')
+  if (!/new\.actor_id\s*:=\s*auth\.uid\s*\(\s*\)/i.test(fwd)) problems.push('does not force NEW.actor_id := auth.uid() (client value not overridden)')
+  if (!/set\s+search_path\s*=/i.test(fwd)) problems.push('trigger function has no pinned search_path')
+  if (!/create\s+trigger\s+compliance_audit_log_set_actor\s+before\s+insert\s+on\s+public\.compliance_audit_log/is.test(fwd)) problems.push('trigger is not BEFORE INSERT on public.compliance_audit_log')
+  if (!/revoke\s+execute\s+on\s+function\s+public\.fn_compliance_audit_log_set_actor[\s\S]*\bauthenticated\b/i.test(fwd)) problems.push('does not revoke EXECUTE from authenticated (client-callable)')
   // Scope: must not touch policies, table privileges, or migration 9's guard.
-  if (/create\s+policy|drop\s+policy/i.test(fwd)) p.push('changes an RLS policy (out of scope)')
-  if (/\bon\s+table\b|alter\s+table/i.test(fwd)) p.push('contains a table-level privilege/ALTER change (out of scope)')
-  if (/compliance_audit_log_no_update_delete/i.test(fwd)) p.push('touches the migration-9 append-only trigger (out of scope)')
-  return p
+  if (/create\s+policy|drop\s+policy/i.test(fwd)) problems.push('changes an RLS policy (out of scope)')
+  if (/\bon\s+table\b|alter\s+table/i.test(fwd)) problems.push('contains a table-level privilege/ALTER change (out of scope)')
+  if (/compliance_audit_log_no_update_delete/i.test(fwd)) problems.push('touches the migration-9 append-only trigger (out of scope)')
+  return problems
 }
 
 /** Problems with the VERIFY companion. Empty array = sound. */

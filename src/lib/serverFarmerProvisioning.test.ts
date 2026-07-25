@@ -184,7 +184,7 @@ describe('handleProvisionFarmer — provisioning outcomes', () => {
   it('does NOT leak the raw Supabase invite error to the client (coded/generic message only)', async () => {
     const secret = 'AuthApiError: SMTP relay 10.0.0.5 rejected sender key sk_live_leak'
     const res = await handleProvisionFarmer(
-      makeDeps({ inviteFarmer: async () => ({ kind: 'error', message: secret }) }),
+      makeDeps({ inviteFarmer: () => Promise.resolve({ kind: 'error', message: secret }) }),
       { token: 'admin-token', body: validBody },
     )
     expect(res.status).toBe(502)

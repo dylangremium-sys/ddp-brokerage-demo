@@ -9,12 +9,12 @@ const read = (f) => readFileSync(join(REPO_ROOT, f), 'utf8')
 
 describe('hasExecutablePendingGuard (DDP audit A3)', () => {
   it('does NOT accept a precondition that is only documented in a comment', () => {
-    const commentOnly = `-- PRECONDITION: no profile rows may have role = 'pending' when this runs.\nBEGIN;\nALTER TABLE public.profiles ADD CONSTRAINT c CHECK (role IN ('ddp_admin','farmer'));\nCOMMIT;`
+    const commentOnly = "-- PRECONDITION: no profile rows may have role = 'pending' when this runs.\nBEGIN;\nALTER TABLE public.profiles ADD CONSTRAINT c CHECK (role IN ('ddp_admin','farmer'));\nCOMMIT;"
     expect(hasExecutablePendingGuard(commentOnly)).toBe(false)
   })
 
   it('accepts an executable guard that tests for pending rows and RAISEs', () => {
-    const enforced = `BEGIN;\nDO $g$ DECLARE n int; BEGIN\n  SELECT count(*) INTO n FROM public.profiles WHERE role = 'pending';\n  IF n > 0 THEN RAISE EXCEPTION 'refused: % pending', n; END IF;\nEND $g$;\nCOMMIT;`
+    const enforced = "BEGIN;\nDO $g$ DECLARE n int; BEGIN\n  SELECT count(*) INTO n FROM public.profiles WHERE role = 'pending';\n  IF n > 0 THEN RAISE EXCEPTION 'refused: % pending', n; END IF;\nEND $g$;\nCOMMIT;"
     expect(hasExecutablePendingGuard(enforced)).toBe(true)
   })
 
@@ -55,7 +55,7 @@ describe('hasRlsFullRollbackOptIn (RLS_ROLLBACK tenant-isolation strip)', () => 
     expect(hasRlsFullRollbackOptIn('-- WARNING: this removes all tenant isolation!\nALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;')).toBe(false)
   })
   it('accepts an executable session opt-in that RAISEs', () => {
-    const sql = `DO $g$ BEGIN IF current_setting('rls.disable_tenant_isolation') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'refused'; END IF; END $g$;`
+    const sql = "DO $g$ BEGIN IF current_setting('rls.disable_tenant_isolation') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'refused'; END IF; END $g$;"
     expect(hasRlsFullRollbackOptIn(sql)).toBe(true)
   })
   it('the real RLS_ROLLBACK.sql requires the opt-in', () => {
@@ -64,10 +64,10 @@ describe('hasRlsFullRollbackOptIn (RLS_ROLLBACK tenant-isolation strip)', () => 
 })
 
 describe('findUnguardedTargetedRlsDisables (per-block tenant-isolation opt-in)', () => {
-  const GUARD = `DO $g$ BEGIN IF coalesce(current_setting('rls.disable_tenant_isolation', true),'') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'refused'; END IF; END $g$;`
+  const GUARD = "DO $g$ BEGIN IF coalesce(current_setting('rls.disable_tenant_isolation', true),'') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'refused'; END IF; END $g$;"
 
   it('FLAGS a targeted block whose DISABLE has no guard', () => {
-    const sql = `-- TARGETED ROLLBACKS\nALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;`
+    const sql = "-- TARGETED ROLLBACKS\nALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;"
     expect(findUnguardedTargetedRlsDisables(sql)).toEqual(['profiles'])
   })
 
@@ -100,12 +100,12 @@ describe('findUnguardedDestructiveRollbacks (audit-critical DROP opt-in)', () =>
   })
 
   it('accepts one that refuses unless the destructive opt-in is set', () => {
-    const body = `BEGIN; DO $g$ BEGIN IF current_setting('buyer_pack.rollback_destructive') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'refused'; END IF; END $g$; DROP TABLE public.buyer_pack_snapshots; COMMIT;`
+    const body = "BEGIN; DO $g$ BEGIN IF current_setting('buyer_pack.rollback_destructive') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'refused'; END IF; END $g$; DROP TABLE public.buyer_pack_snapshots; COMMIT;"
     expect(findUnguardedDestructiveRollbacks([{ name: 'R.sql', body }], specs)).toEqual([])
   })
 
   it('does not accept a prose-only warning as a guard', () => {
-    const body = `-- WARNING: set buyer_pack.rollback_destructive first!\nDROP TABLE public.buyer_pack_snapshots;`
+    const body = "-- WARNING: set buyer_pack.rollback_destructive first!\nDROP TABLE public.buyer_pack_snapshots;"
     expect(findUnguardedDestructiveRollbacks([{ name: 'R.sql', body }], specs)).toEqual(['R.sql'])
   })
 

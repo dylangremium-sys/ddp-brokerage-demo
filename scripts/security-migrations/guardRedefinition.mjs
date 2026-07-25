@@ -64,8 +64,8 @@ const HANDLE_NEW_USER_BODY_RE =
   /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?handle_new_user[\s\S]*?\$\$[\s\S]*?\$\$\s*;/i
 
 export function extractHandleNewUserBody(sqlCode) {
-  const m = sqlCode.match(HANDLE_NEW_USER_BODY_RE)
-  return m ? m[0] : null
+  const match = sqlCode.match(HANDLE_NEW_USER_BODY_RE)
+  return match ? match[0] : null
 }
 
 /** True iff the SQL executably refuses a downgrade (detects the hardened fn and RAISEs). */
