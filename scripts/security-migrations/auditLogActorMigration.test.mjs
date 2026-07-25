@@ -7,12 +7,12 @@ import { findHardeningProblems, findVerifyProblems, findRollbackProblems } from 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const read = (f) => readFileSync(join(REPO_ROOT, f), 'utf8')
 
-const HARDENING = '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql'
-const VERIFY = '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_VERIFY.sql'
-const ROLLBACK = '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_ROLLBACK.sql'
+const HARDENING = '27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql'
+const VERIFY = '27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_VERIFY.sql'
+const ROLLBACK = '27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_ROLLBACK.sql'
 
 // The real files must be sound...
-describe('migration 25 — the real files pass', () => {
+describe('migration 27 — the real files pass', () => {
   it('HARDENING has no problems', () => expect(findHardeningProblems(read(HARDENING))).toEqual([]))
   it('VERIFY has no problems', () => expect(findVerifyProblems(read(VERIFY))).toEqual([]))
   it('ROLLBACK has no problems', () => expect(findRollbackProblems(read(ROLLBACK))).toEqual([]))
@@ -20,7 +20,7 @@ describe('migration 25 — the real files pass', () => {
 
 // ...and — the part that actually matters — the checks must CATCH a weakened one.
 // Each case takes the REAL file and degrades exactly one property.
-describe('migration 25 — checks catch a weakened migration (negative coverage)', () => {
+describe('migration 27 — checks catch a weakened migration (negative coverage)', () => {
   const hardening = read(HARDENING)
 
   it('catches removal of the auth.uid() override (the whole point of the migration)', () => {

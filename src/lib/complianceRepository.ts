@@ -647,8 +647,8 @@ export interface ComplianceAuditLogInsertPayload {
  * actor_type to 'admin' so every existing call site — which passes no
  * actorType argument — keeps writing 'admin' unchanged.
  *
- * NOTE: `actor_id` here is NOT trusted as the source of truth. Migration 25
- * (25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql) installs a
+ * NOTE: `actor_id` here is NOT trusted as the source of truth. Migration 27
+ * (27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql) installs a
  * BEFORE INSERT trigger that OVERRIDES the stored actor_id with auth.uid(), so a
  * forged or stale client value cannot mis-attribute an append-only audit entry.
  * The value sent here is retained only for the honest path (it already equals the

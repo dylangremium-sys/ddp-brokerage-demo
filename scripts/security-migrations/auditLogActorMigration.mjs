@@ -1,4 +1,4 @@
-// Migration 25 shape checks — compliance_audit_log actor is server-authoritative
+// Migration 27 shape checks — compliance_audit_log actor is server-authoritative
 // (DDP audit client-authz #3).
 //
 // The audit log must stamp the actor from auth.uid(), never from a client-supplied

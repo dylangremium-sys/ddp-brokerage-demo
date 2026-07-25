@@ -536,7 +536,7 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
   )
 }
 
-// Check 14 — Migration 25 compliance_audit_log actor is server-authoritative
+// Check 14 — Migration 27 compliance_audit_log actor is server-authoritative
 // (DDP audit client-authz #3). The audit log must stamp the actor from auth.uid(),
 // never from a client-supplied value. Fails if any companion is missing; the
 // trigger does not force NEW.actor_id := auth.uid(); it is not BEFORE INSERT on
@@ -546,11 +546,11 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
 // the ROLLBACK does not remove exactly the trigger + function.
 {
   const AL = {
-    hardening: '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql',
-    verify: '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_VERIFY.sql',
-    rollback: '25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_ROLLBACK.sql',
+    hardening: '27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_HARDENING.sql',
+    verify: '27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_VERIFY.sql',
+    rollback: '27_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_ROLLBACK.sql',
   }
-  const label = 'Migration 25 audit-log actor authoritative'
+  const label = 'Migration 27 audit-log actor authoritative'
   const missing = ['hardening', 'verify', 'rollback'].filter((r) => !existsSync(join(ROOT, AL[r])))
   if (missing.length) {
     fail(`${label}: companion completeness`, `missing file(s): ${missing.map((r) => AL[r]).join(', ')}`)
