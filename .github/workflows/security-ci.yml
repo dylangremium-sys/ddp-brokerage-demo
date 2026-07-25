@@ -48,6 +48,13 @@ jobs:
       - name: Install dependencies (deterministic)
         run: npm ci
 
+      # Runs BEFORE the content checks: if two branches have each claimed the same
+      # migration ordinal, "apply migrations in order" no longer names a single
+      # sequence, and nothing downstream of that is meaningful. Reads only the
+      # root directory listing — no database, no secrets.
+      - name: Migration numbering collision guard
+        run: npm run security:migration-numbers
+
       - name: Security migration static checks
         run: npm run security:sql
 
