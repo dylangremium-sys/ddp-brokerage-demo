@@ -4911,3 +4911,172 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   .ops-desk-field input { min-width: 0; width: 100%; }
   .ops-desk-field { flex: 1 1 100%; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI POLISH LANE — presentation only (branch: ui-polish-isolated)
+
+   Appearance-only layer. Adds no markup, changes no routing, data, auth or
+   role behaviour, and defines no new classes that any component must adopt —
+   every selector below targets classes the components already render. Kept as
+   one delimited block at the end of the sheet so the whole lane reverts by
+   deleting it.
+
+   Ordered P0 → P2 to match the polish plan.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── P0.1 Login visual continuity ────────────────────────────────────────────
+   Landing (.landing-shell, cream/green/gold), the farmer portal (.eo-farmer)
+   and admin (.ddp-wrap) all paint from the editorial paper system. The auth
+   screen was the only surface left on the legacy navy palette, so the one
+   funnel every operator walks — landing → login → portal — inverted from cream
+   to navy and back. This brings login onto the same system.
+
+   Scoped entirely to .auth-page. The classes it restyles (.card, .field, .btn)
+   are shared with the farmer and public screens, so nothing here may leak past
+   that scope. Token choices follow the rules the admin layer already
+   established: gold is spent on focus only (it measures below the 4.5:1 text
+   floor on paper — see the admin eyebrow note above), and the input focus
+   treatment mirrors .eo-farmer's green border + gold :focus-visible ring. */
+body:has(.auth-page) { background: var(--ddp-canvas); }
+
+.auth-page {
+  /* Was padding-top:40px, which pinned the card to the top of an otherwise
+     empty viewport. Centre it instead. min-height subtracts .main-content's
+     32px block padding; auto margins on the card centre without clipping on
+     viewports too short to hold it (justify-content:center would clip). */
+  padding-top: 0;
+  min-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-page .auth-card {
+  margin-block: auto;
+  background: var(--ddp-paper);
+  border: 1px solid var(--ddp-line-strong);
+  border-radius: var(--ddp-r-surface);
+  box-shadow: 0 1px 2px rgba(32, 35, 31, 0.05), 0 12px 32px -20px rgba(32, 35, 31, 0.28);
+  padding: 34px;
+}
+
+.auth-page .auth-card-brand { border-bottom-color: var(--ddp-line-soft); }
+
+.auth-page .page-eyebrow {
+  /* Ink, not gold — same reasoning as .ddp-wrap .page-eyebrow. */
+  color: var(--ddp-ink-500);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.auth-page .auth-card-title {
+  font-family: var(--ddp-serif);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ddp-ink-950);
+}
+
+.auth-page .page-desc { color: var(--ddp-ink-700); }
+
+.auth-page .field > span {
+  color: var(--ddp-ink-700);
+  font-weight: 600;
+}
+
+.auth-page .field input {
+  background: var(--ddp-paper-strong);
+  border: 1px solid var(--ddp-line-strong);
+  border-radius: var(--ddp-r-control);
+  color: var(--ddp-ink-950);
+}
+
+.auth-page .field input::placeholder { color: var(--ddp-ink-500); opacity: 0.75; }
+
+.auth-page .field input:focus {
+  border-color: var(--ddp-green-700);
+  box-shadow: none;
+}
+
+.auth-page .btn-primary {
+  background: var(--ddp-green-900);
+  color: var(--ddp-paper);
+  border-radius: var(--ddp-r-control);
+}
+
+.auth-page .btn-primary:hover {
+  background: var(--ddp-green-800);
+  box-shadow: none;
+}
+
+.auth-page .btn-primary:disabled {
+  background: var(--ddp-ink-500);
+  cursor: not-allowed;
+}
+
+.auth-page .alert-danger {
+  background: rgba(140, 48, 40, 0.08);
+  border: 1px solid rgba(140, 48, 40, 0.30);
+  color: var(--ddp-risk-700);
+}
+
+/* ── P0.2 Navbar brand / nav collision ───────────────────────────────────────
+   .navbar is justify-content:space-between with no gap, so once the links fill
+   the row (demo mode renders FarmerNav and AdminNav in the same 56px bar) the
+   first nav group butts straight against the brand and reads as one run-on
+   word: "BROKERAGEFARMER". A flex gap cannot be consumed by shrinking, so the
+   separation holds at every width.
+
+   column-gap, not gap: below 768px the navbar wraps and already sets gap:6px
+   for both axes. This rule sits later in the sheet, so a shorthand would win
+   there too and pad the wrapped rows apart. Constraining it to the inline axis
+   leaves that row rhythm exactly as it was. */
+.navbar { column-gap: 24px; }
+.navbar-brand { flex-shrink: 0; }
+.navbar-links { min-width: 0; }
+
+/* ── P1.1 Authored focus rings on landing and login ──────────────────────────
+   Admin (.ddp-wrap), the farmer portal (.eo-farmer) and .navbar each define a
+   focus ring; landing and login authored none, so both fell back to the user
+   agent's default blue ring — off-palette on cream, and on the login submit it
+   was the only focus affordance on the screen. Keyed to :focus-visible so the
+   browser still decides when a ring is warranted. */
+.auth-page :focus-visible {
+  outline: 2px solid var(--ddp-focus-light);
+  outline-offset: 2px;
+}
+
+.landing-shell :focus-visible {
+  outline: 2px solid var(--lg-green-900);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Gold on the dark green navigation, where the ink ring would disappear. */
+.ln-nav :focus-visible { outline-color: var(--lg-gold); }
+
+/* ── P1.2 Table readability: identifiers stay on one line ────────────────────
+   .ddp-wrap relaxes thead to white-space:normal so long headers wrap instead
+   of forcing overflow — deliberate, and left alone. Body identifiers are a
+   different case: "F4-122025" broke mid-token across two lines. The table
+   keeps min-width:900px inside .table-scroll, so nowrap adds no page-level
+   overflow. Released again in the narrow-viewport card layout, where rows are
+   stacked blocks rather than a scrolling grid. */
+.ddp-wrap .inv-table .td-mono { white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .ddp-wrap .inv-table--cards .td-mono { white-space: normal; }
+}
+
+/* ── P2.1 Reduced-motion coverage ────────────────────────────────────────────
+   Two prefers-reduced-motion blocks already exist, scoped to .eo-shell/.eo-page
+   and .eo-farmer/.navbar. Landing, login and the admin pages sit outside both,
+   so `transition: all 0.15s` (14 occurrences) kept running for users who asked
+   for less motion. Promoted to a global honouring of the preference. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
