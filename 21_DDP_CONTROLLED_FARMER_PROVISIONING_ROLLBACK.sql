@@ -66,6 +66,37 @@ BEGIN
 END
 $ordering_guard$;
 
+-- 0b. PENDING-ACCOUNT PRECONDITION GUARD. The narrowed CHECK restored in step 2
+--     permits only ('ddp_admin','farmer'), so it cannot be re-applied while any
+--     profile still has role = 'pending'. Without this guard the transaction
+--     fails LATE, at ADD CONSTRAINT, with an opaque "check constraint
+--     profiles_role_check is violated by some row" error that names neither the
+--     cause nor the remedy. The header above already states this precondition;
+--     enforce it here — at the top, before anything is changed — in the same
+--     executable-guard style as the ordering check, so it is "not left to the
+--     operator to remember".
+--
+--     This deliberately REFUSES rather than reconciling. Silently promoting
+--     pending rows to 'farmer' would auto-approve accounts DDP never approved —
+--     precisely the exposure migration 21 exists to close — and deleting them
+--     would destroy accounts. Reconciliation is an explicit operator decision.
+DO $pending_guard$
+DECLARE
+  v_pending integer;
+BEGIN
+  SELECT count(*) INTO v_pending FROM public.profiles WHERE role = 'pending';
+
+  IF v_pending > 0 THEN
+    RAISE EXCEPTION
+      'rollback 21 refused: % profile row(s) still have role = ''pending'', which the '
+      'restored CHECK (ddp_admin, farmer) does not permit. Reconcile them FIRST: approve '
+      'each account through the DDP provisioning path, or delete the account together with '
+      'its auth.users row. This rollback will not auto-approve or delete unapproved accounts.',
+      v_pending;
+  END IF;
+END
+$pending_guard$;
+
 -- 1. Restore handle_new_user() to auto-assign the operational 'farmer' role.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
