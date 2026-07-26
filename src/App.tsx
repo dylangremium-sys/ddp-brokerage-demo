@@ -27,6 +27,7 @@ import {
   type FarmerScope,
 } from './lib/db'
 import { loadInventory, loadFarms, loadReviewRequests, saveReviewRequests, loadMarketBenchmarks } from './data'
+import { T } from './translations'
 import {
   signOut,
   subscribeToAuthChanges,
@@ -1004,30 +1005,41 @@ export default function App() {
         const appPages = (
           <>
 
+          {/* scopeLoading gates every farmer surface that consumes a scoped
+              array. While farmerScope is null those arrays are [] (App.tsx
+              scoped-data block), so the surface would render its empty state —
+              telling a farmer who has stock "No stock yet", and showing 0 open
+              requests on the dashboard. This is the same failure the Operations
+              Desk work eliminated on the admin side; the farmer portal now
+              holds the same standard. Only farmer-status was guarded before. */}
           {page === 'farmer-dashboard' && (
-            <FarmerDashboard
-              lang={lang}
-              farms={farmerFarms}
-              currentProfile={isDemo ? null : currentProfile}
-              onBuildProfile={() => goTo('farmer-onboarding')}
-              onMyStock={() => goTo('farmer-my-stock')}
-              onMyActivity={() => goTo('farmer-status')}
-              onAdvancedProfile={() => goTo('farmer-advanced-profile')}
-              onRequests={() => goTo('farmer-requests')}
-              openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
-            />
+            scopeLoading
+              ? <div className="scope-loading">{T[lang].scopeLoadingDashboard}</div>
+              : <FarmerDashboard
+                  lang={lang}
+                  farms={farmerFarms}
+                  currentProfile={isDemo ? null : currentProfile}
+                  onBuildProfile={() => goTo('farmer-onboarding')}
+                  onMyStock={() => goTo('farmer-my-stock')}
+                  onMyActivity={() => goTo('farmer-status')}
+                  onAdvancedProfile={() => goTo('farmer-advanced-profile')}
+                  onRequests={() => goTo('farmer-requests')}
+                  openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
+                />
           )}
 
           {page === 'farmer-my-stock' && (
-            <FarmerMyStock
-              lang={lang}
-              inventory={farmerInventory}
-              onAddNew={() => { setStockEditItemId(null); goTo('farmer-stock-form') }}
-              onEdit={handleEditStock}
-              openRequestCount={farmerReviewRequests.filter(r => r.status === 'open').length}
-              onGoRequests={() => goTo('farmer-requests')}
-              onCoaUpload={isFarmerRole && isSupabaseConfigured ? handleCoaUpload : undefined}
-            />
+            scopeLoading
+              ? <div className="scope-loading">{T[lang].scopeLoadingStock}</div>
+              : <FarmerMyStock
+                  lang={lang}
+                  inventory={farmerInventory}
+                  onAddNew={() => { setStockEditItemId(null); goTo('farmer-stock-form') }}
+                  onEdit={handleEditStock}
+                  openRequestCount={farmerReviewRequests.filter(r => r.status === 'open').length}
+                  onGoRequests={() => goTo('farmer-requests')}
+                  onCoaUpload={isFarmerRole && isSupabaseConfigured ? handleCoaUpload : undefined}
+                />
           )}
 
           {page === 'farmer-stock-form' && (
@@ -1049,14 +1061,16 @@ export default function App() {
           )}
 
           {page === 'farmer-requests' && (
-            <FarmerRequests
-              lang={lang}
-              requests={farmerReviewRequests}
-              inventory={farmerInventory}
-              onResolve={handleResolveRequest}
-              onEditStock={handleEditStock}
-              onGoMyStock={() => goTo('farmer-my-stock')}
-            />
+            scopeLoading
+              ? <div className="scope-loading">{T[lang].scopeLoadingRequests}</div>
+              : <FarmerRequests
+                  lang={lang}
+                  requests={farmerReviewRequests}
+                  inventory={farmerInventory}
+                  onResolve={handleResolveRequest}
+                  onEditStock={handleEditStock}
+                  onGoMyStock={() => goTo('farmer-my-stock')}
+                />
           )}
 
           {page === 'farmer-onboarding' && (
@@ -1078,8 +1092,11 @@ export default function App() {
           )}
 
           {page === 'farmer-status' && (
-            scopeLoading && isFarmerRole
-              ? <div className="scope-loading">Loading your submissions…</div>
+            // `scopeLoading` already implies isFarmerRole (it is derived as
+            // isFarmerRole && farmerScope === null), so the redundant conjunct
+            // is dropped; the string moves to translations with the other three.
+            scopeLoading
+              ? <div className="scope-loading">{T[lang].scopeLoadingSubmissions}</div>
               : <FarmerStatus
                   lang={lang}
                   inventory={farmerInventory}
