@@ -6,7 +6,9 @@ import {
   deriveFarmDocumentRequirements,
   applyRequirementOverrides,
   saveRequirementOverride,
+  loadRequirementOverrides,
 } from '../../lib/procurementControl'
+import BrowserOnlyProvenanceNotice from '../../components/shared/BrowserOnlyProvenanceNotice'
 import { getComplianceRuleImpact } from '../../lib/complianceRuleImpact'
 import { ComplianceRuleCheckBadge } from '../../components/shared/StatusBadge'
 
@@ -71,6 +73,19 @@ export default function DDPMissingDocuments({ farms, inventory, complianceRules 
     })
   }, [farms, inventory, renderTick])
 
+  // How many requirements ON THIS PAGE are showing a browser-local override
+  // rather than their derived status. Counted against the live (farmId, type)
+  // pairs, so an override for a farm no longer listed is not counted.
+  const overriddenCount = useMemo(() => {
+    void renderTick
+    const overrides = loadRequirementOverrides()
+    return rows.reduce(
+      (total, row) =>
+        total + row.requirements.filter(r => overrides[`${r.farmId}::${r.type}`] !== undefined).length,
+      0,
+    )
+  }, [rows, renderTick])
+
   function handleOverride(farmId: string, type: DocumentRequirementType, status: EvidenceStatus) {
     saveRequirementOverride(farmId, type, status)
     forceRerender(n => n + 1)
@@ -93,6 +108,11 @@ export default function DDPMissingDocuments({ farms, inventory, complianceRules 
           until a real document is received. <strong>Reviewed</strong> and <strong>Verified</strong> only appear once a DDP reviewer or qualified party has explicitly recorded that step below.
         </div>
       </div>
+
+      {/* Provenance. A requirement moved to Rejected/Expired here is half of the
+          release gate (blockerRequirements), and moving one OFF those statuses
+          clears a blocker — yet it is written only to this browser. */}
+      <BrowserOnlyProvenanceNotice count={overriddenCount} subject="document status overrides" />
 
       {farms.length === 0 ? (
         <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>No farm profiles on file.</div>
