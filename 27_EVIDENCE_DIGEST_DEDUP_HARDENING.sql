@@ -62,10 +62,8 @@ DO $precondition$
 DECLARE
   missing text[] := ARRAY[]::text[];
   t text;
-  f text;
   tables text[] := ARRAY['evidence_request_attachments','evidence_requests',
                          'farmer_documents','documents'];
-  fns    text[] := ARRAY['is_ddp_admin','can_operationally_access_farm'];
 BEGIN
   FOREACH t IN ARRAY tables LOOP
     IF to_regclass('public.' || t) IS NULL THEN
@@ -73,14 +71,13 @@ BEGIN
     END IF;
   END LOOP;
 
-  FOREACH f IN ARRAY fns LOOP
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname = 'public' AND p.proname = f
-    ) THEN
-      missing := missing || ('function public.' || f || '()');
-    END IF;
-  END LOOP;
+  -- Signature-specific checks avoid false positives from overloaded names.
+  IF to_regprocedure('public.is_ddp_admin()') IS NULL THEN
+    missing := missing || 'function public.is_ddp_admin()';
+  END IF;
+  IF to_regprocedure('public.can_operationally_access_farm(uuid)') IS NULL THEN
+    missing := missing || 'function public.can_operationally_access_farm(uuid)';
+  END IF;
 
   -- The digest column this migration indexes must already exist: migration 27
   -- compares digests, it does not introduce the attachment digest itself.

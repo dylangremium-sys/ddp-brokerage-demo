@@ -82,16 +82,30 @@ $guard$;
 -- -----------------------------------------------------------------------------
 -- 1. Policies (dropped before the helper function they reference).
 -- -----------------------------------------------------------------------------
-DROP POLICY IF EXISTS "dfe: admin select all"                  ON public.document_field_extractions;
-DROP POLICY IF EXISTS "dfe: operational farmer select own farm" ON public.document_field_extractions;
+DO $drop_policies$
+BEGIN
+  IF to_regclass('public.document_field_extractions') IS NOT NULL THEN
+    DROP POLICY IF EXISTS "dfe: admin select all" ON public.document_field_extractions;
+    DROP POLICY IF EXISTS "dfe: operational farmer select own farm" ON public.document_field_extractions;
+  END IF;
+END
+$drop_policies$;
 
 -- -----------------------------------------------------------------------------
 -- 2. Triggers. The append-only trigger must go before DROP TABLE, and the dedup
 --    trigger is removed from migration 24's table without altering that table
 --    in any other way.
 -- -----------------------------------------------------------------------------
-DROP TRIGGER IF EXISTS trg_dfe_append_only ON public.document_field_extractions;
-DROP TRIGGER IF EXISTS trg_evidence_attachment_digest_dedup ON public.evidence_request_attachments;
+DO $drop_triggers$
+BEGIN
+  IF to_regclass('public.document_field_extractions') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS trg_dfe_append_only ON public.document_field_extractions;
+  END IF;
+  IF to_regclass('public.evidence_request_attachments') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS trg_evidence_attachment_digest_dedup ON public.evidence_request_attachments;
+  END IF;
+END
+$drop_triggers$;
 
 -- -----------------------------------------------------------------------------
 -- 3. RPC and lookup function.
@@ -147,7 +161,6 @@ DECLARE
   damage  text[] := ARRAY[]::text[];
   c text;
   i text;
-  f text;
 BEGIN
   IF to_regclass('public.document_field_extractions') IS NOT NULL THEN
     residue := residue || 'table document_field_extractions';
@@ -167,13 +180,24 @@ BEGIN
     THEN residue := residue || ('index ' || i); END IF;
   END LOOP;
 
-  FOREACH f IN ARRAY ARRAY['record_document_field_extraction','find_document_digest_matches',
-                           'fn_dfe_append_only','fn_evidence_attachment_digest_dedup',
-                           'document_extraction_field_names','document_extraction_provenances'] LOOP
-    IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-               WHERE n.nspname = 'public' AND p.proname = f)
-    THEN residue := residue || ('function ' || f); END IF;
-  END LOOP;
+  IF to_regprocedure('public.record_document_field_extraction(text,uuid,text,text,text,numeric,text)') IS NOT NULL THEN
+    residue := residue || 'function record_document_field_extraction(text,uuid,text,text,text,numeric,text)';
+  END IF;
+  IF to_regprocedure('public.find_document_digest_matches(char)') IS NOT NULL THEN
+    residue := residue || 'function find_document_digest_matches(char)';
+  END IF;
+  IF to_regprocedure('public.fn_dfe_append_only()') IS NOT NULL THEN
+    residue := residue || 'function fn_dfe_append_only()';
+  END IF;
+  IF to_regprocedure('public.fn_evidence_attachment_digest_dedup()') IS NOT NULL THEN
+    residue := residue || 'function fn_evidence_attachment_digest_dedup()';
+  END IF;
+  IF to_regprocedure('public.document_extraction_field_names()') IS NOT NULL THEN
+    residue := residue || 'function document_extraction_field_names()';
+  END IF;
+  IF to_regprocedure('public.document_extraction_provenances()') IS NOT NULL THEN
+    residue := residue || 'function document_extraction_provenances()';
+  END IF;
 
   IF EXISTS (SELECT 1 FROM pg_trigger
              WHERE tgname IN ('trg_dfe_append_only','trg_evidence_attachment_digest_dedup')
