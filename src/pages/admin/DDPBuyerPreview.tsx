@@ -110,17 +110,25 @@ export interface DisclosureOverrideState {
   unavailable: boolean
 }
 
+// The farm a batch belongs to. Extracted because BOTH the gate and the caller
+// that resolves overrides FOR the gate must agree on it: the override read is
+// keyed by farm id, so a caller matching farms differently would resolve
+// overrides for one farm and evaluate them against another.
+function findFarmForItem(item: InventoryItem, farms: FarmProfile[] | undefined) {
+  return farms?.find(f =>
+    (item.farmId && f.id === item.farmId) ||
+    f.tradingName === item.farmName ||
+    f.legalBusinessName === item.farmName
+  )
+}
+
 function computeBuyerDisclosureStatus(
   item: InventoryItem,
   farms: FarmProfile[] | undefined,
   authoritative?: StoredDecision | null,
   overrideState?: DisclosureOverrideState | null,
 ) {
-  const farm = farms?.find(f =>
-    (item.farmId && f.id === item.farmId) ||
-    f.tradingName === item.farmName ||
-    f.legalBusinessName === item.farmName
-  )
+  const farm = findFarmForItem(item, farms)
 
   // OVERRIDES MUST BE AUTHORITATIVE HERE. This used to call
   // applyRequirementOverrides / applyRiskOverrides, which read raw localStorage —
@@ -129,7 +137,15 @@ function computeBuyerDisclosureStatus(
   // another admin had re-opened on the server, while THIS gate still saw the stale
   // browser copy marked 'accepted' and would happily enable Issue Buyer Pack.
   //
-  // `overrideState` is undefined only for callers that render nothing gate-bearing.
+  // BOTH gate-bearing callers now pass `overrideState`: the single-batch pack and
+  // the Qualified Buyer Preview list. The `undefined` branch below is the raw
+  // localStorage path and is reachable only from a caller that renders no
+  // approval claim at all — there is currently no such caller, and adding one
+  // that IS gate-bearing is the exact defect buyerPreviewApprovedList.test.ts
+  // guards against. (It survived one round: the list passed `authoritative` but
+  // not `overrideState`, so its decision half was authoritative while its
+  // override half still read the browser cache. Half a gate is not a gate.)
+  //
   // null (not settled) and unavailable (read failed) are BOTH treated as blocking:
   // an override can clear a blocker, so an override state we cannot verify must
   // never be allowed to do so. Derived blockers alone are not sufficient here —
@@ -172,8 +188,8 @@ function computeBuyerDisclosureStatus(
   // AUTHORITATIVE DECISION, when the caller has resolved one. The issue gate must
   // never be driven by the raw localStorage cache: a decision the server refused,
   // or one whose server state could not be read, must not authorise a release.
-  // `authoritative` is undefined only for the read-only summary list below, which
-  // displays cached state and issues nothing.
+  // `authoritative` is passed by every current caller; the loadProcurementDecisions()
+  // fallback is retained only for a future read-only caller that issues nothing.
   const storedDecision = authoritative !== undefined
     ? authoritative
     : loadProcurementDecisions()[item.id]
@@ -1046,7 +1062,73 @@ function ApprovedInventoryList({ inventory, farms }: { inventory: InventoryItem[
     return () => { cancelled = true }
   }, [candidateKey])
 
-  const approved = resolution === null || resolution.unavailable
+  // AUTHORITATIVE OVERRIDES for the whole candidate set. Resolving the decisions
+  // alone left this list half-authoritative: a batch whose blocker had been
+  // re-opened on the server still appeared under "Human-Approved" because the
+  // override half fell through to raw localStorage. Batched into one risk read
+  // and one requirement read — not N+1 — and stored WITH the candidate set it was
+  // read for, so a changed set reads as unsettled in the same render, exactly as
+  // the decision resolve above does.
+  // Farm ids via the SAME matcher the gate uses, so overrides are resolved for
+  // precisely the farms they will be evaluated against. Derived during render and
+  // flattened to a primitive for the identical reason candidateKey is: `farms` is
+  // an array PROP, so depending on it directly would re-run this effect on every
+  // parent render that rebuilds an equal array — and since the effect setStates,
+  // that is a render loop, not just waste.
+  const overrideFarmIds = Array.from(
+    new Set(candidates.map(i => findFarmForItem(i, farms)?.id).filter((id): id is string => !!id)),
+  )
+  const overrideFarmKey = overrideFarmIds.join(' ')
+
+  // The resolution is keyed on BOTH dimensions it was read for. Either one
+  // changing makes the stored value stale in the very same render that changed
+  // it, so the gate reads as unsettled rather than applying one candidate set's
+  // overrides to another's.
+  const overrideKey = `${candidateKey}|${overrideFarmKey}`
+  const [resolvedOverrides, setResolvedOverrides] =
+    useState<{ key: string; value: DisclosureOverrideState } | null>(null)
+  const overrideState = resolvedOverrides !== null && resolvedOverrides.key === overrideKey
+    ? resolvedOverrides.value
+    : null
+
+  useEffect(() => {
+    let cancelled = false
+    const items = candidateKey === '' ? [] : candidates
+    const farmIds = overrideFarmKey === '' ? [] : overrideFarmKey.split(' ')
+    const riskIds = items.flatMap(i => {
+      const farm = findFarmForItem(i, farms)
+      return deriveAutoRisks(farm ? [farm] : [], [i]).map(r => r.riskId)
+    })
+
+    Promise.all([resolveRiskOverrides(riskIds), resolveRequirementOverrides(farmIds)]).then(
+      ([risks, requirements]) => {
+        if (cancelled) return
+        setResolvedOverrides({
+          key: overrideKey,
+          // Union, not intersection: either read failing makes the override
+          // picture unverifiable and the gate must shut.
+          value: {
+            risks: risks.byKey,
+            requirements: requirements.byKey,
+            unavailable: risks.unavailable || requirements.unavailable,
+          },
+        })
+      },
+      () => {
+        if (cancelled) return
+        setResolvedOverrides({
+          key: overrideKey,
+          value: { risks: new Map(), requirements: new Map(), unavailable: true },
+        })
+      },
+    )
+    return () => { cancelled = true }
+    // Both deps are primitives. `farms` is read inside only to derive risk ids
+    // from the farms overrideFarmKey already pins.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidateKey, overrideFarmKey])
+
+  const approved = resolution === null || resolution.unavailable || overrideState === null || overrideState.unavailable
     ? []
     : candidates.filter(item => {
         const decision = resolution.decisions.get(item.id)
@@ -1056,10 +1138,18 @@ function ApprovedInventoryList({ inventory, farms }: { inventory: InventoryItem[
           notes: decision!.reason ?? undefined,
           decidedAt: decision!.decidedAt as string,
         }
-        return computeBuyerDisclosureStatus(item, farms, authoritative).isHumanApproved
+        return computeBuyerDisclosureStatus(item, farms, authoritative, overrideState).isHumanApproved
       })
 
-  const listState = resolveApprovedListState({ resolution, approvedCount: approved.length })
+  // Both reads gate the list, so both feed its user-visible state. An empty table
+  // may only be shown once BOTH have settled successfully — otherwise "nothing is
+  // approved" is a positive claim made on an unread override store.
+  const listState = resolveApprovedListState({
+    resolution: resolution === null || overrideState === null
+      ? null
+      : { unavailable: resolution.unavailable || overrideState.unavailable },
+    approvedCount: approved.length,
+  })
 
   return (
     <div className="page-wrap ddp-wrap">
