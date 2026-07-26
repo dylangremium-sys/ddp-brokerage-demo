@@ -98,6 +98,8 @@ interface OverrideClientLike {
           maybeSingle(): Promise<{ data: unknown; error: DbError | null }>
         }
       }
+      /** Batch read. One round trip for N keys — see the resolve*Overrides pair. */
+      in(col: string, vals: string[]): Promise<{ data: unknown; error: DbError | null }>
     }
     insert(row: Record<string, unknown>): Promise<{ error: DbError | null }>
   }
@@ -372,6 +374,182 @@ export async function recordRequirementOverride(
 
   saveRequirementOverride(input.farmId, input.type, input.status, input.notes)
   return { ok: true, persistedTo: 'server' }
+}
+
+/**
+ * The outcome of resolving MANY override keys at once.
+ *
+ * `unavailable` is a property of the WHOLE read, not of an individual key: one
+ * query answered for all of them, so if it failed the authoritative state of
+ * every key is unknown. A surface that lists overrides must fail closed across
+ * the whole set and say the source is unavailable — never render it as "no
+ * overrides", which is a positive claim a failed read does not support.
+ */
+export interface BatchOverrideResolution<T> {
+  /** One entry per requested key, always. */
+  byKey: Map<string, T>
+  /** True ⇒ the authoritative read failed; no key may be treated as cleared. */
+  unavailable: boolean
+  error?: string
+}
+
+/** The composite key used for requirement overrides, as one string. */
+export function requirementKey(farmId: string, type: DocumentRequirementType): string {
+  return `${farmId}::${type}`
+}
+
+/**
+ * Resolves MANY risk overrides in ONE round trip.
+ *
+ * The Risk Register renders every risk at once. Resolving them individually
+ * would be an N+1 against the authoritative source; this mirrors
+ * procurementDecisionStore.resolveDecisions, with the same fail-closed contract.
+ */
+export async function resolveRiskOverrides(
+  riskIds: string[],
+  client: OverrideClientLike | null = defaultClient as OverrideClientLike | null,
+): Promise<BatchOverrideResolution<ResolvedRiskOverride>> {
+  const ids = Array.from(new Set(riskIds))
+  const byKey = new Map<string, ResolvedRiskOverride>()
+  if (ids.length === 0) return { byKey, unavailable: false }
+
+  const local = loadRiskOverrides()
+  const fromCache = (riskId: string): ResolvedRiskOverride => {
+    const entry = local[riskId]
+    if (!entry || !isRiskStatus(entry.status)) {
+      return { status: null, reason: null, owner: null, decidedAt: null, decidedBy: null, source: 'none' }
+    }
+    return {
+      status: entry.status,
+      reason: null,   // pre-migration overrides carry no reason — that was the defect
+      owner: asString(entry.owner),
+      decidedAt: asString(entry.updatedAt),
+      decidedBy: null,
+      source: 'local-cache',
+    }
+  }
+
+  // DEMO MODE (no Supabase): the cache IS the store, exactly as before.
+  if (!client) {
+    for (const id of ids) byKey.set(id, fromCache(id))
+    return { byKey, unavailable: false }
+  }
+
+  const { data, error } = await client.from(RISK_VIEW)
+    .select('risk_id, status, reason, owner, decided_at, decided_by')
+    .in('risk_id', ids)
+
+  if (error && !isTableMissing(error)) {
+    const message = unavailableMessage(error)
+    for (const id of ids) {
+      byKey.set(id, { status: null, reason: null, owner: null, decidedAt: null, decidedBy: null, source: 'unavailable', error: message })
+    }
+    return { byKey, unavailable: true, error: message }
+  }
+
+  const rows: Array<Record<string, unknown>> =
+    !error && Array.isArray(data) ? (data as Array<Record<string, unknown>>) : []
+  const server = new Map<string, Record<string, unknown>>()
+  for (const row of rows) {
+    const key = asString(row.risk_id)
+    // The view is DISTINCT ON (risk_id), so at most one row per key already;
+    // first-wins keeps this total even if that ever changes.
+    if (key && !server.has(key)) server.set(key, row)
+  }
+
+  for (const id of ids) {
+    const row = server.get(id)
+    if (row && isRiskStatus(row.status)) {
+      byKey.set(id, {
+        status: row.status,
+        reason: asString(row.reason),
+        owner: asString(row.owner),
+        decidedAt: asString(row.decided_at),
+        decidedBy: asString(row.decided_by),
+        source: 'server',
+      })
+      continue
+    }
+    byKey.set(id, fromCache(id))
+  }
+
+  return { byKey, unavailable: false }
+}
+
+/**
+ * Resolves MANY requirement overrides in ONE round trip.
+ *
+ * Keyed by `${farmId}::${type}` (requirementKey) in the returned map, matching
+ * the client's own composite key. The query filters on farm_id only — the farm
+ * set is what bounds the page — and the pair is reassembled client-side, so one
+ * round trip covers every requirement type on every listed farm.
+ */
+export async function resolveRequirementOverrides(
+  farmIds: string[],
+  client: OverrideClientLike | null = defaultClient as OverrideClientLike | null,
+): Promise<BatchOverrideResolution<ResolvedRequirementOverride>> {
+  const ids = Array.from(new Set(farmIds))
+  const byKey = new Map<string, ResolvedRequirementOverride>()
+  if (ids.length === 0) return { byKey, unavailable: false }
+
+  const local = loadRequirementOverrides()
+  const cacheInto = (target: Map<string, ResolvedRequirementOverride>) => {
+    for (const [key, entry] of Object.entries(local)) {
+      const farmId = key.split('::')[0]
+      if (!ids.includes(farmId)) continue
+      if (!entry || !isEvidenceStatus(entry.status)) continue
+      if (target.has(key)) continue
+      target.set(key, {
+        status: entry.status,
+        reason: null,
+        notes: asString(entry.notes),
+        decidedAt: asString(entry.lastUpdated),
+        decidedBy: null,
+        source: 'local-cache',
+      })
+    }
+  }
+
+  if (!client) {
+    cacheInto(byKey)
+    return { byKey, unavailable: false }
+  }
+
+  const { data, error } = await client.from(REQUIREMENT_VIEW)
+    .select('farm_id, requirement_type, status, reason, notes, decided_at, decided_by')
+    .in('farm_id', ids)
+
+  if (error && !isTableMissing(error)) {
+    const message = unavailableMessage(error)
+    // Every key is unknown. The map is left EMPTY rather than filled with
+    // 'unavailable' placeholders, because the set of keys is not known ahead of
+    // the read — callers must branch on `unavailable`, not on map membership.
+    return { byKey, unavailable: true, error: message }
+  }
+
+  const rows: Array<Record<string, unknown>> =
+    !error && Array.isArray(data) ? (data as Array<Record<string, unknown>>) : []
+  for (const row of rows) {
+    const farmId = asString(row.farm_id)
+    const type = asString(row.requirement_type)
+    if (!farmId || !type || !isEvidenceStatus(row.status)) continue
+    const key = `${farmId}::${type}`
+    if (byKey.has(key)) continue
+    byKey.set(key, {
+      status: row.status,
+      reason: asString(row.reason),
+      notes: asString(row.notes),
+      decidedAt: asString(row.decided_at),
+      decidedBy: asString(row.decided_by),
+      source: 'server',
+    })
+  }
+
+  // Backward compatibility: keys the server has no row for fall through to the
+  // cache, exactly as the single-key path does.
+  cacheInto(byKey)
+
+  return { byKey, unavailable: false }
 }
 
 /**
