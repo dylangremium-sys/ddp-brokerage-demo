@@ -1,6 +1,6 @@
 # Migration Runtime Status — by Environment
 
-**Last verified: 2026-07-21.** This file records where each migration actually is,
+**Last verified: staging 2026-07-21; Production 2026-07-26.** This file records where each migration actually is,
 per environment. A migration is never described as "applied" without naming the
 environment it was applied to and the runtime evidence that proves it.
 
@@ -25,7 +25,7 @@ Contains no credentials, connection strings, keys or passwords.
 | Repository baseline | `origin/main` @ `329f05d1dff8126a6f600b899026d234493dda20` |
 | Staging project ref | `szqocdabwkjrggrddocx` |
 | Production project ref | `iihxjrfxmycjafbtjvvq` |
-| Environments inspected | **Staging only.** Production was not contacted. |
+| Environments inspected | **Staging only.** Production was not contacted. **Superseded for Production by the 2026-07-26 read-only Production verification below.** |
 | Method | Read-only `pg_catalog` / `information_schema` queries, plus `npm run security:staging` |
 
 Both project refs are already hardcoded in `scripts/run-staging-security-tests.mjs`
@@ -48,15 +48,81 @@ presence of a `.sql` file in the repository is **not** evidence of application.
 
 ---
 
+## Production verification — 2026-07-26
+
+Closes AUDIT-013 ("Production status of migrations 19, 20, 21, 22, 23 is UNKNOWN").
+This section is the authoritative Production record; the 2026-07-21 provenance block
+above described a staging-only inspection and is superseded for Production.
+
+| | |
+|---|---|
+| Date | 2026-07-26 |
+| Production project ref | `iihxjrfxmycjafbtjvvq` |
+| Connection | role `ddp_ro` (`NOSUPERUSER`, `NOBYPASSRLS`, SELECT-only), via `PROD_RO_DATABASE_URL` |
+| Session guard | `PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=30000"` — the server rejects any write regardless of script content |
+| Scripts executed | `16_PRODUCTION_SAFETY_VERIFY.sql` (whole file, Q1–Q8); `10_..._VERIFY.sql`; `17_..._VERIFY.sql`; `19_..._VERIFY.sql` **Section A only** (lines 1–138); `21_..._VERIFY.sql` **read-only prefix only** (lines 1–32); `22_..._VERIFY.sql` **read-only prefix only** (lines 1–176); `23_..._VERIFY.sql` **Section A only** (lines 1–107) |
+| Freeze compliance | `docs/PRODUCTION_CHANGE_FREEZE_2026-07-25.md` §2 permits read-only reads via `ddp_ro`. **No Section B was run against Production** — every VERIFY Section B builds an `auth.users` fixture and is a write path even under `ROLLBACK`. No DDL, DML, GRANT or REVOKE was executed. |
+
+### Result
+
+| Migration | Production status | Evidence |
+|---|---|---|
+| **10** Buyer Pack snapshots | `APPLIED_AND_VERIFIED` | Table present with all constraints: `content_hash ~ '^[0-9a-f]{64}$'`, `procurement_decision = 'progress'`, `version >= 1`, `UNIQUE (pack_id, version)`, FKs to `inventory_batches`/`profiles`/self |
+| **17** Procurement decisions | `APPLIED_AND_VERIFIED` | V5–V8 all `ok`: append-only trigger `trg_prevent_procurement_decision_mutation` installed; `anon` cannot SELECT; `authenticated` holds SELECT+INSERT but **not** UPDATE/DELETE; trigger fn not executable; `procurement_decisions_current` view present |
+| **19** Farm admin-field guard | `APPLIED_AND_VERIFIED` | Section A emitted `VERIFY A PASSED: object state correct (SECURITY DEFINER, fixed search_path, is_ddp_admin, all 7 columns preserved, trigger enabled and fires on INSERT+UPDATE, not directly executable)`. `16_..._VERIFY.sql` Q1 independently returned `SAFE — UPDATE policy is guarded by trg_protect_farm_admin_fields` |
+| **20** Guard EXECUTE ACL fix | `APPLIED_AND_VERIFIED` | `has_function_privilege('authenticated','public.fn_protect_farm_admin_fields()','EXECUTE')` = `false`. This ACL state is the migration's entire content |
+| **21** DDP-controlled farmer provisioning | `APPLIED_NOT_VERIFIED` | Catalog: `profiles.role` CHECK = `role = ANY (ARRAY['ddp_admin','farmer','pending'])`; `handle_new_user` body references `pending`. **The VERIFY script could not complete**: it reads `auth.users`, and `ddp_ro` has no USAGE on schema `auth` (`ERROR: permission denied for schema auth`). This is a grant limitation of the read-only role, **not** evidence of drift |
+| **22** Operational-farmer RLS overlay | **`PARTIALLY_APPLIED`** | VERIFY A/B/C **passed** (helper is SECURITY DEFINER + STABLE + pinned search_path; executable by `authenticated` not `anon`; all 11 tables carry the RESTRICTIVE FOR ALL overlay gating on the helper in both USING and WITH CHECK, RLS on). VERIFY **D FAILED: storage policy missing** — see below |
+| **23** Buyer Pack server-authoritative issuance | `APPLIED_AND_VERIFIED` | Section A emitted `VERIFY A PASSED: issuance is server-authoritative`. Probe returned `rpc_present=t, reads_server_trail=t, ignores_client_decision=t, immutability_trigger_present=t`. The live body references `procurement_decisions_current`, confirming the migration-23 definition is installed and **not** migration 10's client-trusting version |
+| **24** Evidence Request & Resolution | `NOT_APPLIED` | `evidence_requests` / `evidence_request_events` count = 0 on Production. Correct and intended: the change freeze §1.1 explicitly defers migration 24 |
+
+### Finding — migration 22 storage overlay is absent on Production
+
+`22_..._HARDENING.sql:157-163` installs a policy named
+`farmer buckets: operational farmer or admin`, `AS RESTRICTIVE FOR ALL` on
+`storage.objects`, scoped to the `farmer-documents` and `farmer-photos` buckets and
+gating on `has_operational_farmer_access()`. **That policy does not exist on
+Production.** The three storage policies that do exist are:
+
+| Policy | Permissive | Cmd | Predicate |
+|---|---|---|---|
+| `farmer-documents: admin all` | PERMISSIVE | ALL | `bucket_id = 'farmer-documents' AND is_ddp_admin()` |
+| `farmer-documents: farmer read own` | PERMISSIVE | SELECT | `bucket_id = 'farmer-documents' AND (is_ddp_admin() OR auth.uid()::text = (string_to_array(name,'/'))[1])` |
+| `farmer-documents: farmer upload own` | PERMISSIVE | INSERT | `bucket_id = 'farmer-documents' AND auth.uid()::text = (string_to_array(name,'/'))[1]` |
+
+**Not a visibility artefact.** `ddp_ro` can read `pg_policies` for schema `storage` —
+the query returned the three rows above. The absence is real. (`ddp_ro` separately
+lacks USAGE on the `storage` schema itself, so `storage.buckets` could not be listed.)
+
+**Consequence.** The two farmer policies gate on the uid path-prefix only; neither
+carries a role check. The RESTRICTIVE overlay from migration 22 is what ANDs
+`has_operational_farmer_access()` on top. Without it, an authenticated identity whose
+role is `pending` — i.e. not operational — can **read and upload** objects under its own
+uid prefix in `farmer-documents`. `farmer-photos` carries no policy at all on
+Production.
+
+**Reachability not confirmed.** Whether any `pending` identity currently exists on
+Production could not be established: `public.profiles` is RLS-gated by a policy that
+calls `is_ddp_admin()`, and `ddp_ro` has no EXECUTE on that function
+(`ERROR: permission denied for function is_ddp_admin`). The gap is therefore
+**structural and confirmed**; live exploitability is **unmeasured**.
+
+**Not remediated here.** Installing the missing storage policy is DDL against
+Production, which the change freeze §1.3–§1.4 prohibits. It requires the §3
+break-glass procedure — written authorisation recorded before execution, naming the
+exact statements, pre-state evidence, rollback and operator. **Escalated, not fixed.**
+
+---
+
 ## Migrations 19–24 — status matrix
 
 | Migration | Repository | Staging | Production | Evidence (staging) | Unresolved |
 |---|---|---|---|---|---|
-| **19** Farm admin-field guard | On `main` | **`APPLIED_NOT_VERIFIED`** | **`UNKNOWN`** | Catalog (installed): `fn_protect_farm_admin_fields` present; body references `is_ddp_admin`; **no `= 'admin'` role literal**; non-internal trigger present on `public.farms`. Behavioural (**partial — UPDATE only, 4 of 7 protected columns**): harness group B2 — farmer A could not set `status`, `compliance_status`, `risk_level` or `partner_tier` on its own farm (write accepted, values reverted; `status` still `Submitted to DDP`) | **Behavioural coverage is incomplete.** The migration installs a `BEFORE INSERT OR UPDATE` trigger over seven admin-controlled columns (`19_..._HARDENING.sql:20-25`, `:187-190`): the four exercised above plus `export_readiness`, `reviewed_by` and `created_by`. The **INSERT** vector — which the migration's own header records as a second vector on the same authorization boundary, including `created_by` spoofing — and those three columns were **not** exercised. Production status also uncorroborated — see Conflicting evidence |
-| **20** Guard EXECUTE ACL fix | On `main` | **`APPLIED_AND_VERIFIED`** | **`UNKNOWN`** | Catalog: `authenticated` does **not** hold `EXECUTE` on `fn_protect_farm_admin_fields`. This ACL state is the migration's entire content, and is exactly what `19_..._VERIFY.sql` Section A asserts | No rollback script exists for this migration |
-| **21** DDP-controlled farmer provisioning | On `main` | **`APPLIED_AND_VERIFIED`** | **`UNKNOWN`** | Catalog: `profiles.role` CHECK admits `pending`; column default is `pending`; `handle_new_user` body assigns `pending`. Harness preflight: **"migrations 21 and 22 present"** (PASS). Behavioural: farmers A and B each denied self-elevation to `ddp_admin` by RLS (`SQLSTATE 42501`), role unchanged afterwards | Supabase Auth "allow new users to sign up" is a dashboard setting, not expressible in SQL, and was **not** inspected |
-| **22** Operational-farmer RLS overlay | On `main` | **`APPLIED_NOT_VERIFIED`** | **`UNKNOWN`** | Catalog (installed): `has_operational_farmer_access()` present; 12 RESTRICTIVE policies in `public`. Behavioural — **table overlay substantially covered**: 59 of 61 pending-matrix probes passed — a `pending` identity was denied SELECT/INSERT/UPDATE/DELETE across all 11 overlay tables, denied `market_price_benchmarks` read, and denied both storage buckets, while an operational farmer retained access on identical requests | **Storage verification is incomplete.** The migration's storage policy is `AS RESTRICTIVE FOR ALL` on `storage.objects` for both farmer buckets (`22_..._HARDENING.sql:157-163`), i.e. SELECT + INSERT + UPDATE + DELETE. Only **INSERT** was fully exercised; **SELECT/list only partially** — the pending list-control probe **failed**; there was **no pending-user storage UPDATE** enforcement probe and **no pending-user storage DELETE** enforcement probe. The `remove()` calls were cleanup attempts that silently matched zero objects and are **not** DELETE-enforcement evidence. Full `FOR ALL` behavioural verification is therefore incomplete. **This is a coverage gap, not evidence of an access-control failure** — every operation actually probed enforced correctly. 2 storage probes failed on cleanup, not on enforcement — see Harness result |
-| **23** Buyer Pack server-authoritative issuance | On `main` | **`APPLIED_NOT_VERIFIED`** | **`UNKNOWN`** | Catalog: `issue_buyer_pack_snapshot` present and its body references `procurement_decisions_current` — i.e. the migration-23 definition is installed, not migration 10's client-trusting version. Prerequisites confirmed: `buyer_pack_snapshots` and `procurement_decisions` tables both present | `23_..._VERIFY.sql` Section B (behavioural: PK-HOLD / PK-REJECT / PK-NONE / stale-decision scenarios) was **not** executed. Applied but not behaviourally proven |
+| **19** Farm admin-field guard | On `main` | **`APPLIED_NOT_VERIFIED`** | **`APPLIED_AND_VERIFIED`** (2026-07-26) | Catalog (installed): `fn_protect_farm_admin_fields` present; body references `is_ddp_admin`; **no `= 'admin'` role literal**; non-internal trigger present on `public.farms`. Behavioural (**partial — UPDATE only, 4 of 7 protected columns**): harness group B2 — farmer A could not set `status`, `compliance_status`, `risk_level` or `partner_tier` on its own farm (write accepted, values reverted; `status` still `Submitted to DDP`) | **Behavioural coverage is incomplete.** The migration installs a `BEFORE INSERT OR UPDATE` trigger over seven admin-controlled columns (`19_..._HARDENING.sql:20-25`, `:187-190`): the four exercised above plus `export_readiness`, `reviewed_by` and `created_by`. The **INSERT** vector — which the migration's own header records as a second vector on the same authorization boundary, including `created_by` spoofing — and those three columns were **not** exercised. Production status also uncorroborated — see Conflicting evidence |
+| **20** Guard EXECUTE ACL fix | On `main` | **`APPLIED_AND_VERIFIED`** | **`APPLIED_AND_VERIFIED`** (2026-07-26) | Catalog: `authenticated` does **not** hold `EXECUTE` on `fn_protect_farm_admin_fields`. This ACL state is the migration's entire content, and is exactly what `19_..._VERIFY.sql` Section A asserts | No rollback script exists for this migration |
+| **21** DDP-controlled farmer provisioning | On `main` | **`APPLIED_AND_VERIFIED`** | **`APPLIED_NOT_VERIFIED`** (2026-07-26; catalog only — VERIFY blocked by `ddp_ro` grants) | Catalog: `profiles.role` CHECK admits `pending`; column default is `pending`; `handle_new_user` body assigns `pending`. Harness preflight: **"migrations 21 and 22 present"** (PASS). Behavioural: farmers A and B each denied self-elevation to `ddp_admin` by RLS (`SQLSTATE 42501`), role unchanged afterwards | Supabase Auth "allow new users to sign up" is a dashboard setting, not expressible in SQL, and was **not** inspected |
+| **22** Operational-farmer RLS overlay | On `main` | **`APPLIED_NOT_VERIFIED`** | **`PARTIALLY_APPLIED`** (2026-07-26; table overlay present, **storage overlay ABSENT**) | Catalog (installed): `has_operational_farmer_access()` present; 12 RESTRICTIVE policies in `public`. Behavioural — **table overlay substantially covered**: 59 of 61 pending-matrix probes passed — a `pending` identity was denied SELECT/INSERT/UPDATE/DELETE across all 11 overlay tables, denied `market_price_benchmarks` read, and denied both storage buckets, while an operational farmer retained access on identical requests | **Storage verification is incomplete.** The migration's storage policy is `AS RESTRICTIVE FOR ALL` on `storage.objects` for both farmer buckets (`22_..._HARDENING.sql:157-163`), i.e. SELECT + INSERT + UPDATE + DELETE. Only **INSERT** was fully exercised; **SELECT/list only partially** — the pending list-control probe **failed**; there was **no pending-user storage UPDATE** enforcement probe and **no pending-user storage DELETE** enforcement probe. The `remove()` calls were cleanup attempts that silently matched zero objects and are **not** DELETE-enforcement evidence. Full `FOR ALL` behavioural verification is therefore incomplete. **This is a coverage gap, not evidence of an access-control failure** — every operation actually probed enforced correctly. 2 storage probes failed on cleanup, not on enforcement — see Harness result |
+| **23** Buyer Pack server-authoritative issuance | On `main` | **`APPLIED_NOT_VERIFIED`** | **`APPLIED_AND_VERIFIED`** (2026-07-26, Section A) | Catalog: `issue_buyer_pack_snapshot` present and its body references `procurement_decisions_current` — i.e. the migration-23 definition is installed, not migration 10's client-trusting version. Prerequisites confirmed: `buyer_pack_snapshots` and `procurement_decisions` tables both present | `23_..._VERIFY.sql` Section B (behavioural: PK-HOLD / PK-REJECT / PK-NONE / stale-decision scenarios) was **not** executed. Applied but not behaviourally proven |
 | **24** Evidence Request & Resolution | On `main` (since 2026-07-23, PR #37 / `9496e1c`) | **`NOT_APPLIED`** | **`NOT_APPLIED`** | **Not applied to any hosted database.** Migration 24 only landed on `main` on 2026-07-23 (PR #37 merge `9496e1c`); no staging or Production apply has been performed, so there is no hosted catalog observation. Runtime evidence to date is **disposable-Postgres only**: HARDENING + STORAGE applied to a throwaway local PostgreSQL 18.4, then `24_..._VERIFY.sql` sections **A–M passed 13/13**, then STORAGE was rolled back to main — objects removed, pre-existing substrate intact; the destructive rollback guard **refused without explicit opt-in and succeeded with it**; teardown clean. **This is disposable-Postgres evidence only; it does not constitute hosted-Supabase (staging or Production) verification, and no parity with hosted Supabase is claimed.** | Staging apply + behavioural VERIFY on hosted Supabase **pending**. A reusable CI disposable-Postgres harness (PR-0) that would make this proof repeatable is **planned but not yet merged** |
 
 ### What changed relative to the previous revision
@@ -146,8 +212,8 @@ What this does and does not establish:
 |---|---|---|
 | **Repository** | Committed on `main`. | Committed on `main`. |
 | **Staging** | **`APPLIED_AND_VERIFIED`** (2026-07-14); table presence re-confirmed by catalog 2026-07-21 | **`APPLIED_AND_VERIFIED`** (2026-07-14); table presence re-confirmed by catalog 2026-07-21 |
-| **Production** | **`NOT_APPLIED`** per the 2026-07-14 operator record. **Not re-verified in this audit.** | **`NOT_APPLIED`** per the 2026-07-14 operator record. **Not re-verified in this audit.** |
-| **Runtime verification — production** | **None. Never executed.** | **None. Never executed.** |
+| **Production** | **`APPLIED_AND_VERIFIED`** (observed 2026-07-26). **This supersedes the 2026-07-14 operator record of `NOT_APPLIED`, which is now disproven** — see *Production verification — 2026-07-26* | **`APPLIED_AND_VERIFIED`** (observed 2026-07-26). **This supersedes the 2026-07-14 operator record of `NOT_APPLIED`, which is now disproven** — see *Production verification — 2026-07-26* |
+| **Runtime verification — production** | `10_..._VERIFY.sql` executed read-only against Production 2026-07-26: table present with all 5 CHECK/FK/PK/UNIQUE constraints (`content_hash ~ '^[0-9a-f]{64}$'`, `procurement_decision = 'progress'`, `version >= 1`, FKs to `inventory_batches`/`profiles`/self, `UNIQUE (pack_id, version)`) | `17_..._VERIFY.sql` executed read-only against Production 2026-07-26: **V5–V8 all `ok`** — append-only trigger installed, `anon` cannot SELECT, `authenticated` holds SELECT+INSERT but **not** UPDATE/DELETE, trigger fn not executable, `procurement_decisions_current` view present |
 | **Rollback** | `10_..._ROLLBACK.sql` present. | `17_..._ROLLBACK.sql` present — **destructive**: dropping the table destroys the decision audit trail. Export first. |
 
 **Ordering — not optional.** Migration 10 MUST be applied before migration 17;
@@ -244,17 +310,30 @@ operation, not an improvisation. Recorded here for a decision.
 
 ## Remaining unknowns
 
-1. **Production status of migrations 19, 20, 21, 22, 23** — `UNKNOWN`. Production was
-   not contacted in this audit. **There is no blanket "read-only Section A" path across
-   these migrations, and no migration 19/21/22/23 VERIFY script may be run wholesale
-   against production:**
+1. ~~**Production status of migrations 19, 20, 21, 22, 23** — `UNKNOWN`.~~
+   **RESOLVED 2026-07-26** — see *Production verification — 2026-07-26*. Statuses are
+   now 19 `APPLIED_AND_VERIFIED`, 20 `APPLIED_AND_VERIFIED`, 21 `APPLIED_NOT_VERIFIED`,
+   22 **`PARTIALLY_APPLIED`** (storage overlay absent — escalated under the freeze),
+   23 `APPLIED_AND_VERIFIED`. **One residual unknown carries forward:** migration 21's
+   behaviour on Production is unproven because `ddp_ro` has no USAGE on schema `auth`;
+   proving it needs either a widened read-only grant or a purpose-built probe that does
+   not read `auth.users`.
+
+   The execution constraints below were correct and were honoured — recorded here as the
+   standing rule for any future production run. **There is no blanket "read-only
+   Section A" path across these migrations, and no migration 19/21/22/23 VERIFY script
+   may be run wholesale against production:**
    - **19** and **23** each carry an object-state Section A written to be read-only.
      Either may be used only after that exact section has been re-read at the current
      repository revision and independently confirmed SELECT-only.
-   - **21** and **22** have **no production-safe read-only section at all**. Migration
-     21's VERIFY inserts into `auth.users` and updates `public.profiles`; migration 22's
-     VERIFY is likewise behavioural and performs DML. A closing `rollback` does **not**
-     make either safe against production.
+   - **21** and **22** carry **no labelled production-safe section**. Migration 21's
+     VERIFY inserts into `auth.users` and updates `public.profiles` (first write at
+     line 33); migration 22's VERIFY is likewise behavioural and performs DML (first
+     write at line 177). A closing `rollback` does **not** make either safe against
+     production. On 2026-07-26 they were run as **explicitly extracted read-only
+     prefixes** (21: lines 1–32; 22: lines 1–176) under an enforced read-only session.
+     That is the only sanctioned method, and the line boundaries must be re-derived at
+     the current revision before any repeat — they are not stable across edits.
    - **`16_PRODUCTION_SAFETY_VERIFY.sql`** contains no DML, but must still be reviewed at
      the exact repository revision before execution.
 
@@ -263,8 +342,12 @@ operation, not an improvisation. Recorded here for a decision.
    connecting, run under an enforced read-only session, and perform no application-table
    DML, no `auth.users` DML and no storage writes. This register records status; it is
    not an execution recipe and deliberately carries no runnable production SQL.
-2. **Production status of migrations 10 and 17** — recorded `NOT_APPLIED` on the
-   2026-07-14 operator record; **not re-verified** on 2026-07-21.
+2. ~~**Production status of migrations 10 and 17** — recorded `NOT_APPLIED` on the
+   2026-07-14 operator record; **not re-verified** on 2026-07-21.~~
+   **RESOLVED 2026-07-26** — both are `APPLIED_AND_VERIFIED` on Production. **The
+   2026-07-14 operator record was wrong**, which is itself the point: an operator
+   assertion of `NOT_APPLIED` survived twelve days and two documents before a catalog
+   read contradicted it.
 3. **Migration 23 behavioural enforcement on staging** — installed, but the decision-gate
    scenarios in `23_..._VERIFY.sql` Section B were not exercised.
 4. **Catalog VERIFY failures for migrations 12, 14, 15 on staging** — cause not
@@ -274,6 +357,11 @@ operation, not an improvisation. Recorded here for a decision.
    ("allow new users to sign up") is not expressible in SQL and was not inspected in
    either environment.
 7. **Migration 20 has no rollback script.**
+8. **Migration 22's storage overlay is absent on Production** — structural gap confirmed
+   2026-07-26; a `pending` identity can read and upload under its own uid prefix in
+   `farmer-documents`. Live reachability unmeasured (`ddp_ro` cannot count `pending`
+   identities). **Blocked on §3 break-glass authorisation** — installing the policy is
+   DDL, which the change freeze prohibits.
 
 ## Migration 24 — landed on `main` since this audit
 
