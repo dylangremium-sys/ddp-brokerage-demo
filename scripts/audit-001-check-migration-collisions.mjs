@@ -58,21 +58,28 @@ function fail(message) {
   process.exit(2);
 }
 
+/** git(), but any failure ends the run via fail() rather than returning empty. */
+function gitOrFail(args, describe) {
+  try {
+    return git(args);
+  } catch (error) {
+    return fail(`${describe}: ${error.message}`);
+  }
+}
+
 /** Remote branches, excluding the `origin/HEAD -> origin/main` symbolic line. */
 function getRemoteBranches() {
-  let raw;
-  try {
-    // for-each-ref emits exact refnames and never the `->` alias line that
-    // `git branch -r` produces.
-    //
-    // Full refnames, not %(refname:short): git shortens refs/remotes/origin/HEAD
-    // to plain `origin`, so filtering the short form for 'origin/HEAD' misses it
-    // and the symbolic pointer is then scanned as if it were a second branch —
-    // double-counting whatever main points at.
-    raw = git(['for-each-ref', '--format=%(refname)', 'refs/remotes/origin']);
-  } catch (error) {
-    fail(`could not list remote branches: ${error.message}`);
-  }
+  // for-each-ref emits exact refnames and never the `->` alias line that
+  // `git branch -r` produces.
+  //
+  // Full refnames, not %(refname:short): git shortens refs/remotes/origin/HEAD
+  // to plain `origin`, so filtering the short form for 'origin/HEAD' misses it
+  // and the symbolic pointer is then scanned as if it were a second branch —
+  // double-counting whatever main points at.
+  const raw = gitOrFail(
+    ['for-each-ref', '--format=%(refname)', 'refs/remotes/origin'],
+    'could not list remote branches',
+  );
 
   const branches = raw
     .split('\n')
@@ -100,12 +107,7 @@ function getRemoteBranches() {
  * tens of thousands here — and takes long enough to stall the CI job.
  */
 function getMigrationsOnRef(ref) {
-  let raw;
-  try {
-    raw = git(['ls-tree', '-r', ref]);
-  } catch (error) {
-    fail(`could not read tree for '${ref}': ${error.message}`);
-  }
+  const raw = gitOrFail(['ls-tree', '-r', ref], `could not read tree for '${ref}'`);
 
   const byNumber = new Map();
   const blobs = new Map();
