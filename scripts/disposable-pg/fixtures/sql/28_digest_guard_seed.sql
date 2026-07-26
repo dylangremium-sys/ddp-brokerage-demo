@@ -1,6 +1,6 @@
--- Destructive-guard seed for the 27_digest fixture.
+-- Destructive-guard seed for the 28_digest fixture.
 --
--- Creates the two kinds of provenance data migration 27's ROLLBACK guard must
+-- Creates the two kinds of provenance data migration 28's ROLLBACK guard must
 -- refuse to destroy without an explicit opt-in: one append-only extraction
 -- record, and one farmer_documents row carrying a recorded digest. This is
 -- HARNESS TEST DATA, not migration SQL — it mirrors the migration's own VERIFY

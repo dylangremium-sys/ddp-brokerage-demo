@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 27 — VERIFY (Evidence digest de-duplication & extraction provenance)
+-- Migration 28 — VERIFY (Evidence digest de-duplication & extraction provenance)
 --
 -- Production-safe: the whole script runs inside ONE transaction that ends in
 -- ROLLBACK, so every fixture it creates is discarded. It contains no COMMIT.
@@ -13,13 +13,13 @@
 -- A section that cannot build its fixture RAISES rather than silently passing,
 -- so the script can never pass vacuously.
 --
--- Run:  psql "<connection>" -v ON_ERROR_STOP=1 -f 27_EVIDENCE_DIGEST_DEDUP_VERIFY.sql
+-- Run:  psql "<connection>" -v ON_ERROR_STOP=1 -f 28_EVIDENCE_DIGEST_DEDUP_VERIFY.sql
 -- =============================================================================
 
 BEGIN;
 
 -- -----------------------------------------------------------------------------
--- VERIFY A — every migration-27 object exists with the required security shape.
+-- VERIFY A — every migration-28 object exists with the required security shape.
 -- -----------------------------------------------------------------------------
 DO $verify_a$
 DECLARE
@@ -105,7 +105,7 @@ BEGIN
       'bypass RLS and disclose other farms'' documents by digest';
   END IF;
 
-  RAISE NOTICE 'VERIFY A PASSED: all migration-27 objects exist; RLS on; write RPC is SECURITY DEFINER with search_path; digest lookup is SECURITY INVOKER.';
+  RAISE NOTICE 'VERIFY A PASSED: all migration-28 objects exist; RLS on; write RPC is SECURITY DEFINER with search_path; digest lookup is SECURITY INVOKER.';
 END
 $verify_a$;
 

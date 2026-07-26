@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 27 — Evidence digest de-duplication & extraction provenance
+-- Migration 28 — Evidence digest de-duplication & extraction provenance
 --
 -- Closes three gaps left open by the existing evidence surfaces. It is ADDITIVE:
 -- it creates one table, adds two columns to public.farmer_documents, and adds
@@ -25,8 +25,8 @@
 --   confident the machine was, nor that a field was unreadable rather than
 --   absent. Downstream that is indistinguishable from certainty.
 --
--- Verify:   27_EVIDENCE_DIGEST_DEDUP_VERIFY.sql
--- Rollback: 27_EVIDENCE_DIGEST_DEDUP_ROLLBACK.sql
+-- Verify:   28_EVIDENCE_DIGEST_DEDUP_VERIFY.sql
+-- Rollback: 28_EVIDENCE_DIGEST_DEDUP_ROLLBACK.sql
 --
 -- Preconditions:
 --   * public.is_ddp_admin()                     (migration 3 / AUTH_RLS_SCHEMA)
@@ -79,7 +79,7 @@ BEGIN
     missing := missing || 'function public.can_operationally_access_farm(uuid)';
   END IF;
 
-  -- The digest column this migration indexes must already exist: migration 27
+  -- The digest column this migration indexes must already exist: migration 28
   -- compares digests, it does not introduce the attachment digest itself.
   IF to_regclass('public.evidence_request_attachments') IS NOT NULL
      AND NOT EXISTS (
@@ -92,8 +92,8 @@ BEGIN
 
   IF array_length(missing, 1) IS NOT NULL THEN
     RAISE EXCEPTION
-      'migration 27 precondition failed: missing required object(s): %. '
-      'Apply migration 24 (and the base schema) before migration 27.',
+      'migration 28 precondition failed: missing required object(s): %. '
+      'Apply migration 24 (and the base schema) before migration 28.',
       array_to_string(missing, ', ');
   END IF;
 END

@@ -1,15 +1,15 @@
 {
-  "id": "27_digest",
-  "title": "Migration 27 — Evidence digest de-duplication & extraction provenance",
-  "description": "Applies migration 24's HARDENING stage as a prerequisite (27 constrains its attachment table and calls its can_operationally_access_farm helper), then migration 27. Runs VERIFY A-M, exercises the destructive-rollback guard, and rolls 27 back alone — asserting migration 24 and public.farmer_documents survive intact. The STORAGE companion of 24 is deliberately not applied: migration 27 touches no storage object.",
+  "id": "28_digest",
+  "title": "Migration 28 — Evidence digest de-duplication & extraction provenance",
+  "description": "Applies migration 24's HARDENING stage as a prerequisite (28 constrains its attachment table and calls its can_operationally_access_farm helper), then migration 28. Runs VERIFY A-M, exercises the destructive-rollback guard, and rolls 28 back alone — asserting migration 24 and public.farmer_documents survive intact. The STORAGE companion of 24 is deliberately not applied: migration 28 touches no storage object.",
   "pgMajor": 18,
   "migrationDir": ".",
   "applyStages": [
     { "label": "24-PREREQ", "file": "24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql" },
-    { "label": "HARDENING", "file": "27_EVIDENCE_DIGEST_DEDUP_HARDENING.sql" }
+    { "label": "HARDENING", "file": "28_EVIDENCE_DIGEST_DEDUP_HARDENING.sql" }
   ],
   "verify": {
-    "file": "27_EVIDENCE_DIGEST_DEDUP_VERIFY.sql",
+    "file": "28_EVIDENCE_DIGEST_DEDUP_VERIFY.sql",
     "expectedSections": ["A","B","C","D","E","F","G","H","I","J","K","L","M"],
     "expectedPassCount": 13,
     "note": "A-B are shape/privilege; C-F are the digest de-duplication rule INCLUDING the three adjacent cases that must still be permitted (different response, coexisting pending uploads, tombstoned re-attach); G is digest shape/pairing on the COA path; H-J are extraction provenance and confidence integrity; K is append-only; L is the surface discriminator and vocabularies; M is the cross-surface lookup."
@@ -17,9 +17,9 @@
   "rollback": {
     "stages": [
       {
-        "label": "27-rollback",
+        "label": "28-rollback",
         "source": "file",
-        "file": "27_EVIDENCE_DIGEST_DEDUP_ROLLBACK.sql"
+        "file": "28_EVIDENCE_DIGEST_DEDUP_ROLLBACK.sql"
       }
     ]
   },
@@ -46,11 +46,11 @@
   },
   "destructiveGuard": {
     "livenessTable": "public.document_field_extractions",
-    "seedSql": "fixtures/sql/27_digest_guard_seed.sql",
+    "seedSql": "fixtures/sql/28_digest_guard_seed.sql",
     "optInSetting": "document_extractions.rollback_destructive",
     "optInValue": "true",
-    "refusalStage": "27-rollback",
-    "expectRefusalMatch": "rollback 27 refused"
+    "refusalStage": "28-rollback",
+    "expectRefusalMatch": "rollback 28 refused"
   },
   "postRollback": {
     "removed": {

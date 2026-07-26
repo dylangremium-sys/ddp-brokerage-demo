@@ -1,13 +1,13 @@
 -- =============================================================================
--- Migration 27 — ROLLBACK (Evidence digest de-duplication & extraction provenance)
+-- Migration 28 — ROLLBACK (Evidence digest de-duplication & extraction provenance)
 --
--- Reverses ONLY migration 27. It creates nothing, and it touches no object
+-- Reverses ONLY migration 28. It creates nothing, and it touches no object
 -- belonging to any other migration. Migration 24's tables, RPCs and triggers,
 -- and public.farmer_documents itself, are all left intact — this file removes
--- only the two columns migration 27 added to that table.
+-- only the two columns migration 28 added to that table.
 --
 -- ORDERING REQUIREMENT: run this file BEFORE migration 24's rollback if both are
--- being reversed. Migration 27's RLS policy calls
+-- being reversed. Migration 28's RLS policy calls
 -- public.can_operationally_access_farm(), which migration 24's rollback drops;
 -- reversing 24 first would leave a policy referencing a missing function.
 --
@@ -64,7 +64,7 @@ BEGIN
 
     IF opt_in IS DISTINCT FROM 'true' THEN
       RAISE EXCEPTION
-        'rollback 27 refused: % extraction record(s) and % recorded document digest(s) exist. '
+        'rollback 28 refused: % extraction record(s) and % recorded document digest(s) exist. '
         'Both attest to what was received and believed at intake and cannot be reconstructed '
         '(re-hashing proves what a file is now, not what it was when it arrived). To proceed '
         'deliberately, run SET LOCAL document_extractions.rollback_destructive = ''true''; '
@@ -73,7 +73,7 @@ BEGIN
     END IF;
 
     RAISE NOTICE
-      'rollback 27: destructive opt-in acknowledged — removing % extraction record(s) and % document digest(s).',
+      'rollback 28: destructive opt-in acknowledged — removing % extraction record(s) and % document digest(s).',
       extraction_count, digest_count;
   END IF;
 END
@@ -122,7 +122,7 @@ DROP FUNCTION IF EXISTS public.fn_evidence_attachment_digest_dedup();
 DROP TABLE IF EXISTS public.document_field_extractions;
 
 -- -----------------------------------------------------------------------------
--- 5. Vocabulary helpers introduced by migration 27.
+-- 5. Vocabulary helpers introduced by migration 28.
 -- -----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.document_extraction_field_names();
 DROP FUNCTION IF EXISTS public.document_extraction_provenances();
@@ -152,7 +152,7 @@ ALTER TABLE public.farmer_documents
 -- 8. Self-verification. The harness's post-rollback hooks check tables,
 --    functions, policies and buckets — they cannot see a COLUMN that failed to
 --    drop, and a partially-reversed migration must not report success. This
---    block fails the transaction if anything migration 27 created survives, or
+--    block fails the transaction if anything migration 28 created survives, or
 --    if anything it must not touch went missing.
 -- -----------------------------------------------------------------------------
 DO $selfcheck$
@@ -217,15 +217,15 @@ BEGIN
   END IF;
 
   IF array_length(residue,1) IS NOT NULL THEN
-    RAISE EXCEPTION 'rollback 27 incomplete — migration-27 object(s) survived: %',
+    RAISE EXCEPTION 'rollback 28 incomplete — migration-28 object(s) survived: %',
       array_to_string(residue, ', ');
   END IF;
   IF array_length(damage,1) IS NOT NULL THEN
-    RAISE EXCEPTION 'rollback 27 overreached — object(s) from other migrations removed: %',
+    RAISE EXCEPTION 'rollback 28 overreached — object(s) from other migrations removed: %',
       array_to_string(damage, ', ');
   END IF;
 
-  RAISE NOTICE 'rollback 27 complete: every migration-27 object removed; migration 24 and farmer_documents intact.';
+  RAISE NOTICE 'rollback 28 complete: every migration-28 object removed; migration 24 and farmer_documents intact.';
 END
 $selfcheck$;
 
