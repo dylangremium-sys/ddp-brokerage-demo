@@ -50,17 +50,41 @@ describe('F2a — both override surfaces render the provenance notice', () => {
     // training operators to ignore it.
     expect(src()).toContain('overriddenCount')
     expect(src()).toMatch(/count=\{overriddenCount\}/)
-    expect(src()).toMatch(/load(Risk|Requirement)Overrides\(\)/)
+  })
+
+  /**
+   * These two assertions originally required a raw `loadRiskOverrides()` /
+   * `loadRequirementOverrides()` read, because at the time F2a shipped that map
+   * WAS the only store. Both surfaces now resolve through
+   * procurementOverrideStore, and counting the raw cache would be WRONG rather
+   * than merely dated: the store write-throughs mean localStorage also holds
+   * copies of durable, attributed SERVER rows, so a raw count would warn
+   * "browser-only" about records that are nothing of the kind.
+   *
+   * The contract the notice actually needs is therefore asserted instead: the
+   * count is driven by the RESOLVED SOURCE, and only 'local-cache' counts.
+   */
+  it.each(OVERRIDE_SURFACES)('%s counts only overrides whose resolved source is local-cache', (_name, src) => {
+    expect(src()).toMatch(/\?\.source === 'local-cache'/)
+    // The superseded raw-cache count must be gone, not merely supplemented.
+    expect(src()).not.toMatch(/load(Risk|Requirement)Overrides\(\)/)
+  })
+
+  it.each(OVERRIDE_SURFACES)('%s counts nothing while the read is unsettled or failed', (_name, src) => {
+    // Fail-closed applies no override at all, so nothing browser-local is in
+    // effect to warn about — and a warning there would be actively misleading.
+    expect(src()).toMatch(/if \(resolution === null \|\| resolution\.unavailable\) return 0/)
   })
 
   it('the Risk Register counts against LIVE risk ids, so an inert override is not counted', () => {
-    // composeRiskId makes a superseded override inert (F1a). Counting the raw
-    // localStorage map would report clearances that affect nothing.
-    expect(RISK_SRC).toMatch(/risks\.filter\(r => overrides\[r\.riskId\] !== undefined\)/)
+    // composeRiskId makes a superseded override inert (F1a): its id no longer
+    // matches any derived risk, so iterating the live risks is what keeps a
+    // clearance that affects nothing out of the count.
+    expect(RISK_SRC).toMatch(/risks\.filter\(r => resolution\.byKey\.get\(r\.riskId\)/)
   })
 
   it('the Matrix counts against the live (farmId, type) pairs', () => {
-    expect(MATRIX_SRC).toMatch(/overrides\[`\$\{r\.farmId\}::\$\{r\.type\}`\]/)
+    expect(MATRIX_SRC).toMatch(/requirementKey\(r\.farmId, r\.type\)/)
   })
 })
 
