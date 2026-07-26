@@ -27,7 +27,15 @@ import {
 } from '../../lib/buyerPackSnapshot'
 import { createLocalStorageBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotStore'
 import { selectBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotSupabaseStore'
-import { resolveDecision, recordDecision, type DecisionSource, type ResolvedDecision } from '../../lib/procurementDecisionStore'
+import {
+  resolveDecision,
+  resolveDecisions,
+  recordDecision,
+  type BatchDecisionResolution,
+  type DecisionSource,
+  type ResolvedDecision,
+} from '../../lib/procurementDecisionStore'
+import { resolveApprovedListState, isListApprovalDecision } from '../../lib/buyerPreviewApprovedList'
 import { appendBuyerPackAuditEvent, getBuyerPackAuditTrail } from '../../lib/buyerPackAudit'
 import { appendBuyerPackDownload } from '../../lib/buyerPackDownloads'
 
@@ -834,15 +842,72 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
     )
   }
 
+  return <ApprovedInventoryList inventory={inventory} farms={farms} />
+}
+
+// ─── Qualified Buyer Preview list ────────────────────────────────────────────
+
+function ApprovedInventoryList({ inventory, farms }: { inventory: InventoryItem[]; farms?: FarmProfile[] }) {
   // Listing a batch here — under a "Human-Approved" heading with the reviewed-supply
   // seal next to it — is itself a buyer-visible disclosure claim. It must clear the
   // same bar as the single-batch pack: no unresolved blocking issues AND a DDP
   // staffer has recorded an explicit "progress" procurement decision. status ===
   // 'Approved' alone is a necessary but not sufficient condition — see
   // computeBuyerDisclosureStatus / deriveBuyerApprovalGate.
-  const approved = inventory
-    .filter(i => i.status === 'Approved')
-    .filter(i => computeBuyerDisclosureStatus(i, farms).isHumanApproved)
+  //
+  // This previously called computeBuyerDisclosureStatus with NO authoritative
+  // argument, so it fell through to loadProcurementDecisions() — raw localStorage.
+  // Admin A recorded 'progress' on batch X, admin B later recorded 'hold', and
+  // admin A's list still showed X under "Human-Approved Available Inventory" with
+  // the DDP Verified Supply Seal. The decisions are now batch-resolved from
+  // procurement_decisions_current — one query, not an N+1 — and anything not
+  // server-confirmed 'progress' (including unavailable and still-loading) is NOT
+  // approved.
+  const candidates = inventory.filter(i => i.status === 'Approved')
+  const candidateIds = candidates.map(i => i.id)
+  // Stable primitive dep: the effect must re-run when the SET of candidate ids
+  // changes, not on every re-render that rebuilds an equal array.
+  const candidateKey = candidateIds.join(' ')
+
+  // null = the authoritative read has not settled. The gate is CLOSED until it
+  // does, so no batch is ever listed on the strength of unverified browser state.
+  // The resolution is stored WITH the candidate set it was read for, and
+  // staleness is DERIVED rather than reset inside the effect. A changed
+  // candidate set therefore reads as 'loading' in the very same render that
+  // changed it — there is no window in which the previous set's decisions are
+  // applied to this one.
+  const [resolved, setResolved] = useState<{ key: string; value: BatchDecisionResolution } | null>(null)
+  const resolution = resolved !== null && resolved.key === candidateKey ? resolved.value : null
+
+  useEffect(() => {
+    let cancelled = false
+    void resolveDecisions(candidateKey === '' ? [] : candidateKey.split(' ')).then(
+      next => { if (!cancelled) setResolved({ key: candidateKey, value: next }) },
+      (err: unknown) => {
+        if (cancelled) return
+        // resolveDecisions reports read failures in-band; this is the belt-and-braces
+        // path for an unexpected throw. Fail closed identically.
+        const message = err instanceof Error ? err.message : 'The procurement decisions could not be read.'
+        setResolved({ key: candidateKey, value: { decisions: new Map(), unavailable: true, error: message } })
+      },
+    )
+    return () => { cancelled = true }
+  }, [candidateKey])
+
+  const approved = resolution === null || resolution.unavailable
+    ? []
+    : candidates.filter(item => {
+        const decision = resolution.decisions.get(item.id)
+        if (!isListApprovalDecision(decision)) return false
+        const authoritative: StoredDecision = {
+          decision: decision!.decision as ProcurementDecision,
+          notes: decision!.reason ?? undefined,
+          decidedAt: decision!.decidedAt as string,
+        }
+        return computeBuyerDisclosureStatus(item, farms, authoritative).isHumanApproved
+      })
+
+  const listState = resolveApprovedListState({ resolution, approvedCount: approved.length })
 
   return (
     <div className="page-wrap ddp-wrap">
@@ -860,7 +925,21 @@ export default function DDPBuyerPreview({ inventory, farms, selectedItem, onBack
         </div>
       </div>
 
-      {approved.length === 0 ? (
+      {/* A still-loading or failed authoritative read must never render as
+          "nothing is approved" — that is a positive claim neither state
+          supports. Same contract as the Operations Desk empty state. */}
+      {listState === 'loading' ? (
+        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+          Checking the recorded procurement decisions for these batches…
+        </div>
+      ) : listState === 'unavailable' ? (
+        <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--warning)' }}>
+          ⚠ The procurement decisions could not be verified against the server, so which batches are
+          human-approved is <strong>unknown</strong>. This is <strong>not</strong> a statement that no
+          batch is approved. Nothing is listed until the decisions can be read.
+          {resolution?.error ? ` (${resolution.error})` : ''}
+        </div>
+      ) : listState === 'none-approved' ? (
         <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
           No batches are currently human approved for buyer discussion. Approving a batch on the Inventory Dashboard is not enough on its own —
           open its Buyer Pack from Master Inventory, confirm there are no unresolved blocking issues, and record a "Progress" decision.
