@@ -103,7 +103,7 @@ describe('KEPT — a reason is required to record an override, demo mode include
 
   it('refuses a blank requirement override reason with no client at all', async () => {
     const result = await recordRequirementOverride(
-      { farmId: 'f-1', requirementType: 'coa', status: 'received', reason: '' },
+      { farmId: 'f-1', type: 'coa', status: 'documented', reason: '' },
       null,
     )
     expect(result).toEqual({
