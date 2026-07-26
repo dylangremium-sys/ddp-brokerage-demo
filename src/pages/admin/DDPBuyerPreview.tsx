@@ -37,6 +37,13 @@ import {
   type ResolvedDecision,
 } from '../../lib/procurementDecisionStore'
 import { resolveApprovedListState, isListApprovalDecision } from '../../lib/buyerPreviewApprovedList'
+import {
+  resolveRiskOverrides,
+  resolveRequirementOverrides,
+  isEffectiveOverride,
+  type ResolvedRiskOverride,
+  type ResolvedRequirementOverride,
+} from '../../lib/procurementOverrideStore'
 import { appendBuyerPackAuditEvent, getBuyerPackAuditTrail } from '../../lib/buyerPackAudit'
 import { appendBuyerPackDownload } from '../../lib/buyerPackDownloads'
 
@@ -92,10 +99,22 @@ function na(val: string | number | undefined | null, suffix = ''): string {
 // buyer" — used by both the single-batch pack and the aggregate inventory
 // list, so the two views can never apply different evidentiary standards to
 // the same word ("Approved") again.
+/**
+ * The authoritative override state for ONE batch's disclosure computation.
+ * `null` means the read has not settled.
+ */
+export interface DisclosureOverrideState {
+  risks: Map<string, ResolvedRiskOverride>
+  requirements: Map<string, ResolvedRequirementOverride>
+  /** True ⇒ the authoritative read FAILED; no override may be trusted either way. */
+  unavailable: boolean
+}
+
 function computeBuyerDisclosureStatus(
   item: InventoryItem,
   farms: FarmProfile[] | undefined,
   authoritative?: StoredDecision | null,
+  overrideState?: DisclosureOverrideState | null,
 ) {
   const farm = farms?.find(f =>
     (item.farmId && f.id === item.farmId) ||
@@ -103,14 +122,53 @@ function computeBuyerDisclosureStatus(
     f.legalBusinessName === item.farmName
   )
 
-  const requirements = farm ? applyRequirementOverrides(deriveFarmDocumentRequirements(farm, [item])) : []
+  // OVERRIDES MUST BE AUTHORITATIVE HERE. This used to call
+  // applyRequirementOverrides / applyRiskOverrides, which read raw localStorage —
+  // so after the Risk Register and the Matrix moved onto the server-authoritative
+  // store, the two halves disagreed: those pages would correctly show a risk that
+  // another admin had re-opened on the server, while THIS gate still saw the stale
+  // browser copy marked 'accepted' and would happily enable Issue Buyer Pack.
+  //
+  // `overrideState` is undefined only for callers that render nothing gate-bearing.
+  // null (not settled) and unavailable (read failed) are BOTH treated as blocking:
+  // an override can clear a blocker, so an override state we cannot verify must
+  // never be allowed to do so. Derived blockers alone are not sufficient here —
+  // a requirement override can also CREATE a blocker, so an unreadable state
+  // leaves us unable to prove either direction, and the gate shuts.
+  const overridesUnverified = overrideState !== undefined && (overrideState === null || overrideState.unavailable)
+
+  const derivedRequirements = farm ? deriveFarmDocumentRequirements(farm, [item]) : []
+  const requirements = overrideState === undefined
+    ? applyRequirementOverrides(derivedRequirements)
+    : overridesUnverified
+      ? derivedRequirements
+      : derivedRequirements.map(req => {
+          const override = overrideState!.requirements.get(`${req.farmId}::${req.type}`)
+          if (!override || override.status === null || !isEffectiveOverride(override.source)) return req
+          return { ...req, status: override.status, notes: override.notes ?? req.notes }
+        })
+
   const missingRequirements = requirements.filter(r => r.status === 'missing')
   const blockerRequirements = requirements.filter(r => r.status === 'rejected' || r.status === 'expired')
   const receivedCount = requirements.filter(r => r.status === 'documented' || r.status === 'reviewed' || r.status === 'verified').length
-  const risks = applyRiskOverrides(deriveAutoRisks(farm ? [farm] : [], [item]))
-    .filter(r => r.batchId === item.id || (!!farm && r.farmId === farm.id))
+
+  const derivedRisks = deriveAutoRisks(farm ? [farm] : [], [item])
+  const risks = (overrideState === undefined
+    ? applyRiskOverrides(derivedRisks)
+    : overridesUnverified
+      ? derivedRisks
+      : derivedRisks.map(risk => {
+          const override = overrideState!.risks.get(risk.riskId)
+          if (!override || override.status === null || !isEffectiveOverride(override.source)) return risk
+          return { ...risk, status: override.status, owner: override.owner ?? risk.owner }
+        })
+  ).filter(r => r.batchId === item.id || (!!farm && r.farmId === farm.id))
+
   const unresolvedRisks = risks.filter(r => r.status !== 'resolved' && r.status !== 'accepted')
-  const hasBlockingIssues = blockerRequirements.length > 0 || unresolvedRisks.some(r => r.severity === 'blocker')
+  const hasBlockingIssues =
+    overridesUnverified
+    || blockerRequirements.length > 0
+    || unresolvedRisks.some(r => r.severity === 'blocker')
   // AUTHORITATIVE DECISION, when the caller has resolved one. The issue gate must
   // never be driven by the raw localStorage cache: a decision the server refused,
   // or one whose server state could not be read, must not authorise a release.
@@ -124,6 +182,10 @@ function computeBuyerDisclosureStatus(
   return {
     farm, requirements, missingRequirements, blockerRequirements, receivedCount,
     unresolvedRisks, hasBlockingIssues, storedDecision, isHumanApproved, packStatusLabel,
+    // Lets the UI say WHY the gate is shut: "we could not verify the overrides"
+    // is a different statement from "this batch has a blocker", and conflating
+    // them would send an operator hunting for a blocker that does not exist.
+    overridesUnverified,
   }
 }
 
@@ -152,16 +214,57 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
       ? { decision: resolved.decision, notes: resolved.reason ?? undefined, decidedAt: resolved.decidedAt }
       : null
 
+  // AUTHORITATIVE OVERRIDES. The blocking-issue half of the gate must come from
+  // the same server-authoritative store the Risk Register and the Missing
+  // Document Matrix now write to. Until this resolves it is null, which
+  // computeBuyerDisclosureStatus treats as blocking — the pack cannot be issued
+  // on the strength of an override state nobody has verified.
+  const [overrideState, setOverrideState] = useState<DisclosureOverrideState | null>(null)
+
   const {
     farm, requirements, missingRequirements, blockerRequirements, receivedCount, unresolvedRisks,
-    storedDecision, isHumanApproved, packStatusLabel,
-  } = computeBuyerDisclosureStatus(item, farms, authoritativeDecision)
+    storedDecision, isHumanApproved, packStatusLabel, overridesUnverified,
+  } = computeBuyerDisclosureStatus(item, farms, authoritativeDecision, overrideState)
   const [decision, setDecision] = useState<ProcurementDecision | ''>('')
   const [decisionSaved, setDecisionSaved] = useState(false)
   const [decisionReason, setDecisionReason] = useState('')
   const [decisionError, setDecisionError] = useState<string | null>(null)
   const [savingDecision, setSavingDecision] = useState(false)
   const [decisionSource, setDecisionSource] = useState<DecisionSource>('none')
+
+  // Resolve the authoritative override state for THIS batch and its farm. Keyed
+  // on both ids so a change of either re-reads. The risk ids are derived here
+  // rather than taken from the destructure above, because that computation is
+  // itself a consumer of the state being resolved — the ids depend only on the
+  // item and farm, never on the overrides.
+  const overrideFarmId = farm?.id
+  useEffect(() => {
+    let cancelled = false
+    const derived = deriveAutoRisks(farm ? [farm] : [], [item])
+    const riskIds = derived.map(r => r.riskId)
+    const farmIds = overrideFarmId ? [overrideFarmId] : []
+
+    Promise.all([resolveRiskOverrides(riskIds), resolveRequirementOverrides(farmIds)]).then(
+      ([risks, requirements]) => {
+        if (cancelled) return
+        setOverrideState({
+          risks: risks.byKey,
+          requirements: requirements.byKey,
+          // EITHER read failing makes the whole override picture unverifiable,
+          // and the gate must shut on the union, not the intersection.
+          unavailable: risks.unavailable || requirements.unavailable,
+        })
+      },
+      () => {
+        if (cancelled) return
+        setOverrideState({ risks: new Map(), requirements: new Map(), unavailable: true })
+      },
+    )
+    return () => { cancelled = true }
+    // `farm` is derived from `farms` and item identity; overrideFarmId pins the
+    // only part of it this effect depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item, overrideFarmId])
 
   // SERVER WINS. On mount, reconcile against the authoritative server record.
   // resolveDecision() refreshes the localStorage cache when a server row exists,
@@ -801,7 +904,18 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
             >
               {issuing ? 'Issuing…' : latestSnapshot ? 'Re-Issue Buyer Pack (new version)' : snapshotLoadError ? 'Issue Buyer Pack (history unavailable)' : 'Issue Buyer Pack'}
             </button>
-            {!isHumanApproved && (
+            {/* "We could not verify the overrides" is a DIFFERENT statement from
+                "this batch has a blocker". Conflating them would send an operator
+                hunting for a blocking issue that does not exist, so the
+                unverified case says so in its own words. */}
+            {!isHumanApproved && overridesUnverified && (
+              <span style={{ fontSize: 12, color: 'var(--warning)' }}>
+                ⚠ The recorded risk and document overrides could not be verified against the server, so
+                whether this batch has an unresolved blocking issue is <strong>unknown</strong>. This is
+                <strong> not</strong> a statement that one exists. Issuing is blocked until they can be read.
+              </span>
+            )}
+            {!isHumanApproved && !overridesUnverified && (
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                 Enabled only after this batch is human-approved for buyer discussion.
               </span>

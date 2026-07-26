@@ -189,29 +189,42 @@ export default function DDPMissingDocuments({ farms, inventory, complianceRules 
     setSaving(true)
     setWriteError(null)
 
-    const result = await recordRequirementOverride({
-      farmId: pending.farmId,
-      type: pending.type,
-      status: pending.status,
-      reason,
-    })
+    // The whole sequence is guarded and `saving` is released in `finally`.
+    // recordRequirementOverride reports refusals in-band (ok: false), but it can
+    // still REJECT — localStorage throwing while refreshing the cache, or any
+    // unexpected client/network exception. Releasing `saving` only on the in-band
+    // paths left every override control permanently disabled on a rejection, and
+    // produced an unhandled rejection alongside it.
+    try {
+      const result = await recordRequirementOverride({
+        farmId: pending.farmId,
+        type: pending.type,
+        status: pending.status,
+        reason,
+      })
 
-    if (!result.ok) {
-      // The server REFUSED the write. The pending cell stays open (reason
-      // intact) so the operator can retry; the displayed pill still shows the
-      // authoritative status, never the attempted one.
-      setWriteError(result.error ?? 'The override could not be recorded.')
+      if (!result.ok) {
+        // The server REFUSED the write. The pending cell stays open (reason
+        // intact) so the operator can retry; the displayed pill still shows the
+        // authoritative status, never the attempted one.
+        setWriteError(result.error ?? 'The override could not be recorded.')
+        return
+      }
+
+      // Accepted (server) or deliberately local (table absent / demo mode).
+      // Re-resolve so the displayed statuses and the provenance count come from
+      // the authoritative source, never from a value this function assumed.
+      const next = await resolveRequirementOverrides(farmKey === '' ? [] : farmKey.split(' '))
+      setResolvedOverrides({ key: farmKey, value: next })
+      setPending(null)
+    } catch (err: unknown) {
+      // The pending cell is kept so the operator can retry. The displayed pill
+      // is untouched — it is only ever rendered from the resolution — so a write
+      // whose outcome is unknown cannot appear applied.
+      setWriteError(err instanceof Error ? err.message : 'The override could not be recorded.')
+    } finally {
       setSaving(false)
-      return
     }
-
-    // Accepted (server) or deliberately local (table absent / demo mode).
-    // Re-resolve so the displayed statuses and the provenance count come from
-    // the authoritative source, never from a value this function assumed.
-    const next = await resolveRequirementOverrides(farmKey === '' ? [] : farmKey.split(' '))
-    setResolvedOverrides({ key: farmKey, value: next })
-    setPending(null)
-    setSaving(false)
   }
 
   return (

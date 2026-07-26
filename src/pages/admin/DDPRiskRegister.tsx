@@ -150,25 +150,38 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
     setSaving(true)
     setWriteError(null)
 
-    const result = await recordRiskOverride({ riskId: pending.riskId, status: pending.status, reason })
+    // The whole sequence is guarded and `saving` is released in `finally`.
+    // recordRiskOverride reports refusals in-band (ok: false), but it can still
+    // REJECT — localStorage throwing while refreshing the cache, or any
+    // unexpected client/network exception. Releasing `saving` only on the
+    // in-band paths left every status control permanently disabled on a
+    // rejection, and produced an unhandled rejection alongside it.
+    try {
+      const result = await recordRiskOverride({ riskId: pending.riskId, status: pending.status, reason })
 
-    if (!result.ok) {
-      // The server REFUSED the write. The store deliberately cached nothing, so
-      // the displayed status must not move: surface the error and keep the
-      // staged change so the operator can retry or abandon it knowingly.
-      setWriteError(result.error ?? 'The override could not be recorded.')
+      if (!result.ok) {
+        // The server REFUSED the write. The store deliberately cached nothing, so
+        // the displayed status must not move: surface the error and keep the
+        // staged change so the operator can retry or abandon it knowingly.
+        setWriteError(result.error ?? 'The override could not be recorded.')
+        return
+      }
+
+      // Accepted (server) or deliberately local (table absent / demo mode).
+      // Re-resolve so the displayed status and its provenance come from the
+      // authoritative source, never from what this handler assumed took effect.
+      const next = await resolveRiskOverrides(riskKey === '' ? [] : riskKey.split(' '))
+      setResolvedOverrides({ key: riskKey, value: next })
+      setPending(null)
+      setPendingReason('')
+    } catch (err: unknown) {
+      // The staged change is kept so the operator can retry. The displayed
+      // status is untouched — it is only ever rendered from the resolution — so
+      // a write whose outcome is unknown cannot appear applied.
+      setWriteError(err instanceof Error ? err.message : 'The override could not be recorded.')
+    } finally {
       setSaving(false)
-      return
     }
-
-    // Accepted (server) or deliberately local (table absent / demo mode).
-    // Re-resolve so the displayed status and its provenance come from the
-    // authoritative source, never from what this handler assumed took effect.
-    const next = await resolveRiskOverrides(riskKey === '' ? [] : riskKey.split(' '))
-    setResolvedOverrides({ key: riskKey, value: next })
-    setPending(null)
-    setPendingReason('')
-    setSaving(false)
   }
 
   function farmName(farmId?: string): string {
