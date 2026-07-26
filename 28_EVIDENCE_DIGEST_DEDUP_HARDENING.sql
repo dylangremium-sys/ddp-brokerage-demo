@@ -38,7 +38,7 @@
 --
 -- ORDERING REQUIREMENT (rollback): this migration's RLS policies call
 -- public.can_operationally_access_farm(), which migration 24's ROLLBACK drops.
--- Roll back 27 BEFORE 24. Rolling back 24 first would leave a policy on
+-- Roll back 28 BEFORE 24. Rolling back 24 first would leave a policy on
 -- public.document_field_extractions referencing a missing function.
 --
 -- NOT IN SCOPE, deliberately:
