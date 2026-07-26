@@ -216,6 +216,7 @@ describe('missing migration-10 schema degrades to the local repository', () => {
   function makeLocal(seed: BuyerPackSnapshot[] = []) {
     const saved: BuyerPackSnapshot[] = [...seed]
     const local: BuyerPackSnapshotRepository = {
+      durability: () => 'local',
       async save(s) { saved.push(s) },
       async getAll() { return saved },
       async getLatest() { return saved.length ? saved[saved.length - 1] : null },

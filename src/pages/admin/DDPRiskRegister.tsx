@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ComplianceAlert, ComplianceRule, FarmProfile, InventoryItem, RiskSeverity, RiskStatus } from '../../types'
-import { deriveAutoRisks, applyRiskOverrides, saveRiskOverride } from '../../lib/procurementControl'
+import { deriveAutoRisks, applyRiskOverrides, saveRiskOverride, loadRiskOverrides } from '../../lib/procurementControl'
+import BrowserOnlyProvenanceNotice from '../../components/shared/BrowserOnlyProvenanceNotice'
 import { getComplianceRuleImpact } from '../../lib/complianceRuleImpact'
 import { EvidenceBadge, ComplianceRuleCheckBadge } from '../../components/shared/StatusBadge'
 
@@ -40,6 +41,17 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
     void renderTick // deliberate recompute trigger — overrides live in localStorage, not in props
     return applyRiskOverrides(deriveAutoRisks(farms, inventory))
   }, [farms, inventory, renderTick])
+  // How many of the risks ON THIS PAGE are showing a browser-local override
+  // rather than their derived status. Counted against the live risk ids, so a
+  // superseded override (one whose risk content has since changed, and which is
+  // therefore inert — see composeRiskId) is correctly NOT counted: it is not
+  // affecting anything an operator can see.
+  const overriddenCount = useMemo(() => {
+    void renderTick
+    const overrides = loadRiskOverrides()
+    return risks.filter(r => overrides[r.riskId] !== undefined).length
+  }, [risks, renderTick])
+
   const visible = severityFilter === 'all' ? risks : risks.filter(r => r.severity === severityFilter)
   const openCount = risks.filter(r => r.status === 'open').length
   const blockerCount = risks.filter(r => r.severity === 'blocker' && r.status !== 'resolved' && r.status !== 'accepted').length
@@ -69,6 +81,11 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
         <div className="summary-card s-pending"><div className="summary-val">{openCount}</div><div className="summary-lbl">Open</div></div>
         <div className="summary-card s-missing"><div className="summary-val">{blockerCount}</div><div className="summary-lbl">Unresolved Blockers</div></div>
       </div>
+
+      {/* Provenance. A risk status moved to Resolved/Accepted here is half of the
+          release gate (hasBlockingIssues), yet it is written only to this
+          browser. The operator is entitled to know that before relying on it. */}
+      <BrowserOnlyProvenanceNotice count={overriddenCount} subject="risk status overrides" />
 
       <div className="toolbar-row" style={{ marginTop: 20 }}>
         <select className="toolbar-select" value={severityFilter} onChange={e => setSeverityFilter(e.target.value as RiskSeverity | 'all')}>

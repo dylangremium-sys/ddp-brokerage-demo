@@ -231,6 +231,55 @@ export function deriveCoaIntelligence(item: InventoryItem): CoaIntelligence {
 // ── Risk register ────────────────────────────────────────────────────────────
 
 /**
+ * Stable 32-bit FNV-1a of the risk's content, as 8 lowercase hex characters.
+ *
+ * Not a security primitive and never used as one: this is a change-detector, so
+ * a non-cryptographic hash is the right tool. It must be SYNCHRONOUS (the whole
+ * derive/override path is), dependency-free, and identical across reloads and
+ * browsers — SubtleCrypto is async and Math.random-seeded hashing would break
+ * the "unchanged risk keeps its override" half of the contract.
+ */
+function riskContentFingerprint(severity: RiskSeverity, issue: string): string {
+  const input = `${severity} ${issue}`
+  let hash = 0x811c9dc5
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i)
+    // FNV prime 16777619, via shifts to stay in 32-bit integer arithmetic.
+    hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
+}
+
+/**
+ * Composes a risk id that is bound to the risk's CONTENT, not only to the
+ * entity it concerns.
+ *
+ * THE DEFECT THIS CLOSES (audit F1). The id used to be `risk-batch-${item.id}`,
+ * which is content-independent, while applyRiskOverrides() matches on that id
+ * alone and overrides `status`. So a "Resolved" recorded against a cosmetic gap
+ * ("Lab name not recorded") kept applying after the batch's risk content changed
+ * to something else entirely — including a failed heavy-metals test, which
+ * raises severity 'blocker' under the SAME id and therefore arrived
+ * pre-resolved. hasBlockingIssues then read zero unresolved blockers, the buyer
+ * approval gate opened, and Issue Buyer Pack enabled for a contaminated batch.
+ *
+ * Folding a fingerprint of `severity + issue` into the id means a changed risk
+ * is a NEW risk carrying no override:
+ *   • Content changed  ⇒ different fingerprint ⇒ different id ⇒ the old override
+ *     no longer matches and the risk is presented as 'open'. The old entry is
+ *     rendered INERT, never migrated onto the new content — silently carrying a
+ *     clearance across a change in what was cleared is the defect itself.
+ *   • Content unchanged ⇒ identical fingerprint ⇒ identical id ⇒ a genuine
+ *     override still applies, so ordinary triage is unaffected.
+ *
+ * Pre-fix overrides are keyed by bare ids with no '#' segment, which no derived
+ * id can now produce, so every one of them is inert by construction.
+ */
+export function composeRiskId(base: string, severity: RiskSeverity, issue: string): string {
+  return `${base}#${riskContentFingerprint(severity, issue)}`
+}
+
+/**
  * Auto-derives risk entries from real gaps already visible in the data
  * (failed lab results, missing COAs, farm status flags). This is a mechanical
  * scan, not a judgement call — severity/owner/status are DDP's to assess and
@@ -254,12 +303,13 @@ export function deriveAutoRisks(farms: FarmProfile[], inventory: InventoryItem[]
         ? 'Request a COA from the farm before this batch can be documented.'
         : 'Request an updated COA or lab confirmation.'
 
+    const issue = coa.redFlags.join('; ')
     risks.push({
-      riskId: `risk-batch-${item.id}`,
+      riskId: composeRiskId(`risk-batch-${item.id}`, severity, issue),
       batchId: item.id,
       farmId: item.farmId,
       severity,
-      issue: coa.redFlags.join('; '),
+      issue,
       requiredAction,
       owner: 'Unassigned',
       status: 'open',
@@ -267,13 +317,18 @@ export function deriveAutoRisks(farms: FarmProfile[], inventory: InventoryItem[]
     })
   }
 
+  // Farm risks are fingerprinted on the same terms as batch risks. Their issue
+  // text is fixed per branch today, so the fingerprint is stable in practice —
+  // but deriving the id uniformly means a future edit to the wording or the
+  // severity of a farm risk cannot silently inherit a clearance either.
   for (const farm of farms) {
     if (farm.status === 'More Information Required') {
+      const issue = 'Farm profile marked "More Information Required" by DDP.'
       risks.push({
-        riskId: `risk-farm-${farm.id}-info`,
+        riskId: composeRiskId(`risk-farm-${farm.id}-info`, 'medium', issue),
         farmId: farm.id,
         severity: 'medium',
-        issue: 'Farm profile marked "More Information Required" by DDP.',
+        issue,
         requiredAction: 'Follow up with the farm contact for the outstanding profile fields.',
         owner: 'Unassigned',
         status: 'open',
@@ -281,11 +336,12 @@ export function deriveAutoRisks(farms: FarmProfile[], inventory: InventoryItem[]
       })
     }
     if (farm.status === 'Watchlist') {
+      const issue = 'Farm is on the DDP watchlist.'
       risks.push({
-        riskId: `risk-farm-${farm.id}-watchlist`,
+        riskId: composeRiskId(`risk-farm-${farm.id}-watchlist`, 'high', issue),
         farmId: farm.id,
         severity: 'high',
-        issue: 'Farm is on the DDP watchlist.',
+        issue,
         requiredAction: 'Review the watchlist reason before progressing any batch from this farm.',
         owner: 'Unassigned',
         status: 'open',
@@ -324,6 +380,16 @@ export function saveRiskOverride(riskId: string, status: RiskStatus, owner?: str
   localStorage.setItem(RISK_OVERRIDE_KEY, JSON.stringify(all))
 }
 
+/**
+ * Applies recorded overrides by exact id match.
+ *
+ * Because riskId is now content-bound (composeRiskId), an override only matches
+ * a risk whose severity and issue are unchanged since it was recorded. An
+ * override against superseded content simply finds no risk to attach to and is
+ * left where it is — inert, not deleted and not migrated. That is the point:
+ * the clearance was given for a specific stated issue, and it does not travel to
+ * a different one.
+ */
 export function applyRiskOverrides(base: RiskRegisterEntry[]): RiskRegisterEntry[] {
   const overrides = loadRiskOverrides()
   return base.map(risk => {
