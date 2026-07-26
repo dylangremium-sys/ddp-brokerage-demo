@@ -603,7 +603,12 @@ export default function App() {
   }
 
   // ── Data handlers ─────────────────────────────────────────────────────────
-  async function handleInventorySubmit(item: InventoryItem, coaFile?: File | null) {
+  // Returns true only when the batch itself was accepted by the database. The
+  // caller navigates on that return value, never unconditionally: awaiting a
+  // handler that resolves identically on success and failure told the caller
+  // nothing, so a rejected insert still sent the farmer to a stock list that
+  // did not contain their submission.
+  async function handleInventorySubmit(item: InventoryItem, coaFile?: File | null): Promise<boolean> {
     // The batch must exist in the database before the farmer is shown it, and
     // before their scope is widened to include it. The previous ordering showed
     // a submitted batch — and granted scope over it — even when the insert was
@@ -629,7 +634,7 @@ export default function App() {
         onError: onDbError,
       },
     )
-    if (!created) return
+    if (!created) return false
 
     // COA attachment is a separate step with its own failure path: the batch is
     // already committed, so a failed upload must surface as a missing-document
@@ -663,6 +668,10 @@ export default function App() {
         },
       )
     }
+    // The batch landed. A failed COA attachment does not undo that — the row
+    // exists and is simply missing its document — so the submission is still
+    // reported as committed and the error banner carries the upload failure.
+    return true
   }
 
   async function handleCoaUpload(batchId: string, file: File) {
@@ -957,6 +966,7 @@ export default function App() {
           lang={lang}
           setLang={setLang}
           onSecureLogin={() => goTo('login')}
+          onSupplierSignup={() => goTo('farmer-register')}
         />
       )}
 
@@ -974,6 +984,7 @@ export default function App() {
           <LoginPage
             lang={lang}
             onSuccess={handleLoginSuccess}
+            onSupplierSignup={() => goTo('farmer-register')}
           />
         </main>
       )}
@@ -1025,8 +1036,11 @@ export default function App() {
               farms={farmerFarms}
               initialItem={stockEditItemId ? farmerInventory.find(i => i.id === stockEditItemId) : null}
               onSubmit={async (item, coaFile) => {
-                await handleInventorySubmit(item, coaFile)
-                if (item.stockStatus !== 'draft') goTo('farmer-my-stock')
+                // Navigate only on a committed submission. Leaving the form in
+                // place on failure keeps the farmer's input recoverable and puts
+                // them where the error banner is actionable.
+                const committed = await handleInventorySubmit(item, coaFile)
+                if (committed && item.stockStatus !== 'draft') goTo('farmer-my-stock')
               }}
               onBack={() => goTo('farmer-my-stock')}
               marketBenchmarks={marketBenchmarks}
