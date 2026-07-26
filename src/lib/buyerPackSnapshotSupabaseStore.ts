@@ -177,6 +177,10 @@ export function createSupabaseBuyerPackSnapshotRepository(
   }
 
   return {
+    // This repository only ever talks to the database — it never writes
+    // locally. When the schema is absent it throws SnapshotSchemaMissingError
+    // and withLocalFallback, not this object, is what degrades.
+    durability: () => 'server',
     /**
      * Issues an immutable snapshot via the RPC. The server re-asserts the
      * admin gate, the 'progress'-decision gate and the named-approver gate, so
@@ -257,16 +261,32 @@ function withLocalFallback(
   server: BuyerPackSnapshotRepository,
   localFallback: BuyerPackSnapshotRepository,
 ): BuyerPackSnapshotRepository {
+  // What the LAST completed operation actually did. The panel's durability
+  // claim must follow the store, and this wrapper is the only place that knows:
+  // it is configured for the server, but a call may have landed locally because
+  // the schema is absent. Starts optimistic and is corrected by observation —
+  // feature detection is per-operation, so this is re-evaluated every call and
+  // flips back to 'server' the moment the migration appears.
+  let degraded = false
+
   async function orFallback<T>(attempt: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
     try {
-      return await attempt()
+      const result = await attempt()
+      degraded = false
+      return result
     } catch (err) {
-      if (err instanceof SnapshotSchemaMissingError) return fallback()
+      if (err instanceof SnapshotSchemaMissingError) {
+        degraded = true
+        return fallback()
+      }
+      // A permission/validation/network failure says nothing about WHERE
+      // snapshots are stored, so the durability claim is left untouched.
       throw err
     }
   }
 
   return {
+    durability: () => (degraded ? 'degraded-local' : 'server'),
     save: s => orFallback(() => server.save(s), () => localFallback.save(s)),
     getAll: p => orFallback(() => server.getAll(p), () => localFallback.getAll(p)),
     getLatest: p => orFallback(() => server.getLatest(p), () => localFallback.getLatest(p)),

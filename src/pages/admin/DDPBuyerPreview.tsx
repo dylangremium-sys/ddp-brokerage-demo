@@ -26,6 +26,7 @@ import {
   type BuyerPackSnapshotStatus,
 } from '../../lib/buyerPackSnapshot'
 import { createLocalStorageBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotStore'
+import type { BuyerPackSnapshotDurability } from '../../lib/buyerPackSnapshotRepository'
 import { selectBuyerPackSnapshotRepository } from '../../lib/buyerPackSnapshotSupabaseStore'
 import {
   resolveDecision,
@@ -44,6 +45,18 @@ import { appendBuyerPackDownload } from '../../lib/buyerPackDownloads'
 // repository remains the demo-mode fallback. Same BuyerPackSnapshotRepository
 // contract either way, so no call site below changes.
 const snapshotRepo = selectBuyerPackSnapshotRepository(createLocalStorageBuyerPackSnapshotRepository())
+
+// One sentence per durability state the repository can report. The operator is
+// told what is actually true of the record they just issued — a claim of
+// "browser only" against a durable server row is as misleading as the reverse.
+const SNAPSHOT_DURABILITY_COPY: Record<BuyerPackSnapshotDurability, string> = {
+  server:
+    'Recorded server-side as an append-only, versioned row issued through the audited issuance function — a durable server record, not browser state.',
+  'degraded-local':
+    'The server snapshot store is not deployed, so this was stored in this browser only — tamper-evident, but not a durable server record.',
+  local:
+    'Stored in this browser only for now — tamper-evident, not a durable server record.',
+}
 
 interface Props {
   inventory: InventoryItem[]
@@ -181,6 +194,14 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   // the UI must not present it as an absence.
   const [snapshotLoadError, setSnapshotLoadError] = useState<string | null>(null)
 
+  // Where the repository is actually storing snapshots. Re-read after every
+  // repository call rather than computed once: a server-backed store only
+  // discovers it has degraded to local when a call hits the missing schema, so
+  // asking before the first call would report an optimistic guess as fact.
+  const [snapshotDurability, setSnapshotDurability] = useState<BuyerPackSnapshotDurability>(
+    () => snapshotRepo.durability(),
+  )
+
   const approver = (approverName && approverName.trim()) || 'DDP Admin'
 
   // Load the latest persisted snapshot for this batch on mount / batch change.
@@ -197,11 +218,16 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
         if (cancelled) return
         setLatestSnapshot(s)
         setSnapshotLoadError(null)  // a later batch loading cleanly clears an earlier failure
+        setSnapshotDurability(snapshotRepo.durability())
       },
       (err: unknown) => {
         if (cancelled) return
         setLatestSnapshot(null)
         setSnapshotLoadError(err instanceof Error ? err.message : 'Could not load the snapshot history.')
+        // A read failure says nothing about WHERE snapshots live; the store
+        // leaves its durability untouched on non-schema errors, so this simply
+        // re-reads whatever it still reports rather than inventing a state.
+        setSnapshotDurability(snapshotRepo.durability())
       },
     )
     return () => { cancelled = true }
@@ -300,6 +326,10 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
       setIssueError(err instanceof Error ? err.message : 'Failed to issue buyer pack.')
     } finally {
       setIssuing(false)
+      // Re-read after the write, success or failure: this issue may be the call
+      // that discovered the schema is absent and fell back to the browser. The
+      // operator must be told where the record they just issued actually went.
+      setSnapshotDurability(snapshotRepo.durability())
     }
   }
 
@@ -798,9 +828,17 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
               <div className="detail-row"><span className="dl">Status</span><span className="dv">{snapshotStatus}</span></div>
             </div>
           )}
+          {/* Durability provenance. This sentence used to be hardcoded as
+              "Stored in this browser only for now", which is FALSE whenever the
+              RPC-backed repository is active — as it is on production, where
+              migration 10 is APPLIED_AND_VERIFIED. It is now derived from the
+              live repository, never from isSupabaseConfigured: the server-backed
+              store degrades to local at runtime if the schema is absent, so the
+              config does not know where a snapshot actually landed. Same pattern
+              as the decision-provenance block above. */}
           <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '10px 0 0' }}>
             Issuing preserves a hashed, append-only copy of exactly what this pack shows, under the recorded human approval.
-            Stored in this browser only for now — tamper-evident, not a durable server record.
+            {' '}{SNAPSHOT_DURABILITY_COPY[snapshotDurability]}
           </p>
         </div>
 
