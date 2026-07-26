@@ -79,8 +79,16 @@ begin
   -- The batch must be resolvable from p_pack_id, not from p_batch_id alone —
   -- the live client never sends p_batch_id, so a p_batch_id-only gate would be
   -- VACUOUS in production (always NULL, always skipped).
-  if v_code !~* 'coalesce\s*\(\s*p_batch_id\s*,' then
-    raise exception 'VERIFY A FAILED: function does not fall back to p_pack_id when p_batch_id is absent — the gate would be vacuous for the live client';
+  if v_code !~* 'coalesce\s*\(\s*v_pack_uuid\s*,\s*p_batch_id\s*\)' then
+    raise exception 'VERIFY A FAILED: the batch is not resolved as COALESCE(v_pack_uuid, p_batch_id) — either the gate is vacuous for the live client (which never sends p_batch_id), or the precedence is reversed and a clean decoy p_batch_id can redirect the contaminant check away from a contaminated pack';
+  end if;
+  -- The reversed order is a live exploit, not a style preference. Assert its
+  -- absence explicitly so it cannot creep back in.
+  if v_code ~* 'coalesce\s*\(\s*p_batch_id\s*,' then
+    raise exception 'VERIFY A FAILED: batch resolution prefers the client-supplied p_batch_id over the authoritative p_pack_id — a clean decoy batch id would bypass the contaminant gate';
+  end if;
+  if v_code !~* 'does not match pack' then
+    raise exception 'VERIFY A FAILED: function does not refuse a p_batch_id that conflicts with a UUID pack id';
   end if;
 
   -- A UUID pack id naming no batch must be refused, not passed through.
@@ -309,8 +317,8 @@ begin
   raise notice 'VERIFY B8 PASSED (KNOWN LIMITATION): a non-UUID pack id is not batch-resolvable, so the contaminant gate cannot evaluate it and issuance proceeds. This is recorded, not hidden — see migration 29 header, FAIL-CLOSED POSTURE.';
 end $$;
 
--- ── B9: p_batch_id, when supplied, is honoured — a contaminated batch is refused
---        even if the pack id itself is a harmless text key. ───────────────────
+-- ── B9: p_batch_id resolves the batch ONLY when the pack id is not itself a
+--        UUID. A contaminated batch named that way is still refused. ─────────
 do $$
 declare v_raised boolean := false; v_msg text;
 begin
@@ -327,7 +335,45 @@ begin
   if position('heavy metals' in v_msg) = 0 then
     raise exception 'VERIFY B9 FAILED: refusal did not name the failed test. Got: %', v_msg;
   end if;
-  raise notice 'VERIFY B9 PASSED: an explicit p_batch_id is honoured and takes precedence.';
+  raise notice 'VERIFY B9 PASSED: p_batch_id resolves the batch for a non-UUID pack id, and a contaminated batch is still refused.';
+end $$;
+
+-- ── B9b: THE SUBSTITUTION ATTACK. p_pack_id names a CONTAMINATED batch while
+--         p_batch_id names a CLEAN one. An earlier revision preferred
+--         p_batch_id, inspected the clean row, passed, and issued a snapshot
+--         keyed to the contaminated pack. The pack id must win, and a
+--         conflicting batch id must be refused outright.
+--
+--         This is the regression test for a live exploit, not a style check:
+--         it must fail loudly if the COALESCE order is ever reversed. ────────
+do $$
+declare v_raised boolean := false; v_msg text; v_n int;
+begin
+  begin
+    perform public.issue_buyer_pack_snapshot(
+      '000e0000-0000-0000-0000-000000000011',            -- pack: heavy-metals FAIL
+      repeat('9',64), 'appr-substitute', now(), 'progress', 'Test Admin', 'Test Admin',
+      '{"e":9}'::jsonb,
+      '000e0000-0000-0000-0000-000000000010'::uuid);     -- batch: CLEAN decoy
+  exception when others then
+    v_raised := true; v_msg := SQLERRM;
+  end;
+
+  if not v_raised then
+    raise exception 'VERIFY B9b FAILED: *** SUBSTITUTION ATTACK SUCCEEDED *** a clean decoy p_batch_id let a contaminated pack issue';
+  end if;
+  -- The refusal must be the identifier-conflict guard, which fires before the
+  -- contaminant read and states the real reason.
+  if position('does not match pack' in v_msg) = 0 then
+    raise exception 'VERIFY B9b FAILED: refusal was not the conflicting-identifier guard. Got: %', v_msg;
+  end if;
+
+  select count(*) into v_n from public.buyer_pack_snapshots
+   where pack_id = '000e0000-0000-0000-0000-000000000011';
+  if v_n <> 0 then
+    raise exception 'VERIFY B9b FAILED: % snapshot row(s) written for the contaminated pack', v_n;
+  end if;
+  raise notice 'VERIFY B9b PASSED: a p_batch_id conflicting with a UUID pack id is refused; the pack id is authoritative.';
 end $$;
 
 -- ── B10: a batch failing MORE THAN ONE test names them all. ──────────────────

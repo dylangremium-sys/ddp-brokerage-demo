@@ -50,8 +50,16 @@
 -- The sole TypeScript caller (buyerPackSnapshotSupabaseStore.ts) does NOT send
 -- p_batch_id — it passes only p_pack_id — so a gate keyed on p_batch_id alone
 -- would be VACUOUS in production: always NULL, always skipped. The batch is
--- therefore resolved as COALESCE(p_batch_id, p_pack_id::uuid when p_pack_id is a
--- well-formed UUID), which is the actual live path.
+-- therefore resolved as COALESCE(p_pack_id::uuid when well-formed, p_batch_id).
+--
+-- THE ORDER MATTERS, AND IT IS THE OPPOSITE OF THE OBVIOUS ONE. p_pack_id wins,
+-- because it is the authoritative key the decision trail is joined on and the
+-- key the snapshot is stored under. An earlier revision of this migration
+-- preferred p_batch_id, which was exploitable by exactly the caller this gate
+-- exists to stop: an authenticated ddp_admin could pass the UUID of ANY clean
+-- batch as p_batch_id while p_pack_id named a contaminated one, and the gate
+-- would inspect the clean row and pass. A p_batch_id that CONFLICTS with a UUID
+-- pack id is now refused outright rather than ignored.
 --
 -- FAIL-CLOSED POSTURE, STATED EXPLICITLY
 -- --------------------------------------
@@ -133,6 +141,7 @@ DECLARE
   v_decided_by UUID;
   v_reason     TEXT;
   v_batch_uuid UUID;
+  v_pack_uuid  UUID;
   v_batch_found BOOLEAN;
   v_failed_tests TEXT;
 BEGIN
@@ -186,13 +195,34 @@ BEGIN
   -- batch id. The regex guard is required: p_pack_id is TEXT and a bare ::uuid
   -- cast on a non-UUID pack id raises 22P02, which would turn a documented
   -- pass-through case into a hard failure for reasons unrelated to contamination.
-  v_batch_uuid := COALESCE(
-    p_batch_id,
-    CASE
-      WHEN p_pack_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-      THEN p_pack_id::uuid
-    END
-  );
+  v_pack_uuid := CASE
+    WHEN p_pack_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    THEN p_pack_id::uuid
+  END;
+
+  -- THE PACK ID WINS. p_pack_id is the authoritative key: it is what the
+  -- decision trail is joined on and what the resulting snapshot is stored
+  -- under. p_batch_id is a client-supplied soft link and must never be able to
+  -- redirect the contaminant check away from the pack actually being issued.
+  --
+  -- Preferring p_batch_id here (as an earlier revision of this migration did)
+  -- was exploitable by the very caller this gate exists to stop: an
+  -- authenticated ddp_admin could pass the UUID of ANY clean batch as
+  -- p_batch_id while p_pack_id named a contaminated one. The function would
+  -- inspect the clean row, pass, and then issue a snapshot keyed to the
+  -- contaminated pack — the decision, the snapshot and the audit row all
+  -- pointing at the failed batch, with the gate satisfied by a different one.
+  --
+  -- A conflicting explicit batch id is REFUSED rather than silently ignored:
+  -- the two identifiers disagreeing about which batch is being released is
+  -- itself a condition no buyer pack should be issued under.
+  IF v_pack_uuid IS NOT NULL AND p_batch_id IS NOT NULL AND p_batch_id <> v_pack_uuid THEN
+    RAISE EXCEPTION 'issue_buyer_pack_snapshot: supplied batch id % does not match pack % — refusing to issue against conflicting batch identifiers', p_batch_id, p_pack_id;
+  END IF;
+
+  -- p_batch_id is used ONLY when the pack id is not itself a UUID, i.e. the
+  -- text-key case where it is the only way to identify the batch at all.
+  v_batch_uuid := COALESCE(v_pack_uuid, p_batch_id);
 
   IF v_batch_uuid IS NOT NULL THEN
     -- Collect the FAILING tests by name, so the exception tells the operator

@@ -70,8 +70,21 @@ describe('migration 29 — forward migration (contaminant blocker gate)', () => 
   it('resolves the batch from p_pack_id, not p_batch_id alone', () => {
     // The live client (buyerPackSnapshotSupabaseStore.ts) never sends p_batch_id,
     // so a p_batch_id-only gate would be VACUOUS in production.
-    expect(body).toMatch(/coalesce\s*\(\s*p_batch_id\s*,/i)
+    expect(body).toMatch(/coalesce\s*\(\s*v_pack_uuid\s*,\s*p_batch_id\s*\)/i)
     expect(body).toMatch(/p_pack_id::uuid/i)
+  })
+
+  it('gives the AUTHORITATIVE pack id precedence over the client-supplied batch id', () => {
+    // Reversing this is a live exploit, not a style preference: with p_batch_id
+    // winning, an authenticated admin passes the UUID of any CLEAN batch while
+    // p_pack_id names a contaminated one — the gate inspects the clean row,
+    // passes, and issues a snapshot keyed to the contaminated pack.
+    expect(body, 'p_batch_id must not be the first COALESCE argument')
+      .not.toMatch(/coalesce\s*\(\s*p_batch_id\s*,/i)
+  })
+
+  it('refuses a p_batch_id that conflicts with a UUID pack id', () => {
+    expect(body).toMatch(/does not match pack/i)
   })
 
   it('guards the uuid cast so a non-UUID pack id cannot raise 22P02', () => {
