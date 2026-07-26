@@ -51,6 +51,9 @@ jobs:
       - name: Security migration static checks
         run: npm run security:sql
 
+      - name: AUDIT-001: Check migration number collisions
+        run: node scripts/audit-001-check-migration-collisions.mjs
+
       - name: Unit tests (Vitest)
         run: npm test
 
