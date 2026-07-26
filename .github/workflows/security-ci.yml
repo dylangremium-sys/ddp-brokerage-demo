@@ -54,6 +54,12 @@ jobs:
       - name: Install dependencies (deterministic)
         run: npm ci
 
+      # Cheapest gate first: a migration-number collision (two unrelated
+      # migrations claiming one number) is invisible on either branch alone and
+      # only appears once both land. It broke PR #44 against main's PR #48.
+      - name: Migration-number collision guard
+        run: npm run verify:migration-numbers
+
       - name: Security migration static checks
         run: npm run security:sql
 
