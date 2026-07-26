@@ -28,6 +28,7 @@ import {
 } from './lib/db'
 import { loadInventory, loadFarms, loadReviewRequests, saveReviewRequests, loadMarketBenchmarks } from './data'
 import { T } from './translations'
+import { reportDbError, reportAppMessage, type DbErrorReport } from './lib/clientErrorReport'
 import {
   signOut,
   subscribeToAuthChanges,
@@ -93,7 +94,10 @@ export default function App() {
   const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
   const [reviewFarmId, setReviewFarmId] = useState<string | null>(null)
   const [reviewItemId, setReviewItemId] = useState<string | null>(null)
-  const [dbError, setDbError] = useState<string | null>(null)
+  // Carries the operator-facing message AND its correlation reference, so the
+  // banner can show a code the user can quote to support without the message
+  // itself ever carrying schema detail.
+  const [dbError, setDbError] = useState<DbErrorReport | null>(null)
   const [buildVersion, setBuildVersion] = useState<string | null>(null)
 
   // Build/version identifier for release traceability — static file regenerated
@@ -548,10 +552,14 @@ export default function App() {
   )
 
   // ── Error handler ────────────────────────────────────────────────────────
+  // The raw Postgres/PostgREST message used to be stored here and rendered
+  // verbatim by the banner — routinely naming policies, tables, columns and
+  // constraints to end users, farmers included. reportDbError maps it to a
+  // stable operator-facing message plus a correlation id, keeps the raw text in
+  // console.error where it already went, and emits one schema-free structured
+  // log line carrying the same id. Same pattern as api/compliance/ai-summary.ts.
   function onDbError(err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('Supabase error:', msg)
-    setDbError(msg)
+    setDbError(reportDbError(err, page))
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
@@ -598,7 +606,7 @@ export default function App() {
     // and send the user back to login with a clear message.
     await signOut()
     setCurrentProfile(null)
-    setDbError('Your account does not have an assigned DDP role. Please contact DDP support.')
+    setDbError(reportAppMessage('Your account does not have an assigned DDP role. Please contact DDP support.'))
     setPage('login')
     window.scrollTo(0, 0)
   }
@@ -974,7 +982,10 @@ export default function App() {
       {/* ── Error banner ── */}
       {dbError && (
         <div className="db-error-banner" role="alert">
-          <strong>Error:</strong> {dbError}
+          <strong>Error:</strong> {dbError.message}
+          {/* The correlation id, quotable to support. It maps to the console
+              line holding the raw text — which never reaches this banner. */}
+          <span className="db-error-ref"> Reference: <code>{dbError.reference}</code></span>
           <button className="db-error-dismiss" onClick={() => setDbError(null)} aria-label="Dismiss">✕</button>
         </div>
       )}

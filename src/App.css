@@ -2517,6 +2517,13 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   border-bottom: 1px solid var(--error);
 }
 .db-error-banner strong { color: var(--text); }
+/* Correlation id. Quietly styled — it is a support handle, not the message. */
+.db-error-ref { opacity: 0.75; font-size: 12px; }
+.db-error-ref code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+}
 .db-error-dismiss {
   margin-left: auto;
   background: none;
