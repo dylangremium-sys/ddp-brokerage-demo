@@ -686,42 +686,84 @@ export default function App() {
     ))
   }
 
-  function handleSendReviewRequest(req: Omit<ReviewRequest, 'id' | 'createdAt'>) {
+  async function handleSendReviewRequest(req: Omit<ReviewRequest, 'id' | 'createdAt'>) {
     const newReq: ReviewRequest = { ...req, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
-    setReviewRequests(prev => [newReq, ...prev])
-    // Mark the item as needs_changes (both in state and Supabase)
-    if (req.stockItemId) {
-      setInventory(prev => prev.map(i =>
-        i.id === req.stockItemId ? { ...i, stockStatus: 'needs_changes' as const } : i
-      ))
-      patchInventoryBatch(req.stockItemId, { stock_status: 'needs_changes' }).catch(onDbError)
-    }
-    createReviewRequest(req, currentProfile?.id).catch(onDbError)
+    // Two independent writes. The request is created FIRST so the ordering can
+    // only fail towards a request with no needs_changes flag — recoverable, and
+    // visible in the queue. The reverse order would leave a batch flagged
+    // needs_changes with no request stating what the farmer must change.
+    const created = await commitMutation(
+      () => createReviewRequest(req, currentProfile?.id),
+      {
+        onCommitted: () => { setReviewRequests(prev => [newReq, ...prev]) },
+        onError: onDbError,
+      },
+    )
+    if (!created) return
+
+    // Local const: narrowing on a property access is not preserved inside the
+    // persist closure, and the flag write must not run for a request with no item.
+    const stockItemId = req.stockItemId
+    if (!stockItemId) return
+    await commitMutation(
+      () => patchInventoryBatch(stockItemId, { stock_status: 'needs_changes' }),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i =>
+            i.id === stockItemId ? { ...i, stockStatus: 'needs_changes' as const } : i
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleResolveRequest(requestId: string) {
-    setReviewRequests(prev => prev.map(r =>
-      r.id === requestId ? { ...r, status: 'resolved' as const, resolvedAt: new Date().toISOString() } : r
-    ))
-    resolveReviewRequest(requestId).catch(onDbError)
+  async function handleResolveRequest(requestId: string) {
+    await commitMutation(
+      () => resolveReviewRequest(requestId),
+      {
+        onCommitted: () => {
+          setReviewRequests(prev => prev.map(r =>
+            r.id === requestId ? { ...r, status: 'resolved' as const, resolvedAt: new Date().toISOString() } : r
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleMarkClientVisible(itemId: string, visible: boolean) {
+  async function handleMarkClientVisible(itemId: string, visible: boolean) {
     const newStockStatus = visible ? 'client_visible' as const : 'approved_internal' as const
-    setInventory(prev => prev.map(i =>
-      i.id === itemId ? { ...i, clientVisible: visible, stockStatus: newStockStatus } : i
-    ))
-    patchInventoryBatch(itemId, {
-      client_visible: visible,
-      stock_status: newStockStatus,
-    }).catch(onDbError)
+    // Client visibility is a disclosure boundary: a batch must never be shown as
+    // client-visible on the strength of a write the database did not accept.
+    await commitMutation(
+      () => patchInventoryBatch(itemId, {
+        client_visible: visible,
+        stock_status: newStockStatus,
+      }),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i =>
+            i.id === itemId ? { ...i, clientVisible: visible, stockStatus: newStockStatus } : i
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleSaveOwnerNote(itemId: string, note: string) {
-    setInventory(prev => prev.map(i =>
-      i.id === itemId ? { ...i, ownerNotes: note } : i
-    ))
-    patchInventoryBatch(itemId, { owner_notes: note }).catch(onDbError)
+  async function handleSaveOwnerNote(itemId: string, note: string) {
+    await commitMutation(
+      () => patchInventoryBatch(itemId, { owner_notes: note }),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i =>
+            i.id === itemId ? { ...i, ownerNotes: note } : i
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
   function handleEditStock(itemId: string) {
@@ -729,21 +771,30 @@ export default function App() {
     goTo('farmer-stock-form')
   }
 
-  function handleFarmSubmit(farm: FarmProfile) {
-    setFarms(prev => {
-      // If a farm with this ID already exists (e.g. advanced profile update), replace it
-      const exists = prev.some(f => f.id === farm.id)
-      return exists ? prev.map(f => f.id === farm.id ? farm : f) : [farm, ...prev]
-    })
-    createFarmProfile(farm, currentProfile?.id).catch(onDbError)
-    // Optimistically expand scope so the farmer sees their new farm immediately
-    if (isFarmerRole) {
-      setFarmerScope(prev => {
-        const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
-        return { farmIds: new Set([...base.farmIds, farm.id]), itemIds: base.itemIds }
-      })
-    }
-    goTo('farmer-status')
+  async function handleFarmSubmit(farm: FarmProfile) {
+    // A farm the database rejected must not be listed, must not widen the
+    // farmer's scope, and must not send them to the status page as though the
+    // application had been filed — the form stays put with the error shown.
+    await commitMutation(
+      () => createFarmProfile(farm, currentProfile?.id),
+      {
+        onCommitted: () => {
+          setFarms(prev => {
+            // If a farm with this ID already exists (e.g. advanced profile update), replace it
+            const exists = prev.some(f => f.id === farm.id)
+            return exists ? prev.map(f => f.id === farm.id ? farm : f) : [farm, ...prev]
+          })
+          if (isFarmerRole) {
+            setFarmerScope(prev => {
+              const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
+              return { farmIds: new Set([...base.farmIds, farm.id]), itemIds: base.itemIds }
+            })
+          }
+          goTo('farmer-status')
+        },
+        onError: onDbError,
+      },
+    )
   }
 
   async function handleFarmAction(farmId: string, action: string) {
