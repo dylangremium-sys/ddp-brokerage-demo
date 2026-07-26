@@ -35,7 +35,7 @@ import {
   getCurrentProfile,
   type UserProfile,
 } from './services/auth'
-import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
+import { resolvePostLoginDecision, nextBootstrapRouting, resolveBootstrap } from './lib/postLoginRouting'
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer, deskReviewRequestsView } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
@@ -219,11 +219,27 @@ export default function App() {
       // Bootstrap routing: on the FIRST auth resolution after a (re)load, route a
       // restored session to its role page (a reload resets `page` to the public
       // landing). Guarded to run once so later events cannot override navigation.
+      const isFirstResolution = !didBootstrapRoute.current
       const routing = nextBootstrapRouting(didBootstrapRoute.current, profile)
       didBootstrapRoute.current = routing.routed
       if (routing.routeTo) {
         setPage(routing.routeTo)
         window.scrollTo(0, 0)
+      } else if (isFirstResolution && profile && resolveBootstrap(profile).state === 'authenticated-unresolved') {
+        // Defence in depth: a FRESH login by an unresolved-role (e.g. 'pending')
+        // account is denied AND its session revoked (handleLoginSuccess's
+        // fail-closed branch), but a page reload restored that same session
+        // intact — bootstrap correctly declined to route, yet the session
+        // survived and isSignedIn became true. Nothing is reachable through it
+        // (no nav affordance renders, DDP pages fail closed to AccessDenied,
+        // RLS denies the reads); this closes the asymmetry so both entry paths
+        // agree the session must not persist. Scoped to the FIRST resolution
+        // only: a token refresh for an already-resolved operator re-fires this
+        // subscription with didBootstrapRoute already true, so it can never
+        // revoke a working session. The ref itself is written only by the
+        // assignment above, preserving the once-only routing guard.
+        void signOut()
+        setCurrentProfile(null)
       }
     })
     return unsubscribe
