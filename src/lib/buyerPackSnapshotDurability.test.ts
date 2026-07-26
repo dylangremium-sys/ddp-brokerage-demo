@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createLocalStorageBuyerPackSnapshotRepository } from './buyerPackSnapshotStore'
-import { selectBuyerPackSnapshotRepository } from './buyerPackSnapshotSupabaseStore'
+import { selectBuyerPackSnapshotRepository, type SnapshotClientLike } from './buyerPackSnapshotSupabaseStore'
 import type { BuyerPackSnapshotRepository } from './buyerPackSnapshotRepository'
 import type { BuyerPackSnapshot } from './buyerPackSnapshot'
 
@@ -64,8 +64,15 @@ function localDouble(): BuyerPackSnapshotRepository {
   }
 }
 
-/** Minimal client double matching what the Supabase repository consumes. */
-function makeClient(opts: { readError?: { code?: string; message?: string }; rpcError?: { code?: string; message?: string } } = {}) {
+/**
+ * Minimal client double, typed against the store's own exported
+ * SnapshotClientLike rather than cast through `any`: the double is only
+ * meaningful if it actually satisfies the contract the store consumes, and a
+ * cast would hide the day that contract changes.
+ */
+function makeClient(
+  opts: { readError?: { code?: string; message?: string }; rpcError?: { code?: string; message?: string } } = {},
+): SnapshotClientLike {
   return {
     from() {
       return {
@@ -95,16 +102,14 @@ describe('F6 — the store reports where it actually persists', () => {
   })
 
   it('reports server once a server-backed read succeeds', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const repo = selectBuyerPackSnapshotRepository(localDouble(), makeClient() as any)
+    const repo = selectBuyerPackSnapshotRepository(localDouble(), makeClient())
     await repo.getLatest('batch-1')
     expect(repo.durability()).toBe('server')
   })
 
   it('reports degraded-local once a call falls back because migration 10 is absent', async () => {
     const client = makeClient({ readError: { code: '42P01', message: 'relation "public.buyer_pack_snapshots" does not exist' } })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const repo = selectBuyerPackSnapshotRepository(localDouble(), client as any)
+    const repo = selectBuyerPackSnapshotRepository(localDouble(), client)
     expect(repo.durability()).toBe('server')   // optimistic until observed
     await repo.getLatest('batch-1')
     expect(repo.durability()).toBe('degraded-local')
@@ -122,8 +127,7 @@ describe('F6 — the store reports where it actually persists', () => {
       },
       rpc: async () => ({ data: null, error: null }),
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const repo = selectBuyerPackSnapshotRepository(localDouble(), client as any)
+    const repo = selectBuyerPackSnapshotRepository(localDouble(), client)
     await repo.getLatest('batch-1')
     expect(repo.durability()).toBe('degraded-local')
 
@@ -134,16 +138,14 @@ describe('F6 — the store reports where it actually persists', () => {
 
   it('does not claim degradation from a permission denial — that says nothing about storage location', async () => {
     const client = makeClient({ readError: { code: '42501', message: 'permission denied for table buyer_pack_snapshots' } })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const repo = selectBuyerPackSnapshotRepository(localDouble(), client as any)
+    const repo = selectBuyerPackSnapshotRepository(localDouble(), client)
     await expect(repo.getLatest('batch-1')).rejects.toThrow(/permission denied/)
     expect(repo.durability()).toBe('server')
   })
 
   it('reports degraded-local after a WRITE falls back, not only a read', async () => {
     const client = makeClient({ rpcError: { code: '42883', message: 'function public.issue_buyer_pack_snapshot does not exist' } })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const repo = selectBuyerPackSnapshotRepository(localDouble(), client as any)
+    const repo = selectBuyerPackSnapshotRepository(localDouble(), client)
     await repo.save(snapshot(1))
     expect(repo.durability()).toBe('degraded-local')
   })

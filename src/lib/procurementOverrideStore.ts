@@ -89,7 +89,10 @@ export interface RecordOverrideResult {
 }
 
 // Minimal structural type — avoids coupling to the full SupabaseClient generic.
-interface OverrideClientLike {
+// Exported so a test double can be TYPED against it rather than cast through
+// `any`: a double is only meaningful if it actually satisfies the contract this
+// module consumes, and a cast hides the day that contract changes.
+export interface OverrideClientLike {
   from(table: string): {
     select(cols: string): {
       eq(col: string, val: string): {

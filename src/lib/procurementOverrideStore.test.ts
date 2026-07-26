@@ -5,6 +5,7 @@ import {
   resolveRequirementOverride,
   recordRequirementOverride,
   isEffectiveOverride,
+  type OverrideClientLike,
 } from './procurementOverrideStore'
 import {
   loadRiskOverrides,
@@ -80,10 +81,9 @@ function stubClient(opts: {
       }
     },
   }
-  // The double is structurally compatible; the cast keeps the test free of the
-  // full SupabaseClient generic, as the store's own signature intends.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { client: client as any, inserts, reads }
+  // Typed against the store's own exported contract, so the double is checked
+  // rather than asserted.
+  return { client: client as OverrideClientLike, inserts, reads }
 }
 
 const RISK_ID = 'risk-batch-1#deadbeef'
