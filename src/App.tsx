@@ -37,6 +37,7 @@ import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginR
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer, deskReviewRequestsView } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
+import { commitMutation } from './lib/mutationCommit'
 import { resolveAdminDataApply, deskAdminDataView } from './lib/adminDataLoad'
 import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
@@ -603,47 +604,64 @@ export default function App() {
 
   // ── Data handlers ─────────────────────────────────────────────────────────
   async function handleInventorySubmit(item: InventoryItem, coaFile?: File | null) {
-    setInventory(prev => {
-      const exists = prev.some(i => i.id === item.id)
-      return exists ? prev.map(i => i.id === item.id ? item : i) : [item, ...prev]
-    })
-    // Optimistically expand scope so the farmer sees their new submission immediately
-    if (isFarmerRole) {
-      setFarmerScope(prev => {
-        const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
-        const newFarmIds = item.farmId
-          ? new Set([...base.farmIds, item.farmId])
-          : base.farmIds
-        return { farmIds: newFarmIds, itemIds: new Set([...base.itemIds, item.id]) }
-      })
-    }
-    try {
-      await createInventoryBatch(item, currentProfile?.id)
-    } catch (err) {
-      onDbError(err)
-      return
-    }
+    // The batch must exist in the database before the farmer is shown it, and
+    // before their scope is widened to include it. The previous ordering showed
+    // a submitted batch — and granted scope over it — even when the insert was
+    // rejected, so a failed submission looked identical to a successful one.
+    const created = await commitMutation(
+      () => createInventoryBatch(item, currentProfile?.id),
+      {
+        onCommitted: () => {
+          setInventory(prev => {
+            const exists = prev.some(i => i.id === item.id)
+            return exists ? prev.map(i => i.id === item.id ? item : i) : [item, ...prev]
+          })
+          if (isFarmerRole) {
+            setFarmerScope(prev => {
+              const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
+              const newFarmIds = item.farmId
+                ? new Set([...base.farmIds, item.farmId])
+                : base.farmIds
+              return { farmIds: newFarmIds, itemIds: new Set([...base.itemIds, item.id]) }
+            })
+          }
+        },
+        onError: onDbError,
+      },
+    )
+    if (!created) return
+
+    // COA attachment is a separate step with its own failure path: the batch is
+    // already committed, so a failed upload must surface as a missing-document
+    // error rather than discarding the submission. The file is uploaded before
+    // the metadata is written, so the row never advertises a COA that is absent.
     if (coaFile && isSupabaseConfigured && isFarmerRole && currentProfile && item.id) {
-      try {
-        const { storagePath } = await uploadCoaFile(
-          coaFile,
-          currentProfile.id,
-          item.farmId ?? '',
-          item.id,
-        )
-        await patchInventoryBatch(item.id, {
-          coa_file_name: coaFile.name,
-          coa_available: true,
-          coa_storage_path: storagePath,
-        })
-        setInventory(prev => prev.map(i =>
-          i.id === item.id
-            ? { ...i, certFileName: coaFile.name, coaAvailable: true, coaStoragePath: storagePath }
-            : i
-        ))
-      } catch (err) {
-        onDbError(err)
-      }
+      await commitMutation(
+        async () => {
+          const { storagePath } = await uploadCoaFile(
+            coaFile,
+            currentProfile.id,
+            item.farmId ?? '',
+            item.id,
+          )
+          await patchInventoryBatch(item.id, {
+            coa_file_name: coaFile.name,
+            coa_available: true,
+            coa_storage_path: storagePath,
+          })
+          return storagePath
+        },
+        {
+          onCommitted: (storagePath) => {
+            setInventory(prev => prev.map(i =>
+              i.id === item.id
+                ? { ...i, certFileName: coaFile.name, coaAvailable: true, coaStoragePath: storagePath }
+                : i
+            ))
+          },
+          onError: onDbError,
+        },
+      )
     }
   }
 
@@ -668,42 +686,84 @@ export default function App() {
     ))
   }
 
-  function handleSendReviewRequest(req: Omit<ReviewRequest, 'id' | 'createdAt'>) {
+  async function handleSendReviewRequest(req: Omit<ReviewRequest, 'id' | 'createdAt'>) {
     const newReq: ReviewRequest = { ...req, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
-    setReviewRequests(prev => [newReq, ...prev])
-    // Mark the item as needs_changes (both in state and Supabase)
-    if (req.stockItemId) {
-      setInventory(prev => prev.map(i =>
-        i.id === req.stockItemId ? { ...i, stockStatus: 'needs_changes' as const } : i
-      ))
-      patchInventoryBatch(req.stockItemId, { stock_status: 'needs_changes' }).catch(onDbError)
-    }
-    createReviewRequest(req, currentProfile?.id).catch(onDbError)
+    // Two independent writes. The request is created FIRST so the ordering can
+    // only fail towards a request with no needs_changes flag — recoverable, and
+    // visible in the queue. The reverse order would leave a batch flagged
+    // needs_changes with no request stating what the farmer must change.
+    const created = await commitMutation(
+      () => createReviewRequest(req, currentProfile?.id),
+      {
+        onCommitted: () => { setReviewRequests(prev => [newReq, ...prev]) },
+        onError: onDbError,
+      },
+    )
+    if (!created) return
+
+    // Local const: narrowing on a property access is not preserved inside the
+    // persist closure, and the flag write must not run for a request with no item.
+    const stockItemId = req.stockItemId
+    if (!stockItemId) return
+    await commitMutation(
+      () => patchInventoryBatch(stockItemId, { stock_status: 'needs_changes' }),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i =>
+            i.id === stockItemId ? { ...i, stockStatus: 'needs_changes' as const } : i
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleResolveRequest(requestId: string) {
-    setReviewRequests(prev => prev.map(r =>
-      r.id === requestId ? { ...r, status: 'resolved' as const, resolvedAt: new Date().toISOString() } : r
-    ))
-    resolveReviewRequest(requestId).catch(onDbError)
+  async function handleResolveRequest(requestId: string) {
+    await commitMutation(
+      () => resolveReviewRequest(requestId),
+      {
+        onCommitted: () => {
+          setReviewRequests(prev => prev.map(r =>
+            r.id === requestId ? { ...r, status: 'resolved' as const, resolvedAt: new Date().toISOString() } : r
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleMarkClientVisible(itemId: string, visible: boolean) {
+  async function handleMarkClientVisible(itemId: string, visible: boolean) {
     const newStockStatus = visible ? 'client_visible' as const : 'approved_internal' as const
-    setInventory(prev => prev.map(i =>
-      i.id === itemId ? { ...i, clientVisible: visible, stockStatus: newStockStatus } : i
-    ))
-    patchInventoryBatch(itemId, {
-      client_visible: visible,
-      stock_status: newStockStatus,
-    }).catch(onDbError)
+    // Client visibility is a disclosure boundary: a batch must never be shown as
+    // client-visible on the strength of a write the database did not accept.
+    await commitMutation(
+      () => patchInventoryBatch(itemId, {
+        client_visible: visible,
+        stock_status: newStockStatus,
+      }),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i =>
+            i.id === itemId ? { ...i, clientVisible: visible, stockStatus: newStockStatus } : i
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleSaveOwnerNote(itemId: string, note: string) {
-    setInventory(prev => prev.map(i =>
-      i.id === itemId ? { ...i, ownerNotes: note } : i
-    ))
-    patchInventoryBatch(itemId, { owner_notes: note }).catch(onDbError)
+  async function handleSaveOwnerNote(itemId: string, note: string) {
+    await commitMutation(
+      () => patchInventoryBatch(itemId, { owner_notes: note }),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i =>
+            i.id === itemId ? { ...i, ownerNotes: note } : i
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
   function handleEditStock(itemId: string) {
@@ -711,24 +771,33 @@ export default function App() {
     goTo('farmer-stock-form')
   }
 
-  function handleFarmSubmit(farm: FarmProfile) {
-    setFarms(prev => {
-      // If a farm with this ID already exists (e.g. advanced profile update), replace it
-      const exists = prev.some(f => f.id === farm.id)
-      return exists ? prev.map(f => f.id === farm.id ? farm : f) : [farm, ...prev]
-    })
-    createFarmProfile(farm, currentProfile?.id).catch(onDbError)
-    // Optimistically expand scope so the farmer sees their new farm immediately
-    if (isFarmerRole) {
-      setFarmerScope(prev => {
-        const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
-        return { farmIds: new Set([...base.farmIds, farm.id]), itemIds: base.itemIds }
-      })
-    }
-    goTo('farmer-status')
+  async function handleFarmSubmit(farm: FarmProfile) {
+    // A farm the database rejected must not be listed, must not widen the
+    // farmer's scope, and must not send them to the status page as though the
+    // application had been filed — the form stays put with the error shown.
+    await commitMutation(
+      () => createFarmProfile(farm, currentProfile?.id),
+      {
+        onCommitted: () => {
+          setFarms(prev => {
+            // If a farm with this ID already exists (e.g. advanced profile update), replace it
+            const exists = prev.some(f => f.id === farm.id)
+            return exists ? prev.map(f => f.id === farm.id ? farm : f) : [farm, ...prev]
+          })
+          if (isFarmerRole) {
+            setFarmerScope(prev => {
+              const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
+              return { farmIds: new Set([...base.farmIds, farm.id]), itemIds: base.itemIds }
+            })
+          }
+          goTo('farmer-status')
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleFarmAction(farmId: string, action: string) {
+  async function handleFarmAction(farmId: string, action: string) {
     const statusMap: Record<string, FarmStatus> = {
       'approve': 'Approved',
       'request-info': 'More Information Required',
@@ -737,12 +806,22 @@ export default function App() {
       'reject': 'Rejected',
     }
     const newStatus = statusMap[action]
-    if (newStatus) {
-      const oldStatus = farms.find(f => f.id === farmId)?.status
-      setFarms(prev => prev.map(f => f.id === farmId ? { ...f, status: newStatus } : f))
-      updateFarmProfileStatus(farmId, newStatus, oldStatus, currentProfile?.id).catch(onDbError)
-    }
-    goTo('ddp-farms')
+    // Unrecognised action: nothing to persist, so leaving the review is safe.
+    if (!newStatus) { goTo('ddp-farms'); return }
+    const oldStatus = farms.find(f => f.id === farmId)?.status
+    // Status and navigation are applied only once the write has landed — a
+    // rejected update leaves the operator on the review with the error shown,
+    // rather than on a farm list that claims a decision the database refused.
+    await commitMutation(
+      () => updateFarmProfileStatus(farmId, newStatus, oldStatus, currentProfile?.id),
+      {
+        onCommitted: () => {
+          setFarms(prev => prev.map(f => f.id === farmId ? { ...f, status: newStatus } : f))
+          goTo('ddp-farms')
+        },
+        onError: onDbError,
+      },
+    )
   }
 
   function handleFarmerCarbonExclude(farmId: string, newStatus: 'excluded_by_farmer' | 'withdrawn_by_farmer') {
@@ -759,19 +838,28 @@ export default function App() {
     }
   }
 
-  function handleInventoryAction(itemId: string, action: string) {
+  async function handleInventoryAction(itemId: string, action: string) {
     const statusMap: Record<string, InventoryStatus> = {
       'approve': 'Approved',
       'missing': 'Missing Document',
       'reject': 'Rejected',
     }
     const newStatus = statusMap[action]
-    if (newStatus) {
-      const oldStatus = inventory.find(i => i.id === itemId)?.status
-      setInventory(prev => prev.map(i => i.id === itemId ? { ...i, status: newStatus } : i))
-      updateInventoryStatus(itemId, newStatus, oldStatus, currentProfile?.id).catch(onDbError)
-    }
-    goTo('ddp-inventory')
+    // Unrecognised action: nothing to persist, so leaving the review is safe.
+    if (!newStatus) { goTo('ddp-inventory'); return }
+    const oldStatus = inventory.find(i => i.id === itemId)?.status
+    // Same contract as handleFarmAction: an approval the database rejected must
+    // never be shown as approved, nor navigated away from as if it had landed.
+    await commitMutation(
+      () => updateInventoryStatus(itemId, newStatus, oldStatus, currentProfile?.id),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i => i.id === itemId ? { ...i, status: newStatus } : i))
+          goTo('ddp-inventory')
+        },
+        onError: onDbError,
+      },
+    )
   }
 
   function handleReviewFarm(farmId: string) {
