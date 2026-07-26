@@ -224,6 +224,54 @@ describe('F3 — the list is wired to the authoritative read', () => {
     expect(PREVIEW_SRC).not.toMatch(/computeBuyerDisclosureStatus\(\s*\w+\s*,\s*farms\s*\)/)
   })
 
+  /**
+   * Why this is a structural count and not another `toMatch`: the regex above
+   * anchors on the call ENDING at `farms`, so it passed a call that supplied the
+   * authoritative decision and then stopped — `(item, farms, authoritative)`.
+   * That is exactly the shape the list shipped with, and its override half went
+   * on reading localStorage for a full review cycle underneath a green test and
+   * a source comment asserting the opposite. Count the arguments instead: any
+   * call site short of all four re-opens one half of the gate, whichever half it
+   * happens to be.
+   */
+  function callSiteArity(src: string): number[] {
+    const arities: number[] = []
+    const needle = 'computeBuyerDisclosureStatus('
+    for (let at = src.indexOf(needle); at !== -1; at = src.indexOf(needle, at + 1)) {
+      // Skip the declaration itself; only calls are under assertion.
+      if (/function\s+$/.test(src.slice(Math.max(0, at - 10), at))) continue
+      let depth = 0
+      let commas = 0
+      let i = at + needle.length - 1
+      for (; i < src.length; i++) {
+        const c = src[i]
+        if (c === '(' || c === '[' || c === '{') depth++
+        else if (c === ')' || c === ']' || c === '}') { depth--; if (depth === 0) break }
+        else if (c === ',' && depth === 1) commas++
+      }
+      arities.push(commas + 1)
+    }
+    return arities
+  }
+
+  it('passes all four arguments at every call site — decision AND override halves', () => {
+    const arities = callSiteArity(PREVIEW_SRC)
+    // Both gate-bearing surfaces: the single-batch pack and the preview list.
+    expect(arities.length).toBeGreaterThanOrEqual(2)
+    expect(arities).toEqual(arities.map(() => 4))
+  })
+
+  it('resolves authoritative overrides for the listed batches, batched', () => {
+    expect(PREVIEW_SRC).toContain('resolveRiskOverrides')
+    expect(PREVIEW_SRC).toContain('resolveRequirementOverrides')
+    // Same N+1 prohibition the decision read is held to.
+    expect(PREVIEW_SRC).not.toMatch(/\.map\([^)]*resolveRequirementOverrides\(/)
+  })
+
+  it('treats an unsettled or failed OVERRIDE read as zero approved batches', () => {
+    expect(PREVIEW_SRC).toContain('overrideState === null || overrideState.unavailable')
+  })
+
   it('batch-resolves the listed batches through the store', () => {
     expect(PREVIEW_SRC).toContain('resolveDecisions')
     // An N+1 of per-row single reads is explicitly out of contract.
