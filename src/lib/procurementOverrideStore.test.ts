@@ -71,6 +71,15 @@ function stubClient(opts: {
               reads.push({ table, filters })
               return { data: opts.readError ? null : (opts.readData ?? null), error: opts.readError ?? null }
             },
+            // The batch-read arm of the contract. Present so the double stays a
+            // TYPED implementation of OverrideClientLike rather than a cast —
+            // which is the point of typing it: when the store's contract grew an
+            // `in()`, tsc said so here instead of the gap going unnoticed.
+            async in(col: string, vals: string[]) {
+              filters.push([col, vals.join(',')])
+              reads.push({ table, filters })
+              return { data: opts.readError ? null : (opts.readData ?? null), error: opts.readError ?? null }
+            },
           }
           return node
         },
