@@ -6,9 +6,10 @@ import type { Lang } from '../../types'
 interface Props {
   lang?: Lang
   onSuccess: () => void
+  onSupplierSignup: () => void
 }
 
-export default function LoginPage({ lang = 'en', onSuccess }: Props) {
+export default function LoginPage({ lang = 'en', onSuccess, onSupplierSignup }: Props) {
   const t = T[lang]
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -72,6 +73,14 @@ export default function LoginPage({ lang = 'en', onSuccess }: Props) {
             disabled={loading}
           >
             {loading ? t.loginLoading : t.loginBtn}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-lg"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={onSupplierSignup}
+          >
+            {lang === 'th' ? 'สมัครเป็นผู้จัดหาสินค้า' : 'Supplier signup'}
           </button>
         </form>
       </div>
