@@ -83,7 +83,12 @@ const FARMER_PAGES: Page[] = [
 ]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
-const PUBLIC_PAGES: Page[] = ['landing', 'login']
+// 'farmer-register' is a public self-registration route: the landing page's
+// supplier-signup callbacks route straight to it for visitors who have no
+// account yet. Without it here, goTo() bounces every signup click to 'login'
+// whenever Supabase mode is active, making supplier signup reachable only in
+// demo mode.
+const PUBLIC_PAGES: Page[] = ['landing', 'login', 'farmer-register']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 

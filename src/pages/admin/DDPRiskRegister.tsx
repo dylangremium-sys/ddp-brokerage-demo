@@ -288,11 +288,15 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
                         <select
                           value={isPendingRow ? pending.status : risk.status}
                           onChange={e => handleStatusPick(risk.riskId, e.target.value as RiskStatus, risk.status)}
-                          // Editing is gated on a settled successful read: staging a
-                          // change against a status the server has not confirmed
-                          // would invite overriding the wrong baseline.
-                          disabled={!overridesLive || saving}
-                          title={overridesLive ? undefined : 'Overrides cannot be changed until the authoritative override state has been read.'}
+                          // Fail-closed governs DISPLAY, not input. An unread or
+                          // failed override read makes the shown status
+                          // unverified, and the banner and provenance labels say
+                          // so — but it does not lock the operator out of
+                          // recording one. The write itself is an absolute set
+                          // against the server, not a delta off this baseline,
+                          // and it re-resolves afterwards.
+                          disabled={saving}
+                          title={overridesLive ? undefined : 'The authoritative override state has not been read, so the status shown may not be the recorded one.'}
                           style={{ fontSize: 12.5 }}
                         >
                           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}

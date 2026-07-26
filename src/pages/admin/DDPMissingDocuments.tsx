@@ -267,7 +267,8 @@ export default function DDPMissingDocuments({ farms, inventory, complianceRules 
           ⚠ The document status overrides could not be verified against the server, so any recorded
           overrides are <strong>unknown</strong>. This is <strong>not</strong> a statement that none exist.
           The statuses and the Received / Missing / Blockers counts below are the <strong>derived</strong> ones
-          only and are not authoritative. Recording new overrides is disabled until the override state can be read.
+          only and are not authoritative. Recording an override is still permitted, but it will be
+          applied without a verified baseline.
           {resolution?.error ? ` (${resolution.error})` : ''}
         </div>
       )}
@@ -321,13 +322,16 @@ export default function DDPMissingDocuments({ farms, inventory, complianceRules 
                                     {req.notes && <span className="td-muted" style={{ fontSize: 11.5, maxWidth: 320, textAlign: 'right' }}>{req.notes}</span>}
                                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-muted)' }}>
                                       Override:
-                                      {/* Disabled until 'resolved': proposing a change against a
-                                          status whose authoritative state is unknown invites
-                                          re-clearing something another admin already changed. */}
+                                      {/* Fail-closed governs DISPLAY, not input. When the
+                                          authoritative state is unread or unreadable the banner
+                                          above and this control's title say the shown status is
+                                          unverified — but the operator is not locked out. The
+                                          write is an absolute set against the server, not a delta
+                                          off this baseline, and it re-resolves afterwards. */}
                                       <select
                                         value={isPendingCell ? pending.status : req.status}
-                                        disabled={overrideState !== 'resolved' || saving}
-                                        title={overrideState === 'resolved' ? undefined : 'Overrides are disabled until the recorded override state can be read.'}
+                                        disabled={saving}
+                                        title={overrideState === 'resolved' ? undefined : 'The recorded override state has not been read, so the status shown may not be the recorded one.'}
                                         onChange={e => handleSelectStatus(farm.id, req.type, e.target.value as EvidenceStatus)}
                                         style={{ fontSize: 12 }}
                                       >
