@@ -117,7 +117,11 @@ export function createCoaReviewSupabaseRepository(
             extraction_status: field.extractionStatus,
             warnings: field.warnings,
           })),
-          { onConflict: 'coa_document_id,field_key' },
+          // ignoreDuplicates -> ON CONFLICT DO NOTHING. Migration 32 makes
+          // provenance append-only, so a re-run must not attempt an UPDATE.
+          // Extraction is deterministic for a given set of bytes, so an
+          // existing row is already identical and needs no rewrite.
+          { onConflict: 'coa_document_id,field_key', ignoreDuplicates: true },
         )
         if (fieldsError) fail('saveExtraction.fields', fieldsError.message)
       }
@@ -137,7 +141,8 @@ export function createCoaReviewSupabaseRepository(
             page_number: finding.pageNumber,
             finding_fingerprint: finding.fingerprint,
           })),
-          { onConflict: 'coa_document_id,finding_fingerprint' },
+          // Append-only, as above: identical findings re-derive identically.
+          { onConflict: 'coa_document_id,finding_fingerprint', ignoreDuplicates: true },
         )
         if (findingsError) fail('saveExtraction.findings', findingsError.message)
       }
