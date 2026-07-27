@@ -7,6 +7,7 @@ import {
 } from '../../src/lib/serverCoaReview.js'
 import { createCoaReviewSupabaseRepository } from '../../src/lib/coaReviewSupabaseRepository.js'
 import { unpdfTextExtractor } from '../../src/lib/unpdfExtractor.js'
+import { nodeHostResolver } from '../_lib/nodeHostResolver.js'
 import { logServerError, newRequestId } from '../../src/lib/observability.js'
 
 // ─── Official-source retrieval Vercel Function (Gate P0 — issue #77) ────────
@@ -69,6 +70,9 @@ function buildDeps(): ServerCoaReviewDeps | null {
     },
     // Unused on this route, but the dependency shape is shared with extraction.
     pdfExtractor: unpdfTextExtractor,
+    // Enables the resolved-IP SSRF gate: name-based validation alone would let
+    // an allowlisted name that resolves to an internal address through.
+    resolveHost: nodeHostResolver,
     // fetchImpl omitted: the core defaults to the real server-side fetcher.
     now: () => new Date().toISOString(),
   } as ServerCoaReviewDeps

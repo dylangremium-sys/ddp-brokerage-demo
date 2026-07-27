@@ -6,6 +6,10 @@
 
 import { describe, it, expect } from 'vitest'
 import {
+  SUGGESTION_DISCLAIMER,
+  SUGGESTION_DEFERRAL,
+  SUGGESTION_NO_EVALUATION,
+  assertRequiredShape,
   bindSuggestionToSource,
   composePreliminarySuggestion,
   assertNoConclusion,
@@ -25,10 +29,22 @@ const goodVersion: PersistedSourceVersion = {
   section: 'Published requirements text.',
 }
 
+/**
+ * Wrap a body in the mandatory qualifications a bindable suggestion must carry.
+ * Binding now requires this SHAPE positively, so ad-hoc prose cannot bind.
+ */
+function shaped(body: string): string {
+  return [
+    `Preliminary, source-bound note. ${SUGGESTION_DISCLAIMER}`,
+    body,
+    `${SUGGESTION_DEFERRAL} against the requirements published at that source and record a decision. ${SUGGESTION_NO_EVALUATION}`,
+  ].join('\n')
+}
+
 const draft = (overrides: Partial<Parameters<typeof bindSuggestionToSource>[0]> = {}) => ({
   coaDocumentId: 'coa-1',
   sourceVersionId: 'sv-001',
-  text: 'Preliminary note: an administrator should compare the extracted results against the retrieved source.',
+  text: shaped('Deterministic document checks raised no findings.'),
   ...overrides,
 })
 
@@ -76,10 +92,25 @@ describe('bindSuggestionToSource — rejection', () => {
     'The sample is safe to sell.',
     'This batch passes all compliance checks.',
     'The product complies with the published limit.',
-  ])('rejects text stating a conclusion: %s', (text) => {
-    const result = bindSuggestionToSource(draft({ text }), [goodVersion])
+  ])('rejects a correctly-shaped note that still states a conclusion: %s', (body) => {
+    // Correctly shaped, so the structural gate passes — the denylist is what
+    // catches these, which is the second layer doing its job.
+    const result = bindSuggestionToSource(draft({ text: shaped(body) }), [goodVersion])
     expect(result.state).toBe('rejected')
     expect(result.reason).toMatch(/conclusion/i)
+    expect(result.suggestion).toBeNull()
+  })
+
+  it.each([
+    'The batch looks fine to me.',
+    'Everything conforms to every applicable requirement.',
+    'No regulatory obstacle exists.',
+  ])('rejects free text that lacks the required qualifications: %s', (text) => {
+    // These evade the denylist entirely — the STRUCTURAL gate is what stops
+    // them, which is the point of requiring shape rather than banning phrases.
+    const result = bindSuggestionToSource(draft({ text }), [goodVersion])
+    expect(result.state).toBe('rejected')
+    expect(result.reason).toMatch(/required qualification/i)
     expect(result.suggestion).toBeNull()
   })
 })
@@ -132,6 +163,17 @@ describe('isUsableSourceVersion', () => {
     expect(isUsableSourceVersion(goodVersion)).toBe(true)
     expect(isUsableSourceVersion({ ...goodVersion, retrievalStatus: 'http_error' })).toBe(false)
     expect(isUsableSourceVersion({ ...goodVersion, contentFingerprint: null })).toBe(false)
+  })
+})
+
+describe('assertRequiredShape', () => {
+  it('accepts text carrying all three mandatory qualifications', () => {
+    expect(assertRequiredShape(shaped('body'))).toBeNull()
+  })
+
+  it('names the first missing qualification', () => {
+    expect(assertRequiredShape('bare prose')).toBe(SUGGESTION_DISCLAIMER)
+    expect(assertRequiredShape(`x ${SUGGESTION_DISCLAIMER}`)).toBe(SUGGESTION_DEFERRAL)
   })
 })
 

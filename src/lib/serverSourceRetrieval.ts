@@ -29,6 +29,7 @@ import type { RegulatorySource } from '../types.js'
 // classification and, transitively, the Supabase repository, which must not be
 // dragged into a Vercel Function. Same rules, one definition.
 import {
+  isPrivateOrUnsafeHost,
   validateConnectorAllowlist,
   validateConnectorUrlSafety,
 } from './complianceSourceUrlSafety.js'
@@ -39,6 +40,7 @@ export type SourceRetrievalStatus =
   | 'rejected_not_https'
   | 'rejected_not_allowlisted'
   | 'rejected_private_network'
+  | 'rejected_resolved_private'
   | 'rejected_disallowed_port'
   | 'rejected_redirect'
   | 'too_many_redirects'
@@ -106,12 +108,23 @@ export interface SourceFetchInit {
 
 export type SourceFetchImpl = (url: string, init: SourceFetchInit) => Promise<SourceFetchResponse>
 
+/**
+ * Resolves a hostname to its IP addresses.
+ *
+ * Injected rather than imported so this module stays free of node:dns and can
+ * still be unit-tested. The Vercel Functions supply the real resolver; when
+ * absent, name-based validation alone applies (documented, not silent).
+ */
+export type HostResolver = (hostname: string) => Promise<string[]>
+
 export interface SourceRetrievalInput {
   url: string
   policy: SourceRetrievalPolicy
   /** Caller-supplied so the module never reads a clock. */
   retrievedAt: string
   fetchImpl?: SourceFetchImpl
+  /** Supply in a server context to enable resolved-IP SSRF checking. */
+  resolveHost?: HostResolver
 }
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
@@ -175,6 +188,44 @@ export function validateRetrievalTarget(
   const allowlist = validateConnectorAllowlist(source, policy.allowedHosts)
   if (!allowlist.allowed) {
     return { ok: false, status: 'rejected_not_allowlisted', reason: allowlist.reason }
+  }
+
+  return { ok: true }
+}
+
+/**
+ * Second SSRF gate: check where the hostname actually POINTS.
+ *
+ * validateRetrievalTarget is name-based — it classifies the hostname string. A
+ * public name that resolves to an internal address (the classic DNS-rebinding
+ * shape) would pass it. This resolves the name and rejects the request if ANY
+ * returned address is loopback/private/link-local/metadata.
+ *
+ * Applied to the original URL and to every redirect hop. A resolver failure is
+ * treated as fatal — failing closed, because an unresolvable host cannot be
+ * shown to be safe.
+ */
+export async function validateResolvedAddresses(
+  hostname: string,
+  resolveHost: HostResolver,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  let addresses: string[]
+  try {
+    addresses = await resolveHost(hostname)
+  } catch {
+    return { ok: false, reason: `host "${hostname}" could not be resolved` }
+  }
+
+  if (addresses.length === 0) {
+    return { ok: false, reason: `host "${hostname}" resolved to no addresses` }
+  }
+
+  const unsafe = addresses.filter((address) => isPrivateOrUnsafeHost(address.toLowerCase()))
+  if (unsafe.length > 0) {
+    return {
+      ok: false,
+      reason: `host "${hostname}" resolves to a private/loopback/link-local address (${unsafe.join(', ')})`,
+    }
   }
 
   return { ok: true }
@@ -317,7 +368,7 @@ export const nodeSourceFetch: SourceFetchImpl = async (url, init) =>
  * UNVERIFIED state — which is precisely what blocks a regulatory suggestion.
  */
 export async function retrieveOfficialSource(input: SourceRetrievalInput): Promise<SourceRetrievalRecord> {
-  const { url, policy, retrievedAt, fetchImpl = nodeSourceFetch } = input
+  const { url, policy, retrievedAt, fetchImpl = nodeSourceFetch, resolveHost } = input
 
   const maxRedirects = policy.maxRedirects ?? DEFAULT_RETRIEVAL_POLICY.maxRedirects
   const timeoutMs = policy.timeoutMs ?? DEFAULT_RETRIEVAL_POLICY.timeoutMs
@@ -327,6 +378,11 @@ export async function retrieveOfficialSource(input: SourceRetrievalInput): Promi
 
   const initial = validateRetrievalTarget(url, policy)
   if (!initial.ok) return failure(initial.status, url, retrievedAt, initial.reason)
+
+  if (resolveHost) {
+    const resolved = await validateResolvedAddresses(new URL(url).hostname, resolveHost)
+    if (!resolved.ok) return failure('rejected_resolved_private', url, retrievedAt, resolved.reason)
+  }
 
   const redirectChain: string[] = [url]
   let currentUrl = url
@@ -387,6 +443,14 @@ export async function retrieveOfficialSource(input: SourceRetrievalInput): Promi
       if (!hopCheck.ok) {
         return failure('rejected_redirect', url, retrievedAt,
           `redirect target rejected: ${hopCheck.reason}`, [...redirectChain, nextUrl], response.status)
+      }
+
+      if (resolveHost) {
+        const resolved = await validateResolvedAddresses(new URL(nextUrl).hostname, resolveHost)
+        if (!resolved.ok) {
+          return failure('rejected_redirect', url, retrievedAt,
+            `redirect target rejected: ${resolved.reason}`, [...redirectChain, nextUrl], response.status)
+        }
       }
 
       redirectChain.push(nextUrl)

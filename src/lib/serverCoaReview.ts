@@ -26,6 +26,7 @@ import { deriveCoaFindings, type CoaFinding, type KnownCoaDocument } from './coa
 import {
   retrieveOfficialSource,
   selectRelevantSection,
+  type HostResolver,
   type SourceFetchImpl,
   type SourceRetrievalRecord,
 } from './serverSourceRetrieval.js'
@@ -158,6 +159,8 @@ export interface ServerCoaReviewDeps {
   repository: CoaReviewRepository
   pdfExtractor: PdfTextExtractor
   fetchImpl?: SourceFetchImpl
+  /** Supplied server-side to enable resolved-IP SSRF checking. */
+  resolveHost?: HostResolver
   /** Injected so the cores stay clock-free and deterministic under test. */
   now(): string
 }
@@ -404,6 +407,7 @@ export async function handleSourceRetrieveRequest(
     policy: COA_SOURCE_POLICY,
     retrievedAt: now,
     fetchImpl: deps.fetchImpl,
+    resolveHost: deps.resolveHost,
   })
 
   const section =

@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { validateRetrievalTarget, retrieveOfficialSource } from './serverSourceRetrieval'
-import { assertNoConclusion } from './coaSuggestionBinding'
+import { assertNoConclusion, assertRequiredShape, composePreliminarySuggestion } from './coaSuggestionBinding'
 import { MAX_BASE64_CHARS } from './serverCoaReview'
 
 const enabled = process.env.DDP_STAGING_E2E === '1'
@@ -70,12 +70,43 @@ describe('RED: SSRF guard — encoding and resolution', () => {
     }
   })
 
-  it('GAP: validation is name-based — a hostname resolving to a private IP is not detected', () => {
-    // The guard never resolves DNS, so an allowlisted name that resolves to an
-    // internal address would pass. Mitigated in practice only by the
-    // single-entry allowlist pointing at a government domain.
-    const permissive = { allowedHosts: ['localtest.me'] } // public name -> 127.0.0.1
-    expect(validateRetrievalTarget('https://localtest.me/', permissive)).toEqual({ ok: true })
+  it('BLUE (was MEDIUM): a name resolving to a private address is now rejected', async () => {
+    // RED found validation was purely name-based, so an allowlisted hostname
+    // pointing at an internal address would pass. The server path now resolves
+    // the name and re-checks the ADDRESSES.
+    const rebinding = { allowedHosts: ['rebind.test'] }
+    const result = await retrieveOfficialSource({
+      url: 'https://rebind.test/', policy: rebinding, retrievedAt: '2026-07-27T00:00:00Z',
+      resolveHost: async () => ['203.0.113.10', '127.0.0.1'], // one public, one loopback
+      fetchImpl: async () => { throw new Error('must never be fetched') },
+    })
+    expect(result.status).toBe('rejected_resolved_private')
+    expect(result.reason ?? '').toMatch(/127\.0\.0\.1/)
+  })
+
+  it('BLUE: a redirect to a name that resolves privately is rejected mid-chain', async () => {
+    const policy2 = { allowedHosts: ['www.fda.moph.go.th', 'rebind.test'] }
+    const result = await retrieveOfficialSource({
+      url: 'https://www.fda.moph.go.th/', policy: policy2, retrievedAt: '2026-07-27T00:00:00Z',
+      resolveHost: async (host) => (host === 'rebind.test' ? ['10.0.0.5'] : ['203.0.113.10']),
+      fetchImpl: async () => ({
+        status: 302,
+        headers: { get: (n: string) => (n.toLowerCase() === 'location' ? 'https://rebind.test/x' : null) },
+        body: null,
+        arrayBuffer: async () => new ArrayBuffer(0),
+      }),
+    })
+    expect(result.status).toBe('rejected_redirect')
+    expect(result.reason ?? '').toMatch(/private|10\.0\.0\.5/)
+  })
+
+  it('BLUE: an unresolvable host fails closed', async () => {
+    const result = await retrieveOfficialSource({
+      url: 'https://www.fda.moph.go.th/', policy, retrievedAt: '2026-07-27T00:00:00Z',
+      resolveHost: async () => { throw new Error('NXDOMAIN') },
+      fetchImpl: async () => { throw new Error('must never be fetched') },
+    })
+    expect(result.status).toBe('rejected_resolved_private')
   })
 
   it('holds the line on scheme, port and redirect hops', async () => {
@@ -96,15 +127,32 @@ describe('RED: SSRF guard — encoding and resolution', () => {
   })
 })
 
-describe('RED: conclusion denylist strength', () => {
-  it('GAP: assertNoConclusion is a denylist and is trivially evadable', () => {
-    // It guards only the deterministic text this system composes, so it is
-    // defence-in-depth. It would NOT hold against free-text input.
-    expect(assertNoConclusion('This batch conforms to every applicable requirement.')).toBeNull()
-    expect(assertNoConclusion('Fit for release to the buyer.')).toBeNull()
-    expect(assertNoConclusion('No regulatory obstacle exists.')).toBeNull()
-    // The phrasings it does catch:
-    expect(assertNoConclusion('This batch is compliant.')).toBeTruthy()
+describe('RED: suggestion text controls', () => {
+  it('BLUE (was MEDIUM): free text that evades the denylist is stopped by the shape gate', () => {
+    // RED showed assertNoConclusion is an evadable denylist. Binding no longer
+    // depends on it: a suggestion must POSITIVELY carry the disclaimer and the
+    // deferral-to-a-human sentences, which arbitrary prose cannot do by chance.
+    for (const evasion of [
+      'This batch conforms to every applicable requirement.',
+      'Fit for release to the buyer.',
+      'No regulatory obstacle exists.',
+    ]) {
+      expect(assertNoConclusion(evasion), 'denylist still misses these').toBeNull()
+      expect(assertRequiredShape(evasion), 'but the shape gate catches them').not.toBeNull()
+    }
+  })
+
+  it('BLUE: the composed suggestion satisfies the shape gate', () => {
+    const composed = composePreliminarySuggestion({
+      sampleName: 'Mango', reportNumber: 'RP-1', findings: [],
+      version: {
+        sourceVersionId: 'sv-1', authority: 'Thai FDA', jurisdiction: 'Thailand',
+        url: 'https://www.fda.moph.go.th/', retrievalStatus: 'retrieved',
+        contentFingerprint: 'c'.repeat(64), retrievedAt: '2026-07-27T00:00:00Z', section: 's',
+      },
+    })
+    expect(assertRequiredShape(composed)).toBeNull()
+    expect(assertNoConclusion(composed)).toBeNull()
   })
 })
 
@@ -303,5 +351,64 @@ describe.skipIf(!ready)('RED: database controls under attack', () => {
     const { error: tamper } = await client.from('compliance_audit_log')
       .update({ reason: 'rewritten' }).eq('entity_id', docId)
     expect(tamper, 'the audit log must be append-only').not.toBeNull()
+  }, 60_000)
+
+  it('BLUE (was LOW): a zero-row tamper attempt is now refused loudly', async () => {
+    // RED found the refusal was a silent no-op: with no UPDATE/DELETE policy,
+    // RLS matched zero rows and the row-level trigger never fired. Migration 33
+    // adds STATEMENT-level guards, which fire regardless of rows matched.
+    const { error: updateError } = await client.from('coa_decisions')
+      .update({ note: 'tampered' }).eq('coa_document_id', docId)
+    expect(updateError, 'a tamper attempt must now return an error').not.toBeNull()
+    expect(updateError?.message ?? '').toMatch(/append-only/i)
+
+    const { error: deleteError } = await client.from('coa_extracted_fields')
+      .delete().eq('coa_document_id', docId)
+    expect(deleteError).not.toBeNull()
+    expect(deleteError?.message ?? '').toMatch(/append-only/i)
+  }, 60_000)
+
+  it('BLUE (was LOW): a decision and its audit event are written atomically', async () => {
+    // RED found the client wrote them as two separate inserts, so a failure
+    // between them could leave a decision with no audit trail.
+    const { count: before } = await client
+      .from('compliance_audit_log')
+      .select('*', { count: 'exact', head: true })
+      .eq('entity_type', 'coa').eq('entity_id', docId).eq('action', 'coa_decision_recorded')
+
+    const { data, error } = await client.rpc('record_coa_decision', {
+      p_coa_document_id: docId,
+      p_decision: 'on_hold',
+      p_previous_state: 'pending_review',
+      p_note: 'atomicity probe',
+      p_evidence_version: 'tnr-coa-adapter/1.0.0@redteam',
+      p_source_version_id: goodSourceId,
+      p_suggestion_id: suggestionId,
+    })
+    expect(error, error?.message).toBeNull()
+    expect(data).toBeTruthy()
+
+    const { count: after } = await client
+      .from('compliance_audit_log')
+      .select('*', { count: 'exact', head: true })
+      .eq('entity_type', 'coa').eq('entity_id', docId).eq('action', 'coa_decision_recorded')
+
+    expect((after ?? 0) - (before ?? 0)).toBe(1)
+  }, 60_000)
+
+  it('BLUE: the atomic RPC refuses a non-admin caller', async () => {
+    if (!pendingEmail || !pendingPassword) throw new Error('pending credentials required')
+    const pending = await signIn(pendingEmail, pendingPassword)
+    const { error } = await clientForToken(pending.token).rpc('record_coa_decision', {
+      p_coa_document_id: docId,
+      p_decision: 'rejected',
+      p_previous_state: 'pending_review',
+      p_note: 'unauthorized',
+      p_evidence_version: 'x',
+      p_source_version_id: null,
+      p_suggestion_id: null,
+    })
+    expect(error, 'SECURITY DEFINER must not become an escalation path').not.toBeNull()
+    expect(error?.message ?? '').toMatch(/administrator access is required/i)
   }, 60_000)
 })
