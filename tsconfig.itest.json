@@ -1,10 +1,10 @@
 {
   "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.itest.tsbuildinfo",
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     "module": "esnext",
-    "types": ["vite/client"],
+    "types": ["node", "vite/client"],
     "skipLibCheck": true,
 
     /* Bundler mode */
@@ -13,7 +13,6 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
-    "jsx": "react-jsx",
 
     /* Linting */
     "noUnusedLocals": true,
@@ -21,9 +20,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
-  /* Integration tests use Node built-ins (fs, process) and are type-checked by
-     tsconfig.itest.json, which supplies @types/node. Keeping them out of this
-     project preserves the rule that ordinary src/ code cannot reach Node APIs. */
-  "exclude": ["src/**/*.integration.test.ts"]
+  "include": ["src/**/*.integration.test.ts"]
 }

@@ -20,7 +20,8 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "unpdf": "^1.8.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

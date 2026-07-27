@@ -70,6 +70,7 @@ import {
   SOURCE_TIER_LABELS,
 } from '../../lib/complianceSourceGovernance'
 import { WatchtowerIngestionPanel } from '../../components/admin/WatchtowerIngestionPanel'
+import { CoaReviewPanel } from '../../components/admin/CoaReviewPanel'
 import { listMissingStarterSources } from '../../lib/watchtowerStarterSources'
 
 // Phase 2I — manual AI draft-summary integration, wired to the secure HTTP
@@ -93,7 +94,7 @@ interface Props {
   currentUser?: UserProfile | null
 }
 
-type WatchtowerTab = 'monitor' | 'monitoring-queue' | 'sources' | 'ingestion' | 'queue' | 'rules' | 'readiness' | 'alerts' | 'audit'
+type WatchtowerTab = 'monitor' | 'monitoring-queue' | 'sources' | 'ingestion' | 'coa-review' | 'queue' | 'rules' | 'readiness' | 'alerts' | 'audit'
 
 const STORAGE = {
   legalUpdates: 'ddp_compliance_legal_updates',
@@ -110,6 +111,7 @@ const TABS: Array<{ id: WatchtowerTab; label: string }> = [
   { id: 'monitoring-queue', label: 'Monitoring Queue' },
   { id: 'sources', label: 'Source Registry' },
   { id: 'ingestion', label: 'Ingestion Runs' },
+  { id: 'coa-review', label: 'COA Review' },
   { id: 'queue', label: 'Review Queue' },
   { id: 'rules', label: 'Compliance Rules' },
   { id: 'readiness', label: 'Export Readiness' },
@@ -1910,6 +1912,13 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       {tab === 'ingestion' && (
         <WatchtowerIngestionPanel
           sources={sources}
+          isSupabaseConfigured={repo.isSupabaseConfigured}
+          isAdmin={isSupabaseAdmin}
+        />
+      )}
+
+      {tab === 'coa-review' && (
+        <CoaReviewPanel
           isSupabaseConfigured={repo.isSupabaseConfigured}
           isAdmin={isSupabaseAdmin}
         />
