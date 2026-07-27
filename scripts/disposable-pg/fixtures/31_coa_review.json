@@ -1,0 +1,76 @@
+{
+  "id": "31_coa_review",
+  "title": "Migration 31 — Source-bound COA review (Gate P0, issue #77)",
+  "description": "Applies migration 9 (Watchtower MVP substrate) then the migration-31 hardening, runs VERIFY A-M, rolls back 31, and exercises the destructive-rollback guard on a disposable PostgreSQL 18 cluster. Migration 9 is an apply stage rather than bootstrap substrate because migration 31 extends compliance_audit_log, which migration 9 creates.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "WATCHTOWER-MVP", "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql" },
+    { "label": "HARDENING", "file": "31_COA_SOURCE_BOUND_REVIEW_HARDENING.sql" }
+  ],
+  "verify": {
+    "file": "31_COA_SOURCE_BOUND_REVIEW_VERIFY.sql",
+    "expectedSections": ["A","B","C","D","E","F","G","H","I","J","K","L","M"],
+    "expectedPassCount": 13,
+    "note": "A schema/RLS shape; B page provenance required; C finding idempotency; D retrieved-requires-fingerprint; E failed retrieval recorded; F uncited suggestion refused; G unverified-source suggestion refused; H quarantine retained with reason; I bound suggestion accepted; J decisions append-only; K audit vocabulary + evidence/source version; L document fingerprint uniqueness; M admin-only RLS + insert-own decisions."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "31_COA_SOURCE_BOUND_REVIEW_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "extensions", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.is_ddp_admin",
+      "public.profiles"
+    ]
+  },
+  "destructiveGuard": {
+    "livenessTable": "public.coa_documents",
+    "seedSql": "fixtures/sql/31_coa_review_guard_seed.sql",
+    "optInSetting": "coa_review.rollback_destructive",
+    "optInValue": "true",
+    "refusalStage": "main-rollback",
+    "expectRefusalMatch": "rollback 31 refused"
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.coa_documents",
+        "public.coa_extracted_fields",
+        "public.coa_findings",
+        "public.coa_source_versions",
+        "public.coa_suggestions",
+        "public.coa_decisions"
+      ],
+      "functions": [
+        "public.enforce_coa_suggestion_source_binding",
+        "public.prevent_coa_decision_mutation"
+      ]
+    },
+    "intact": {
+      "tables": [
+        "public.compliance_audit_log",
+        "public.regulatory_sources",
+        "public.legal_updates",
+        "public.compliance_rules",
+        "public.compliance_alerts",
+        "public.profiles",
+        "auth.users"
+      ],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.prevent_compliance_audit_log_mutation",
+        "auth.uid"
+      ]
+    }
+  }
+}
