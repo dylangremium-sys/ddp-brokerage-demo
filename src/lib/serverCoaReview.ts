@@ -40,8 +40,16 @@ import {
 export const COA_EXTRACT_ROUTE = 'api/compliance/coa-extract'
 export const SOURCE_RETRIEVE_ROUTE = 'api/compliance/source-retrieve'
 
-/** Base64 inflates by ~4/3; cap the encoded payload accordingly. */
-export const MAX_BASE64_CHARS = 34 * 1024 * 1024
+/**
+ * Cap on the encoded payload.
+ *
+ * Set just under Vercel's ~4.5 MB request-body limit rather than at the
+ * adapter's own 25 MB byte ceiling: a larger value is unreachable in practice,
+ * because the platform rejects the request with an opaque error before this
+ * handler ever runs. A real TNR COA is ~1.8 MB (~2.4 MB base64), so the
+ * supported path has ample headroom. (Red-team finding, low severity.)
+ */
+export const MAX_BASE64_CHARS = 4 * 1024 * 1024
 
 export const REQUIRED_ROLE = 'ddp_admin'
 
