@@ -420,46 +420,27 @@ export interface RecordDecisionInput {
  */
 export async function recordCoaDecision(input: RecordDecisionInput): Promise<CoaDecisionView> {
   const client = requireClient()
-  const session = await getSession()
-  const userId = session?.user?.id
-  if (!userId) throw new CoaReviewError('unauthenticated', 'Sign in as an administrator first.')
 
-  const { data, error } = await client
-    .from('coa_decisions')
-    .insert({
-      coa_document_id: input.coaDocumentId,
-      source_version_id: input.sourceVersionId,
-      suggestion_id: input.suggestionId,
-      decision: input.decision,
-      previous_state: input.previousState,
-      resulting_state: input.decision,
-      note: input.note,
-      evidence_version: input.evidenceVersion,
-      decided_by: userId,
-    })
-    .select('id, decision, previous_state, resulting_state, note, evidence_version, source_version_id, decided_by, decided_at')
-    .single()
+  // One transaction via the migration-33 RPC. Previously the decision and its
+  // audit event were two separate inserts, so a failure between them could
+  // leave a recorded decision with no audit trail. The function pins
+  // decided_by to auth.uid() and re-checks admin rights server-side, so a
+  // non-admin call is still refused by the database.
+  const { data, error } = await client.rpc('record_coa_decision', {
+    p_coa_document_id: input.coaDocumentId,
+    p_decision: input.decision,
+    p_previous_state: input.previousState,
+    p_note: input.note,
+    p_evidence_version: input.evidenceVersion,
+    p_source_version_id: input.sourceVersionId,
+    p_suggestion_id: input.suggestionId,
+  })
 
   if (error || !data) {
     throw new CoaReviewError('decision_refused', error?.message ?? 'The decision was refused.')
   }
 
-  const row = data as Record<string, unknown>
-
-  // The decision itself is the operational record; the audit event mirrors it
-  // into the shared compliance trail with both version identities attached.
-  await client.from('compliance_audit_log').insert({
-    actor_type: 'admin',
-    actor_id: userId,
-    action: 'coa_decision_recorded',
-    entity_type: 'coa',
-    entity_id: input.coaDocumentId,
-    before_state: { state: input.previousState },
-    after_state: { state: input.decision },
-    reason: input.note || null,
-    evidence_version: input.evidenceVersion,
-    source_version_id: input.sourceVersionId,
-  })
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown>
 
   return {
     decisionId: row.id as string,

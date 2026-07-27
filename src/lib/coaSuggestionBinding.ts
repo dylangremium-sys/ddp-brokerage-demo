@@ -23,6 +23,20 @@ import type { SourceRetrievalStatus } from './serverSourceRetrieval.js'
 
 export type SuggestionState = 'bound' | 'quarantined' | 'rejected'
 
+/**
+ * Mandatory markers every bindable suggestion must carry.
+ *
+ * The denylist below (FORBIDDEN_CONCLUSIONS) is defence-in-depth and is
+ * trivially evadable — "conforms to every applicable requirement" sails past
+ * any list of banned phrasings. So binding does NOT rely on it: a suggestion
+ * must positively carry the disclaimer and the deferral-to-a-human sentence
+ * that composePreliminarySuggestion emits. That is an allowlist on SHAPE, which
+ * arbitrary free text cannot satisfy by accident.
+ */
+export const SUGGESTION_DISCLAIMER = 'This is not a compliance determination and carries no operational effect.'
+export const SUGGESTION_DEFERRAL = 'An authorized administrator should compare the extracted results'
+export const SUGGESTION_NO_EVALUATION = 'The system has not evaluated the document against any legal threshold.'
+
 /** A source version as it exists AFTER being persisted. */
 export interface PersistedSourceVersion {
   sourceVersionId: string
@@ -95,6 +109,18 @@ export function assertNoConclusion(text: string): string | null {
   return null
 }
 
+/**
+ * Positive structural check: the text must be shaped like a preliminary,
+ * source-bound note that defers the judgement to a person. Returns the missing
+ * marker, or null when the text is acceptable.
+ */
+export function assertRequiredShape(text: string): string | null {
+  if (!text.includes(SUGGESTION_DISCLAIMER)) return SUGGESTION_DISCLAIMER
+  if (!text.includes(SUGGESTION_DEFERRAL)) return SUGGESTION_DEFERRAL
+  if (!text.includes(SUGGESTION_NO_EVALUATION)) return SUGGESTION_NO_EVALUATION
+  return null
+}
+
 /** A source version is usable only if it was genuinely retrieved and fingerprinted. */
 export function isUsableSourceVersion(version: PersistedSourceVersion): boolean {
   return version.retrievalStatus === 'retrieved' && !!version.contentFingerprint
@@ -153,7 +179,17 @@ export function bindSuggestionToSource(
     }
   }
 
-  // ── The text may not state a conclusion ───────────────────────────────────
+  // ── The text must be shaped like a deferring, preliminary note ────────────
+  const missing = assertRequiredShape(text)
+  if (missing) {
+    return {
+      state: 'rejected',
+      suggestion: null,
+      reason: `the suggestion does not carry the required qualification ("${missing}"); only a preliminary, deferring note may be bound`,
+    }
+  }
+
+  // ── …and, additionally, may not state a conclusion ────────────────────────
   const conclusion = assertNoConclusion(text)
   if (conclusion) {
     return {

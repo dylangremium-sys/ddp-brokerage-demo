@@ -81,7 +81,7 @@ const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
  * fetcher must never be pointed at. Deliberately conservative. `host` is
  * expected already normalized (lowercased, no IPv6 brackets).
  */
-function isPrivateOrUnsafeHost(host: string): boolean {
+export function isPrivateOrUnsafeHost(host: string): boolean {
   if (!host) return true
   if (host === 'localhost' || host.endsWith('.localhost')) return true
 
