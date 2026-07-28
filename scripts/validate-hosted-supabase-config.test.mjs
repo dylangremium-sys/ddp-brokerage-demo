@@ -18,6 +18,11 @@ import {
   isConfigRequired,
   isPresent,
   missingVars,
+  originOf,
+  cspDirectiveSources,
+  directivePermitsOrigin,
+  evaluateCspSupabaseAlignment,
+  readCspFromVercelJson,
 } from './validate-hosted-supabase-config.mjs'
 
 // fileURLToPath decodes percent-encoding (a space in the path becomes %20 in a
@@ -29,6 +34,12 @@ const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 // Obviously synthetic. Never a real project ref or key.
 const FAKE_URL = 'https://synthetic-not-a-real-ref.supabase.co'
 const FAKE_KEY = 'synthetic-anon-key-value-for-tests-only'
+
+// The Supabase origin the committed CSP permits. Read from vercel.json (which is
+// public, tracked configuration — not a secret) so the CLI tests below exercise
+// the aligned case without hard-coding a project ref in two places.
+const CSP_SUPABASE_ORIGIN = cspDirectiveSources(readCspFromVercelJson(join(ROOT, 'vercel.json')), 'connect-src')
+  .find(source => source.startsWith('https://') && source.includes('.supabase.co'))
 
 function ok(env) {
   return evaluateHostedSupabaseConfig(env).ok
@@ -209,8 +220,23 @@ describe('CLI behaviour (real child process)', () => {
   })
 
   it('exits 0 for a hosted build with complete configuration', () => {
-    const run = runCli({ VERCEL_ENV: 'production', VITE_SUPABASE_URL: FAKE_URL, VITE_SUPABASE_ANON_KEY: FAKE_KEY })
+    // The URL must be the origin the committed CSP names, because the CLI now
+    // runs a SECOND gate: presence, then CSP alignment. Derived from vercel.json
+    // rather than hard-coded so the test follows the policy if it is retargeted.
+    const run = runCli({ VERCEL_ENV: 'production', VITE_SUPABASE_URL: CSP_SUPABASE_ORIGIN, VITE_SUPABASE_ANON_KEY: FAKE_KEY })
     expect(run.status).toBe(0)
+  })
+
+  it('exits non-zero when configuration is present but the CSP names another project', () => {
+    // End-to-end proof of the reviewer's drift scenario: a Preview-scoped
+    // VITE_SUPABASE_URL override would produce a deployment whose every backend
+    // call is blocked by our own CSP. The build must refuse instead of shipping it.
+    const run = runCli({ VERCEL_ENV: 'preview', VITE_SUPABASE_URL: FAKE_URL, VITE_SUPABASE_ANON_KEY: FAKE_KEY })
+    expect(run.status).not.toBe(0)
+    expect(run.stderr).toContain('Refusing to build')
+    expect(run.stderr).toContain('connect-src')
+    // and still never echoes the value it rejected
+    expect(`${run.stdout}${run.stderr}`).not.toContain('synthetic-not-a-real-ref')
   })
 
   it('exits non-zero for a hosted production build with missing configuration', () => {
@@ -266,5 +292,104 @@ describe('the guard is wired into the build path', () => {
     // ci:verify runs `npm run build` with no VERCEL_ENV set.
     expect(PKG.scripts['ci:verify']).toContain('npm run build')
     expect(isConfigRequired({})).toBe(false)
+  })
+})
+
+// ─── CSP / Supabase-origin alignment (PR #80 reviewer point) ────────────────
+//
+// vercel.json names one Supabase origin literally; the client is built from
+// VITE_SUPABASE_URL at runtime. Vercel does not interpolate env vars into
+// vercel.json, so the policy cannot be derived — instead the build asserts the
+// two agree, and refuses rather than shipping a deployment that cannot reach
+// its own backend.
+
+describe('CSP directive parsing', () => {
+  const CSP = "default-src 'self'; connect-src 'self' https://ref.supabase.co wss://ref.supabase.co; img-src 'self' data: blob: https://ref.supabase.co"
+
+  it('extracts the sources of a named directive', () => {
+    expect(cspDirectiveSources(CSP, 'connect-src')).toEqual([
+      "'self'", 'https://ref.supabase.co', 'wss://ref.supabase.co',
+    ])
+  })
+
+  it('is case-insensitive on the directive name and empty-safe', () => {
+    expect(cspDirectiveSources(CSP, 'CONNECT-SRC')).toContain('https://ref.supabase.co')
+    expect(cspDirectiveSources(CSP, 'font-src')).toEqual([])
+    expect(cspDirectiveSources(null, 'connect-src')).toEqual([])
+  })
+
+  it('does not confuse a directive with one whose name it prefixes', () => {
+    // 'connect-src' must not be satisfied by reading 'default-src'.
+    expect(cspDirectiveSources('default-src https://evil.example', 'connect-src')).toEqual([])
+  })
+
+  it('matches an origin regardless of trailing slash or scheme case', () => {
+    expect(directivePermitsOrigin(CSP, 'connect-src', 'https://ref.supabase.co')).toBe(true)
+    expect(directivePermitsOrigin(CSP, 'connect-src', 'wss://ref.supabase.co')).toBe(true)
+    expect(directivePermitsOrigin(CSP, 'connect-src', 'https://other.supabase.co')).toBe(false)
+  })
+
+  it('never treats a keyword source as permitting a concrete origin', () => {
+    // "'self'" must not be read as allowing an arbitrary Supabase host.
+    expect(directivePermitsOrigin("connect-src 'self'", 'connect-src', 'https://ref.supabase.co')).toBe(false)
+  })
+
+  it('originOf is null-safe and rejects unparseable values', () => {
+    expect(originOf('https://ref.supabase.co/rest/v1')).toBe('https://ref.supabase.co')
+    expect(originOf('not a url')).toBeNull()
+    expect(originOf('')).toBeNull()
+    expect(originOf(undefined)).toBeNull()
+  })
+})
+
+describe('the build refuses a CSP that cannot reach this environment Supabase', () => {
+  const ALIGNED = "connect-src 'self' https://ref.supabase.co wss://ref.supabase.co; img-src 'self' https://ref.supabase.co"
+  const hosted = url => ({ VERCEL_ENV: 'production', VITE_SUPABASE_URL: url, VITE_SUPABASE_ANON_KEY: FAKE_KEY })
+
+  it('passes when the origin is named in connect-src, img-src and wss', () => {
+    const result = evaluateCspSupabaseAlignment(hosted('https://ref.supabase.co'), ALIGNED)
+    expect(result.ok).toBe(true)
+    expect(result.checked).toBe(true)
+  })
+
+  it('fails when the environment points at a DIFFERENT project than the CSP names', () => {
+    // The exact drift the reviewer raised: a Preview-scoped override would ship
+    // a build whose every backend call is blocked by our own policy.
+    const result = evaluateCspSupabaseAlignment(hosted('https://preview-ref.supabase.co'), ALIGNED)
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/Refusing to build/)
+    expect(result.message).toMatch(/connect-src/)
+  })
+
+  it('fails when realtime wss is missing even though https is allowed', () => {
+    const noWss = "connect-src 'self' https://ref.supabase.co; img-src 'self' https://ref.supabase.co"
+    const result = evaluateCspSupabaseAlignment(hosted('https://ref.supabase.co'), noWss)
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/wss/)
+  })
+
+  it('never echoes the VITE_SUPABASE_URL value in its failure message', () => {
+    const secretish = 'https://do-not-print-this-ref.supabase.co'
+    const result = evaluateCspSupabaseAlignment(hosted(secretish), ALIGNED)
+    expect(result.ok).toBe(false)
+    expect(result.message).not.toContain('do-not-print-this-ref')
+  })
+
+  it('does not run for a non-hosted build, so local builds stay unaffected', () => {
+    const result = evaluateCspSupabaseAlignment({ VITE_SUPABASE_URL: 'https://x.supabase.co' }, ALIGNED)
+    expect(result.ok).toBe(true)
+    expect(result.checked).toBe(false)
+  })
+
+  it('the CSP actually committed in vercel.json is self-consistent', () => {
+    // Reads the real file: connect-src and img-src must name the same Supabase
+    // origin, and connect-src must carry its wss counterpart.
+    const csp = readCspFromVercelJson(join(ROOT, 'vercel.json'))
+    expect(csp).toBeTruthy()
+    const supabaseOrigin = cspDirectiveSources(csp, 'connect-src')
+      .find(s => s.startsWith('https://') && s.includes('.supabase.co'))
+    expect(supabaseOrigin, 'connect-src must name a Supabase origin').toBeTruthy()
+    expect(directivePermitsOrigin(csp, 'img-src', supabaseOrigin)).toBe(true)
+    expect(directivePermitsOrigin(csp, 'connect-src', supabaseOrigin.replace(/^https:/, 'wss:'))).toBe(true)
   })
 })

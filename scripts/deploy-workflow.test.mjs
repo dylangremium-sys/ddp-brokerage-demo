@@ -257,8 +257,8 @@ describe('vercel.json sets browser security headers on every route', () => {
     // Supabase project origin. A CSP of "'self' plus Supabase" — the shape the
     // audit recommended — would have blocked the site's own webfonts.
     const csp = header('Content-Security-Policy')
-    expect(csp).toContain('style-src ' + "'self'" + ' https://fonts.googleapis.com')
-    expect(csp).toContain('font-src ' + "'self'" + ' https://fonts.gstatic.com')
+    expect(csp).toContain("style-src 'self' https://fonts.googleapis.com")
+    expect(csp).toContain("font-src 'self' https://fonts.gstatic.com")
     expect(csp).toContain('connect-src')
     expect(csp).toMatch(/connect-src [^;]*'self'/)
     expect(csp).toMatch(/connect-src [^;]*https:\/\/\w+\.supabase\.co/)
@@ -266,5 +266,26 @@ describe('vercel.json sets browser security headers on every route', () => {
     // origin the rest of this policy just excluded.
     expect(csp).not.toMatch(/\*/)
     expect(csp).not.toMatch(/(^|[; ])(script|connect|style|font|img)-src[^;]*\shttps:(\s|;|$)/)
+  })
+
+  it('deliberately does NOT allow external regulatory feed origins', () => {
+    // Reviewer point (Codex P1): this policy blocks the Watchtower "Check feed"
+    // button. Confirmed, and kept — the decision is recorded with its measurement
+    // in docs/CSP_FEED_RETRIEVAL_DECISION.md.
+    //
+    // Both seeded RSS sources (sukl.gov.cz, eur-lex.europa.eu) return no
+    // Access-Control-Allow-Origin, so a browser already refuses them; the CSP
+    // makes an already-failing path fail one step earlier. Widening connect-src
+    // could not fix it in general anyway: administrators register feed URLs at
+    // runtime and vercel.json is baked at deploy time.
+    //
+    // This test exists so the exclusion stays a decision rather than drifting
+    // into an accident — if a future change adds feed origins here, it should
+    // come with the server-side proxy and an update to that document.
+    const csp = header('Content-Security-Policy')
+    for (const feedHost of ['sukl.gov.cz', 'eur-lex.europa.eu', 'moph.go.th', 'customs.go.th']) {
+      expect(csp, `${feedHost} must not be granted by the CSP without the proxy decision being revisited`)
+        .not.toContain(feedHost)
+    }
   })
 })
