@@ -83,7 +83,13 @@ const FARMER_PAGES: Page[] = [
 ]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
-const PUBLIC_PAGES: Page[] = ['landing', 'login']
+// Pages a signed-out visitor may reach. 'farmer-register' MUST be here: it is
+// the public supplier access-request form, and goTo() bounces any non-public
+// page to login for an unauthenticated caller. Omitting it made the
+// "Supplier signup" button a no-op on the live site — the click redirected
+// straight back to the login screen, so the onboarding entry point was
+// unreachable in production for every visitor.
+const PUBLIC_PAGES: Page[] = ['landing', 'login', 'farmer-register']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -1006,9 +1012,12 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Auth pages (no navbar) ── */}
+      {/* ── Auth pages (no navbar) ──
+          Wrapped in the public shell so a visitor arriving from the landing
+          page stays inside the same brand rather than dropping into the
+          internal navy app theme. */}
       {page === 'login' && (
-        <main className="main-content">
+        <main className="main-content public-auth-shell">
           <LoginPage
             lang={lang}
             onSuccess={handleLoginSuccess}
@@ -1017,12 +1026,15 @@ export default function App() {
         </main>
       )}
 
-      {/* ── Demo registration (no navbar) ── */}
+      {/* ── Supplier access request (no navbar) ── */}
       {page === 'farmer-register' && (
-        <main className="main-content">
+        <main className="main-content public-auth-shell">
           <FarmerRegister
             lang={lang}
-            onComplete={() => goTo('farmer-dashboard')}
+            /* Returns to the landing page. It previously routed to
+               farmer-dashboard, which requires a session the request flow
+               never creates — the dead end this replaced. */
+            onComplete={() => goTo('landing')}
           />
         </main>
       )}
