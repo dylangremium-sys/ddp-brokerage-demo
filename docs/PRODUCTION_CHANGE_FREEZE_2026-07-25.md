@@ -119,11 +119,12 @@ before closing.
 | **Event** | `34_FARMER_ACCESS_REQUESTS_HARDENING.sql` applied to production |
 | **Date applied** | 2026-07-28 |
 | **Operator** | Repository owner, via the Supabase SQL editor |
-| **Authorisation** | **RETROSPECTIVE — recorded 2026-07-28, after execution.** §3 requires written authorisation *before* execution. No such record was made, and none is invented here. The change itself was made by the owner, so this is a **record-keeping failure, not an unauthorised change**. |
+| **Authorisation** | **NONE. This was an UNAUTHORISED production change under §3.** §3 requires written authorisation from the release owner, *recorded before execution*, stating (a) the statements, (b) pre-state evidence, (c) the rollback, (d) the operator. No such record was made, and none is invented here. The operator being the release owner does **not** satisfy §3: the control is the *contemporaneous written record*, not the identity of the person acting — an authorisation that can be asserted afterwards by the same party is not a control at all. This entry is a retrospective **record of** an unauthorised change; it does not retroactively authorise it. |
+| **Prior classification** | An earlier draft of this row called the event "a record-keeping failure, not an unauthorised change". That was wrong and is corrected here: it contradicted §3's own text and left this record understating what happened. |
 | **Statements run** | The full contents of `34_FARMER_ACCESS_REQUESTS_HARDENING.sql` |
 | **Pre-state** | Not captured before execution. Reconstructable only negatively: `public.farmer_access_requests` did not exist on `main` before migration 34, and the freeze baseline SHA `bce42f8c` contains no such table. |
 | **Rollback** | `34_FARMER_ACCESS_REQUESTS_ROLLBACK.sql` — present in the repository, **not exercised** |
-| **Related** | Audit finding R2, `DDP_REDBLUE_WEBSITE_AUDIT_2026-07-28.md` |
+| **Related** | Audit finding R2 — [`docs/audits/DDP_REDBLUE_WEBSITE_AUDIT_2026-07-28.md`](audits/DDP_REDBLUE_WEBSITE_AUDIT_2026-07-28.md) §R2 (line 59). The report is now committed alongside this record; previously it was referenced by filename only and existed nowhere in the repository, so nobody could follow the evidence for this entry. R5 (line 133), R5b (line 156) and R11 (line 259) are in the same document. |
 
 **Objects created** (all verified present in production 2026-07-28, read-only via `ddp_ro`):
 
