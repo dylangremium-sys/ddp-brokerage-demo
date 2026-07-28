@@ -151,9 +151,19 @@ does **not** reproduce.
 | roles `anon`/`authenticated`/`service_role`/`supabase_storage_admin` | migrations `GRANT`/`REVOKE` against them; RLS evaluates per-role | Supabase's baseline roles | `NOLOGIN` roles with the platform's baseline grants | the full hosted role hierarchy and JWT→role mapping |
 | `public.is_ddp_admin()` / `has_operational_farmer_access()` / `has_farm_membership()` | migration 24 policies/RPCs call them | earlier-migration authorization helpers | `SECURITY DEFINER` predicates over `profiles`/`farm_memberships` keyed on `auth.uid()` | any additional business rules those helpers carry in production |
 | `public.profiles/farms/farm_profiles/inventory_batches/farm_memberships/farmer_documents/documents` | FK targets and scope checks the migration/VERIFY touch | earlier-migration tables | the subset of columns actually referenced | full column sets, their own RLS, and unrelated constraints |
+| `public.status_history` | migration 35's RPC writes the audit half of a status transition into it | the pre-numbering compliance artefact (`SUPABASE_SCHEMA.sql`) | `id/entity_type/entity_id/old_status/new_status/note/created_at`, all nullable except `id`/`created_at`, with **no** FK on `entity_id` (it addresses two different tables) — shapes copied from production, measured read-only 2026-07-28 | its RLS policy set, and therefore the fact that in production only `is_ddp_admin()` satisfies a permissive INSERT policy |
+| `farms.status` / `inventory_batches.status` / `.reviewed_by` / `.updated_at` | the columns an admin review action writes and migration 35's RPC transitions | earlier-migration columns | `status text NULL`, `reviewed_by uuid NULL`, `updated_at timestamptz NOT NULL DEFAULT now()` | nothing further — production carries **no** CHECK constraint on `status` (the vocabulary is enforced in TypeScript), which the shim reproduces exactly |
 
 Anything the shim cannot faithfully model stays a documented limitation and is
 covered by the live-staging harness instead.
+
+**The RLS limitation matters for migration 35.** VERIFY runs as the cluster owner,
+who bypasses RLS, so sections C–J prove the RPC's *own* authorisation checks —
+which are the access control that matters, because `SECURITY DEFINER` bypasses RLS
+in production too. What the harness does **not** prove is the surrounding policy
+set: that `status_history` has no permissive INSERT policy for any role but
+`ddp_admin`. That was established by direct read-only measurement of production
+(`pg_policies`, 2026-07-28) and is recorded in the migration header.
 
 ## K-10(e): FORCE ROW LEVEL SECURITY stays OFF
 

@@ -71,6 +71,108 @@ async function sbUpsertIgnore(table: string, data: Record<string, unknown>, onCo
 }
 
 // ---------------------------------------------------------------------------
+// Atomic status transitions (migration 35 — audit R7)
+//
+// A status change is TWO writes: the entity row moves to the new status, and a
+// status_history row records that it did. Performed as two independent PostgREST
+// calls they are not atomic, and because sbInsert throws on any error, a failed
+// history insert reports FAILURE to the operator while the row is ALREADY at the
+// new status. status_history is the compliance artefact, so the result is a
+// silent divergence between the state and the record of how it was reached.
+//
+// public.record_status_transition() does both inside one transaction. It is
+// preferred whenever it is deployed, with the legacy two-call path kept only for
+// the window in which it is not.
+// ---------------------------------------------------------------------------
+
+const STATUS_TRANSITION_RPC = 'record_status_transition'
+
+/**
+ * PostgREST's code for "this FUNCTION is not in the schema cache".
+ *
+ * NOT PGRST205 — that is the code for a missing TABLE. Verified directly against
+ * production on 2026-07-28:
+ *
+ *   POST /rest/v1/rpc/record_status_transition -> {"code":"PGRST202", ...
+ *       "Could not find the function public.record_status_transition ..."}
+ *   GET  /rest/v1/risk_overrides               -> {"code":"PGRST205", ...
+ *       "Could not find the table 'public.risk_overrides' ..."}
+ *
+ * Matching on the table code here would mean the fallback below never fires, and
+ * every status transition would fail for as long as migration 35 is unapplied.
+ */
+const MISSING_FUNCTION_PGRST = 'PGRST202'
+
+/** Postgres `undefined_function` — the direct-connection equivalent. */
+const UNDEFINED_FUNCTION = '42883'
+
+/** The only object whose absence may legitimately degrade to the legacy path. */
+const STATUS_RPC_OBJECT = /record_status_transition/i
+
+/**
+ * True ONLY when the transition RPC itself is not deployed. That is "migration 35
+ * has not been applied yet" and may fall back to the pre-existing two-call path.
+ *
+ * Everything else — 42501 (the caller is not an administrator), 42703 (schema
+ * drift), 22023 (a rejected argument), authentication failure, a transient 5xx,
+ * a network error — is an AUTHORITATIVE FAILURE and must surface as one. Falling
+ * back on a permission denial would silently retry the write through a path with
+ * weaker checks, which is precisely the hole the RPC exists to close.
+ *
+ * The message fallback is deliberately narrow: it applies only when there is no
+ * error code at all AND the message names this function, so a generic
+ * "... does not exist" can never be mistaken for a missing RPC. Same shape as
+ * procurementDecisionStore.ts isTableMissing().
+ */
+function isStatusTransitionRpcMissing(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  if (error.code) return error.code === UNDEFINED_FUNCTION || error.code === MISSING_FUNCTION_PGRST
+  const message = error.message ?? ''
+  return /could not find the function|does not exist|schema cache/i.test(message) && STATUS_RPC_OBJECT.test(message)
+}
+
+/**
+ * Attempts the atomic transition.
+ *
+ * Returns true when the RPC performed both writes. Returns false ONLY when the
+ * RPC is not deployed, which tells the caller to use the legacy path. Throws on
+ * every other error.
+ */
+async function tryAtomicStatusTransition(
+  entityType: 'farm' | 'inventory_batch',
+  entityId: string,
+  newStatus: string,
+  oldStatus?: string,
+  reviewerId?: string,
+): Promise<boolean> {
+  const { error } = await supabase!.rpc(STATUS_TRANSITION_RPC, {
+    p_entity_type: entityType,
+    p_entity_id: entityId,
+    p_new_status: newStatus,
+    // Advisory only. The function reads the real previous status from the row
+    // under lock and records that instead — an audit record must state what was
+    // true, not what a possibly-stale browser believed.
+    p_old_status: oldStatus ?? null,
+    // The function requires this to equal auth.uid() when present, so a
+    // transition can never be attributed to another administrator.
+    p_reviewer_id: reviewerId && isValidUUID(reviewerId) ? reviewerId : null,
+  })
+
+  if (!error) return true
+
+  if (isStatusTransitionRpcMissing(error)) {
+    console.warn(
+      `${STATUS_TRANSITION_RPC}: not deployed (${error.code ?? 'no code'}) — falling back to the ` +
+      'non-atomic two-call path. Apply migration 35 to close audit finding R7.',
+    )
+    return false
+  }
+
+  console.error(`Supabase error [${STATUS_TRANSITION_RPC}]:`, error)
+  throw new Error(error.message)
+}
+
+// ---------------------------------------------------------------------------
 // Farm Profiles
 // ---------------------------------------------------------------------------
 
@@ -295,6 +397,14 @@ export async function updateFarmProfileStatus(
     return
   }
 
+  // Preferred: one transaction, so the row change and its audit record either
+  // both land or neither does.
+  if (await tryAtomicStatusTransition('farm', farmId, newStatus, oldStatus, reviewerId)) return
+
+  // LEGACY, NON-ATOMIC path — reached only while migration 35 is unapplied.
+  // If the history insert below fails, the farm row is already at the new status
+  // and the operator is nonetheless shown a failure. That is audit finding R7,
+  // and it is why the RPC above exists.
   const farmUpdate: Record<string, unknown> = { status: newStatus, updated_at: new Date().toISOString() }
   if (reviewerId && isValidUUID(reviewerId)) farmUpdate.reviewed_by = reviewerId
   await sbUpdate('farms', farmUpdate, 'id', farmId)
@@ -397,6 +507,10 @@ export async function updateInventoryStatus(
     return
   }
 
+  // Preferred: one transaction — see updateFarmProfileStatus above.
+  if (await tryAtomicStatusTransition('inventory_batch', itemId, newStatus, oldStatus, reviewerId)) return
+
+  // LEGACY, NON-ATOMIC path — reached only while migration 35 is unapplied.
   const batchUpdate: Record<string, unknown> = { status: newStatus, updated_at: new Date().toISOString() }
   if (reviewerId && isValidUUID(reviewerId)) batchUpdate.reviewed_by = reviewerId
   await sbUpdate('inventory_batches', batchUpdate, 'id', itemId)
