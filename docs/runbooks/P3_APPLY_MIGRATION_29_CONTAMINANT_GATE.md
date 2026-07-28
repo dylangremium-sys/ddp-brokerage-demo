@@ -115,12 +115,36 @@ COMMIT;
   privilege-escalation vector; freeze §4 G2.2 expects **0** of them.
 
 **2. Section A of the migration's VERIFY** (read-only; never the whole file against
-production):
+production).
+
+Section A is **extracted first**, so only the reviewed read-only prefix reaches
+production — the previous form passed the whole file to `psql` and relied on a warning
+the command itself ignored:
 
 ```bash
-psql "$PROD_RO_DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f 29_BUYER_PACK_CONTAMINANT_BLOCKER_GATE_VERIFY.sql 2>&1 | grep 'VERIFY A'
+# Extract ONLY Section A (everything before the Section B header) and run that.
+sed '/^-- SECTION B —/,$d' 29_BUYER_PACK_CONTAMINANT_BLOCKER_GATE_VERIFY.sql \
+  > /tmp/verify29_section_a.sql
+
+# Match the section HEADER line, not the string "SECTION B" — that also appears in
+# the file's own preamble, so a bare `grep -c 'SECTION B'` prints 1 on a correct
+# extraction and would read as a failure.
+grep -c '^-- SECTION B —' /tmp/verify29_section_a.sql              # must print 0
+grep -ciE '^[[:space:]]*(insert|update|delete|begin;)' \
+  /tmp/verify29_section_a.sql                                     # must print 0
+
+# No pipe: psql's own exit status is the result.
+psql "$PROD_RO_DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/verify29_section_a.sql
+echo "psql exit: $?"    # must be 0
 ```
+
+Expected: `VERIFY A PASSED`, and `psql exit: 0`.
+
+**Never pipe this into `grep 'VERIFY A'`.** That pattern matches `VERIFY A FAILED` exactly
+as well as `VERIFY A PASSED`, and the pipeline's exit status is `grep`'s rather than
+`psql`'s — so a failure, a `RAISE EXCEPTION`, or a connection error all read as success.
+Section B (line 139 onward) builds a fixture and calls the RPC; against a read-only role
+those writes are refused, but they are still attempted and they abort the run.
 
 **3. Update freeze §4.** The issuance-identity row pins
 `md5 = c4a255b81f220d2e6f67b4d59a97f961, length = 3934`. **That row becomes wrong

@@ -93,17 +93,45 @@ directory — see `docs/runbooks/README.md`.
 
 ## Post-state verification
 
-**1. Section A of the migration's own VERIFY** — read-only, safe against production:
+**1. Section A of the migration's own VERIFY** — read-only, safe against production.
+
+Section A is **extracted first**, so only the reviewed read-only prefix ever reaches
+production. The previous form of this step passed the *whole* file to `psql` and relied on
+the warning below to stop the operator — which is a warning that the command itself
+ignores:
 
 ```bash
-psql "$PROD_RO_DATABASE_URL" -v ON_ERROR_STOP=1 \
-  -f 30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_VERIFY.sql 2>&1 | grep 'VERIFY A'
+# Extract ONLY Section A (everything before the Section B header) and run that.
+sed '/^-- SECTION B —/,$d' 30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_VERIFY.sql \
+  > /tmp/verify30_section_a.sql
+
+# Confirm the extraction really stopped before the write-bearing half.
+# Match the section HEADER line, not the string "SECTION B" — that also appears in
+# the file's own preamble, so a bare `grep -c 'SECTION B'` prints 1 on a correct
+# extraction and would read as a failure.
+grep -c '^-- SECTION B —' /tmp/verify30_section_a.sql              # must print 0
+grep -ciE '^[[:space:]]*(insert|update|delete|begin;)' \
+  /tmp/verify30_section_a.sql                                     # must print 0
+
+# Run it. No pipe: psql's own exit status is the result.
+psql "$PROD_RO_DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/verify30_section_a.sql
+echo "psql exit: $?"    # must be 0
 ```
 
-Expected: `VERIFY A PASSED`.
+Expected: `VERIFY A PASSED`, and `psql exit: 0`.
 
-**Do not run the whole file against production.** Sections B onward build a fixture
-and insert into `auth.users`.
+Two things this deliberately avoids:
+
+- **Never pipe the verifier into `grep`.** `... | grep 'VERIFY A'` reports success on
+  `VERIFY A FAILED` just as happily as on `VERIFY A PASSED` — the string matches either
+  way — and the pipeline's exit status is `grep`'s, not `psql`'s, so a connection error or
+  a `RAISE EXCEPTION` is swallowed. Read the output; trust the exit code.
+- **Never run the whole file against production.** Section B (line 194 onward) opens a
+  transaction and inserts into `auth.users` and other production tables. With
+  `PROD_RO_DATABASE_URL` those writes are refused rather than applied — but they are still
+  *attempted*, they abort the run, and the refusal is what the old `grep` was hiding.
+
+> The same correction applies to the P3 runbook, which carried an identical step.
 
 **2. Object state:**
 
