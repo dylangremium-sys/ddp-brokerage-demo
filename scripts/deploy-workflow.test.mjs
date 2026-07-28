@@ -188,8 +188,83 @@ describe('vercel.json disables Git production deploys for main — and nothing m
   })
 
   it('adds no unrelated Vercel configuration', () => {
-    // Scope guard: this file exists to close one bypass path. Rewrites, headers,
-    // build overrides and crons are separate decisions and must not ride along.
-    expect(Object.keys(VERCEL_CONFIG)).toEqual(['git'])
+    // Scope guard: rewrites, build overrides and crons are separate decisions and
+    // must not ride along. `headers` was added deliberately (audit R6 — the live
+    // site sent no CSP/XFO/nosniff/Referrer-Policy/Permissions-Policy) and is
+    // pinned by its own describe block below rather than merely tolerated here.
+    expect(Object.keys(VERCEL_CONFIG)).toEqual(['git', 'headers'])
+  })
+})
+
+// ─── Browser security headers (audit R6) ────────────────────────────────────
+//
+// These headers are applied by the Vercel platform, not by any code in this repo,
+// so nothing else in the test suite can observe them. That makes vercel.json the
+// only artefact a regression can be caught in — hence assertions on its content,
+// not just its shape. The specific risk being closed: the admin console was
+// framable (clickjacking of approve/reject/issue controls) and the Supabase
+// session token lives in localStorage, so an XSS would be full session theft with
+// no CSP backstop.
+describe('vercel.json sets browser security headers on every route', () => {
+  const rule = (VERCEL_CONFIG.headers || []).find((h) => h.source === '/(.*)')
+  const header = (name) =>
+    (rule?.headers || []).find((h) => h.key.toLowerCase() === name.toLowerCase())?.value
+
+  it('applies to every path', () => {
+    // A narrower source would leave the admin console (a client-side route)
+    // uncovered, which is the exact surface clickjacking targets.
+    expect(rule, 'no header rule matching every path').toBeTruthy()
+  })
+
+  it('denies framing two ways', () => {
+    // frame-ancestors is the modern control; X-Frame-Options covers agents that
+    // predate CSP level 2. Both, because the cost of the second is one line.
+    expect(header('Content-Security-Policy')).toContain("frame-ancestors 'none'")
+    expect(header('X-Frame-Options')).toBe('DENY')
+  })
+
+  it('sets nosniff, Referrer-Policy and Permissions-Policy', () => {
+    expect(header('X-Content-Type-Options')).toBe('nosniff')
+    expect(header('Referrer-Policy')).toBe('strict-origin-when-cross-origin')
+    const pp = header('Permissions-Policy')
+    for (const feature of ['camera=()', 'microphone=()', 'geolocation=()']) {
+      expect(pp, `Permissions-Policy must deny ${feature}`).toContain(feature)
+    }
+  })
+
+  it('never allows unsafe-eval or unsafe-inline', () => {
+    // The two escape hatches that would make the CSP decorative. The app needs
+    // neither: Vite emits no inline script or style into dist/index.html, and
+    // React sets element styles through CSSOM (which CSP does not govern) rather
+    // than through a style attribute.
+    const csp = header('Content-Security-Policy')
+    expect(csp).not.toContain('unsafe-eval')
+    expect(csp).not.toContain('unsafe-inline')
+  })
+
+  it('locks down the sinks an XSS would reach for', () => {
+    const csp = header('Content-Security-Policy')
+    expect(csp).toContain("default-src 'self'")
+    expect(csp).toContain("base-uri 'self'")
+    expect(csp).toContain("object-src 'none'")
+    expect(csp).toContain("form-action 'self'")
+    expect(csp).toContain("script-src 'self'")
+  })
+
+  it('permits exactly the external origins the app actually uses', () => {
+    // Derived from the deployed artefact, not from memory: index.html loads the
+    // Google Fonts stylesheet + font files, and the bundle talks to exactly one
+    // Supabase project origin. A CSP of "'self' plus Supabase" — the shape the
+    // audit recommended — would have blocked the site's own webfonts.
+    const csp = header('Content-Security-Policy')
+    expect(csp).toContain('style-src ' + "'self'" + ' https://fonts.googleapis.com')
+    expect(csp).toContain('font-src ' + "'self'" + ' https://fonts.gstatic.com')
+    expect(csp).toContain('connect-src')
+    expect(csp).toMatch(/connect-src [^;]*'self'/)
+    expect(csp).toMatch(/connect-src [^;]*https:\/\/\w+\.supabase\.co/)
+    // No wildcard host anywhere — a single `https:` or `*` would readmit every
+    // origin the rest of this policy just excluded.
+    expect(csp).not.toMatch(/\*/)
+    expect(csp).not.toMatch(/(^|[; ])(script|connect|style|font|img)-src[^;]*\shttps:(\s|;|$)/)
   })
 })
