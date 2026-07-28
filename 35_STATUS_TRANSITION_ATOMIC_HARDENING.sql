@@ -109,16 +109,16 @@ DO $precondition$
 DECLARE
   missing text[] := '{}';
 BEGIN
-  IF to_regclass('public.status_history')    IS NULL THEN missing := missing || 'public.status_history'; END IF;
-  IF to_regclass('public.farms')             IS NULL THEN missing := missing || 'public.farms'; END IF;
-  IF to_regclass('public.inventory_batches') IS NULL THEN missing := missing || 'public.inventory_batches'; END IF;
+  IF to_regclass('public.status_history')    IS NULL THEN missing := missing || 'public.status_history'::text; END IF;
+  IF to_regclass('public.farms')             IS NULL THEN missing := missing || 'public.farms'::text; END IF;
+  IF to_regclass('public.inventory_batches') IS NULL THEN missing := missing || 'public.inventory_batches'::text; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                   WHERE n.nspname='public' AND p.proname='is_ddp_admin') THEN
-    missing := missing || 'public.is_ddp_admin()';
+    missing := missing || 'public.is_ddp_admin()'::text;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                   WHERE n.nspname='public' AND p.proname='has_operational_farmer_access') THEN
-    missing := missing || 'public.has_operational_farmer_access()';
+    missing := missing || 'public.has_operational_farmer_access()'::text;
   END IF;
   IF array_length(missing, 1) IS NOT NULL THEN
     RAISE EXCEPTION 'migration 35 precondition failed: missing %', array_to_string(missing, ', ');

@@ -119,15 +119,32 @@ const STATUS_RPC_OBJECT = /record_status_transition/i
  * back on a permission denial would silently retry the write through a path with
  * weaker checks, which is precisely the hole the RPC exists to close.
  *
- * The message fallback is deliberately narrow: it applies only when there is no
- * error code at all AND the message names this function, so a generic
+ * Both the 42883 branch and the codeless branch are deliberately narrow: they
+ * apply only when the message NAMES this function, so a generic
  * "... does not exist" can never be mistaken for a missing RPC. Same shape as
  * procurementDecisionStore.ts isTableMissing().
  */
 function isStatusTransitionRpcMissing(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false
-  if (error.code) return error.code === UNDEFINED_FUNCTION || error.code === MISSING_FUNCTION_PGRST
   const message = error.message ?? ''
+
+  // PGRST202 is raised by PostgREST itself, before any SQL runs, and can only
+  // ever refer to the function being invoked. It is unambiguous on its own.
+  if (error.code === MISSING_FUNCTION_PGRST) return true
+
+  // 42883 is `undefined_function`, raised by Postgres for ANY missing function —
+  // including one called from INSIDE a deployed record_status_transition (say, by
+  // a trigger on the status_history insert). Treating that as "not deployed"
+  // would retry through the non-atomic path, where the entity UPDATE can commit
+  // without its audit record — recreating audit finding R7, which this function
+  // exists to prevent. So require the message to name the RPC, exactly as the
+  // codeless branch does. A genuinely absent RPC always names itself here
+  // ("function public.record_status_transition(...) does not exist").
+  if (error.code === UNDEFINED_FUNCTION) return STATUS_RPC_OBJECT.test(message)
+
+  // Any other code is an authoritative failure.
+  if (error.code) return false
+
   return /could not find the function|does not exist|schema cache/i.test(message) && STATUS_RPC_OBJECT.test(message)
 }
 

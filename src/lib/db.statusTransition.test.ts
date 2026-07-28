@@ -33,21 +33,24 @@ interface Recorder {
  */
 function mockSupabase(rpcError: SbError, opts: { insertError?: SbError } = {}) {
   const calls: Recorder = { rpc: [], update: [], insert: [] }
+  // These stubs record synchronously and hand back an already-settled promise —
+  // the client contract is promise-returning, but there is nothing to await, so
+  // they are written as plain functions returning Promise.resolve(...).
   const client = {
-    rpc: async (fn: string, args: Record<string, unknown>) => {
+    rpc: (fn: string, args: Record<string, unknown>) => {
       calls.rpc.push({ fn, args })
-      return { data: rpcError ? null : 'history-row-id', error: rpcError }
+      return Promise.resolve({ data: rpcError ? null : 'history-row-id', error: rpcError })
     },
     from: (table: string) => ({
       update: (data: Record<string, unknown>) => ({
-        eq: async () => {
+        eq: () => {
           calls.update.push({ table, data })
-          return { error: null }
+          return Promise.resolve({ error: null })
         },
       }),
-      insert: async (data: Record<string, unknown>) => {
+      insert: (data: Record<string, unknown>) => {
         calls.insert.push({ table, data })
-        return { error: opts.insertError ?? null }
+        return Promise.resolve({ error: opts.insertError ?? null })
       },
     }),
   }
@@ -55,12 +58,17 @@ function mockSupabase(rpcError: SbError, opts: { insertError?: SbError } = {}) {
   return calls
 }
 
+/** Console sink for the spies below — a named no-op rather than an empty arrow. */
+function silence(): void {
+  return undefined
+}
+
 beforeEach(() => {
   vi.resetModules()
   vi.restoreAllMocks()
-  vi.spyOn(console, 'warn').mockImplementation(() => {})
-  vi.spyOn(console, 'error').mockImplementation(() => {})
-  vi.spyOn(console, 'log').mockImplementation(() => {})
+  vi.spyOn(console, 'warn').mockImplementation(silence)
+  vi.spyOn(console, 'error').mockImplementation(silence)
+  vi.spyOn(console, 'log').mockImplementation(silence)
 })
 
 describe('the RPC is deployed — one transactional call, and no second write', () => {
@@ -138,6 +146,31 @@ describe('the RPC is NOT deployed — and only then, the legacy path runs', () =
 
     expect(calls.update).toHaveLength(1)
     expect(calls.insert).toHaveLength(1)
+  })
+
+  it('does NOT degrade on a 42883 raised from INSIDE the RPC body', async () => {
+    // The dangerous case. 42883 is `undefined_function`, and Postgres raises it
+    // for ANY missing function — including one called by a trigger that fires on
+    // the status_history INSERT inside record_status_transition. That is an
+    // authoritative failure of a DEPLOYED function, not a missing RPC.
+    //
+    // Degrading here would retry through the non-atomic update/insert path, where
+    // the entity UPDATE can commit and the history INSERT then hit the same
+    // missing trigger function — the farm moves status with no audit record,
+    // recreating the exact divergence (audit R7) this PR exists to close.
+    const calls = mockSupabase({
+      code: '42883',
+      message: 'function public.audit_trigger_fn(text) does not exist',
+    })
+    const { updateFarmProfileStatus } = await import('./db')
+
+    await expect(
+      updateFarmProfileStatus(FARM_ID, 'Approved' as FarmStatus, undefined, ADMIN_ID),
+    ).rejects.toThrow(/audit_trigger_fn/)
+
+    expect(calls.rpc).toHaveLength(1)
+    expect(calls.update).toHaveLength(0)
+    expect(calls.insert).toHaveLength(0)
   })
 
   it('degrades on a codeless message that names this function', async () => {
