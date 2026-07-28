@@ -83,7 +83,13 @@ const FARMER_PAGES: Page[] = [
 ]
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
-const PUBLIC_PAGES: Page[] = ['landing', 'login']
+// Pages a signed-out visitor may reach. 'farmer-register' MUST be here: it is
+// the public supplier access-request form, and goTo() bounces any non-public
+// page to login for an unauthenticated caller. Omitting it made the
+// "Supplier signup" button a no-op on the live site — the click redirected
+// straight back to the login screen, so the onboarding entry point was
+// unreachable in production for every visitor.
+const PUBLIC_PAGES: Page[] = ['landing', 'login', 'farmer-register']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -579,6 +585,15 @@ export default function App() {
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
+  // The public pages are cream; the app shell is navy. .public-auth-shell only
+  // covers <main>, so body kept painting navy behind it — visible during route
+  // transitions and on overscroll. Tag the document instead, and let CSS own it.
+  useEffect(() => {
+    const isPublicAuthPage = page === 'login' || page === 'farmer-register'
+    document.body.classList.toggle('public-auth-page', isPublicAuthPage)
+    return () => document.body.classList.remove('public-auth-page')
+  }, [page])
+
   function goTo(p: Page) {
     // In Supabase mode: redirect unauthenticated users to login
     if (!isDemo && !isSignedIn && !PUBLIC_PAGES.includes(p)) {
@@ -1006,9 +1021,12 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Auth pages (no navbar) ── */}
+      {/* ── Auth pages (no navbar) ──
+          Wrapped in the public shell so a visitor arriving from the landing
+          page stays inside the same brand rather than dropping into the
+          internal navy app theme. */}
       {page === 'login' && (
-        <main className="main-content">
+        <main className="main-content public-auth-shell">
           <LoginPage
             lang={lang}
             onSuccess={handleLoginSuccess}
@@ -1017,12 +1035,15 @@ export default function App() {
         </main>
       )}
 
-      {/* ── Demo registration (no navbar) ── */}
+      {/* ── Supplier access request (no navbar) ── */}
       {page === 'farmer-register' && (
-        <main className="main-content">
+        <main className="main-content public-auth-shell">
           <FarmerRegister
             lang={lang}
-            onComplete={() => goTo('farmer-dashboard')}
+            /* Returns to the landing page. It previously routed to
+               farmer-dashboard, which requires a session the request flow
+               never creates — the dead end this replaced. */
+            onComplete={() => goTo('landing')}
           />
         </main>
       )}
@@ -1300,7 +1321,13 @@ export default function App() {
         )
       })()}
 
-      {page !== 'landing' && (isDemo || buildVersion) && (
+      {/* Internal diagnostic chrome. Hidden on every PUBLIC page, not just the
+          landing: it is position:fixed with z-index 200, so on sign-in and the
+          supplier access request it painted a navy bar with the build id across
+          the bottom of an otherwise cream, branded page — internal build detail
+          shown to prospects, and the last of the "blue screen" on the public
+          funnel. It remains visible throughout the signed-in app. */}
+      {!PUBLIC_PAGES.includes(page) && (isDemo || buildVersion) && (
         <div className="demo-utility-strip">
           {isDemo && <span className="db-mode-badge">○ Demo mode: localStorage</span>}
           {buildVersion && <span className="build-id-badge">{buildVersion}</span>}
