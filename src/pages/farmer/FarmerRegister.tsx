@@ -72,11 +72,21 @@ export default function FarmerRegister({ lang, onComplete }: Props) {
       })
       setSubmitted(true)
     } catch (err) {
-      setError(
-        err instanceof AccessRequestError
-          ? (isThai ? 'ส่งคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : err.message)
-          : (isThai ? 'ส่งคำขอไม่สำเร็จ' : 'The request could not be sent.'),
-      )
+      if (err instanceof AccessRequestError && err.code === 'backend_unavailable') {
+        // The intake table is not in this environment yet. Do not tell the
+        // visitor to retry — it cannot succeed. Give them another route.
+        setError(
+          isThai
+            ? 'ขณะนี้ยังไม่เปิดรับคำขอผ่านแบบฟอร์ม กรุณาติดต่อทีมงาน DDP โดยตรง'
+            : 'The request form is not available yet. Please contact the DDP team directly.',
+        )
+      } else {
+        setError(
+          err instanceof AccessRequestError
+            ? (isThai ? 'ส่งคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : err.message)
+            : (isThai ? 'ส่งคำขอไม่สำเร็จ' : 'The request could not be sent.'),
+        )
+      }
     } finally {
       setSubmitting(false)
     }

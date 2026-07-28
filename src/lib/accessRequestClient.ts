@@ -29,6 +29,8 @@ export type AccessRequestErrorCode =
   | 'not_configured'
   | 'invalid_input'
   | 'submit_failed'
+  /** The intake table is absent — the migration has not reached this environment. */
+  | 'backend_unavailable'
 
 export class AccessRequestError extends Error {
   readonly code: AccessRequestErrorCode
@@ -85,6 +87,17 @@ export async function submitAccessRequest(input: AccessRequestInput): Promise<vo
   })
 
   if (error) {
+    // PGRST205 = the table is not in PostgREST's schema cache, i.e. migration 34
+    // has not been applied to this environment. Distinguished from a genuine
+    // failure so the UI can tell the visitor to reach us another way instead of
+    // asking them to retry something that cannot succeed. This makes the
+    // application safe to deploy BEFORE the migration lands, in either order.
+    if ((error as { code?: string }).code === 'PGRST205') {
+      throw new AccessRequestError(
+        'backend_unavailable',
+        'The request form is not available yet. Please contact the DDP team directly.',
+      )
+    }
     // The driver message can name columns and constraints; keep it out of the UI.
     throw new AccessRequestError('submit_failed', 'The request could not be sent. Please try again.')
   }
