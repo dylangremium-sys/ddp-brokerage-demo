@@ -80,13 +80,24 @@ explicitly by deleting the branch and striking these rows.
 
 ## Free
 
-**35 and upward.** No `.sql` file numbered 35 or higher has ever existed on any ref in this
-repository:
+**37 and upward.**
+
+The floor is 37, not 35, because **35 and 36 are already allocated by this remediation** — see the
+allocations table below. Quoting a free floor of 35 would have invited an author to take a number
+this very document reserves, recreating exactly the collision the register exists to prevent.
+
+The check must therefore exclude the allocated numbers rather than merely look for files on disk: an
+allocation is a *claim*, and a claim is made before the file exists. Numbers 27, 28 and 31–33 are
+claimed by branches too (see above), so the honest query is "no file exists **and** no row in the
+allocations table claims it":
 
 ```
-$ git log --all --diff-filter=A --name-only --pretty=format: -- '*.sql' | grep -E '^(3[5-9]|[4-9][0-9])_'
+$ git log --all --diff-filter=A --name-only --pretty=format: -- '*.sql' | grep -E '^(3[7-9]|[4-9][0-9])_'
 (no output)
 ```
+
+**Take the next number above the highest CLAIMED one — not the highest number on disk.** As of
+2026-07-28 the highest claim is 36, so the next migration is 37.
 
 **1, 2, 5, 6, 7 are NOT free.** They were never used by a numbered file, but the pre-numbering
 migrations (`AUTH_RLS_SCHEMA.sql`, `SUPABASE_SCHEMA.sql`, `FARMER_MVP_MIGRATION.sql`,
