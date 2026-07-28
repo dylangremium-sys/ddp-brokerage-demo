@@ -585,6 +585,15 @@ export default function App() {
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
+  // The public pages are cream; the app shell is navy. .public-auth-shell only
+  // covers <main>, so body kept painting navy behind it — visible during route
+  // transitions and on overscroll. Tag the document instead, and let CSS own it.
+  useEffect(() => {
+    const isPublicAuthPage = page === 'login' || page === 'farmer-register'
+    document.body.classList.toggle('public-auth-page', isPublicAuthPage)
+    return () => document.body.classList.remove('public-auth-page')
+  }, [page])
+
   function goTo(p: Page) {
     // In Supabase mode: redirect unauthenticated users to login
     if (!isDemo && !isSignedIn && !PUBLIC_PAGES.includes(p)) {
@@ -1312,7 +1321,13 @@ export default function App() {
         )
       })()}
 
-      {page !== 'landing' && (isDemo || buildVersion) && (
+      {/* Internal diagnostic chrome. Hidden on every PUBLIC page, not just the
+          landing: it is position:fixed with z-index 200, so on sign-in and the
+          supplier access request it painted a navy bar with the build id across
+          the bottom of an otherwise cream, branded page — internal build detail
+          shown to prospects, and the last of the "blue screen" on the public
+          funnel. It remains visible throughout the signed-in app. */}
+      {!PUBLIC_PAGES.includes(page) && (isDemo || buildVersion) && (
         <div className="demo-utility-strip">
           {isDemo && <span className="db-mode-badge">○ Demo mode: localStorage</span>}
           {buildVersion && <span className="build-id-badge">{buildVersion}</span>}

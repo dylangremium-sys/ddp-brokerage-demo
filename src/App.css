@@ -977,6 +977,14 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
    components already consume (.card, .field, .btn, .alert), so the existing
    markup renders correctly on the public palette with no component changes.
    The internal app is untouched — this is scoped to .public-auth-shell. */
+/* Paint the document for public auth pages. .public-auth-shell covers <main>
+   only, so without this the navy body shows through during route transitions
+   and on overscroll/rubber-band. */
+body.public-auth-page {
+  background: #F7F3EA;
+  color: #1E2A24;
+}
+
 .public-auth-shell {
   --bg:          #F7F3EA;   /* landing cream */
   --bg-card:     #FFFFFF;
@@ -992,6 +1000,27 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   background: var(--bg);
   color: var(--text);
 }
+
+/* .page-header/.farmer-header paint a hardcoded navy GRADIENT (literal hex, so
+   the token remap above cannot reach it). On the public pages that left a dark
+   block with unreadable dark-on-dark text above the form. Neutralised the same
+   way .eo-farmer already does for the editorial shell. */
+.public-auth-shell .page-header,
+.public-auth-shell .farmer-header {
+  background: transparent;
+  background-image: none;
+  border: none;
+  color: var(--text);
+  padding-left: 0;
+  padding-right: 0;
+}
+.public-auth-shell .page-title,
+.public-auth-shell .page-desc,
+.public-auth-shell .page-eyebrow {
+  color: var(--text);
+}
+.public-auth-shell .page-eyebrow { color: var(--accent-strong); }
+.public-auth-shell .page-desc { color: var(--text-muted); }
 
 /* The shared .btn-primary hardcodes navy text for contrast on a slate accent.
    On gold, ink reads correctly and navy does not. */
