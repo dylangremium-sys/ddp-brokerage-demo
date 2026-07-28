@@ -54,6 +54,21 @@ jobs:
       - name: Install dependencies (deterministic)
         run: npm ci
 
+      # Dependency advisories, SHIPPED TREE ONLY.
+      #
+      # --omit=dev is the whole point. The dev tree carries build-chain
+      # advisories (postcss, brace-expansion) that never reach a browser, and
+      # gating on them would fail every unrelated PR the moment a transitive
+      # build dependency is flagged upstream — a gate that fires on things the
+      # author cannot fix gets disabled, and then nothing is checked at all.
+      #
+      # --audit-level=high means moderate and low advisories are reported but do
+      # not fail the run. Raise this deliberately, not by accident.
+      #
+      # Run `npm audit` locally (without --omit=dev) to see the full picture.
+      - name: Dependency advisories (production tree)
+        run: npm audit --omit=dev --audit-level=high
+
       # Cheapest gate first: a migration-number collision (two unrelated
       # migrations claiming one number) is invisible on either branch alone and
       # only appears once both land. It broke PR #44 against main's PR #48.
