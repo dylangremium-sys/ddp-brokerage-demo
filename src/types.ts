@@ -413,6 +413,7 @@ export type Page =
   | 'ddp-risk-register'
   | 'ddp-compliance-watchtower'
   | 'ddp-operations-desk'
+  | 'ddp-access-requests'
 
 export type StockStatus =
   | 'draft'

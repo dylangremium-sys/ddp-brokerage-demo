@@ -74,6 +74,7 @@ import AccessDenied from './components/shared/AccessDenied'
 import FarmerNav from './components/farmer/FarmerNav'
 import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
+import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 
 const FARMER_PAGES: Page[] = [
@@ -81,7 +82,7 @@ const FARMER_PAGES: Page[] = [
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
+const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk', 'ddp-access-requests']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 // Pages a signed-out visitor may reach. 'farmer-register' MUST be here: it is
 // the public supplier access-request form, and goTo() bounces any non-public
@@ -1266,6 +1267,12 @@ export default function App() {
           {/* Operations Desk — read-only index over existing records. The
               `&& isAdminRole` conjunction is the guard, exactly as on every
               other DDP page; the database's RLS remains the real boundary. */}
+          {/* Supplier enquiries — the administrator's view of the public intake
+              queue, and the only in-app way to disposition spam. Same
+              `&& isAdminRole` guard as every other DDP page; RLS remains the
+              real boundary (migration 34 `admin read` / `admin triage`). */}
+          {page === 'ddp-access-requests' && isAdminRole && <DDPAccessRequests />}
+
           {page === 'ddp-operations-desk' && isAdminRole && (
             <DDPOperationsDesk
               // Only farm/inventory data confirmed fresh by the current admin

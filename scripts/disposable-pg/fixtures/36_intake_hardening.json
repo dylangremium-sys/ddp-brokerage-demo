@@ -1,0 +1,60 @@
+{
+  "id": "36_intake_hardening",
+  "title": "Migration 36 — Public intake hardening (rate-limited server path)",
+  "description": "Applies migration 34 (the intake table this migration hardens) then migration 36, runs VERIFY A-F, and rolls back 36 then 34. Migration 34 is an apply stage rather than substrate because 36's whole purpose is to change 34's policy and grant posture — shimming it would test the shim, not the migration.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "34-PREREQ", "file": "34_FARMER_ACCESS_REQUESTS_HARDENING.sql" },
+    { "label": "HARDENING", "file": "36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING.sql" }
+  ],
+  "verify": {
+    "file": "36_FARMER_ACCESS_REQUEST_INTAKE_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F"],
+    "expectedPassCount": 6,
+    "note": "A-D are read-only catalog/privilege checks and are safe against Production. C is the finding itself (no anon-satisfiable write policy and no anon INSERT grant remain). D asserts what migration 36 must NOT have touched, including migration 34's deliberate absence of a DELETE policy."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "36-rollback",
+        "source": "file",
+        "file": "36_FARMER_ACCESS_REQUEST_INTAKE_ROLLBACK.sql"
+      },
+      {
+        "label": "34-rollback",
+        "source": "file",
+        "file": "34_FARMER_ACCESS_REQUESTS_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.is_ddp_admin",
+      "public.profiles"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.public_intake_attempts",
+        "public.farmer_access_requests"
+      ],
+      "functions": ["public.stamp_farmer_access_request_review"],
+      "policies": [
+        "farmer_access_requests: server submit",
+        "farmer_access_requests: public submit",
+        "public_intake_attempts: service role only"
+      ]
+    },
+    "intact": {
+      "tables": ["public.profiles", "auth.users"],
+      "functions": ["public.is_ddp_admin", "auth.uid"],
+      "authUsersMinRows": 2
+    }
+  }
+}
