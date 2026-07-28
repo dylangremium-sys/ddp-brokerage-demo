@@ -20,5 +20,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["api"]
+  /* The adapter's unit test lives under src/ so vitest picks it up, but it
+     imports api/public/access-request.ts and therefore needs the same Node
+     types this project supplies. tsconfig.app.json excludes it for the same
+     reason it excludes integration tests. */
+  "include": ["api", "src/lib/publicIntakeAdapter.test.ts"]
 }

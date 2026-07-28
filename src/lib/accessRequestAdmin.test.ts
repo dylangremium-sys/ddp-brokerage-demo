@@ -27,11 +27,11 @@ function mockSupabase(result: { data?: unknown; error?: SbError | null }) {
   const client = {
     from: () => ({
       select: () => ({
-        order: async () => ({ data: result.data ?? null, error: result.error ?? null }),
+        order: () => Promise.resolve({ data: result.data ?? null, error: result.error ?? null }),
       }),
       update: (data: Record<string, unknown>) => {
         calls.updates.push(data)
-        return { eq: async () => ({ error: result.error ?? null }) }
+        return { eq: () => Promise.resolve({ error: result.error ?? null }) }
       },
     }),
   }

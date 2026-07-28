@@ -94,8 +94,10 @@ function asString(v: unknown): string {
 }
 
 function toStatus(v: unknown): AccessRequestStatus {
-  const s = asString(v)
-  return (ACCESS_REQUEST_STATUSES as readonly string[]).includes(s) ? (s as AccessRequestStatus) : 'new'
+  const candidate = asString(v)
+  return (ACCESS_REQUEST_STATUSES as readonly string[]).includes(candidate)
+    ? (candidate as AccessRequestStatus)
+    : 'new'
 }
 
 export function mapAccessRequestRow(raw: unknown): AccessRequestRow | null {

@@ -46,7 +46,12 @@ CREATE POLICY "farmer_access_requests: public submit" ON public.farmer_access_re
 GRANT INSERT ON public.farmer_access_requests TO anon;
 GRANT INSERT ON public.farmer_access_requests TO authenticated;
 
--- 3. Drop the throttle ledger. Its indexes and policy go with it.
+-- 3. Drop the functions migration 36 added. Dropped BEFORE the table they read,
+--    so the rollback does not depend on CASCADE ordering.
+DROP FUNCTION IF EXISTS public.reserve_public_intake_slot(text, text, jsonb);
+DROP FUNCTION IF EXISTS public.has_open_access_request(text);
+
+-- 4. Drop the throttle ledger. Its indexes and policy go with it.
 DROP TABLE IF EXISTS public.public_intake_attempts;
 
 COMMIT;

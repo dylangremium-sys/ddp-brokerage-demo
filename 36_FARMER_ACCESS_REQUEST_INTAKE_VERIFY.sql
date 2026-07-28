@@ -282,6 +282,110 @@ BEGIN
   RAISE NOTICE 'VERIFY F PASSED: every triage disposition the UI offers is accepted and attributed; an unattributed one is refused.';
 END $$;
 
+
+-- ---------------------------------------------------------------------------
+-- G — the atomic reservation reserves BEFORE it evaluates, and admits no more
+--     than the ceiling. This is the Codex P1 finding: counting first and
+--     recording later is check-then-act, and a concurrent burst passes it.
+--
+--     A single session cannot demonstrate true concurrency, so this asserts the
+--     property that makes concurrency safe — the reservation is counted by its
+--     own check, so the Nth caller cannot see fewer than N attempts. The
+--     genuinely-parallel proof lives in
+--     scripts/disposable-pg/migration-36-throttle-concurrency.test.mjs.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_key    text := repeat('e', 64);
+  v_rules  jsonb := '[{"scope":"client","windowSeconds":600,"max":3}]'::jsonb;
+  v_result jsonb;
+  v_rows   int;
+  v_admitted int := 0;
+  i int;
+BEGIN
+  FOR i IN 1..5 LOOP
+    v_result := public.reserve_public_intake_slot(v_key, 'verify-global-ceiling', v_rules);
+    IF (v_result->>'allowed')::boolean THEN
+      v_admitted := v_admitted + 1;
+    END IF;
+  END LOOP;
+
+  IF v_admitted <> 3 THEN
+    RAISE EXCEPTION 'VERIFY G FAILED: 5 reservations against a ceiling of 3 admitted %, expected 3', v_admitted;
+  END IF;
+
+  -- Every attempt is reserved, including refused ones — otherwise a flood would
+  -- reset its own allowance and the ceiling would never bind.
+  SELECT count(*) INTO v_rows FROM public.public_intake_attempts WHERE bucket_key = v_key;
+  IF v_rows <> 5 THEN
+    RAISE EXCEPTION 'VERIFY G FAILED: expected 5 reservations recorded, found %', v_rows;
+  END IF;
+
+  -- A refusal must always name a window for Retry-After.
+  IF (v_result->>'windowSeconds') IS NULL THEN
+    RAISE EXCEPTION 'VERIFY G FAILED: a refusal did not name the window it exceeded';
+  END IF;
+
+  -- The global bucket key the application uses must satisfy the ledger's own
+  -- length CHECK. The original 'global' was six characters and would have been
+  -- rejected on every submission.
+  IF length('global-intake-ceiling') NOT BETWEEN 16 AND 128 THEN
+    RAISE EXCEPTION 'VERIFY G FAILED: the global bucket key violates the bucket_key length CHECK';
+  END IF;
+
+  RAISE NOTICE 'VERIFY G PASSED: reservations are counted by their own check, the ceiling binds at 3/5, refusals still consume the allowance, and the global key is storable.';
+END $$;
+
+
+-- ---------------------------------------------------------------------------
+-- H — the duplicate lookup compares a LITERAL address, not a pattern.
+--
+--     The defect: .ilike('email', <address>) sent the address to SQL ILIKE as a
+--     PATTERN. `_` is legal in an email local part, so a_b@example.com matched a
+--     stored axb@example.com; the endpoint reported success and wrote nothing,
+--     silently losing a real supplier's enquiry.
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  INSERT INTO public.farmer_access_requests
+    (full_name, email, phone, province, position, preferred_language, note, status)
+  VALUES ('Verify H', 'axb@verify36.test', '+66 81 000 0000', 'Buriram', 'Owner', 'en', '', 'new');
+
+  -- `_` must be a character, not a single-character wildcard.
+  IF public.has_open_access_request('a_b@verify36.test') THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: `_` still behaves as a wildcard — a new enquiry would be discarded as a duplicate';
+  END IF;
+
+  -- `%` must not match everything.
+  IF public.has_open_access_request('%@verify36.test') THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: `%%` still behaves as a wildcard';
+  END IF;
+
+  -- A backslash must not reintroduce escape/pattern semantics.
+  IF public.has_open_access_request('a\_b@verify36.test') THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: a backslash-escaped pattern still matched';
+  END IF;
+
+  -- The genuine duplicate must still be found...
+  IF NOT public.has_open_access_request('axb@verify36.test') THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: an exact duplicate was not detected';
+  END IF;
+
+  -- ...case-insensitively, which is the semantics ILIKE provided and which this
+  -- deliberately preserves.
+  IF NOT public.has_open_access_request('AXB@Verify36.TEST') THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: matching is no longer case-insensitive';
+  END IF;
+
+  -- A resolved request must not suppress a fresh enquiry.
+  UPDATE public.farmer_access_requests SET status = 'declined' WHERE email = 'axb@verify36.test';
+  IF public.has_open_access_request('axb@verify36.test') THEN
+    RAISE EXCEPTION 'VERIFY H FAILED: a closed request still suppresses a new one';
+  END IF;
+
+  RAISE NOTICE 'VERIFY H PASSED: duplicate detection is a case-insensitive LITERAL comparison; _, %% and \ are ordinary characters.';
+END $$;
+
 ROLLBACK;
 
 -- Residue check — run AFTER the rollback above. Every count must be zero.

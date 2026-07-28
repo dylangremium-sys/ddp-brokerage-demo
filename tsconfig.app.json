@@ -25,5 +25,5 @@
   /* Integration tests use Node built-ins (process, fs) and are type-checked by
      tsconfig.itest.json, which supplies @types/node. Keeping them out of this
      project preserves the rule that ordinary src/ code cannot reach Node APIs. */
-  "exclude": ["src/**/*.integration.test.ts"]
+  "exclude": ["src/**/*.integration.test.ts", "src/lib/publicIntakeAdapter.test.ts"]
 }

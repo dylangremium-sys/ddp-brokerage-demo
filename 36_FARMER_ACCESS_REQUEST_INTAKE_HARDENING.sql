@@ -185,4 +185,145 @@ REVOKE INSERT ON public.farmer_access_requests FROM authenticated;
 -- the `admin read` and `admin triage` policies are, and both are untouched.
 -- Narrowing them here would be scope creep into migrations 14/15's territory.
 
+-- ---------------------------------------------------------------------------
+-- 3. Atomic throttle reservation.
+--
+-- The first cut of this feature counted attempts in one round trip and recorded
+-- them in a later one. That is check-then-act: concurrent invocations across
+-- serverless instances all complete their counts before any of them writes, so a
+-- parallel burst passes every rule and lands far above both ceilings. Vercel
+-- functions share no lock, so the race cannot be closed in TypeScript.
+--
+-- This function closes it by doing both halves in ONE database call, under a
+-- transaction-scoped advisory lock, in this order:
+--
+--   1. RESERVE  — insert this attempt (client bucket AND global bucket) first,
+--   2. EVALUATE — then count, so the reservation is included in its own count.
+--
+-- Reserving before evaluating is what bounds the outcome. If k callers are
+-- admitted, the k-th admitted caller counted at least k rows, so k <= max. A
+-- caller that is refused still consumes its reservation, which is deliberate and
+-- matches the pre-existing intent: re-submitting the same address repeatedly
+-- must keep consuming the caller's allowance rather than resetting it.
+--
+-- The advisory lock serialises reservations. The public funnel is low-volume by
+-- construction (the global ceiling is 60/hour), so serialising costs nothing
+-- measurable and removes the race entirely rather than narrowing it.
+--
+-- The RULES ARE A PARAMETER, not a copy. THROTTLE_RULES in
+-- src/lib/serverAccessRequestIntake.ts stays the single source of truth; this
+-- function supplies atomicity only. Duplicating the numbers here would let the
+-- two drift silently.
+--
+-- Returns: {"allowed": true} or {"allowed": false, "windowSeconds": <int>}.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.reserve_public_intake_slot(
+  p_client_key text,
+  p_global_key text,
+  p_rules      jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_rule   jsonb;
+  v_key    text;
+  v_count  bigint;
+  v_window int;
+BEGIN
+  IF p_client_key IS NULL OR p_global_key IS NULL OR p_rules IS NULL THEN
+    RAISE EXCEPTION 'reserve_public_intake_slot: all arguments are required'
+      USING ERRCODE = '22023';
+  END IF;
+  IF jsonb_typeof(p_rules) <> 'array' THEN
+    RAISE EXCEPTION 'reserve_public_intake_slot: p_rules must be a JSON array'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Serialise every reservation against every other one.
+  PERFORM pg_advisory_xact_lock(hashtext('public.reserve_public_intake_slot'));
+
+  -- ---- RESERVE (before any evaluation) ------------------------------------
+  INSERT INTO public.public_intake_attempts (bucket_key) VALUES (p_client_key);
+  INSERT INTO public.public_intake_attempts (bucket_key) VALUES (p_global_key);
+
+  -- ---- EVALUATE (the reservation above is counted) ------------------------
+  FOR v_rule IN SELECT * FROM jsonb_array_elements(p_rules)
+  LOOP
+    v_window := (v_rule->>'windowSeconds')::int;
+    v_key := CASE WHEN v_rule->>'scope' = 'global' THEN p_global_key ELSE p_client_key END;
+
+    SELECT count(*) INTO v_count
+      FROM public.public_intake_attempts
+     WHERE bucket_key = v_key
+       AND occurred_at > now() - make_interval(secs => v_window);
+
+    -- STRICTLY GREATER: this caller's own reservation is already in v_count, so
+    -- `max` admitted callers produce a count of exactly `max`, and the next one
+    -- produces max+1. This reproduces the pre-existing `count >= max` boundary
+    -- exactly, just measured after the reservation instead of before it.
+    IF v_count > (v_rule->>'max')::int THEN
+      RETURN jsonb_build_object('allowed', false, 'windowSeconds', v_window);
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object('allowed', true);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.reserve_public_intake_slot(text, text, jsonb) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.reserve_public_intake_slot(text, text, jsonb) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.reserve_public_intake_slot(text, text, jsonb) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.reserve_public_intake_slot(text, text, jsonb) TO service_role;
+
+COMMENT ON FUNCTION public.reserve_public_intake_slot(text, text, jsonb) IS
+  'Atomically reserves one public-intake slot and reports whether a throttle rule '
+  'is exceeded (migration 36, audit R5). Reserves BEFORE evaluating, under an '
+  'advisory transaction lock, so a concurrent burst across serverless instances '
+  'cannot exceed the ceiling. Rules are supplied by the caller; the application '
+  'owns the policy, this function owns only the atomicity.';
+
+-- ---------------------------------------------------------------------------
+-- 4. Literal, case-insensitive duplicate lookup.
+--
+-- The intake previously asked PostgREST for `.ilike('email', <address>)`, which
+-- sends the address to SQL ILIKE as a PATTERN. `_` and `%` are wildcards and `_`
+-- is legal in an email local part, so `a_b@example.com` matched a stored
+-- `axb@example.com`; the handler then treated a brand-new supplier as a
+-- duplicate and returned HTTP 200 while writing nothing. A real enquiry was lost
+-- with no error anywhere. Verified on PostgreSQL 18.4:
+--   SELECT 'axb@example.com' ILIKE 'a_b@example.com';  -- true
+--
+-- Comparing lower(email) = lower($1) is a literal equality with no pattern
+-- semantics at all, and it is exactly the expression migration 34 indexed
+-- (idx_farmer_access_requests_email_lower), so the lookup stays index-backed.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.has_open_access_request(p_email text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.farmer_access_requests
+     WHERE lower(email) = lower(p_email)
+       AND status IN ('new', 'contacted')
+  );
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.has_open_access_request(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.has_open_access_request(text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.has_open_access_request(text) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.has_open_access_request(text) TO service_role;
+
+COMMENT ON FUNCTION public.has_open_access_request(text) IS
+  'True when an unresolved (new/contacted) access request already exists for this '
+  'address, compared as a case-insensitive LITERAL (migration 36). Replaces an '
+  'ILIKE call in which `_`/`%` in a valid address acted as wildcards and silently '
+  'discarded legitimate enquiries. Uses migration 34''s lower(email) index.';
+
 COMMIT;

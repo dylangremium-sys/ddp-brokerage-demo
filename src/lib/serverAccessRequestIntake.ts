@@ -54,14 +54,48 @@ export const THROTTLE_RULES = [
   { scope: 'global' as const, windowSeconds: 3_600, max: 60 },
 ]
 
-/** The key used for the global bucket. Never collides with a sha256 hex digest. */
-export const GLOBAL_BUCKET_KEY = 'global'
+/**
+ * The key used for the global bucket.
+ *
+ * Two constraints, both load-bearing:
+ *
+ *  1. It must satisfy the ledger's own CHECK — migration 36 declares
+ *     `CHECK (length(bucket_key) BETWEEN 16 AND 128)`. The original value here
+ *     was 'global', six characters, so the global reservation was rejected by
+ *     that constraint on every single submission. Because the handler turns a
+ *     ledger write failure into a fail-closed 503, applying migration 36 would
+ *     have taken the public intake form completely offline. No test caught it:
+ *     every unit test mocks the database, and the VERIFY script never exercised
+ *     the global key.
+ *  2. It must never collide with a client bucket. Client buckets are sha256 hex
+ *     digests — exactly 64 characters of [0-9a-f] — so any string containing a
+ *     character outside that alphabet is collision-proof by construction. This
+ *     one contains hyphens and letters beyond 'f'.
+ */
+export const GLOBAL_BUCKET_KEY = 'global-intake-ceiling'
+
+/** The outcome of an atomic slot reservation. */
+export interface ThrottleReservation {
+  allowed: boolean
+  /** Present only when `allowed` is false — the window that was exceeded. */
+  windowSeconds?: number
+}
 
 export interface IntakeDeps {
-  /** Attempts recorded for a bucket since `since`. */
-  countAttempts(bucketKey: string, since: Date): Promise<number>
-  /** Append one attempt. */
-  recordAttempt(bucketKey: string): Promise<void>
+  /**
+   * Atomically reserve one intake slot and report whether a rule is exceeded.
+   *
+   * This is deliberately ONE operation rather than a count followed by a write.
+   * Splitting them is check-then-act: concurrent invocations across serverless
+   * instances all finish counting before any of them records, so a parallel
+   * burst passes every rule at once. Vercel functions share no lock, so the
+   * database has to be the thing that serialises — see
+   * public.reserve_public_intake_slot() in migration 36.
+   *
+   * MUST THROW rather than return `{allowed: true}` when the ledger cannot be
+   * reached; the caller turns a throw into a fail-closed 503.
+   */
+  reserveThrottleSlot(clientBucketKey: string): Promise<ThrottleReservation>
   /** True when an unresolved request already exists for this email. */
   hasOpenRequestForEmail(email: string): Promise<boolean>
   /** Insert the request. Throws on failure. */
@@ -106,27 +140,6 @@ export function normaliseSubmission(input: Partial<AccessRequestSubmission>): Ac
     preferredLanguage: input.preferredLanguage === 'th' ? 'th' : 'en',
     note: (input.note ?? '').trim(),
   }
-}
-
-/**
- * The first rule this caller has exceeded, or null.
- *
- * Evaluated before the write, and every rule is checked rather than
- * short-circuiting on the first pass — a caller inside the 10-minute allowance
- * can still be outside the daily one.
- */
-export async function firstExceededRule(
-  deps: IntakeDeps,
-  clientBucket: string,
-): Promise<{ windowSeconds: number } | null> {
-  const now = deps.now()
-  for (const rule of THROTTLE_RULES) {
-    const key = rule.scope === 'global' ? GLOBAL_BUCKET_KEY : clientBucket
-    const since = new Date(now.getTime() - rule.windowSeconds * 1000)
-    const count = await deps.countAttempts(key, since)
-    if (count >= rule.max) return { windowSeconds: rule.windowSeconds }
-  }
-  return null
 }
 
 /**
@@ -177,22 +190,28 @@ export async function handleAccessRequest(
     }
   }
 
-  let exceeded: { windowSeconds: number } | null
+  // Reserve and evaluate in ONE atomic operation. The reservation happens even
+  // when the caller is then refused, which is deliberate: re-submitting must keep
+  // consuming the caller's allowance rather than resetting it.
+  let reservation: ThrottleReservation
   try {
-    exceeded = await firstExceededRule(deps, clientBucket)
+    reservation = await deps.reserveThrottleSlot(clientBucket)
   } catch {
     // The throttle could not be evaluated, so the request cannot be accepted
     // within a known bound. Fail closed rather than waving it through.
     return { status: 503, body: { ok: false, error: 'The request form is not available yet.' } }
   }
 
-  if (exceeded) {
+  if (!reservation.allowed) {
     return {
       status: 429,
       body: {
         ok: false,
         error: 'Too many requests from this connection. Please try again later, or contact the DDP team directly.',
-        retryAfterSeconds: exceeded.windowSeconds,
+        // A refusal always names a window. Defaulting to the longest configured
+        // window rather than 0 keeps a malformed reply fail-closed: telling a
+        // caller to retry immediately would be the one unsafe answer.
+        retryAfterSeconds: reservation.windowSeconds ?? Math.max(...THROTTLE_RULES.map(r => r.windowSeconds)),
       },
     }
   }
@@ -201,16 +220,6 @@ export async function handleAccessRequest(
   // anonymous caller "that address already has a request" would turn the endpoint
   // into an oracle for which suppliers have applied. The queue stays clean and
   // the visitor sees the same confirmation either way.
-  //
-  // Recorded as an attempt first, so repeatedly re-submitting the same address
-  // still consumes the caller's allowance.
-  try {
-    await deps.recordAttempt(clientBucket)
-    await deps.recordAttempt(GLOBAL_BUCKET_KEY)
-  } catch {
-    return { status: 503, body: { ok: false, error: 'The request form is not available yet.' } }
-  }
-
   try {
     if (await deps.hasOpenRequestForEmail(submission.email)) {
       return { status: 200, body: { ok: true } }

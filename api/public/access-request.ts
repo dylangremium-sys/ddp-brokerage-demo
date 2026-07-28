@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
   handleAccessRequest,
   GLOBAL_BUCKET_KEY,
+  THROTTLE_RULES,
   type AccessRequestSubmission,
   type IntakeDeps,
 } from '../../src/lib/serverAccessRequestIntake.js'
@@ -43,15 +44,25 @@ function headerValue(v: string | string[] | undefined): string | null {
  * The client address, as Vercel reports it.
  *
  * x-forwarded-for is a comma-separated chain; on Vercel the FIRST entry is the
- * real client and the rest are proxies. x-real-ip is preferred where present
- * because Vercel sets it itself and it cannot be spoofed by a client-supplied
- * header. A caller CAN spoof x-forwarded-for, so treating it as authoritative
- * would let an attacker rotate buckets at will — hence the ordering, and hence
- * the global rule in the core, which no per-client spoofing can evade.
+ * real client and the rest are proxies. x-real-ip is preferred where present.
+ *
+ * ASSUMPTION, STATED BECAUSE IT IS NOT PROVEN: this code assumes Vercel's proxy
+ * OVERWRITES a client-supplied `x-real-ip` rather than forwarding it. That is
+ * the documented behaviour of every reverse proxy this pattern is normally used
+ * with, and it is why x-real-ip is preferred over the client-controllable
+ * x-forwarded-for — but it has NOT been verified against Vercel's edge for this
+ * deployment, and no test here can verify it, because it is a property of the
+ * platform rather than of this function.
+ *
+ * If that assumption is wrong, a caller can set x-real-ip freely and rotate
+ * per-client buckets at will. The design does not depend on it being right: the
+ * GLOBAL rule in the core is evaluated on every request, is unaffected by any
+ * per-client key the caller can influence, and therefore still bounds total
+ * intake. Per-client throttling degrades; the ceiling does not.
  */
 function clientAddress(req: VercelRequestLike): string | null {
   const realIp = headerValue(req.headers['x-real-ip'])
-  if (realIp && realIp.trim()) return realIp.trim()
+  if (realIp?.trim()) return realIp.trim()
 
   const forwarded = headerValue(req.headers['x-forwarded-for'])
   if (forwarded) {
@@ -59,6 +70,77 @@ function clientAddress(req: VercelRequestLike): string | null {
     if (first) return first
   }
   return null
+}
+
+/**
+ * Canonicalises an address so that two spellings of the same client cannot land
+ * in two different buckets, and so that one client cannot own an effectively
+ * unlimited number of buckets.
+ *
+ * Two distinct problems, both of which defeated the per-client rules:
+ *
+ *  1. SPELLING. `::1` and `0:0:0:0:0:0:0:1` are the same address; `2001:DB8::1`
+ *     and `2001:db8::1` differ only in case. Hashing the raw string put each
+ *     spelling in its own bucket. Node's built-in URL parser is used to
+ *     normalise rather than a hand-rolled parser — it implements the RFC 4291
+ *     rules (zero compression, leading zeros, lowercasing) that a regex will get
+ *     wrong.
+ *
+ *  2. ALLOCATION SIZE. An IPv6 client is routinely assigned a /64 — 2^64
+ *     addresses — so per-address bucketing gives a single attacker 2^64 buckets
+ *     and no per-client limit at all. Bucketing by the /64 PREFIX makes the unit
+ *     of limitation the allocation rather than the address.
+ *
+ * /64 is the conventional choice because it is the smallest allocation an end
+ * site is guaranteed by RFC 6177/RFC 4291 addressing architecture, so it is the
+ * narrowest prefix that cannot be subdivided by the client. Choosing /128 gives
+ * an attacker unlimited buckets; choosing /48 or shorter would put unrelated
+ * customers of the same ISP in one bucket and let one abuser lock out another
+ * organisation. IPv4 is bucketed per address (/32): the address IS the scarce
+ * allocation there.
+ */
+export function normaliseAddress(address: string): string | null {
+  const trimmed = (address ?? '').trim()
+  if (!trimmed) return null
+
+  // A bracketed or port-suffixed form can arrive from some proxies.
+  const unbracketed = trimmed.startsWith('[') && trimmed.includes(']')
+    ? trimmed.slice(1, trimmed.indexOf(']'))
+    : trimmed
+
+  // IPv4 (optionally with a :port). Dotted-quad, no colons beyond a port.
+  const v4 = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::\d+)?$/.exec(unbracketed)
+  if (v4) {
+    const octets = v4[1].split('.').map(Number)
+    if (octets.every(o => Number.isInteger(o) && o >= 0 && o <= 255)) {
+      return `v4:${octets.join('.')}`
+    }
+    return null
+  }
+
+  // IPv6. Let the URL parser canonicalise it — it lowercases, compresses zero
+  // runs and rejects malformed input, which a regex would not do reliably.
+  let canonical: string
+  try {
+    const parsed = new URL(`http://[${unbracketed}]`)
+    canonical = parsed.hostname.replace(/^\[|\]$/g, '')
+  } catch {
+    return null
+  }
+
+  // Expand to eight groups so the /64 prefix can be taken positionally.
+  const [head, tail] = canonical.split('::')
+  const headGroups = head ? head.split(':').filter(Boolean) : []
+  const tailGroups = tail ? tail.split(':').filter(Boolean) : []
+  if (canonical.includes('::')) {
+    const fill = 8 - headGroups.length - tailGroups.length
+    if (fill < 0) return null
+    headGroups.push(...Array<string>(fill).fill('0'), ...tailGroups)
+  }
+  if (headGroups.length !== 8) return null
+
+  // The /64 prefix is the first four groups.
+  return `v6/64:${headGroups.slice(0, 4).map(g => g.replace(/^0+(?=.)/, '')).join(':')}`
 }
 
 /**
@@ -73,9 +155,14 @@ function clientAddress(req: VercelRequestLike): string | null {
  * This is pseudonymisation for abuse control, not a secrecy claim: anyone holding
  * both the salt and a candidate address can confirm a match. That bound is stated
  * on the table comment in migration 36.
+ *
+ * Returns null for an address that cannot be canonicalised, so the caller fails
+ * closed rather than hashing an attacker-chosen string.
  */
-function bucketKeyFor(address: string, salt: string): string {
-  return createHash('sha256').update(`${address}:${salt}`).digest('hex')
+function bucketKeyFor(address: string, salt: string): string | null {
+  const canonical = normaliseAddress(address)
+  if (canonical === null) return null
+  return createHash('sha256').update(`${canonical}:${salt}`).digest('hex')
 }
 
 function buildDeps(req: VercelRequestLike): IntakeDeps | null {
@@ -92,37 +179,47 @@ function buildDeps(req: VercelRequestLike): IntakeDeps | null {
   return {
     bucketKeyForClient() {
       const address = clientAddress(req)
+      // A null here makes the core fail closed with a 503 rather than accepting
+      // an unthrottleable request — including when the address is present but
+      // cannot be canonicalised.
       return address ? bucketKeyFor(address, salt) : null
     },
 
     now: () => new Date(),
 
-    async countAttempts(bucketKey, since) {
-      const { count, error } = await admin
-        .from('public_intake_attempts')
-        .select('id', { count: 'exact', head: true })
-        .eq('bucket_key', bucketKey)
-        .gt('occurred_at', since.toISOString())
-      // Throwing (rather than returning 0) is what makes the core fail closed:
-      // an unreadable throttle must never read as "no attempts yet".
+    async reserveThrottleSlot(clientBucketKey) {
+      // One round trip. The reservation and the limit check happen inside
+      // public.reserve_public_intake_slot() under an advisory transaction lock,
+      // so concurrent invocations on separate serverless instances cannot all
+      // pass the check before any of them writes. THROTTLE_RULES is passed in so
+      // the application remains the single source of the policy.
+      const { data, error } = await admin.rpc('reserve_public_intake_slot', {
+        p_client_key: clientBucketKey,
+        p_global_key: GLOBAL_BUCKET_KEY,
+        p_rules: THROTTLE_RULES,
+      })
+      // Throwing (rather than returning allowed) is what makes the core fail
+      // closed: an unreachable throttle must never read as "no attempts yet".
       if (error) throw new Error(error.message)
-      return count ?? 0
-    },
-
-    async recordAttempt(bucketKey) {
-      const { error } = await admin.from('public_intake_attempts').insert({ bucket_key: bucketKey })
-      if (error) throw new Error(error.message)
+      if (!data || typeof data !== 'object' || typeof (data as { allowed?: unknown }).allowed !== 'boolean') {
+        throw new Error('reserve_public_intake_slot returned an unusable result')
+      }
+      const result = data as { allowed: boolean; windowSeconds?: number }
+      return { allowed: result.allowed, windowSeconds: result.windowSeconds }
     },
 
     async hasOpenRequestForEmail(email) {
-      const { data, error } = await admin
-        .from('farmer_access_requests')
-        .select('id')
-        .ilike('email', email)
-        .in('status', ['new', 'contacted'])
-        .limit(1)
+      // Compared as a case-insensitive LITERAL by the database. The previous
+      // .ilike('email', email) sent the address to SQL ILIKE as a PATTERN, so a
+      // legal `_` or `%` in the local part acted as a wildcard and matched an
+      // unrelated stored address — the enquiry was then dropped as a duplicate
+      // while the caller saw HTTP 200.
+      const { data, error } = await admin.rpc('has_open_access_request', { p_email: email })
       if (error) throw new Error(error.message)
-      return (data ?? []).length > 0
+      if (typeof data !== 'boolean') {
+        throw new Error('has_open_access_request returned an unusable result')
+      }
+      return data
     },
 
     async insertRequest(input: AccessRequestSubmission) {
@@ -155,3 +252,4 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
 }
 
 export { bucketKeyFor, clientAddress, GLOBAL_BUCKET_KEY }
+export type { VercelRequestLike }
