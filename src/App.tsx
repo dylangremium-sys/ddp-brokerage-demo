@@ -27,16 +27,19 @@ import {
   type FarmerScope,
 } from './lib/db'
 import { loadInventory, loadFarms, loadReviewRequests, saveReviewRequests, loadMarketBenchmarks } from './data'
+import { T } from './translations'
+import { reportDbError, reportAppMessage, type DbErrorReport } from './lib/clientErrorReport'
 import {
   signOut,
   subscribeToAuthChanges,
   getCurrentProfile,
   type UserProfile,
 } from './services/auth'
-import { resolvePostLoginDecision, nextBootstrapRouting } from './lib/postLoginRouting'
+import { resolvePostLoginDecision, nextBootstrapRouting, resolveBootstrap } from './lib/postLoginRouting'
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer, deskReviewRequestsView } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
+import { commitMutation } from './lib/mutationCommit'
 import { resolveAdminDataApply, deskAdminDataView } from './lib/adminDataLoad'
 import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
@@ -72,15 +75,15 @@ import FarmerNav from './components/farmer/FarmerNav'
 import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
+import { FARMER_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 
-const FARMER_PAGES: Page[] = [
-  'landing', 'login', 'farmer-register',
-  'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
-  'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
-]
+// FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
+// lib/navigationGuard.ts so they can be unit tested. PUBLIC_PAGES once omitted
+// 'farmer-register', which silently made the "Supplier signup" button a no-op
+// for every signed-out visitor; navigationGuard.test.ts now asserts that every
+// target a public surface links to is actually reachable.
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
-const PUBLIC_PAGES: Page[] = ['landing', 'login']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -91,7 +94,10 @@ export default function App() {
   const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
   const [reviewFarmId, setReviewFarmId] = useState<string | null>(null)
   const [reviewItemId, setReviewItemId] = useState<string | null>(null)
-  const [dbError, setDbError] = useState<string | null>(null)
+  // Carries the operator-facing message AND its correlation reference, so the
+  // banner can show a code the user can quote to support without the message
+  // itself ever carrying schema detail.
+  const [dbError, setDbError] = useState<DbErrorReport | null>(null)
   const [buildVersion, setBuildVersion] = useState<string | null>(null)
 
   // Build/version identifier for release traceability — static file regenerated
@@ -213,11 +219,27 @@ export default function App() {
       // Bootstrap routing: on the FIRST auth resolution after a (re)load, route a
       // restored session to its role page (a reload resets `page` to the public
       // landing). Guarded to run once so later events cannot override navigation.
+      const isFirstResolution = !didBootstrapRoute.current
       const routing = nextBootstrapRouting(didBootstrapRoute.current, profile)
       didBootstrapRoute.current = routing.routed
       if (routing.routeTo) {
         setPage(routing.routeTo)
         window.scrollTo(0, 0)
+      } else if (isFirstResolution && profile && resolveBootstrap(profile).state === 'authenticated-unresolved') {
+        // Defence in depth: a FRESH login by an unresolved-role (e.g. 'pending')
+        // account is denied AND its session revoked (handleLoginSuccess's
+        // fail-closed branch), but a page reload restored that same session
+        // intact — bootstrap correctly declined to route, yet the session
+        // survived and isSignedIn became true. Nothing is reachable through it
+        // (no nav affordance renders, DDP pages fail closed to AccessDenied,
+        // RLS denies the reads); this closes the asymmetry so both entry paths
+        // agree the session must not persist. Scoped to the FIRST resolution
+        // only: a token refresh for an already-resolved operator re-fires this
+        // subscription with didBootstrapRoute already true, so it can never
+        // revoke a working session. The ref itself is written only by the
+        // assignment above, preserving the once-only routing guard.
+        void signOut()
+        setCurrentProfile(null)
       }
     })
     return unsubscribe
@@ -546,27 +568,31 @@ export default function App() {
   )
 
   // ── Error handler ────────────────────────────────────────────────────────
+  // The raw Postgres/PostgREST message used to be stored here and rendered
+  // verbatim by the banner — routinely naming policies, tables, columns and
+  // constraints to end users, farmers included. reportDbError maps it to a
+  // stable operator-facing message plus a correlation id, keeps the raw text in
+  // console.error where it already went, and emits one schema-free structured
+  // log line carrying the same id. Same pattern as api/compliance/ai-summary.ts.
   function onDbError(err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('Supabase error:', msg)
-    setDbError(msg)
+    setDbError(reportDbError(err, page))
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
+  // The public pages are cream; the app shell is navy. .public-auth-shell only
+  // covers <main>, so body kept painting navy behind it — visible during route
+  // transitions and on overscroll. Tag the document instead, and let CSS own it.
+  useEffect(() => {
+    const isPublicAuthPage = page === 'login' || page === 'farmer-register'
+    document.body.classList.toggle('public-auth-page', isPublicAuthPage)
+    return () => document.body.classList.remove('public-auth-page')
+  }, [page])
+
   function goTo(p: Page) {
-    // In Supabase mode: redirect unauthenticated users to login
-    if (!isDemo && !isSignedIn && !PUBLIC_PAGES.includes(p)) {
-      setPage('login')
-      window.scrollTo(0, 0)
-      return
-    }
-    // In Supabase mode: redirect admins away from farmer-only pages
-    if (!isDemo && isAdminRole && FARMER_PAGES.includes(p) && !PUBLIC_PAGES.includes(p)) {
-      setPage('ddp-overview')
-      window.scrollTo(0, 0)
-      return
-    }
-    setPage(p)
+    // The decision itself is pure and lives in lib/navigationGuard.ts; this
+    // function keeps only the side effects.
+    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole })
+    setPage(target)
     window.scrollTo(0, 0)
   }
 
@@ -596,55 +622,81 @@ export default function App() {
     // and send the user back to login with a clear message.
     await signOut()
     setCurrentProfile(null)
-    setDbError('Your account does not have an assigned DDP role. Please contact DDP support.')
+    setDbError(reportAppMessage('Your account does not have an assigned DDP role. Please contact DDP support.'))
     setPage('login')
     window.scrollTo(0, 0)
   }
 
   // ── Data handlers ─────────────────────────────────────────────────────────
-  async function handleInventorySubmit(item: InventoryItem, coaFile?: File | null) {
-    setInventory(prev => {
-      const exists = prev.some(i => i.id === item.id)
-      return exists ? prev.map(i => i.id === item.id ? item : i) : [item, ...prev]
-    })
-    // Optimistically expand scope so the farmer sees their new submission immediately
-    if (isFarmerRole) {
-      setFarmerScope(prev => {
-        const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
-        const newFarmIds = item.farmId
-          ? new Set([...base.farmIds, item.farmId])
-          : base.farmIds
-        return { farmIds: newFarmIds, itemIds: new Set([...base.itemIds, item.id]) }
-      })
-    }
-    try {
-      await createInventoryBatch(item, currentProfile?.id)
-    } catch (err) {
-      onDbError(err)
-      return
-    }
+  // Returns true only when the batch itself was accepted by the database. The
+  // caller navigates on that return value, never unconditionally: awaiting a
+  // handler that resolves identically on success and failure told the caller
+  // nothing, so a rejected insert still sent the farmer to a stock list that
+  // did not contain their submission.
+  async function handleInventorySubmit(item: InventoryItem, coaFile?: File | null): Promise<boolean> {
+    // The batch must exist in the database before the farmer is shown it, and
+    // before their scope is widened to include it. The previous ordering showed
+    // a submitted batch — and granted scope over it — even when the insert was
+    // rejected, so a failed submission looked identical to a successful one.
+    const created = await commitMutation(
+      () => createInventoryBatch(item, currentProfile?.id),
+      {
+        onCommitted: () => {
+          setInventory(prev => {
+            const exists = prev.some(i => i.id === item.id)
+            return exists ? prev.map(i => i.id === item.id ? item : i) : [item, ...prev]
+          })
+          if (isFarmerRole) {
+            setFarmerScope(prev => {
+              const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
+              const newFarmIds = item.farmId
+                ? new Set([...base.farmIds, item.farmId])
+                : base.farmIds
+              return { farmIds: newFarmIds, itemIds: new Set([...base.itemIds, item.id]) }
+            })
+          }
+        },
+        onError: onDbError,
+      },
+    )
+    if (!created) return false
+
+    // COA attachment is a separate step with its own failure path: the batch is
+    // already committed, so a failed upload must surface as a missing-document
+    // error rather than discarding the submission. The file is uploaded before
+    // the metadata is written, so the row never advertises a COA that is absent.
     if (coaFile && isSupabaseConfigured && isFarmerRole && currentProfile && item.id) {
-      try {
-        const { storagePath } = await uploadCoaFile(
-          coaFile,
-          currentProfile.id,
-          item.farmId ?? '',
-          item.id,
-        )
-        await patchInventoryBatch(item.id, {
-          coa_file_name: coaFile.name,
-          coa_available: true,
-          coa_storage_path: storagePath,
-        })
-        setInventory(prev => prev.map(i =>
-          i.id === item.id
-            ? { ...i, certFileName: coaFile.name, coaAvailable: true, coaStoragePath: storagePath }
-            : i
-        ))
-      } catch (err) {
-        onDbError(err)
-      }
+      await commitMutation(
+        async () => {
+          const { storagePath } = await uploadCoaFile(
+            coaFile,
+            currentProfile.id,
+            item.farmId ?? '',
+            item.id,
+          )
+          await patchInventoryBatch(item.id, {
+            coa_file_name: coaFile.name,
+            coa_available: true,
+            coa_storage_path: storagePath,
+          })
+          return storagePath
+        },
+        {
+          onCommitted: (storagePath) => {
+            setInventory(prev => prev.map(i =>
+              i.id === item.id
+                ? { ...i, certFileName: coaFile.name, coaAvailable: true, coaStoragePath: storagePath }
+                : i
+            ))
+          },
+          onError: onDbError,
+        },
+      )
     }
+    // The batch landed. A failed COA attachment does not undo that — the row
+    // exists and is simply missing its document — so the submission is still
+    // reported as committed and the error banner carries the upload failure.
+    return true
   }
 
   async function handleCoaUpload(batchId: string, file: File) {
@@ -668,42 +720,84 @@ export default function App() {
     ))
   }
 
-  function handleSendReviewRequest(req: Omit<ReviewRequest, 'id' | 'createdAt'>) {
+  async function handleSendReviewRequest(req: Omit<ReviewRequest, 'id' | 'createdAt'>) {
     const newReq: ReviewRequest = { ...req, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
-    setReviewRequests(prev => [newReq, ...prev])
-    // Mark the item as needs_changes (both in state and Supabase)
-    if (req.stockItemId) {
-      setInventory(prev => prev.map(i =>
-        i.id === req.stockItemId ? { ...i, stockStatus: 'needs_changes' as const } : i
-      ))
-      patchInventoryBatch(req.stockItemId, { stock_status: 'needs_changes' }).catch(onDbError)
-    }
-    createReviewRequest(req, currentProfile?.id).catch(onDbError)
+    // Two independent writes. The request is created FIRST so the ordering can
+    // only fail towards a request with no needs_changes flag — recoverable, and
+    // visible in the queue. The reverse order would leave a batch flagged
+    // needs_changes with no request stating what the farmer must change.
+    const created = await commitMutation(
+      () => createReviewRequest(req, currentProfile?.id),
+      {
+        onCommitted: () => { setReviewRequests(prev => [newReq, ...prev]) },
+        onError: onDbError,
+      },
+    )
+    if (!created) return
+
+    // Local const: narrowing on a property access is not preserved inside the
+    // persist closure, and the flag write must not run for a request with no item.
+    const stockItemId = req.stockItemId
+    if (!stockItemId) return
+    await commitMutation(
+      () => patchInventoryBatch(stockItemId, { stock_status: 'needs_changes' }),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i =>
+            i.id === stockItemId ? { ...i, stockStatus: 'needs_changes' as const } : i
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleResolveRequest(requestId: string) {
-    setReviewRequests(prev => prev.map(r =>
-      r.id === requestId ? { ...r, status: 'resolved' as const, resolvedAt: new Date().toISOString() } : r
-    ))
-    resolveReviewRequest(requestId).catch(onDbError)
+  async function handleResolveRequest(requestId: string) {
+    await commitMutation(
+      () => resolveReviewRequest(requestId),
+      {
+        onCommitted: () => {
+          setReviewRequests(prev => prev.map(r =>
+            r.id === requestId ? { ...r, status: 'resolved' as const, resolvedAt: new Date().toISOString() } : r
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleMarkClientVisible(itemId: string, visible: boolean) {
+  async function handleMarkClientVisible(itemId: string, visible: boolean) {
     const newStockStatus = visible ? 'client_visible' as const : 'approved_internal' as const
-    setInventory(prev => prev.map(i =>
-      i.id === itemId ? { ...i, clientVisible: visible, stockStatus: newStockStatus } : i
-    ))
-    patchInventoryBatch(itemId, {
-      client_visible: visible,
-      stock_status: newStockStatus,
-    }).catch(onDbError)
+    // Client visibility is a disclosure boundary: a batch must never be shown as
+    // client-visible on the strength of a write the database did not accept.
+    await commitMutation(
+      () => patchInventoryBatch(itemId, {
+        client_visible: visible,
+        stock_status: newStockStatus,
+      }),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i =>
+            i.id === itemId ? { ...i, clientVisible: visible, stockStatus: newStockStatus } : i
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleSaveOwnerNote(itemId: string, note: string) {
-    setInventory(prev => prev.map(i =>
-      i.id === itemId ? { ...i, ownerNotes: note } : i
-    ))
-    patchInventoryBatch(itemId, { owner_notes: note }).catch(onDbError)
+  async function handleSaveOwnerNote(itemId: string, note: string) {
+    await commitMutation(
+      () => patchInventoryBatch(itemId, { owner_notes: note }),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i =>
+            i.id === itemId ? { ...i, ownerNotes: note } : i
+          ))
+        },
+        onError: onDbError,
+      },
+    )
   }
 
   function handleEditStock(itemId: string) {
@@ -711,24 +805,33 @@ export default function App() {
     goTo('farmer-stock-form')
   }
 
-  function handleFarmSubmit(farm: FarmProfile) {
-    setFarms(prev => {
-      // If a farm with this ID already exists (e.g. advanced profile update), replace it
-      const exists = prev.some(f => f.id === farm.id)
-      return exists ? prev.map(f => f.id === farm.id ? farm : f) : [farm, ...prev]
-    })
-    createFarmProfile(farm, currentProfile?.id).catch(onDbError)
-    // Optimistically expand scope so the farmer sees their new farm immediately
-    if (isFarmerRole) {
-      setFarmerScope(prev => {
-        const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
-        return { farmIds: new Set([...base.farmIds, farm.id]), itemIds: base.itemIds }
-      })
-    }
-    goTo('farmer-status')
+  async function handleFarmSubmit(farm: FarmProfile) {
+    // A farm the database rejected must not be listed, must not widen the
+    // farmer's scope, and must not send them to the status page as though the
+    // application had been filed — the form stays put with the error shown.
+    await commitMutation(
+      () => createFarmProfile(farm, currentProfile?.id),
+      {
+        onCommitted: () => {
+          setFarms(prev => {
+            // If a farm with this ID already exists (e.g. advanced profile update), replace it
+            const exists = prev.some(f => f.id === farm.id)
+            return exists ? prev.map(f => f.id === farm.id ? farm : f) : [farm, ...prev]
+          })
+          if (isFarmerRole) {
+            setFarmerScope(prev => {
+              const base = prev ?? { farmIds: new Set<string>(), itemIds: new Set<string>() }
+              return { farmIds: new Set([...base.farmIds, farm.id]), itemIds: base.itemIds }
+            })
+          }
+          goTo('farmer-status')
+        },
+        onError: onDbError,
+      },
+    )
   }
 
-  function handleFarmAction(farmId: string, action: string) {
+  async function handleFarmAction(farmId: string, action: string) {
     const statusMap: Record<string, FarmStatus> = {
       'approve': 'Approved',
       'request-info': 'More Information Required',
@@ -737,12 +840,22 @@ export default function App() {
       'reject': 'Rejected',
     }
     const newStatus = statusMap[action]
-    if (newStatus) {
-      const oldStatus = farms.find(f => f.id === farmId)?.status
-      setFarms(prev => prev.map(f => f.id === farmId ? { ...f, status: newStatus } : f))
-      updateFarmProfileStatus(farmId, newStatus, oldStatus, currentProfile?.id).catch(onDbError)
-    }
-    goTo('ddp-farms')
+    // Unrecognised action: nothing to persist, so leaving the review is safe.
+    if (!newStatus) { goTo('ddp-farms'); return }
+    const oldStatus = farms.find(f => f.id === farmId)?.status
+    // Status and navigation are applied only once the write has landed — a
+    // rejected update leaves the operator on the review with the error shown,
+    // rather than on a farm list that claims a decision the database refused.
+    await commitMutation(
+      () => updateFarmProfileStatus(farmId, newStatus, oldStatus, currentProfile?.id),
+      {
+        onCommitted: () => {
+          setFarms(prev => prev.map(f => f.id === farmId ? { ...f, status: newStatus } : f))
+          goTo('ddp-farms')
+        },
+        onError: onDbError,
+      },
+    )
   }
 
   function handleFarmerCarbonExclude(farmId: string, newStatus: 'excluded_by_farmer' | 'withdrawn_by_farmer') {
@@ -759,19 +872,28 @@ export default function App() {
     }
   }
 
-  function handleInventoryAction(itemId: string, action: string) {
+  async function handleInventoryAction(itemId: string, action: string) {
     const statusMap: Record<string, InventoryStatus> = {
       'approve': 'Approved',
       'missing': 'Missing Document',
       'reject': 'Rejected',
     }
     const newStatus = statusMap[action]
-    if (newStatus) {
-      const oldStatus = inventory.find(i => i.id === itemId)?.status
-      setInventory(prev => prev.map(i => i.id === itemId ? { ...i, status: newStatus } : i))
-      updateInventoryStatus(itemId, newStatus, oldStatus, currentProfile?.id).catch(onDbError)
-    }
-    goTo('ddp-inventory')
+    // Unrecognised action: nothing to persist, so leaving the review is safe.
+    if (!newStatus) { goTo('ddp-inventory'); return }
+    const oldStatus = inventory.find(i => i.id === itemId)?.status
+    // Same contract as handleFarmAction: an approval the database rejected must
+    // never be shown as approved, nor navigated away from as if it had landed.
+    await commitMutation(
+      () => updateInventoryStatus(itemId, newStatus, oldStatus, currentProfile?.id),
+      {
+        onCommitted: () => {
+          setInventory(prev => prev.map(i => i.id === itemId ? { ...i, status: newStatus } : i))
+          goTo('ddp-inventory')
+        },
+        onError: onDbError,
+      },
+    )
   }
 
   function handleReviewFarm(farmId: string) {
@@ -869,33 +991,44 @@ export default function App() {
           lang={lang}
           setLang={setLang}
           onSecureLogin={() => goTo('login')}
+          onSupplierSignup={() => goTo('farmer-register')}
         />
       )}
 
       {/* ── Error banner ── */}
       {dbError && (
         <div className="db-error-banner" role="alert">
-          <strong>Error:</strong> {dbError}
+          <strong>Error:</strong> {dbError.message}
+          {/* The correlation id, quotable to support. It maps to the console
+              line holding the raw text — which never reaches this banner. */}
+          <span className="db-error-ref"> Reference: <code>{dbError.reference}</code></span>
           <button className="db-error-dismiss" onClick={() => setDbError(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
 
-      {/* ── Auth pages (no navbar) ── */}
+      {/* ── Auth pages (no navbar) ──
+          Wrapped in the public shell so a visitor arriving from the landing
+          page stays inside the same brand rather than dropping into the
+          internal navy app theme. */}
       {page === 'login' && (
-        <main className="main-content">
+        <main className="main-content public-auth-shell">
           <LoginPage
             lang={lang}
             onSuccess={handleLoginSuccess}
+            onSupplierSignup={() => goTo('farmer-register')}
           />
         </main>
       )}
 
-      {/* ── Demo registration (no navbar) ── */}
+      {/* ── Supplier access request (no navbar) ── */}
       {page === 'farmer-register' && (
-        <main className="main-content">
+        <main className="main-content public-auth-shell">
           <FarmerRegister
             lang={lang}
-            onComplete={() => goTo('farmer-dashboard')}
+            /* Returns to the landing page. It previously routed to
+               farmer-dashboard, which requires a session the request flow
+               never creates — the dead end this replaced. */
+            onComplete={() => goTo('landing')}
           />
         </main>
       )}
@@ -905,30 +1038,41 @@ export default function App() {
         const appPages = (
           <>
 
+          {/* scopeLoading gates every farmer surface that consumes a scoped
+              array. While farmerScope is null those arrays are [] (App.tsx
+              scoped-data block), so the surface would render its empty state —
+              telling a farmer who has stock "No stock yet", and showing 0 open
+              requests on the dashboard. This is the same failure the Operations
+              Desk work eliminated on the admin side; the farmer portal now
+              holds the same standard. Only farmer-status was guarded before. */}
           {page === 'farmer-dashboard' && (
-            <FarmerDashboard
-              lang={lang}
-              farms={farmerFarms}
-              currentProfile={isDemo ? null : currentProfile}
-              onBuildProfile={() => goTo('farmer-onboarding')}
-              onMyStock={() => goTo('farmer-my-stock')}
-              onMyActivity={() => goTo('farmer-status')}
-              onAdvancedProfile={() => goTo('farmer-advanced-profile')}
-              onRequests={() => goTo('farmer-requests')}
-              openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
-            />
+            scopeLoading
+              ? <div className="scope-loading">{T[lang].scopeLoadingDashboard}</div>
+              : <FarmerDashboard
+                  lang={lang}
+                  farms={farmerFarms}
+                  currentProfile={isDemo ? null : currentProfile}
+                  onBuildProfile={() => goTo('farmer-onboarding')}
+                  onMyStock={() => goTo('farmer-my-stock')}
+                  onMyActivity={() => goTo('farmer-status')}
+                  onAdvancedProfile={() => goTo('farmer-advanced-profile')}
+                  onRequests={() => goTo('farmer-requests')}
+                  openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
+                />
           )}
 
           {page === 'farmer-my-stock' && (
-            <FarmerMyStock
-              lang={lang}
-              inventory={farmerInventory}
-              onAddNew={() => { setStockEditItemId(null); goTo('farmer-stock-form') }}
-              onEdit={handleEditStock}
-              openRequestCount={farmerReviewRequests.filter(r => r.status === 'open').length}
-              onGoRequests={() => goTo('farmer-requests')}
-              onCoaUpload={isFarmerRole && isSupabaseConfigured ? handleCoaUpload : undefined}
-            />
+            scopeLoading
+              ? <div className="scope-loading">{T[lang].scopeLoadingStock}</div>
+              : <FarmerMyStock
+                  lang={lang}
+                  inventory={farmerInventory}
+                  onAddNew={() => { setStockEditItemId(null); goTo('farmer-stock-form') }}
+                  onEdit={handleEditStock}
+                  openRequestCount={farmerReviewRequests.filter(r => r.status === 'open').length}
+                  onGoRequests={() => goTo('farmer-requests')}
+                  onCoaUpload={isFarmerRole && isSupabaseConfigured ? handleCoaUpload : undefined}
+                />
           )}
 
           {page === 'farmer-stock-form' && (
@@ -937,8 +1081,11 @@ export default function App() {
               farms={farmerFarms}
               initialItem={stockEditItemId ? farmerInventory.find(i => i.id === stockEditItemId) : null}
               onSubmit={async (item, coaFile) => {
-                await handleInventorySubmit(item, coaFile)
-                if (item.stockStatus !== 'draft') goTo('farmer-my-stock')
+                // Navigate only on a committed submission. Leaving the form in
+                // place on failure keeps the farmer's input recoverable and puts
+                // them where the error banner is actionable.
+                const committed = await handleInventorySubmit(item, coaFile)
+                if (committed && item.stockStatus !== 'draft') goTo('farmer-my-stock')
               }}
               onBack={() => goTo('farmer-my-stock')}
               marketBenchmarks={marketBenchmarks}
@@ -947,14 +1094,16 @@ export default function App() {
           )}
 
           {page === 'farmer-requests' && (
-            <FarmerRequests
-              lang={lang}
-              requests={farmerReviewRequests}
-              inventory={farmerInventory}
-              onResolve={handleResolveRequest}
-              onEditStock={handleEditStock}
-              onGoMyStock={() => goTo('farmer-my-stock')}
-            />
+            scopeLoading
+              ? <div className="scope-loading">{T[lang].scopeLoadingRequests}</div>
+              : <FarmerRequests
+                  lang={lang}
+                  requests={farmerReviewRequests}
+                  inventory={farmerInventory}
+                  onResolve={handleResolveRequest}
+                  onEditStock={handleEditStock}
+                  onGoMyStock={() => goTo('farmer-my-stock')}
+                />
           )}
 
           {page === 'farmer-onboarding' && (
@@ -976,8 +1125,11 @@ export default function App() {
           )}
 
           {page === 'farmer-status' && (
-            scopeLoading && isFarmerRole
-              ? <div className="scope-loading">Loading your submissions…</div>
+            // `scopeLoading` already implies isFarmerRole (it is derived as
+            // isFarmerRole && farmerScope === null), so the redundant conjunct
+            // is dropped; the string moves to translations with the other three.
+            scopeLoading
+              ? <div className="scope-loading">{T[lang].scopeLoadingSubmissions}</div>
               : <FarmerStatus
                   lang={lang}
                   inventory={farmerInventory}
@@ -1154,7 +1306,13 @@ export default function App() {
         )
       })()}
 
-      {page !== 'landing' && (isDemo || buildVersion) && (
+      {/* Internal diagnostic chrome. Hidden on every PUBLIC page, not just the
+          landing: it is position:fixed with z-index 200, so on sign-in and the
+          supplier access request it painted a navy bar with the build id across
+          the bottom of an otherwise cream, branded page — internal build detail
+          shown to prospects, and the last of the "blue screen" on the public
+          funnel. It remains visible throughout the signed-in app. */}
+      {!PUBLIC_PAGES.includes(page) && (isDemo || buildVersion) && (
         <div className="demo-utility-strip">
           {isDemo && <span className="db-mode-badge">○ Demo mode: localStorage</span>}
           {buildVersion && <span className="build-id-badge">{buildVersion}</span>}

@@ -252,94 +252,20 @@ CREATE POLICY "buyer_pack_download_log: admin insert" ON public.buyer_pack_downl
 --   This is an explicit, known gap — not faked parity. Server-side hash
 --   verification is a follow-up before this can be called tamper-evident
 --   end-to-end at the DB layer.
-CREATE OR REPLACE FUNCTION public.issue_buyer_pack_snapshot(
-  p_pack_id              TEXT,
-  p_content_hash         TEXT,
-  p_approval_id          TEXT,
-  p_approval_timestamp   TIMESTAMPTZ,
-  p_procurement_decision TEXT,
-  p_approved_by          TEXT,
-  p_generated_by         TEXT,
-  p_frozen_evidence      JSONB,
-  p_batch_id             UUID DEFAULT NULL
-)
-RETURNS public.buyer_pack_snapshots
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, auth, pg_temp
-AS $$
-DECLARE
-  v_prev public.buyer_pack_snapshots%ROWTYPE;
-  v_next_version INTEGER;
-  v_row public.buyer_pack_snapshots%ROWTYPE;
-  v_actor TEXT;
-BEGIN
-  -- Human-approval gate + admin gate, re-asserted server-side.
-  IF NOT public.is_ddp_admin() THEN
-    RAISE EXCEPTION 'issue_buyer_pack_snapshot: ddp_admin role required';
-  END IF;
-  IF p_procurement_decision <> 'progress' THEN
-    RAISE EXCEPTION 'issue_buyer_pack_snapshot: a recorded "progress" decision is required';
-  END IF;
-  IF p_approved_by IS NULL OR length(btrim(p_approved_by)) = 0 THEN
-    RAISE EXCEPTION 'issue_buyer_pack_snapshot: a named human approver is required';
-  END IF;
-
-  -- Server-captured authoritative actor identity (preferred over client string).
-  v_actor := COALESCE(auth.uid()::text, p_approved_by);
-
-  -- Per-pack transaction serialization. hashtext(p_pack_id) is a deterministic,
-  -- non-dynamic integer derived from the pack id; it implicitly widens to the
-  -- bigint pg_advisory_xact_lock key. This serializes ALL concurrent issues for
-  -- the same pack for the remainder of the transaction, closing BOTH:
-  --   (a) the first-version race — where no row yet exists to lock, so two
-  --       concurrent first issues would otherwise both compute version 1; and
-  --   (b) the concurrent re-issue race — two issues both reading the same max().
-  -- The lock is transaction-scoped and released automatically at COMMIT/ROLLBACK.
-  -- The UNIQUE (pack_id, version) constraint remains the ultimate backstop.
-  PERFORM pg_advisory_xact_lock(hashtext(p_pack_id));
-
-  SELECT * INTO v_prev
-  FROM public.buyer_pack_snapshots
-  WHERE pack_id = p_pack_id
-  ORDER BY version DESC
-  LIMIT 1;
-
-  v_next_version := COALESCE(v_prev.version, 0) + 1;
-
-  INSERT INTO public.buyer_pack_snapshots (
-    pack_id, version, previous_snapshot_id, content_hash,
-    approval_id, approval_timestamp, procurement_decision, approved_by,
-    generated_by, issued_by, frozen_evidence, batch_id
-  ) VALUES (
-    p_pack_id, v_next_version, v_prev.snapshot_id, p_content_hash,
-    p_approval_id, p_approval_timestamp, p_procurement_decision, p_approved_by,
-    p_generated_by, auth.uid(), p_frozen_evidence, p_batch_id
-  )
-  RETURNING * INTO v_row;
-
-  INSERT INTO public.buyer_pack_audit_log (pack_id, snapshot_version, action, actor)
-    VALUES (p_pack_id, v_next_version, 'pack_generated', v_actor);
-
-  IF v_prev.snapshot_id IS NOT NULL THEN
-    INSERT INTO public.buyer_pack_audit_log (pack_id, snapshot_version, action, actor)
-      VALUES (p_pack_id, v_prev.version, 'pack_superseded', v_actor);
-  END IF;
-
-  RETURN v_row;
-END;
-$$;
-
--- The RPC is the only intended snapshot-write path. Lock down direct EXECUTE:
--- deny anon/PUBLIC and grant authenticated ONLY (the function self-gates on
--- is_ddp_admin). No service_role grant is issued: this is a frontend-only app
--- with no verified server-side caller for this RPC. Add a service_role grant
--- only if/when a real backend caller (e.g. an edge function) is introduced.
-REVOKE EXECUTE ON FUNCTION public.issue_buyer_pack_snapshot(
-  TEXT, TEXT, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, JSONB, UUID) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.issue_buyer_pack_snapshot(
-  TEXT, TEXT, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, JSONB, UUID) FROM anon;
-GRANT EXECUTE ON FUNCTION public.issue_buyer_pack_snapshot(
-  TEXT, TEXT, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, JSONB, UUID) TO authenticated;
+-- ---------------------------------------------------------------------------
+-- issue_buyer_pack_snapshot() IS NOT DEFINED HERE.
+--
+-- The authoritative, server-authoritative definition lives in
+--   23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql  (CREATE at :80, ACLs at :192-196)
+-- which gates issuance on the SERVER decision read from procurement_decisions_current
+-- and ignores the client-supplied p_procurement_decision argument.
+--
+-- The original client-trusting definition was REMOVED from this file because
+-- re-running migration 10 after migration 23 silently reverted the hardened
+-- function (both used CREATE OR REPLACE on the same signature). There is no
+-- numeric-ordering runner and `ls *.sql | sort` orders 10 before 3,4,8,9, so any
+-- glob-and-run replay reintroduced the weaker definition with no error and no
+-- ledger entry. Do not re-add a CREATE for this function here.
+-- ---------------------------------------------------------------------------
 
 -- End of 10_BUYER_PACK_SNAPSHOTS_MVP.sql

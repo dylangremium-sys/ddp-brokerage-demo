@@ -15,6 +15,13 @@ dist-ssr
 # Generated at build time by scripts/generate-version.js — regenerated every build
 public/version.json
 
+# Disposable-Postgres harness runtime evidence — never committed; CI uploads it
+scripts/disposable-pg/.artifacts/
+
+# Database dumps taken before destructive staging operations — recovery
+# material, never committed (they contain real staging rows).
+backups/
+
 # Environment — never commit real secrets
 .env
 .env.*

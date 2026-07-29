@@ -36,8 +36,14 @@ jobs:
     name: Static security & build checks
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 is REQUIRED by the migration collision check below. The
+      # default single-ref, depth-1 checkout leaves `origin/main` and the other
+      # remote branches unresolvable, and the check would then have nothing to
+      # compare and would pass without having verified anything.
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -48,8 +54,41 @@ jobs:
       - name: Install dependencies (deterministic)
         run: npm ci
 
+      # Dependency advisories, SHIPPED TREE ONLY.
+      #
+      # --omit=dev is the whole point. The dev tree carries build-chain
+      # advisories (postcss, brace-expansion) that never reach a browser, and
+      # gating on them would fail every unrelated PR the moment a transitive
+      # build dependency is flagged upstream — a gate that fires on things the
+      # author cannot fix gets disabled, and then nothing is checked at all.
+      #
+      # --audit-level=high means moderate and low advisories are reported but do
+      # not fail the run. Raise this deliberately, not by accident.
+      #
+      # Run `npm audit` locally (without --omit=dev) to see the full picture.
+      - name: Dependency advisories (production tree)
+        run: npm audit --omit=dev --audit-level=high
+
+      # Cheapest gate first: a migration-number collision (two unrelated
+      # migrations claiming one number) is invisible on either branch alone and
+      # only appears once both land. It broke PR #44 against main's PR #48.
+      - name: Migration-number collision guard
+        run: npm run verify:migration-numbers
+
       - name: Security migration static checks
         run: npm run security:sql
+
+      # Quoted: an unquoted `AUDIT-001: ...` contains a ": " and makes the whole
+      # workflow file invalid YAML, which fails the run before any job starts.
+      #
+      # Deliberately NOT --strict. That additionally reports content drift on
+      # already-numbered migrations, which is a pre-existing condition across
+      # the repository's older branches (migration 3 differs on several) and is
+      # unrelated to whether the PR under test introduces a numbering conflict.
+      # Gating on it would fail every PR from the day this lands. Run
+      # `--strict` manually when reviewing drift.
+      - name: 'AUDIT-001: Check migration number collisions'
+        run: node scripts/audit-001-check-migration-collisions.mjs
 
       - name: Unit tests (Vitest)
         run: npm test
