@@ -338,7 +338,7 @@ describe('CSP directive parsing', () => {
     expect(originOf('https://ref.supabase.co/rest/v1')).toBe('https://ref.supabase.co')
     expect(originOf('not a url')).toBeNull()
     expect(originOf('')).toBeNull()
-    expect(originOf(undefined)).toBeNull()
+    expect(originOf()).toBeNull()
   })
 })
 

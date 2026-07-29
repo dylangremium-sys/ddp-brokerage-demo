@@ -273,9 +273,13 @@ if (invokedDirectly) {
   if (csp !== null) {
     const alignment = evaluateCspSupabaseAlignment(process.env, csp)
     if (!alignment.ok) {
+      // skipcq: JS-0002 — this is a build-time Node CLI, never bundled for the
+      // browser. Printing to the build log IS its output contract; the message
+      // is asserted by test to contain no environment value.
       console.error(alignment.message)
       process.exit(1)
     }
+    // skipcq: JS-0002 — build-time CLI, see above.
     console.log(alignment.message)
   }
 }
