@@ -211,7 +211,7 @@ export async function handleAccessRequest(
         // A refusal always names a window. Defaulting to the longest configured
         // window rather than 0 keeps a malformed reply fail-closed: telling a
         // caller to retry immediately would be the one unsafe answer.
-        retryAfterSeconds: reservation.windowSeconds ?? Math.max(...THROTTLE_RULES.map(r => r.windowSeconds)),
+        retryAfterSeconds: reservation.windowSeconds ?? Math.max(...THROTTLE_RULES.map(rule => rule.windowSeconds)),
       },
     }
   }

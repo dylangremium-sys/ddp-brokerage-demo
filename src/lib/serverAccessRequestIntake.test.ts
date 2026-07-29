@@ -117,7 +117,7 @@ describe('method and configuration', () => {
     })
     const out = await handleAccessRequest('POST', VALID, d)
     expect(out.status).toBe(429)
-    expect(out.body).toMatchObject({ retryAfterSeconds: Math.max(...THROTTLE_RULES.map(r => r.windowSeconds)) })
+    expect(out.body).toMatchObject({ retryAfterSeconds: Math.max(...THROTTLE_RULES.map(rule => rule.windowSeconds)) })
   })
 })
 
@@ -246,8 +246,8 @@ describe('throttling', () => {
 
   it('the rule set has both a per-client and a global scope', () => {
     // A regression here would silently remove a whole class of protection.
-    expect(THROTTLE_RULES.some(r => r.scope === 'client')).toBe(true)
-    expect(THROTTLE_RULES.some(r => r.scope === 'global')).toBe(true)
+    expect(THROTTLE_RULES.some(rule => rule.scope === 'client')).toBe(true)
+    expect(THROTTLE_RULES.some(rule => rule.scope === 'global')).toBe(true)
   })
 })
 
@@ -339,7 +339,7 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
     return { allowed: true }
   }
 
-  const PER_CLIENT_MAX = THROTTLE_RULES.find(r => r.scope === 'client')!.max
+  const PER_CLIENT_MAX = THROTTLE_RULES.find(rule => rule.scope === 'client')!.max
 
   it('DEMONSTRATES the defect: check-then-act admits a whole parallel burst', async () => {
     const { deps: burstDeps, rec } = sharedDeps(checkThenActReserve)
@@ -370,7 +370,7 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
   })
 
   it('holds the GLOBAL ceiling when every caller is a different client', async () => {
-    const globalRule = THROTTLE_RULES.find(r => r.scope === 'global')!
+    const globalRule = THROTTLE_RULES.find(rule => rule.scope === 'global')!
     const rec: Recorder = { attempts: [], inserted: [] }
 
     // Each request carries its own client bucket, so no per-client rule can fire
