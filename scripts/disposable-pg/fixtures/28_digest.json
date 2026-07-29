@@ -1,0 +1,100 @@
+{
+  "id": "28_digest",
+  "title": "Migration 28 — Evidence digest de-duplication & extraction provenance",
+  "description": "Applies migration 24's HARDENING stage as a prerequisite (28 constrains its attachment table and calls its can_operationally_access_farm helper), then migration 28. Runs VERIFY A-M, exercises the destructive-rollback guard, and rolls 28 back alone — asserting migration 24 and public.farmer_documents survive intact. The STORAGE companion of 24 is deliberately not applied: migration 28 touches no storage object.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "24-PREREQ", "file": "24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql" },
+    { "label": "HARDENING", "file": "28_EVIDENCE_DIGEST_DEDUP_HARDENING.sql" }
+  ],
+  "verify": {
+    "file": "28_EVIDENCE_DIGEST_DEDUP_VERIFY.sql",
+    "expectedSections": ["A","B","C","D","E","F","G","H","I","J","K","L","M"],
+    "expectedPassCount": 13,
+    "note": "A-B are shape/privilege; C-F are the digest de-duplication rule INCLUDING the three adjacent cases that must still be permitted (different response, coexisting pending uploads, tombstoned re-attach); G is digest shape/pairing on the COA path; H-J are extraction provenance and confidence integrity; K is append-only; L is the surface discriminator and vocabularies; M is the cross-surface lookup."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "28-rollback",
+        "source": "file",
+        "file": "28_EVIDENCE_DIGEST_DEDUP_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role", "supabase_storage_admin"],
+    "schemas": ["auth", "storage", "extensions", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "storage.objects",
+      "storage.buckets",
+      "public.is_ddp_admin",
+      "public.has_operational_farmer_access",
+      "public.has_farm_membership",
+      "public.handle_new_user",
+      "public.profiles",
+      "public.farms",
+      "public.farm_profiles",
+      "public.inventory_batches",
+      "public.farm_memberships",
+      "public.farmer_documents",
+      "public.documents"
+    ]
+  },
+  "destructiveGuard": {
+    "livenessTable": "public.document_field_extractions",
+    "seedSql": "fixtures/sql/28_digest_guard_seed.sql",
+    "optInSetting": "document_extractions.rollback_destructive",
+    "optInValue": "true",
+    "refusalStage": "28-rollback",
+    "expectRefusalMatch": "rollback 28 refused"
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.document_field_extractions"
+      ],
+      "functions": [
+        "public.record_document_field_extraction",
+        "public.find_document_digest_matches",
+        "public.fn_dfe_append_only",
+        "public.fn_evidence_attachment_digest_dedup",
+        "public.document_extraction_field_names",
+        "public.document_extraction_provenances"
+      ],
+      "policies": [
+        "dfe: admin select all",
+        "dfe: operational farmer select own farm"
+      ]
+    },
+    "intact": {
+      "tables": [
+        "public.evidence_requests",
+        "public.evidence_request_responses",
+        "public.evidence_request_attachments",
+        "public.evidence_request_history",
+        "public.farmer_documents",
+        "public.documents",
+        "public.profiles",
+        "public.farms",
+        "public.farm_profiles",
+        "public.inventory_batches",
+        "public.farm_memberships",
+        "auth.users"
+      ],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.can_operationally_access_farm",
+        "public.has_operational_farmer_access",
+        "public.has_farm_membership",
+        "public.finalize_evidence_attachment",
+        "public.fn_evidence_attachment_validate",
+        "auth.uid"
+      ],
+      "authUsersMinRows": 2
+    }
+  }
+}
