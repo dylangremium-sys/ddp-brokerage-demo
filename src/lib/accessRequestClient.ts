@@ -9,11 +9,17 @@
 // ENQUIRY to a real, server-side queue and tells the visitor the truth about
 // what happens next. It never creates an account and never grants a role.
 //
-// Submission is an anon INSERT under the migration-34 RLS policy, which pins the
-// row to status='new' with no reviewer. Reads are admin-only — a submitter
-// cannot read back their own request, or anyone else's.
+// Submission POSTs to our own server function, /api/public/access-request, which
+// rate-limits per client and inserts using its own server-side credential (audit
+// fix R5). It does NOT insert into Supabase from the browser: that path never
+// traversed Vercel, so no edge rate limit could see it, and migration 36 revokes
+// the anon INSERT that made it possible. The row is still pinned to status='new'
+// with no reviewer, by the server-only INSERT policy migration 36 substitutes.
+//
+// Reads remain admin-only — a submitter cannot read back their own request, or
+// anyone else's. The administrator's view of the queue is accessRequestAdmin.ts.
 
-import { supabase, isSupabaseConfigured } from './supabase'
+import { isSupabaseConfigured } from './supabase'
 
 export interface AccessRequestInput {
   fullName: string
@@ -29,8 +35,13 @@ export type AccessRequestErrorCode =
   | 'not_configured'
   | 'invalid_input'
   | 'submit_failed'
-  /** The intake table is absent — the migration has not reached this environment. */
+  /**
+   * The intake endpoint is not configured, or its throttle could not be
+   * evaluated. Either way the request cannot succeed by retrying.
+   */
   | 'backend_unavailable'
+  /** The caller has exceeded the public-intake throttle (migration 36). */
+  | 'rate_limited'
 
 export class AccessRequestError extends Error {
   readonly code: AccessRequestErrorCode
@@ -63,7 +74,7 @@ export function validateAccessRequest(input: AccessRequestInput): string | null 
  * error was thrown.
  */
 export async function submitAccessRequest(input: AccessRequestInput): Promise<void> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!isSupabaseConfigured) {
     throw new AccessRequestError(
       'not_configured',
       'The request could not be sent because the backend is not configured.',
@@ -75,30 +86,53 @@ export async function submitAccessRequest(input: AccessRequestInput): Promise<vo
     throw new AccessRequestError('invalid_input', `The ${invalid} field is not valid.`)
   }
 
-  const { error } = await supabase.from('farmer_access_requests').insert({
-    full_name: input.fullName.trim(),
-    email: input.email.trim(),
-    phone: input.phone.trim(),
-    province: input.province,
-    position: input.position,
-    preferred_language: input.preferredLanguage,
-    note: (input.note ?? '').trim(),
-    status: 'new',
-  })
-
-  if (error) {
-    // PGRST205 = the table is not in PostgREST's schema cache, i.e. migration 34
-    // has not been applied to this environment. Distinguished from a genuine
-    // failure so the UI can tell the visitor to reach us another way instead of
-    // asking them to retry something that cannot succeed. This makes the
-    // application safe to deploy BEFORE the migration lands, in either order.
-    if ((error as { code?: string }).code === 'PGRST205') {
-      throw new AccessRequestError(
-        'backend_unavailable',
-        'The request form is not available yet. Please contact the DDP team directly.',
-      )
-    }
-    // The driver message can name columns and constraints; keep it out of the UI.
+  // Submission goes through our own server function, NOT browser -> Supabase.
+  // That is the entire point of audit fix R5: a direct Supabase insert never
+  // traverses Vercel, so no edge rate limit can see it. Migration 36 revokes the
+  // anon INSERT so this is the only remaining path.
+  let response: Response
+  try {
+    response = await fetch('/api/public/access-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: input.fullName.trim(),
+        email: input.email.trim(),
+        phone: input.phone.trim(),
+        province: input.province,
+        position: input.position,
+        preferredLanguage: input.preferredLanguage,
+        note: (input.note ?? '').trim(),
+      }),
+    })
+  } catch {
     throw new AccessRequestError('submit_failed', 'The request could not be sent. Please try again.')
   }
+
+  if (response.ok) return
+
+  // 503 = the endpoint is deployed but not configured, or the throttle could not
+  // be evaluated. Distinguished from a genuine failure so the UI tells the
+  // visitor to reach us another way rather than asking them to retry something
+  // that cannot succeed — the same honest path the direct-insert version used
+  // for PGRST205, and what makes the app safe to deploy before migration 36.
+  if (response.status === 503) {
+    throw new AccessRequestError(
+      'backend_unavailable',
+      'The request form is not available yet. Please contact the DDP team directly.',
+    )
+  }
+
+  if (response.status === 429) {
+    throw new AccessRequestError(
+      'rate_limited',
+      'Too many requests have been sent from this connection. Please try again later, or contact the DDP team directly.',
+    )
+  }
+
+  if (response.status === 400) {
+    throw new AccessRequestError('invalid_input', 'One of the fields is not valid.')
+  }
+
+  throw new AccessRequestError('submit_failed', 'The request could not be sent. Please try again.')
 }

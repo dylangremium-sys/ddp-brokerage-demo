@@ -13,6 +13,30 @@
 // Skipped unless DDP_STAGING_E2E=1.
 //   set -a && . ./.env.staging && set +a
 //   DDP_STAGING_E2E=1 npm test -- accessRequest.integration
+//
+// MIGRATION 36 CHANGES THE FIRST ASSERTION. Before migration 36 an anonymous
+// visitor inserts directly (migration 34's `public submit` policy). After it,
+// that policy and the anon INSERT grant are both gone and submission goes through
+// /api/public/access-request; a direct anon insert must then be REFUSED.
+//
+// Rather than leave a test that silently inverts meaning the day the migration
+// lands, the expectation is selected explicitly:
+//   DDP_INTAKE_MIGRATION_36_APPLIED=1   -> anon insert must be refused
+//   unset                               -> anon insert must succeed (pre-36)
+// Set it in the same env file as the rest of the staging configuration when the
+// migration is applied there.
+//
+// WITH THAT FLAG SET, STAGING_SUPABASE_SERVICE_ROLE_KEY IS ALSO REQUIRED.
+// Migration 36 revokes INSERT on farmer_access_requests from anon AND
+// authenticated, so once it is applied neither the visitor client nor the
+// signed-in administrator client can create the row the triage assertions need.
+// service_role is the only remaining writer — the same identity
+// /api/public/access-request uses. beforeAll refuses to run without it rather
+// than failing later on an opaque 42501.
+//
+// NOT RUN in this change: no staging credentials are held here, so this suite
+// has not been executed. The correction above is by inspection of migration 36's
+// own REVOKE/POLICY statements, which are quoted at serviceRoleClient().
 
 import { describe, it, expect, beforeAll } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
@@ -27,9 +51,37 @@ const farmerPassword = process.env.STAGING_FARMER_A_PASSWORD ?? ''
 
 const ready = enabled && !!(url && anonKey && adminEmail && adminPassword)
 
+/** Has migration 36 been applied to the environment under test? */
+const migration36Applied = process.env.DDP_INTAKE_MIGRATION_36_APPLIED === '1'
+
+/**
+ * Service-role key for the environment under test. Required ONLY when migration
+ * 36 has been applied — see seedRequestRow() for why.
+ */
+const serviceRoleKey = process.env.STAGING_SUPABASE_SERVICE_ROLE_KEY ?? ''
+
 /** A signed-out visitor — exactly what the public form uses. */
 function anonClient(): SupabaseClient {
   return createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
+}
+
+/**
+ * A service-role client. This is the ONLY client that can create a request row
+ * once migration 36 is applied.
+ *
+ * Migration 36 does two things that together close every other seeding route:
+ *   REVOKE INSERT ON public.farmer_access_requests FROM anon, authenticated;
+ *   CREATE POLICY "farmer_access_requests: server submit" ... FOR INSERT TO service_role
+ *
+ * `authenticated` covers a signed-in administrator, so an admin browser client
+ * is refused exactly like an anonymous one. Seeding through it — which this
+ * suite originally did — could never succeed with DDP_INTAKE_MIGRATION_36_APPLIED=1
+ * set: the test written to avoid a migration trap contained one of its own.
+ */
+function serviceRoleClient(): SupabaseClient {
+  return createClient(url, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 }
 
 async function signedInClient(email: string, password: string) {
@@ -62,12 +114,49 @@ describe.skipIf(!ready)('farmer access request — end to end', () => {
   let admin: { client: SupabaseClient; userId: string }
 
   beforeAll(async () => {
+    // Fail LOUDLY on an incoherent configuration rather than skipping quietly or
+    // dying later on a confusing RLS denial. Post-migration-36 the suite needs a
+    // service-role key to create the row it then triages; there is no other
+    // route, because 36 revokes INSERT from anon AND authenticated.
+    if (migration36Applied && !serviceRoleKey) {
+      throw new Error(
+        'DDP_INTAKE_MIGRATION_36_APPLIED=1 requires STAGING_SUPABASE_SERVICE_ROLE_KEY: ' +
+        'migration 36 revokes INSERT on farmer_access_requests from anon and authenticated, ' +
+        'so neither the visitor nor the administrator client can seed the row this suite triages.',
+      )
+    }
     admin = await signedInClient(adminEmail, adminPassword)
   }, 60_000)
 
-  it('a signed-out visitor can submit a request', async () => {
+  it('the anonymous submission path matches the deployed migration state', async () => {
     const { error } = await anonClient().from('farmer_access_requests').insert(submission)
-    expect(error, error?.message).toBeNull()
+
+    if (migration36Applied) {
+      // Migration 36 revoked the anon INSERT and narrowed the policy to
+      // service_role, so the browser -> Supabase path is closed. This is audit
+      // fix R5: submission now goes through /api/public/access-request, which is
+      // the only path an edge rate limiter can see.
+      expect(error, 'anon insert must be refused once migration 36 is applied').not.toBeNull()
+      expect(error?.code).toBe('42501')
+
+      // An ADMINISTRATOR is refused too — `authenticated` lost INSERT as well,
+      // so this is not merely an anonymous-visitor restriction. Asserting it
+      // here is what stops the seed below from quietly regressing to an
+      // authenticated client that can never work.
+      const { error: adminInsert } = await admin.client.from('farmer_access_requests').insert(submission)
+      expect(adminInsert, 'an authenticated admin must ALSO be refused after migration 36').not.toBeNull()
+      expect(adminInsert?.code).toBe('42501')
+
+      // The rest of this suite needs a row to triage, and only the server path
+      // can create one now. Seed through service_role — the same identity
+      // /api/public/access-request uses.
+      const { error: seedError } = await serviceRoleClient()
+        .from('farmer_access_requests')
+        .insert(submission)
+      expect(seedError, seedError?.message).toBeNull()
+    } else {
+      expect(error, error?.message).toBeNull()
+    }
   }, 60_000)
 
   it('the visitor cannot read back their own request, or any other', async () => {
