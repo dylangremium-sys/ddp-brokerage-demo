@@ -123,27 +123,42 @@ export function subscribeToAuthChanges(
         callback(null)
         return
       }
-      const { data } = await supabase!
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single()
-      const m = session.user.user_metadata ?? {}
-      callback(
-        data
-          ? {
-              id: data.id,
-              email: data.email ?? session.user.email ?? '',
-              displayName: data.display_name ?? '',
-              role: data.role as UserRole,
-              phoneNumber: m.phone_number,
-              lineId: m.line_id,
-              preferredLang: m.preferred_lang,
-              farmerSubRole: m.farmer_sub_role,
-              province: m.province,
-            }
-          : null,
-      )
+      try {
+        // Prevent a hung network/profile query from pinning the app on auth loading.
+        const profileQuery = supabase!
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single()
+
+        const timeout = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('profiles lookup timed out')), 8000)
+        })
+
+        const { data, error } = await Promise.race([profileQuery, timeout])
+
+        if (error || !data) {
+          callback(null)
+          return
+        }
+
+        const m = session.user.user_metadata ?? {}
+        callback({
+          id: data.id,
+          email: data.email ?? session.user.email ?? '',
+          displayName: data.display_name ?? '',
+          role: data.role as UserRole,
+          phoneNumber: m.phone_number,
+          lineId: m.line_id,
+          preferredLang: m.preferred_lang,
+          farmerSubRole: m.farmer_sub_role,
+          province: m.province,
+        })
+      } catch (err) {
+        console.warn('Auth bootstrap profile lookup failed:', err)
+        // Fail closed: no profile means no operator permissions.
+        callback(null)
+      }
     },
   )
 
