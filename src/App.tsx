@@ -76,21 +76,15 @@ import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
+import { FARMER_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 
-const FARMER_PAGES: Page[] = [
-  'landing', 'login', 'farmer-register',
-  'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
-  'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
-]
+// FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
+// lib/navigationGuard.ts so they can be unit tested. PUBLIC_PAGES once omitted
+// 'farmer-register', which silently made the "Supplier signup" button a no-op
+// for every signed-out visitor; navigationGuard.test.ts now asserts that every
+// target a public surface links to is actually reachable.
 const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk', 'ddp-access-requests']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
-// Pages a signed-out visitor may reach. 'farmer-register' MUST be here: it is
-// the public supplier access-request form, and goTo() bounces any non-public
-// page to login for an unauthenticated caller. Omitting it made the
-// "Supplier signup" button a no-op on the live site — the click redirected
-// straight back to the login screen, so the onboarding entry point was
-// unreachable in production for every visitor.
-const PUBLIC_PAGES: Page[] = ['landing', 'login', 'farmer-register']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -596,19 +590,10 @@ export default function App() {
   }, [page])
 
   function goTo(p: Page) {
-    // In Supabase mode: redirect unauthenticated users to login
-    if (!isDemo && !isSignedIn && !PUBLIC_PAGES.includes(p)) {
-      setPage('login')
-      window.scrollTo(0, 0)
-      return
-    }
-    // In Supabase mode: redirect admins away from farmer-only pages
-    if (!isDemo && isAdminRole && FARMER_PAGES.includes(p) && !PUBLIC_PAGES.includes(p)) {
-      setPage('ddp-overview')
-      window.scrollTo(0, 0)
-      return
-    }
-    setPage(p)
+    // The decision itself is pure and lives in lib/navigationGuard.ts; this
+    // function keeps only the side effects.
+    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole })
+    setPage(target)
     window.scrollTo(0, 0)
   }
 

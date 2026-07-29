@@ -39,8 +39,19 @@ GRANT TRUNCATE, TRIGGER, REFERENCES, MAINTAIN ON TABLE
   public.status_history
 TO anon, authenticated;
 
--- 2. Restore UPDATE/DELETE on the audit log to anon + authenticated.
-GRANT UPDATE, DELETE ON TABLE public.compliance_audit_log TO anon, authenticated;
+-- 2. Restore UPDATE/DELETE on the audit log to authenticated ONLY.
+--
+--    DELIBERATE ASYMMETRY: the pre-migration state also granted these to `anon`,
+--    and this rollback intentionally does NOT restore that. `anon` is the
+--    UNAUTHENTICATED role, and no code path writes to the compliance audit log as
+--    anon — the app writes it as a signed-in admin and the RLS insert policy
+--    requires is_ddp_admin(). Re-granting UPDATE/DELETE on an append-only
+--    compliance audit log to an unauthenticated role restores no functionality
+--    while re-opening an unauthenticated write vector, leaving the append-only
+--    property resting solely on the guard trigger (which step 3 below returns
+--    from ENABLE ALWAYS to ENABLE). Restoring `authenticated` preserves the
+--    functional reversal; omitting `anon` removes only an indefensible privilege.
+GRANT UPDATE, DELETE ON TABLE public.compliance_audit_log TO authenticated;
 
 -- 3. Return both audit-log guard triggers to normal ENABLE mode.
 ALTER TABLE public.compliance_audit_log

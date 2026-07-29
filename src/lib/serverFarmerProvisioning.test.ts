@@ -95,6 +95,40 @@ describe('handleProvisionFarmer — input validation', () => {
     const res = await handleProvisionFarmer(makeDeps(), { token: 'admin-token', body: 'nope' })
     expect(res.status).toBe(400)
   })
+
+  it('rejects over-length invite metadata with 400 (fail closed, not truncated)', async () => {
+    const cases = [
+      { display_name: 'x'.repeat(121) },
+      { province: 'p'.repeat(86) },
+      { phone_number: '9'.repeat(33) },
+      { line_id: 'l'.repeat(65) },
+    ]
+    for (const extra of cases) {
+      const res = await handleProvisionFarmer(makeDeps(), {
+        token: 'admin-token',
+        body: { email: 'grower@example.com', ...extra },
+      })
+      expect(res.status, `over-length ${Object.keys(extra)[0]} must be rejected`).toBe(400)
+      expect(res.body.ok).toBe(false)
+    }
+  })
+
+  it('rejects an over-length email with 400', async () => {
+    const longLocal = 'a'.repeat(250)
+    const res = await handleProvisionFarmer(makeDeps(), {
+      token: 'admin-token',
+      body: { email: `${longLocal}@example.com` },
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('accepts metadata at the boundary (does not over-reject)', async () => {
+    const res = await handleProvisionFarmer(makeDeps(), {
+      token: 'admin-token',
+      body: { email: 'grower@example.com', display_name: 'x'.repeat(120), province: 'p'.repeat(85) },
+    })
+    expect(res.status).toBe(200)
+  })
 })
 
 describe('handleProvisionFarmer — provisioning outcomes', () => {
@@ -145,5 +179,18 @@ describe('handleProvisionFarmer — provisioning outcomes', () => {
     )
     expect(res.status).toBe(502)
     expect(res.body).toMatchObject({ ok: false, stage: 'invite' })
+  })
+
+  it('does NOT leak the raw Supabase invite error to the client (coded/generic message only)', async () => {
+    const secret = 'AuthApiError: SMTP relay 10.0.0.5 rejected sender key sk_live_leak'
+    const res = await handleProvisionFarmer(
+      makeDeps({ inviteFarmer: () => Promise.resolve({ kind: 'error', message: secret }) }),
+      { token: 'admin-token', body: validBody },
+    )
+    expect(res.status).toBe(502)
+    expect(res.body).toMatchObject({ ok: false, stage: 'invite', reason: 'invite_failed' })
+    expect(String(res.body.error)).not.toContain('SMTP')
+    expect(String(res.body.error)).not.toContain('10.0.0.5')
+    expect(String(res.body.error)).not.toContain('sk_live')
   })
 })
