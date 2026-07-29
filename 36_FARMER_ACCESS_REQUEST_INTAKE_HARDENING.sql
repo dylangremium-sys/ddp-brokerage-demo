@@ -242,6 +242,50 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
+  -- ---- VALIDATE THE POLICY, BEFORE RESERVING ANYTHING ---------------------
+  --
+  -- This function must FAIL CLOSED, and an unvalidated rule set is the one way
+  -- it could fail open. `(rule->>'max')::int` is NULL for a missing or mistyped
+  -- key, and `v_count > NULL` is NULL, which an IF treats as false — so the loop
+  -- below would fall through every rule and return allowed=true. A single typo
+  -- in THROTTLE_RULES (`maxx` for `max`), a missing windowSeconds, a null
+  -- element, a negative window, or an empty array would each have silently
+  -- removed the entire throttle with no error anywhere. Measured, all four
+  -- returned {"allowed": true}.
+  --
+  -- Validation runs BEFORE the inserts so a malformed call does not also consume
+  -- a reservation it was never entitled to evaluate.
+  IF jsonb_array_length(p_rules) = 0 THEN
+    RAISE EXCEPTION 'reserve_public_intake_slot: p_rules is empty — refusing to admit an unthrottled request'
+      USING ERRCODE = '22023';
+  END IF;
+
+  FOR v_rule IN SELECT * FROM jsonb_array_elements(p_rules)
+  LOOP
+    IF jsonb_typeof(v_rule) <> 'object' THEN
+      RAISE EXCEPTION 'reserve_public_intake_slot: every rule must be an object, got %', jsonb_typeof(v_rule)
+        USING ERRCODE = '22023';
+    END IF;
+    IF v_rule->>'scope' IS NULL OR v_rule->>'scope' NOT IN ('client', 'global') THEN
+      RAISE EXCEPTION 'reserve_public_intake_slot: rule scope must be "client" or "global", got %',
+        coalesce(v_rule->>'scope', 'NULL') USING ERRCODE = '22023';
+    END IF;
+    -- IS DISTINCT FROM, not <>: an ABSENT key makes v_rule->'windowSeconds' SQL
+    -- NULL, jsonb_typeof(NULL) NULL, and `NULL <> 'number'` NULL — which IF
+    -- treats as false. That is the very NULL trap this validation exists to
+    -- close, and a first cut of it fell into the same hole.
+    IF jsonb_typeof(v_rule->'windowSeconds') IS DISTINCT FROM 'number'
+       OR (v_rule->>'windowSeconds')::numeric <= 0 THEN
+      RAISE EXCEPTION 'reserve_public_intake_slot: rule windowSeconds must be a positive number, got %',
+        coalesce(v_rule->>'windowSeconds', 'NULL') USING ERRCODE = '22023';
+    END IF;
+    IF jsonb_typeof(v_rule->'max') IS DISTINCT FROM 'number'
+       OR (v_rule->>'max')::numeric < 0 THEN
+      RAISE EXCEPTION 'reserve_public_intake_slot: rule max must be a non-negative number, got %',
+        coalesce(v_rule->>'max', 'NULL') USING ERRCODE = '22023';
+    END IF;
+  END LOOP;
+
   -- Serialise every reservation against every other one.
   PERFORM pg_advisory_xact_lock(hashtext('public.reserve_public_intake_slot'));
 

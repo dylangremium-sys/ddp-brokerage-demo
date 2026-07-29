@@ -138,9 +138,45 @@ export function normaliseAddress(address: string): string | null {
     headGroups.push(...Array<string>(fill).fill('0'), ...tailGroups)
   }
   if (headGroups.length !== 8) return null
+  const groups = headGroups.map(g => g.replace(/^0+(?=.)/, ''))
+
+  // ---- IPv4 carried inside an IPv6 address ---------------------------------
+  //
+  // `::ffff:203.0.113.7` is an IPv4-MAPPED address: the same machine as plain
+  // `203.0.113.7`, just spelled the way a dual-stack proxy reports it. Treating
+  // it as an ordinary IPv6 address is wrong twice over:
+  //
+  //   * the whole ::ffff:0:0/96 range shares one /64, so EVERY IPv4 client
+  //     arriving in mapped form lands in a single bucket — three of them would
+  //     exhaust the per-client allowance and lock out every other supplier;
+  //   * the same client would be bucketed differently depending on which form
+  //     the proxy happened to send, which is precisely the inconsistency this
+  //     normalisation exists to remove.
+  //
+  // The same reasoning applies to the well-known NAT64 prefix 64:ff9b::/96,
+  // which also carries the real IPv4 address in its low 32 bits.
+  const embeddedV4 = embeddedIpv4(groups)
+  if (embeddedV4) return `v4:${embeddedV4}`
 
   // The /64 prefix is the first four groups.
-  return `v6/64:${headGroups.slice(0, 4).map(g => g.replace(/^0+(?=.)/, '')).join(':')}`
+  return `v6/64:${groups.slice(0, 4).join(':')}`
+}
+
+/**
+ * The dotted-quad hidden in the low 32 bits of an IPv4-mapped (`::ffff:0:0/96`)
+ * or NAT64 (`64:ff9b::/96`) address, or null when this is a native IPv6 address.
+ * `groups` is the address expanded to eight leading-zero-stripped hextets.
+ */
+function embeddedIpv4(groups: string[]): string | null {
+  const isZero = (i: number) => groups[i] === '0'
+  const mapped = isZero(0) && isZero(1) && isZero(2) && isZero(3) && isZero(4) && groups[5] === 'ffff'
+  const nat64 = groups[0] === '64' && groups[1] === 'ff9b' && isZero(2) && isZero(3) && isZero(4) && isZero(5)
+  if (!mapped && !nat64) return null
+
+  const high = Number.parseInt(groups[6], 16)
+  const low = Number.parseInt(groups[7], 16)
+  if (!Number.isInteger(high) || !Number.isInteger(low)) return null
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.')
 }
 
 /**

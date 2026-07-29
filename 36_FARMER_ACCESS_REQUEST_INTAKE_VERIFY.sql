@@ -333,7 +333,46 @@ BEGIN
     RAISE EXCEPTION 'VERIFY G FAILED: the global bucket key violates the bucket_key length CHECK';
   END IF;
 
-  RAISE NOTICE 'VERIFY G PASSED: reservations are counted by their own check, the ceiling binds at 3/5, refusals still consume the allowance, and the global key is storable.';
+  -- ---- FAIL CLOSED on a malformed policy ---------------------------------
+  -- The rules are a parameter supplied by the application, so a typo in
+  -- THROTTLE_RULES is a live failure mode. Before this guard, a mistyped key
+  -- made `(rule->>'max')::int` NULL, `count > NULL` NULL, and PL/pgSQL's IF
+  -- treated that as false — the loop fell through every rule and returned
+  -- allowed=true, silently removing the whole throttle with no error anywhere.
+  DECLARE
+    v_bad     jsonb;
+    v_refused int := 0;
+  BEGIN
+    FOREACH v_bad IN ARRAY ARRAY[
+      '[{"scope":"client","windowSeconds":600,"maxx":3}]'::jsonb,  -- typo'd key
+      '[{"scope":"client","max":3}]'::jsonb,                        -- no window
+      '[]'::jsonb,                                                  -- empty set
+      '[null]'::jsonb,                                              -- null rule
+      '[{"scope":"client","windowSeconds":-600,"max":3}]'::jsonb,   -- negative
+      '[{"scope":"clint","windowSeconds":600,"max":3}]'::jsonb      -- bad scope
+    ]
+    LOOP
+      BEGIN
+        PERFORM public.reserve_public_intake_slot(repeat('f', 64), 'verify-global-ceiling', v_bad);
+        RAISE EXCEPTION 'VERIFY G FAILED: a malformed rule set was ADMITTED (%) — the throttle failed open', v_bad;
+      EXCEPTION
+        WHEN invalid_parameter_value THEN
+          v_refused := v_refused + 1;
+      END;
+    END LOOP;
+
+    IF v_refused <> 6 THEN
+      RAISE EXCEPTION 'VERIFY G FAILED: expected 6 malformed rule sets to be refused, got %', v_refused;
+    END IF;
+
+    -- A refused policy must not have consumed a reservation either: validation
+    -- runs before the insert.
+    IF EXISTS (SELECT 1 FROM public.public_intake_attempts WHERE bucket_key = repeat('f', 64)) THEN
+      RAISE EXCEPTION 'VERIFY G FAILED: a refused policy still burned a reservation';
+    END IF;
+  END;
+
+  RAISE NOTICE 'VERIFY G PASSED: reservations are counted by their own check, the ceiling binds at 3/5, refusals still consume the allowance, the global key is storable, and a malformed rule set fails CLOSED without burning a reservation.';
 END $$;
 
 

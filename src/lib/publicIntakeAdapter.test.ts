@@ -93,6 +93,43 @@ describe('normaliseAddress — one client must be one bucket', () => {
     expect(normaliseAddress('203.0.113.7')).not.toBe(normaliseAddress('::203.0.113.7'))
   })
 
+  // ─── Re-audit finding: IPv4 carried inside an IPv6 address ────────────────
+  //
+  // A dual-stack proxy may report an IPv4 client as `::ffff:203.0.113.7`. The
+  // first implementation treated that as an ordinary IPv6 address and took its
+  // /64 prefix — but the ENTIRE ::ffff:0:0/96 range shares one /64, so every
+  // such client collapsed into a single bucket `v6/64:0:0:0:0`.
+  //
+  // Two failures at once: unrelated suppliers shared one allowance (three of
+  // them would lock out everybody else — a denial of service against legitimate
+  // users), and one client was bucketed differently depending on which spelling
+  // the proxy happened to send, which is the exact inconsistency this
+  // normalisation exists to remove.
+  it('maps an IPv4-mapped IPv6 address to the SAME bucket as the plain IPv4 form', () => {
+    expect(normaliseAddress('::ffff:203.0.113.7')).toBe(normaliseAddress('203.0.113.7'))
+    expect(normaliseAddress('::FFFF:203.0.113.7')).toBe(normaliseAddress('203.0.113.7'))
+  })
+
+  it('keeps DIFFERENT IPv4-mapped clients in different buckets', () => {
+    // The regression: these three all became `v6/64:0:0:0:0` and shared one
+    // allowance between entirely unrelated networks.
+    const keys = ['::ffff:203.0.113.7', '::ffff:198.51.100.9', '::ffff:8.8.8.8'].map(normaliseAddress)
+    expect(new Set(keys).size).toBe(3)
+  })
+
+  it('unwraps the NAT64 well-known prefix too', () => {
+    // 64:ff9b::/96 carries the real IPv4 in its low 32 bits; without unwrapping,
+    // every client behind a NAT64 translator shares one /64 bucket.
+    expect(normaliseAddress('64:ff9b::203.0.113.7')).toBe(normaliseAddress('203.0.113.7'))
+    expect(normaliseAddress('64:ff9b::198.51.100.9')).not.toBe(normaliseAddress('64:ff9b::203.0.113.7'))
+  })
+
+  it('does not mistake a native IPv6 address for a mapped one', () => {
+    // 2001:db8::ffff:... has ffff in the wrong position and must stay IPv6.
+    expect(normaliseAddress('2001:db8::ffff:203.0.113.7')).toMatch(/^v6\/64:/)
+    expect(normaliseAddress('::1')).toMatch(/^v6\/64:/)
+  })
+
   it('rejects anything it cannot canonicalise', () => {
     // A value that cannot be parsed must not be hashed: that would let a caller
     // choose its own bucket by sending garbage.

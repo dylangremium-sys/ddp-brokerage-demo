@@ -149,6 +149,63 @@ describe.skipIf(!HAS_PG)('migration 36 throttle under real concurrency', () => {
     }
   });
 
+  // ─── Re-audit finding: the throttle must not fail OPEN on a bad policy ────
+  //
+  // The rules are a PARAMETER, supplied by the application, so a typo in
+  // THROTTLE_RULES is a live failure mode. `(rule->>'max')::int` is NULL for a
+  // missing or mistyped key, and `count > NULL` is NULL, which PL/pgSQL's IF
+  // treats as false — so the evaluation loop fell straight through every rule
+  // and returned allowed=true. Measured: a typo'd `maxx`, a missing
+  // windowSeconds, a null element, a negative window and an empty array ALL
+  // returned {"allowed": true}, silently removing the entire throttle.
+  //
+  // Every one of these must now raise, because the adapter turns a throw into a
+  // fail-closed 503. Note the first fix for this fell into the SAME NULL trap:
+  // `jsonb_typeof(NULL) <> 'number'` is NULL, so it caught nothing. It needs
+  // IS DISTINCT FROM.
+  it('refuses a malformed rule set instead of admitting the request', { timeout: 120000 }, () => {
+    const cluster = bootCluster();
+    try {
+      const key = 'c'.repeat(64);
+      const malformed = [
+        ['typo\'d max key', '[{"scope":"client","windowSeconds":600,"maxx":3}]'],
+        ['missing windowSeconds', '[{"scope":"client","max":3}]'],
+        ['empty rule set', '[]'],
+        ['null element', '[null]'],
+        ['negative window', '[{"scope":"client","windowSeconds":-600,"max":3}]'],
+        ['unknown scope', '[{"scope":"clint","windowSeconds":600,"max":3}]'],
+        ['max as a string', '[{"scope":"client","windowSeconds":600,"max":"3"}]'],
+        ['rules not an array', '{}'],
+      ];
+
+      for (const [label, rules] of malformed) {
+        const res = cluster.query(
+          `SELECT public.reserve_public_intake_slot('${key}', '${GLOBAL_KEY}', '${rules}'::jsonb)`,
+        );
+        expect(res.status, `${label} must be REFUSED, not admitted`).not.toBe(0);
+        // cluster.query() returns {status, stdout, stderr} — no `combined`.
+        expect(`${res.stdout}${res.stderr}`, `${label} must not report allowed`).not.toMatch(/"allowed": true/);
+      }
+
+      // ...and a malformed call must not have consumed a reservation either,
+      // since validation runs before the insert.
+      const rows = cluster.query(
+        `SELECT count(*) FROM public.public_intake_attempts WHERE bucket_key = '${key}'`,
+      ).stdout.trim();
+      expect(Number(rows), 'a refused policy must not burn a reservation').toBe(0);
+
+      // Control: the real rule set still works, so the guard is not simply
+      // rejecting everything.
+      const ok = cluster.query(
+        `SELECT (public.reserve_public_intake_slot('${key}', '${GLOBAL_KEY}', '${RULES}'::jsonb)->>'allowed')`,
+      );
+      expect(ok.status).toBe(0);
+      expect(ok.stdout.trim()).toBe('true');
+    } finally {
+      cluster.teardown();
+    }
+  });
+
   it('a distributed burst from many DIFFERENT clients is bounded by the global rule', { timeout: 180000 }, async () => {
     const cluster = bootCluster();
     try {
