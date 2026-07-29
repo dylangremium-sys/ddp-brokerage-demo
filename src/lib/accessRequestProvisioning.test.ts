@@ -18,26 +18,26 @@ import type { InviteFarmerResult } from '../services/adminProvisioning'
 
 describe('resolveProvisionDecision', () => {
   it('marks invited when an account was created', () => {
-    const d = resolveProvisionDecision({ ok: true, userId: 'u-1' })
+    const decision = resolveProvisionDecision({ ok: true, userId: 'u-1' })
 
-    expect(d.kind).toBe('invited')
-    expect(d.markInvited).toBe(true)
-    expect(d.message).toMatch(/invitation email sent/i)
+    expect(decision.kind).toBe('invited')
+    expect(decision.markInvited).toBe(true)
+    expect(decision.message).toMatch(/invitation email sent/i)
   })
 
   it('marks invited when the account already existed — the account is real', () => {
     // Common when a supplier was invited by hand before this button existed.
-    const d = resolveProvisionDecision({
+    const decision = resolveProvisionDecision({
       ok: false, error: 'User already registered.', reason: 'user_already_exists',
     })
 
-    expect(d.kind).toBe('already_exists')
-    expect(d.markInvited).toBe(true)
-    expect(d.message).toMatch(/no second invitation/i)
+    expect(decision.kind).toBe('already_exists')
+    expect(decision.markInvited).toBe(true)
+    expect(decision.message).toMatch(/no second invitation/i)
   })
 
   it('does NOT mark invited when the user is pending and needs explicit approval', () => {
-    const d = resolveProvisionDecision({
+    const decision = resolveProvisionDecision({
       ok: false,
       error: 'Promotion required.',
       reason: 'promotion_required',
@@ -45,70 +45,70 @@ describe('resolveProvisionDecision', () => {
       userId: 'u-pending-7',
     })
 
-    expect(d.kind).toBe('promotion_required')
-    expect(d.markInvited).toBe(false)
+    expect(decision.kind).toBe('promotion_required')
+    expect(decision.markInvited).toBe(false)
     // The admin needs the id, because the server refuses to promote by email.
-    expect(d.message).toContain('u-pending-7')
-    expect(d.message).toMatch(/enquiry is unchanged/i)
+    expect(decision.message).toContain('u-pending-7')
+    expect(decision.message).toMatch(/enquiry is unchanged/i)
   })
 
   it('still explains itself when a pending user has no id attached', () => {
-    const d = resolveProvisionDecision({
+    const decision = resolveProvisionDecision({
       ok: false, error: 'Promotion required.', reason: 'promotion_required',
     })
 
-    expect(d.markInvited).toBe(false)
-    expect(d.message).toMatch(/pending account/i)
-    expect(d.message).not.toContain('undefined')
+    expect(decision.markInvited).toBe(false)
+    expect(decision.message).toMatch(/pending account/i)
+    expect(decision.message).not.toContain('undefined')
   })
 
   it('does NOT mark invited when the invitation failed', () => {
-    const d = resolveProvisionDecision({
+    const decision = resolveProvisionDecision({
       ok: false,
       error: 'The invitation could not be sent.',
       stage: 'invite',
       reason: 'invite_failed',
     })
 
-    expect(d.kind).toBe('failed')
-    expect(d.markInvited).toBe(false)
+    expect(decision.kind).toBe('failed')
+    expect(decision.markInvited).toBe(false)
   })
 
   it('names deliverability on an invite-stage failure, because the server cannot', () => {
     // A real 502 from production on 2026-07-29: provisioning to an @example.com
     // address returns the same generic string as a genuine outage.
-    const d = resolveProvisionDecision({
+    const decision = resolveProvisionDecision({
       ok: false,
       error: 'The invitation could not be sent. Please retry, or contact support if it persists.',
       stage: 'invite',
       reason: 'invite_failed',
     })
 
-    expect(d.message).toMatch(/undeliverable domain|can receive mail/i)
-    expect(d.markInvited).toBe(false)
+    expect(decision.message).toMatch(/undeliverable domain|can receive mail/i)
+    expect(decision.markInvited).toBe(false)
   })
 
   it('does not add a deliverability hint to failures from other stages', () => {
-    const d = resolveProvisionDecision({
+    const decision = resolveProvisionDecision({
       ok: false, error: 'DDP admin privileges are required.', stage: 'authorize',
     })
 
-    expect(d.message).toBe('DDP admin privileges are required.')
-    expect(d.message).not.toMatch(/receive mail/i)
-    expect(d.markInvited).toBe(false)
+    expect(decision.message).toBe('DDP admin privileges are required.')
+    expect(decision.message).not.toMatch(/receive mail/i)
+    expect(decision.markInvited).toBe(false)
   })
 
   it('does not mark invited for an unrecognised failure', () => {
-    const d = resolveProvisionDecision({ ok: false, error: 'Something unexpected.' })
+    const decision = resolveProvisionDecision({ ok: false, error: 'Something unexpected.' })
 
-    expect(d.kind).toBe('failed')
-    expect(d.markInvited).toBe(false)
+    expect(decision.kind).toBe('failed')
+    expect(decision.markInvited).toBe(false)
   })
 
   it('never leaves the message empty, whatever the server sent', () => {
-    const d = resolveProvisionDecision({ ok: false, error: '' })
+    const decision = resolveProvisionDecision({ ok: false, error: '' })
 
-    expect(d.message.length).toBeGreaterThan(0)
+    expect(decision.message.length).toBeGreaterThan(0)
   })
 
   it('marks invited in exactly two cases and no others', () => {

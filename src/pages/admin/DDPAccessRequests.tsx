@@ -108,33 +108,39 @@ export default function DDPAccessRequests() {
     setActionError(null)
     setActionNotice(null)
 
-    const decision = resolveProvisionDecision(
-      await inviteFarmer({
-        email: row.email,
-        displayName: row.fullName,
-        province: row.province,
-        phoneNumber: row.phone,
-      }),
-    )
-
-    if (!decision.markInvited) {
-      setActionError(decision.message)
-      setBusyId(null)
-      return
-    }
-
+    // One try/finally around the WHOLE body, including the invite call. An
+    // unexpected throw before the status write would otherwise leave busyId set
+    // and the row's buttons disabled until a reload.
     try {
-      await setAccessRequestStatus(row.id, 'invited', (noteDraft[row.id] ?? '').trim())
-      setActionNotice(decision.message)
-      refresh()
-    } catch (err) {
-      // The account DOES exist at this point. Say so, rather than reporting a
-      // bare failure that would invite a second provisioning attempt.
-      setActionError(
-        `${decision.message} However the enquiry status could not be updated: ${
-          err instanceof AccessRequestAdminError ? err.message : 'the update was rejected'
-        }. Do not re-invite — mark it invited manually.`,
+      const decision = resolveProvisionDecision(
+        await inviteFarmer({
+          email: row.email,
+          displayName: row.fullName,
+          province: row.province,
+          phoneNumber: row.phone,
+        }),
       )
+
+      if (!decision.markInvited) {
+        setActionError(decision.message)
+        return
+      }
+
+      try {
+        await setAccessRequestStatus(row.id, 'invited', (noteDraft[row.id] ?? '').trim())
+        setActionNotice(decision.message)
+        refresh()
+      } catch (err) {
+        // The account DOES exist at this point. Say so, rather than reporting a
+        // bare failure that would invite a second provisioning attempt.
+        setActionError(
+          `${decision.message} However the enquiry status could not be updated: ${
+            err instanceof AccessRequestAdminError ? err.message : 'the update was rejected'
+          }. Do not re-invite — mark it invited manually.`,
+        )
+      }
+    } catch {
+      setActionError('The account could not be created. Please try again.')
     } finally {
       setBusyId(null)
     }
@@ -276,8 +282,12 @@ export default function DDPAccessRequests() {
                       type="button"
                       className="btn btn-primary"
                       disabled={busyId === row.id}
-                      // deliberately-unawaited promise; repo-wide idiom, see above.
-                      onClick={() => void provision(row)}
+                      // NOT the `void` idiom used above, deliberately. provision()
+                      // handles every failure internally and cannot reject, so an
+                      // explicit no-op catch says that plainly and keeps the
+                      // promise handled — without adding a THIRD void finding to
+                      // the two the owner has already reviewed and accepted here.
+                      onClick={() => { provision(row).catch(() => undefined) }}
                     >
                       {busyId === row.id ? 'Creating account…' : 'Invite & create account'}
                     </button>
