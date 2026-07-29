@@ -253,7 +253,7 @@ describe('throttling', () => {
 
 describe('duplicate suppression', () => {
   it('reports success without inserting a second open request', async () => {
-    const { deps: d, rec } = deps({ async hasOpenRequestForEmail() { return true } })
+    const { deps: d, rec } = deps({ hasOpenRequestForEmail: () => Promise.resolve(true) })
     const out = await handleAccessRequest('POST', VALID, d)
 
     // Reported as SUCCESS deliberately: telling an anonymous caller "that address
@@ -265,7 +265,7 @@ describe('duplicate suppression', () => {
 
   it('still consumes the caller\'s allowance', async () => {
     // Otherwise re-submitting one address would be an unlimited free probe.
-    const { deps: d, rec } = deps({ async hasOpenRequestForEmail() { return true } })
+    const { deps: d, rec } = deps({ hasOpenRequestForEmail: () => Promise.resolve(true) })
     await handleAccessRequest('POST', VALID, d)
     expect(rec.attempts).toHaveLength(2)
   })
@@ -274,9 +274,9 @@ describe('duplicate suppression', () => {
 describe('failures do not leak driver detail', () => {
   it('an insert failure returns a generic message', async () => {
     const { deps: d } = deps({
-      async insertRequest() {
-        throw new Error('duplicate key value violates unique constraint "farmer_access_requests_pkey"')
-      },
+      insertRequest: () => Promise.reject(
+        new Error('duplicate key value violates unique constraint "farmer_access_requests_pkey"'),
+      ),
     })
     const out = await handleAccessRequest('POST', VALID, d)
     expect(out.status).toBe(500)
@@ -301,7 +301,7 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
   /** Deps sharing ONE ledger across every concurrent call. */
   function sharedDeps(reserve: (rec: Recorder, key: string) => Promise<ThrottleReservation>) {
     const rec: Recorder = { attempts: [], inserted: [] }
-    const d: IntakeDeps = {
+    const intakeDeps: IntakeDeps = {
       now: () => T0,
       bucketKeyForClient: () => CLIENT_KEY,
       reserveThrottleSlot: key => reserve(rec, key),
@@ -311,7 +311,7 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
         return Promise.resolve()
       },
     }
-    return { deps: d, rec }
+    return { deps: intakeDeps, rec }
   }
 
   /** The atomic reservation: reserve, then evaluate. What ships now. */
@@ -342,10 +342,10 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
   const PER_CLIENT_MAX = THROTTLE_RULES.find(r => r.scope === 'client')!.max
 
   it('DEMONSTRATES the defect: check-then-act admits a whole parallel burst', async () => {
-    const { deps: d, rec } = sharedDeps(checkThenActReserve)
+    const { deps: burstDeps, rec } = sharedDeps(checkThenActReserve)
 
     const outcomes = await Promise.all(
-      Array.from({ length: 20 }, () => handleAccessRequest('POST', VALID, d)),
+      Array.from({ length: 20 }, () => handleAccessRequest('POST', VALID, burstDeps)),
     )
 
     const accepted = outcomes.filter(o => o.status === 200).length
@@ -355,10 +355,10 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
   })
 
   it('the atomic reservation holds the per-client ceiling under a parallel burst', async () => {
-    const { deps: d, rec } = sharedDeps(atomicReserve)
+    const { deps: burstDeps, rec } = sharedDeps(atomicReserve)
 
     const outcomes = await Promise.all(
-      Array.from({ length: 20 }, () => handleAccessRequest('POST', VALID, d)),
+      Array.from({ length: 20 }, () => handleAccessRequest('POST', VALID, burstDeps)),
     )
 
     const accepted = outcomes.filter(o => o.status === 200).length
@@ -376,19 +376,19 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
     // Each request carries its own client bucket, so no per-client rule can fire
     // — only the global ceiling stands between this burst and the queue.
     const outcomes = await Promise.all(
-      Array.from({ length: globalRule.max + 25 }, (_, i) => {
-        const key = String(i).padStart(64, '0')
-        const d: IntakeDeps = {
+      Array.from({ length: globalRule.max + 25 }, (_, index) => {
+        const bucketKey = String(index).padStart(64, '0')
+        const callerDeps: IntakeDeps = {
           now: () => T0,
-          bucketKeyForClient: () => key,
-          reserveThrottleSlot: k => Promise.resolve(reserveAgainst(rec, k, T0)),
+          bucketKeyForClient: () => bucketKey,
+          reserveThrottleSlot: reserveKey => Promise.resolve(reserveAgainst(rec, reserveKey, T0)),
           hasOpenRequestForEmail: () => Promise.resolve(false),
           insertRequest(input) {
             rec.inserted.push(input)
             return Promise.resolve()
           },
         }
-        return handleAccessRequest('POST', VALID, d)
+        return handleAccessRequest('POST', VALID, callerDeps)
       }),
     )
 
@@ -398,8 +398,8 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
 
   it('a refused caller still consumed its reservation', async () => {
     // Otherwise a flood would reset its own allowance and never be bounded.
-    const { deps: d, rec } = sharedDeps(atomicReserve)
-    await Promise.all(Array.from({ length: 10 }, () => handleAccessRequest('POST', VALID, d)))
+    const { deps: burstDeps, rec } = sharedDeps(atomicReserve)
+    await Promise.all(Array.from({ length: 10 }, () => handleAccessRequest('POST', VALID, burstDeps)))
     expect(rec.attempts.filter(a => a.bucketKey === CLIENT_KEY)).toHaveLength(10)
   })
 })
