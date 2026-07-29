@@ -9,6 +9,8 @@ import {
   type AccessRequestRow,
   type AccessRequestStatus,
 } from '../../lib/accessRequestAdmin'
+import { inviteFarmer } from '../../services/adminProvisioning'
+import { resolveProvisionDecision } from '../../lib/accessRequestProvisioning'
 
 /**
  * Supplier enquiries — the administrator's view of the public intake queue.
@@ -34,6 +36,7 @@ export default function DDPAccessRequests() {
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showResolved, setShowResolved] = useState(false)
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
@@ -92,9 +95,61 @@ export default function DDPAccessRequests() {
     [rows],
   )
 
+  /**
+   * Create the supplier's account, then record the enquiry as invited.
+   *
+   * Order is load-bearing. The account is created FIRST and the status is only
+   * written once one exists, so a failed invitation can never leave an enquiry
+   * that claims to have been invited. Before this existed, "Invited" was a bare
+   * label: it wrote the status and created nothing.
+   */
+  async function provision(row: AccessRequestRow) {
+    setBusyId(row.id)
+    setActionError(null)
+    setActionNotice(null)
+
+    // One try/finally around the WHOLE body, including the invite call. An
+    // unexpected throw before the status write would otherwise leave busyId set
+    // and the row's buttons disabled until a reload.
+    try {
+      const decision = resolveProvisionDecision(
+        await inviteFarmer({
+          email: row.email,
+          displayName: row.fullName,
+          province: row.province,
+          phoneNumber: row.phone,
+        }),
+      )
+
+      if (!decision.markInvited) {
+        setActionError(decision.message)
+        return
+      }
+
+      try {
+        await setAccessRequestStatus(row.id, 'invited', (noteDraft[row.id] ?? '').trim())
+        setActionNotice(decision.message)
+        refresh()
+      } catch (err) {
+        // The account DOES exist at this point. Say so, rather than reporting a
+        // bare failure that would invite a second provisioning attempt.
+        setActionError(
+          `${decision.message} However the enquiry status could not be updated: ${
+            err instanceof AccessRequestAdminError ? err.message : 'the update was rejected'
+          }. Do not re-invite — mark it invited manually.`,
+        )
+      }
+    } catch {
+      setActionError('The account could not be created. Please try again.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function disposition(row: AccessRequestRow, status: AccessRequestStatus) {
     setBusyId(row.id)
     setActionError(null)
+    setActionNotice(null)
     try {
       await setAccessRequestStatus(row.id, status, (noteDraft[row.id] ?? '').trim())
       // Re-read rather than patching state locally: reviewed_by/reviewed_at are
@@ -117,7 +172,9 @@ export default function DDPAccessRequests() {
         <h1>Supplier enquiries</h1>
         <p className="muted">
           Access requests submitted through the public supplier form. An enquiry is not an
-          account: provisioning stays admin-only and happens by email invitation.
+          account. “Invite &amp; create account” provisions one and emails the supplier an
+          invitation; they choose their own password. Marking an enquiry Invited is not a
+          separate step — it records that an account now exists.
         </p>
       </header>
 
@@ -149,6 +206,12 @@ export default function DDPAccessRequests() {
           {actionError && (
             <div role="alert" className="notice notice-error" style={{ marginBottom: 16 }}>
               {actionError}
+            </div>
+          )}
+
+          {actionNotice && (
+            <div role="status" className="notice" style={{ marginBottom: 16 }}>
+              {actionNotice}
             </div>
           )}
 
@@ -199,7 +262,10 @@ export default function DDPAccessRequests() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                  {TRIAGE_ACTIONS.filter(s => s !== row.status).map(status => (
+                  {/* 'invited' is NOT offered as a plain status here. It is set only
+                      by the provisioning action below, so the label always means an
+                      account exists. */}
+                  {TRIAGE_ACTIONS.filter(s => s !== row.status && s !== 'invited').map(status => (
                     <button
                       key={status}
                       type="button"
@@ -210,6 +276,22 @@ export default function DDPAccessRequests() {
                       {ACCESS_REQUEST_STATUS_LABELS[status]}
                     </button>
                   ))}
+
+                  {row.status !== 'invited' && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={busyId === row.id}
+                      // NOT the `void` idiom used above, deliberately. provision()
+                      // handles every failure internally and cannot reject, so an
+                      // explicit no-op catch says that plainly and keeps the
+                      // promise handled — without adding a THIRD void finding to
+                      // the two the owner has already reviewed and accepted here.
+                      onClick={() => { provision(row).catch(() => undefined) }}
+                    >
+                      {busyId === row.id ? 'Creating account…' : 'Invite & create account'}
+                    </button>
+                  )}
                 </div>
 
                 {/* Stated in the UI, not just in the migration, so the absence of a
