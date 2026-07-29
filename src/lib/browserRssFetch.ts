@@ -21,6 +21,15 @@ import type { RssFetchImpl, RssFetchResponse } from './complianceRssConnector'
 // are handled as an ordinary error state. Swapping this adapter for a
 // server-side proxy is a later phase and requires no change to the connector
 // or the orchestration.
+//
+// Since the deployed CSP (vercel.json) restricts `connect-src` to 'self' and
+// Supabase, these requests are now refused by the policy BEFORE the CORS check
+// rather than after it. Both surface identically as `fetch_failed`. That was a
+// deliberate decision, taken after measuring the registered feeds — both of the
+// seeded RSS sources already fail CORS today, so nothing working was given up.
+// See docs/CSP_FEED_RETRIEVAL_DECISION.md. Making this path actually work needs
+// the server-side proxy noted above, not a wider CSP: administrators register
+// feed URLs at runtime, and a static header cannot enumerate them.
 
 export function createBrowserRssFetch(): RssFetchImpl {
   return async (url, init) => {

@@ -29,6 +29,9 @@ export function createLocalStorageBuyerPackSnapshotRepository(): BuyerPackSnapsh
   // Promise-returning repository contract. The append-only guard, version
   // lookups, and latest-selection logic are identical to Phase A.
   return {
+    // Unconditionally browser-local, and honestly so: in demo mode this IS the
+    // intended store, not a degradation.
+    durability: () => 'local',
     async save(snapshot: BuyerPackSnapshot): Promise<void> {
       const all = readAll()
       const existing = all[snapshot.manifest.packId] ?? []

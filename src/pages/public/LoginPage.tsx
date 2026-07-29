@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { signIn } from '../../services/auth'
 import { T } from '../../translations'
 import type { Lang } from '../../types'
@@ -6,14 +6,25 @@ import type { Lang } from '../../types'
 interface Props {
   lang?: Lang
   onSuccess: () => void
+  onSupplierSignup: () => void
 }
 
-export default function LoginPage({ lang = 'en', onSuccess }: Props) {
+export default function LoginPage({ lang = 'en', onSuccess, onSupplierSignup }: Props) {
   const t = T[lang]
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // A failed sign-in must be announced, not just painted. Focus stays on the
+  // submit button after the request settles, so without this a screen-reader
+  // user hears nothing and is left believing the form is still working. Moving
+  // focus to the alert (which also carries role="alert") reads the failure out
+  // the moment it appears.
+  const errorRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (error) errorRef.current?.focus()
+  }, [error])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -39,7 +50,16 @@ export default function LoginPage({ lang = 'en', onSuccess }: Props) {
         </div>
 
         {error && (
-          <div className="alert alert-danger" style={{ marginTop: 0, marginBottom: 16 }}>
+          // role="alert" announces the failure to assistive technology, and
+          // tabIndex={-1} lets the effect above move focus here programmatically
+          // without adding the alert to the tab order.
+          <div
+            ref={errorRef}
+            role="alert"
+            tabIndex={-1}
+            className="alert alert-danger"
+            style={{ marginTop: 0, marginBottom: 16 }}
+          >
             {error}
           </div>
         )}
@@ -72,6 +92,14 @@ export default function LoginPage({ lang = 'en', onSuccess }: Props) {
             disabled={loading}
           >
             {loading ? t.loginLoading : t.loginBtn}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-lg"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={onSupplierSignup}
+          >
+            {lang === 'th' ? 'สมัครเป็นผู้จัดหาสินค้า' : 'Supplier signup'}
           </button>
         </form>
       </div>
