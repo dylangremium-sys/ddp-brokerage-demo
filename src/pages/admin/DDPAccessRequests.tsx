@@ -167,16 +167,24 @@ export default function DDPAccessRequests() {
   }
 
   return (
-    <div className="page">
-      <header style={{ marginBottom: 20 }}>
-        <h1>Supplier enquiries</h1>
-        <p className="muted">
+    // `page-wrap ddp-wrap`, matching every sibling admin page. This page was the
+    // only one using `className="page"` — a class that is not defined anywhere in
+    // App.css — so it never picked up the light admin panel's typography and
+    // inherited the dark-theme text colour (rgb(237,241,245)) instead. On the
+    // cream panel that renders as near-invisible text: the heading, the counts,
+    // the checkbox label, the empty state and every success/error notice were all
+    // unreadable in production.
+    <div className="page-wrap ddp-wrap">
+      <div className="page-header ddp-header">
+        <div className="page-eyebrow ddp-eyebrow">DDP OPERATIONS — SUPPLIER ENQUIRIES</div>
+        <h1 className="page-title">Supplier enquiries</h1>
+        <p className="page-desc">
           Access requests submitted through the public supplier form. An enquiry is not an
           account. “Invite &amp; create account” provisions one and emails the supplier an
           invitation; they choose their own password. Marking an enquiry Invited is not a
           separate step — it records that an account now exists.
         </p>
-      </header>
+      </div>
 
       {loadState === 'loading' && <p className="muted">Loading enquiries…</p>}
 
