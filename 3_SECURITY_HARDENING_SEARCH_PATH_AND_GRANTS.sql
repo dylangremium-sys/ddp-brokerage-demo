@@ -31,6 +31,35 @@ BEGIN;
 --   PUBLIC is unnecessary and widens attack surface for privilege escalation
 --   via crafted EXECUTE calls.
 -- ============================================================================
+
+-- REPLAY DOWNGRADE GUARD (DDP audit A2). This file predates migration 21, which
+-- changed handle_new_user() to mint the NON-OPERATIONAL 'pending' role so an
+-- anonymous signup can no longer self-provision a working 'farmer' account.
+-- Re-running this file AFTER migration 21 would CREATE OR REPLACE that hardened
+-- definition back to the 'farmer' default and SILENTLY re-open that exposure —
+-- the ordering rests only on filename numbering, with nothing recording applied
+-- state. Fresh installs are unaffected (the hardened version is not yet present);
+-- only an out-of-order replay is refused, and it is refused BEFORE anything is
+-- changed.
+DO $handle_new_user_downgrade_guard$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'handle_new_user'
+      AND p.prosrc LIKE '%''pending''%'
+  ) THEN
+    RAISE EXCEPTION
+      'refused: the hardened handle_new_user() from migration 21 (mints ''pending'') is '
+      'installed. Re-running this file would revert it to the ''farmer'' default and re-open '
+      'anonymous self-provisioning. Roll back migration 21 deliberately first if that is '
+      'genuinely intended.';
+  END IF;
+END
+$handle_new_user_downgrade_guard$;
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql

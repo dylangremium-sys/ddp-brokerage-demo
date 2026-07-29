@@ -966,6 +966,92 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
   border-color: var(--text-muted);
 }
 
+/* ── Public auth shell (sign-in, supplier access request) ───────────────────
+   The landing page is warm cream/green/gold; the internal app is institutional
+   navy. Sign-in and the supplier access request sit BETWEEN the two: they are
+   public, pre-authentication pages, and they were falling through to the navy
+   app theme. A visitor coming off the branded landing page hit an abrupt dark
+   screen that read as a different product.
+
+   Rather than restyle every control, this remaps the core tokens the shared
+   components already consume (.card, .field, .btn, .alert), so the existing
+   markup renders correctly on the public palette with no component changes.
+   The internal app is untouched — this is scoped to .public-auth-shell. */
+/* Paint the document for public auth pages. .public-auth-shell covers <main>
+   only, so without this the navy body shows through during route transitions
+   and on overscroll/rubber-band. */
+body.public-auth-page {
+  background: #F7F3EA;
+  color: #1E2A24;
+}
+
+.public-auth-shell {
+  --bg:          #F7F3EA;   /* landing cream */
+  --bg-card:     #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-deep:     #EFE9DA;
+  --accent:        #C6A24C; /* landing gold */
+  --accent-strong: #B18F3C;
+  --text:        #1E2A24;   /* landing ink */
+  --text-muted:  #46524B;
+  --border:      #E7E0CF;
+
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* .page-header/.farmer-header paint a hardcoded navy GRADIENT (literal hex, so
+   the token remap above cannot reach it). On the public pages that left a dark
+   block with unreadable dark-on-dark text above the form. Neutralised the same
+   way .eo-farmer already does for the editorial shell. */
+.public-auth-shell .page-header,
+.public-auth-shell .farmer-header {
+  background: transparent;
+  background-image: none;
+  border: none;
+  color: var(--text);
+  padding-left: 0;
+  padding-right: 0;
+}
+.public-auth-shell .page-title,
+.public-auth-shell .page-desc,
+.public-auth-shell .page-eyebrow {
+  color: var(--text);
+}
+.public-auth-shell .page-eyebrow { color: var(--accent-strong); }
+.public-auth-shell .page-desc { color: var(--text-muted); }
+
+/* The shared .btn-primary hardcodes navy text for contrast on a slate accent.
+   On gold, ink reads correctly and navy does not. */
+.public-auth-shell .btn-primary {
+  background: var(--accent);
+  color: #1E2A24;
+}
+.public-auth-shell .btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
+
+/* Ghost/secondary buttons need a visible edge on cream. */
+.public-auth-shell .btn-ghost,
+.public-auth-shell .btn-review {
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* Inputs sit on white cards, not on a dark field. */
+.public-auth-shell input,
+.public-auth-shell select,
+.public-auth-shell textarea {
+  background: #FFFFFF;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.public-auth-shell input::placeholder { color: #8C9790; }
+
+/* The card shadow is tuned for a dark backdrop; soften it on cream. */
+.public-auth-shell .card {
+  box-shadow: 0 1px 3px rgba(30, 42, 36, 0.08);
+}
+
 /* ── Homepage (approved LandPage.png redesign) ──────────────────────────────
    Scoped under .landing-shell so the page keeps its warm green/gold/cream
    theme while the rest of the app stays on the institutional navy palette. */
@@ -2517,6 +2603,13 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   border-bottom: 1px solid var(--error);
 }
 .db-error-banner strong { color: var(--text); }
+/* Correlation id. Quietly styled — it is a support handle, not the message. */
+.db-error-ref { opacity: 0.75; font-size: 12px; }
+.db-error-ref code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+}
 .db-error-dismiss {
   margin-left: auto;
   background: none;
