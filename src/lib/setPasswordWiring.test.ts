@@ -32,11 +32,12 @@ const AUTH_SERVICE = source(import.meta.glob('../services/auth.ts', { query: '?r
 const LOGIN_PAGE = source(import.meta.glob('../pages/public/LoginPage.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
 const SET_PASSWORD_PAGE = source(import.meta.glob('../pages/public/SetPasswordPage.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
 const FORGOT_PAGE = source(import.meta.glob('../pages/public/ForgotPasswordPage.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+const PROVISION_ENDPOINT = source(import.meta.glob('../../api/admin/provision-farmer.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
 
 it('reads every source file it asserts on', () => {
   // If a path drifts, every assertion below would pass vacuously against ''.
   for (const [name, text] of Object.entries({
-    APP, SUPABASE, AUTH_SERVICE, LOGIN_PAGE, SET_PASSWORD_PAGE, FORGOT_PAGE,
+    APP, SUPABASE, AUTH_SERVICE, LOGIN_PAGE, SET_PASSWORD_PAGE, FORGOT_PAGE, PROVISION_ENDPOINT,
   })) {
     expect(text.length, `${name} source is empty — the glob path has drifted`).toBeGreaterThan(200)
   }
@@ -107,6 +108,31 @@ describe('the invited user can reach the screen', () => {
     expect(PUBLIC_PAGES).toContain('forgot-password')
     expect(PUBLIC_AUTH_PAGES).toContain('set-password')
     expect(PUBLIC_AUTH_PAGES).toContain('forgot-password')
+  })
+})
+
+describe('the invitation email points at this app, not at a dashboard setting', () => {
+  // Without this the invite link goes wherever the Supabase project's Site URL
+  // points — invisible from this repo, unversioned, shared by every auth email.
+  // If it is not the app that renders SetPasswordPage, the supplier gets a
+  // session on a page that cannot set a password and the account dies with it.
+  it('the endpoint resolves a redirect and passes it to inviteUserByEmail', () => {
+    expect(PROVISION_ENDPOINT).toMatch(/import \{ resolveInviteRedirectUrl \} from/)
+    expect(PROVISION_ENDPOINT).toMatch(/const redirectTo = resolveInviteRedirectUrl\(process\.env\)/)
+    // The spread must sit INSIDE the inviteUserByEmail options object — a
+    // resolved value assigned and then never passed is the defect this guards.
+    const call = PROVISION_ENDPOINT.slice(
+      PROVISION_ENDPOINT.indexOf('inviteUserByEmail('),
+      PROVISION_ENDPOINT.indexOf('if (error)'),
+    )
+    expect(call).toMatch(/\.\.\.\(redirectTo \? \{ redirectTo \} : \{\}\)/)
+  })
+
+  it('resolves the redirect before the call that uses it', () => {
+    const resolved = PROVISION_ENDPOINT.indexOf('const redirectTo =')
+    const used = PROVISION_ENDPOINT.indexOf('inviteUserByEmail(')
+    expect(resolved).toBeGreaterThan(-1)
+    expect(resolved).toBeLessThan(used)
   })
 })
 
