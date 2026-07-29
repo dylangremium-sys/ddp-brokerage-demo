@@ -568,6 +568,14 @@ export const T = {
     loginSwitchPrompt: 'New farmer?',
     loginSwitchLink: 'Create a farmer account',
     loginAdminNote: 'DDP Admin accounts are created by the DDP team — see README for setup instructions.',
+    // Farmer scope loading. A farmer's records are fetched asynchronously; until
+    // the scope resolves the arrays are empty, and an empty-state message would
+    // read as "you have nothing" to a farmer who does. Same standard the
+    // Operations Desk applies on the admin side.
+    scopeLoadingStock: 'Loading your stock…',
+    scopeLoadingRequests: 'Loading your requests…',
+    scopeLoadingDashboard: 'Loading your farm…',
+    scopeLoadingSubmissions: 'Loading your submissions…',
   },
   th: {
     // Nav
@@ -1112,6 +1120,10 @@ export const T = {
     loginSwitchPrompt: 'เกษตรกรรายใหม่?',
     loginSwitchLink: 'สร้างบัญชีเกษตรกร',
     loginAdminNote: 'บัญชี DDP Admin สร้างโดยทีม DDP — ดูรายละเอียดในเอกสาร README',
+    scopeLoadingStock: 'กำลังโหลดสต็อกของคุณ…',
+    scopeLoadingRequests: 'กำลังโหลดคำขอของคุณ…',
+    scopeLoadingDashboard: 'กำลังโหลดข้อมูลฟาร์มของคุณ…',
+    scopeLoadingSubmissions: 'กำลังโหลดรายการของคุณ…',
   },
 }
 

@@ -77,6 +77,8 @@ interface DecisionClientLike {
       eq(col: string, val: string): {
         maybeSingle(): Promise<{ data: unknown; error: { code?: string; message?: string } | null }>
       }
+      /** Batch read. One round trip for N batches — see resolveDecisions. */
+      in(col: string, vals: string[]): Promise<{ data: unknown; error: { code?: string; message?: string } | null }>
     }
     insert(row: Record<string, unknown>): Promise<{ error: { code?: string; message?: string } | null }>
   }
@@ -242,6 +244,115 @@ export async function resolveDecision(
     decidedBy: null, // pre-migration decisions have no recorded actor — that was the defect
     source: 'local-cache',
   }
+}
+
+/**
+ * The outcome of resolving MANY batches at once.
+ *
+ * `unavailable` is a property of the whole read, not of an individual batch: one
+ * query answered for all of them, so if it failed the authoritative state of
+ * every requested batch is unknown. The caller must fail closed across the whole
+ * set and say the source is unavailable — never render it as "none approved",
+ * which is a positive claim the failed read does not support.
+ */
+export interface BatchDecisionResolution {
+  /** One entry per requested batch id, always. */
+  decisions: Map<string, ResolvedDecision>
+  /** True ⇒ the authoritative read failed; nothing in the set may count as approved. */
+  unavailable: boolean
+  error?: string
+}
+
+/**
+ * Resolves the authoritative decision for MANY batches in ONE round trip.
+ *
+ * Exists because the Qualified Buyer Preview list (DDPBuyerPreview.tsx) marks
+ * every listed batch "Human-Approved", and was reading raw localStorage to do
+ * it — so admin A's list still showed batch X as approved after admin B recorded
+ * a hold. It must clear the same bar as the single-batch pack, without an N+1 of
+ * individual resolveDecision() calls.
+ *
+ * Same contract as resolveDecision(), applied set-wide:
+ *   • SERVER WINS for every batch that has a server row.
+ *   • The localStorage cache is consulted ONLY for batches the server has no row
+ *     for, and only when the read itself succeeded — the pre-migration-17
+ *     backward-compatibility case.
+ *   • A failed authoritative read yields unavailable: true and a 'unavailable'
+ *     source on every batch. The cache is NOT substituted.
+ *   • Table genuinely not deployed (42P01/PGRST205), or demo mode (no client),
+ *     degrades to the cache exactly as the single-batch path does.
+ */
+export async function resolveDecisions(
+  batchIds: string[],
+  client: DecisionClientLike | null = defaultClient as DecisionClientLike | null,
+): Promise<BatchDecisionResolution> {
+  const ids = Array.from(new Set(batchIds))
+  const decisions = new Map<string, ResolvedDecision>()
+  if (ids.length === 0) return { decisions, unavailable: false }
+
+  const local = loadProcurementDecisions()
+  const fromCache = (batchId: string): ResolvedDecision => {
+    const entry = local[batchId]
+    if (!entry || !isProcurementDecision(entry.decision)) {
+      return { decision: null, reason: null, decidedAt: null, decidedBy: null, source: 'none' }
+    }
+    return {
+      decision: entry.decision,
+      reason: asString(entry.notes),
+      decidedAt: asString(entry.decidedAt),
+      decidedBy: null, // pre-migration decisions have no recorded actor — that was the defect
+      source: 'local-cache',
+    }
+  }
+
+  // DEMO MODE (no Supabase): the cache IS the store, exactly as elsewhere.
+  if (!client) {
+    for (const id of ids) decisions.set(id, fromCache(id))
+    return { decisions, unavailable: false }
+  }
+
+  const { data, error } = await client.from(CURRENT_VIEW)
+    .select('batch_id, decision, reason, decided_at, decided_by')
+    .in('batch_id', ids)
+
+  if (error && !isTableMissing(error)) {
+    // AUTHORITATIVE READ FAILURE. Permission, RLS, auth, schema drift, transient.
+    // Every batch is unknown; the cache must not stand in for any of them.
+    const message = error.message
+      ?? `The authoritative procurement decisions could not be read (${error.code ?? 'unknown error'}).`
+    for (const id of ids) {
+      decisions.set(id, { decision: null, reason: null, decidedAt: null, decidedBy: null, source: 'unavailable', error: message })
+    }
+    return { decisions, unavailable: true, error: message }
+  }
+
+  // error && isTableMissing ⇒ migration 17 absent: no server rows exist at all,
+  // so every batch falls through to the cache, as the single-batch path does.
+  const rows: ServerDecisionRow[] = !error && Array.isArray(data) ? (data as ServerDecisionRow[]) : []
+  const byBatch = new Map<string, ServerDecisionRow>()
+  for (const row of rows) {
+    const batchId = asString((row as { batch_id?: unknown }).batch_id)
+    // The view is DISTINCT ON (batch_id), so at most one row per batch already;
+    // first-wins keeps this total even if that ever changes.
+    if (batchId && !byBatch.has(batchId)) byBatch.set(batchId, row)
+  }
+
+  for (const id of ids) {
+    const row = byBatch.get(id)
+    if (row && isProcurementDecision(row.decision)) {
+      decisions.set(id, {
+        decision: row.decision,
+        reason: asString(row.reason),
+        decidedAt: asString(row.decided_at),
+        decidedBy: asString(row.decided_by),
+        source: 'server',
+      })
+      continue
+    }
+    decisions.set(id, fromCache(id))
+  }
+
+  return { decisions, unavailable: false }
 }
 
 /**
