@@ -48,10 +48,11 @@ export default function DDPAccessRequests() {
     let active = true
     // runGuardedLoad drops a superseded or hung load, so a slow first fetch
     // cannot land on top of a newer one after the operator hits Refresh.
-    // skipcq: JS-0295 — `void` marks a deliberately-unawaited promise. This is
-    // the repo-wide idiom for it (36 uses in DDPComplianceWatchtower.tsx alone,
-    // plus eight other files); dropping it here would leave an unmarked floating
-    // promise, and changing the convention belongs in its own PR.
+    // `void` marks a deliberately-unawaited promise. This is the repo-wide idiom
+    // for it (36 uses in DDPComplianceWatchtower.tsx alone, plus eight other
+    // files); dropping it here would leave an unmarked floating promise, and
+    // changing the convention belongs in its own PR.
+    // skipcq
     void runGuardedLoad(loadAccessRequests(), () => active, {
       onSuccess: loaded => {
         setRows(loaded)
@@ -202,7 +203,8 @@ export default function DDPAccessRequests() {
                       key={status}
                       type="button"
                       disabled={busyId === row.id}
-                      // skipcq: JS-0295 — deliberately-unawaited promise; repo-wide idiom, see above.
+                      // deliberately-unawaited promise; repo-wide idiom, see above.
+                      // skipcq
                       onClick={() => void disposition(row, status)}
                     >
                       {ACCESS_REQUEST_STATUS_LABELS[status]}

@@ -339,7 +339,9 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
     return { allowed: true }
   }
 
-  const PER_CLIENT_MAX = THROTTLE_RULES.find(rule => rule.scope === 'client')!.max
+  const perClientRule = THROTTLE_RULES.find(rule => rule.scope === 'client')
+  if (!perClientRule) throw new Error('THROTTLE_RULES must contain a per-client rule')
+  const PER_CLIENT_MAX = perClientRule.max
 
   it('DEMONSTRATES the defect: check-then-act admits a whole parallel burst', async () => {
     const { deps: burstDeps, rec } = sharedDeps(checkThenActReserve)
@@ -370,7 +372,8 @@ describe('concurrent bursts cannot exceed the ceiling', () => {
   })
 
   it('holds the GLOBAL ceiling when every caller is a different client', async () => {
-    const globalRule = THROTTLE_RULES.find(rule => rule.scope === 'global')!
+    const globalRule = THROTTLE_RULES.find(rule => rule.scope === 'global')
+    if (!globalRule) throw new Error('THROTTLE_RULES must contain a global rule')
     const rec: Recorder = { attempts: [], inserted: [] }
 
     // Each request carries its own client bucket, so no per-client rule can fire
