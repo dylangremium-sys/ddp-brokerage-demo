@@ -36,6 +36,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { isArchivalRef } from './lib/archival-refs.mjs';
 
 const STRICT = process.argv.includes('--strict');
 const MAIN_REF = 'origin/main';
@@ -67,7 +68,12 @@ function gitOrFail(args, describe) {
   }
 }
 
-/** Remote branches, excluding the `origin/HEAD -> origin/main` symbolic line. */
+/**
+ * Remote branches, excluding the `origin/HEAD -> origin/main` symbolic line and
+ * archival snapshots (see lib/archival-refs.mjs — a preserved pre-rebase branch
+ * is never merged, so it cannot create the ambiguity this check defends
+ * against, but it WAS enough to turn the gate red for the whole repository).
+ */
 function getRemoteBranches() {
   // for-each-ref emits exact refnames and never the `->` alias line that
   // `git branch -r` produces.
@@ -86,6 +92,7 @@ function getRemoteBranches() {
     .map((line) => line.trim())
     .filter(Boolean)
     .filter((ref) => ref !== 'refs/remotes/origin/HEAD')
+    .filter((ref) => !isArchivalRef(ref))
     .map((ref) => ref.replace(/^refs\/remotes\//, ''));
 
   if (branches.length === 0) {
