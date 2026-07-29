@@ -95,7 +95,6 @@ export default function ForgotPasswordPage({ lang = 'en', onBackToLogin }: Props
                 required
                 autoComplete="email"
                 placeholder="you@example.com"
-                autoFocus
               />
             </label>
             <button

@@ -172,7 +172,6 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
                   onChange={e => setPasswordValue(e.target.value)}
                   required
                   autoComplete="new-password"
-                  autoFocus
                 />
               </label>
               <div className="field-hint">{t.setPwHint}</div>

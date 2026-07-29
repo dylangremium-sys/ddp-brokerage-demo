@@ -177,8 +177,3 @@ export function clearAuthRedirect(): void {
     window.history.replaceState(window.history.state, '', cleaned)
   }
 }
-
-/** Test seam: restores the captured value. Not used by application code. */
-export function __setCapturedAuthRedirectForTest(value: AuthRedirect | null): void {
-  captured = value
-}
