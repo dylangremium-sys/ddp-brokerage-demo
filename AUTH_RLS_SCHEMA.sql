@@ -48,6 +48,31 @@ ALTER TABLE inventory_batches ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENC
 
 -- Auto-create a profiles row whenever a new auth user is inserted.
 -- Reads display_name from the raw_user_meta_data set at signUp time.
+-- REPLAY DOWNGRADE GUARD (DDP audit A2). This baseline predates migration 21,
+-- which changed handle_new_user() to mint the NON-OPERATIONAL 'pending' role so an
+-- anonymous signup can no longer self-provision a working 'farmer' account.
+-- Re-running this baseline AFTER migration 21 would CREATE OR REPLACE that
+-- hardened definition back to the 'farmer' default and SILENTLY re-open that
+-- exposure. Fresh installs are unaffected; only an out-of-order replay is refused.
+DO $handle_new_user_downgrade_guard$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'handle_new_user'
+      AND p.prosrc LIKE '%''pending''%'
+  ) THEN
+    RAISE EXCEPTION
+      'refused: the hardened handle_new_user() from migration 21 (mints ''pending'') is '
+      'installed. Re-running this baseline would revert it to the ''farmer'' default and '
+      're-open anonymous self-provisioning. Roll back migration 21 deliberately first if '
+      'that is genuinely intended.';
+  END IF;
+END
+$handle_new_user_downgrade_guard$;
+
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -78,6 +103,12 @@ RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
+-- Pinned search_path: a SECURITY DEFINER function with a mutable search_path is a
+-- privilege-escalation vector (a caller can shadow an unqualified name and have it
+-- run as the function owner). Matches the hardened definition in
+-- 3_SECURITY_HARDENING_SEARCH_PATH_AND_GRANTS.sql so replaying this baseline can
+-- never downgrade the live function.
+SET search_path = public, auth, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.profiles
@@ -91,6 +122,9 @@ RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
+-- Pinned search_path — see the note on is_ddp_admin() above. Matches
+-- 3_SECURITY_HARDENING_SEARCH_PATH_AND_GRANTS.sql.
+SET search_path = public, auth, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.farm_memberships

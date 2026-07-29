@@ -44,6 +44,11 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
+-- Pinned search_path: a SECURITY DEFINER function with a mutable search_path is a
+-- privilege-escalation vector. Matches the hardened definition in
+-- 3_SECURITY_HARDENING_SEARCH_PATH_AND_GRANTS.sql so replaying this baseline can
+-- never downgrade the live function.
+SET search_path = public, auth, pg_temp
 AS $$
 BEGIN
   -- DDP admins may set owner_notes to any value.
@@ -90,6 +95,9 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
+-- Pinned search_path — see the note on fn_protect_owner_notes() above. Matches
+-- 3_SECURITY_HARDENING_SEARCH_PATH_AND_GRANTS.sql.
+SET search_path = public, auth, pg_temp
 AS $$
 BEGIN
   -- DDP admins may modify any field (e.g. to correct a typo in the message).
