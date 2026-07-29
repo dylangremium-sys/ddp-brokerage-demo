@@ -18,7 +18,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
  * The Supabase client is mocked so the exact insert payload is observable.
  */
 
-const h = vi.hoisted(() => ({
+const supabaseStub = vi.hoisted(() => ({
   table: null as string | null,
   inserted: [] as Record<string, unknown>[],
   result: { error: null as { code?: string; message?: string } | null },
@@ -26,16 +26,16 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('./supabase', () => ({
-  get isSupabaseConfigured() { return h.configured },
+  get isSupabaseConfigured() { return supabaseStub.configured },
   get supabase() {
-    return h.configured
+    return supabaseStub.configured
       ? {
           from: (t: string) => {
-            h.table = t
+            supabaseStub.table = t
             return {
               insert: (row: Record<string, unknown>) => {
-                h.inserted.push(row)
-                return Promise.resolve(h.result)
+                supabaseStub.inserted.push(row)
+                return Promise.resolve(supabaseStub.result)
               },
             }
           },
@@ -57,10 +57,10 @@ const VALID = {
 }
 
 beforeEach(() => {
-  h.table = null
-  h.inserted = []
-  h.result = { error: null }
-  h.configured = true
+  supabaseStub.table = null
+  supabaseStub.inserted = []
+  supabaseStub.result = { error: null }
+  supabaseStub.configured = true
   vi.restoreAllMocks()
 })
 
@@ -73,15 +73,15 @@ describe('submitAccessRequest — temporary direct-insert path (incident revert)
 
     await expect(submitAccessRequest(VALID)).resolves.toBeUndefined()
 
-    expect(h.table).toBe('farmer_access_requests')
-    expect(h.inserted).toHaveLength(1)
+    expect(supabaseStub.table).toBe('farmer_access_requests')
+    expect(supabaseStub.inserted).toHaveLength(1)
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('trims the payload and pins status to new with no reviewer', async () => {
     await submitAccessRequest(VALID)
 
-    expect(h.inserted[0]).toEqual({
+    expect(supabaseStub.inserted[0]).toEqual({
       full_name: 'Somchai Prasert',
       email: 'somchai@example.com',
       phone: '0812345678',
@@ -92,25 +92,25 @@ describe('submitAccessRequest — temporary direct-insert path (incident revert)
       status: 'new',
     })
     // A reviewer must never be settable by the submitter.
-    expect(h.inserted[0]).not.toHaveProperty('reviewed_by')
-    expect(h.inserted[0]).not.toHaveProperty('reviewed_at')
+    expect(supabaseStub.inserted[0]).not.toHaveProperty('reviewed_by')
+    expect(supabaseStub.inserted[0]).not.toHaveProperty('reviewed_at')
   })
 
   it('reports an unconfigured backend without attempting a write', async () => {
-    h.configured = false
+    supabaseStub.configured = false
 
     await expect(submitAccessRequest(VALID)).rejects.toMatchObject({ code: 'not_configured' })
-    expect(h.inserted).toHaveLength(0)
+    expect(supabaseStub.inserted).toHaveLength(0)
   })
 
   it('rejects invalid input before any write', async () => {
     await expect(submitAccessRequest({ ...VALID, email: 'not-an-email' }))
       .rejects.toMatchObject({ code: 'invalid_input' })
-    expect(h.inserted).toHaveLength(0)
+    expect(supabaseStub.inserted).toHaveLength(0)
   })
 
   it('maps PGRST205 (migration 34 absent) to backend_unavailable', async () => {
-    h.result = { error: { code: 'PGRST205', message: 'table not in schema cache' } }
+    supabaseStub.result = { error: { code: 'PGRST205', message: 'table not in schema cache' } }
 
     await expect(submitAccessRequest(VALID)).rejects.toMatchObject({ code: 'backend_unavailable' })
   })
@@ -119,13 +119,13 @@ describe('submitAccessRequest — temporary direct-insert path (incident revert)
     // Applying migration 36 while this revert is live is the foreseeable next
     // failure. It must degrade to "contact us directly", not to a "try again"
     // the visitor can never satisfy.
-    h.result = { error: { code: '42501', message: 'permission denied for table farmer_access_requests' } }
+    supabaseStub.result = { error: { code: '42501', message: 'permission denied for table farmer_access_requests' } }
 
     await expect(submitAccessRequest(VALID)).rejects.toMatchObject({ code: 'backend_unavailable' })
   })
 
   it('never leaks the driver message to the UI', async () => {
-    h.result = { error: { code: '23514', message: 'violates check constraint "farmer_access_requests_phone_check"' } }
+    supabaseStub.result = { error: { code: '23514', message: 'violates check constraint "farmer_access_requests_phone_check"' } }
 
     const err = await submitAccessRequest(VALID).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(AccessRequestError)

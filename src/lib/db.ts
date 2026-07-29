@@ -6,7 +6,6 @@ import {
   loadFarms as lsLoadFarms,
   saveFarms as lsSaveFarms,
   resetDemo as lsResetDemo,
-  SEED_BENCHMARKS,
 } from '../data'
 import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus } from '../types'
 
@@ -711,12 +710,18 @@ export async function loadMarketBenchmarksFromDB(): Promise<MarketBenchmark[]> {
     .eq('visible_to_farmers', true)
     .order('product_type')
 
+  // NEVER substitute the demo seed here. This runs only when Supabase IS
+  // configured — i.e. in production, for a signed-in farmer — so returning
+  // SEED_BENCHMARKS presented fictional prices as real market guidance, with no
+  // badge and no warning, on nothing more than a transient query error or an
+  // empty table. Empty is the honest answer; App.tsx already declines to
+  // overwrite state with an empty result.
   if (error) {
     console.warn('loadMarketBenchmarksFromDB:', error.message)
-    return SEED_BENCHMARKS
+    return []
   }
 
-  if (!data || data.length === 0) return SEED_BENCHMARKS
+  if (!data || data.length === 0) return []
 
   return data.map(row => ({
     id: row.id as string,
