@@ -41,7 +41,7 @@ function pgAvailable() {
   }
 }
 const REQUIRE_PG = process.env.HARNESS_REQUIRE_PG === '1';
-const PG_ENABLED = !!(process.env.PG_BIN && process.env.PG_BIN.trim()) || REQUIRE_PG;
+const PG_ENABLED = Boolean(process.env.PG_BIN?.trim()) || REQUIRE_PG;
 const HAS_PG = PG_ENABLED && pgAvailable();
 
 describe('migration 35 precondition block (static)', () => {
