@@ -14,6 +14,8 @@ interface Props {
   setLang: (l: Lang) => void
   /** Wired to the existing auth flow — goTo('login') in App.tsx. */
   onSecureLogin: () => void
+  /** Routes to the supplier/farmer registration flow. */
+  onSupplierSignup: () => void
 }
 
 function scrollToId(id: string) {
@@ -168,7 +170,7 @@ function PinGlyph() {
   )
 }
 
-export default function LandingPage({ lang, setLang, onSecureLogin }: Props) {
+export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSignup }: Props) {
   const t = T[lang]
 
   const navItems: Array<{ key: string; label: string; target?: string; caret?: boolean }> = [
@@ -272,6 +274,10 @@ export default function LandingPage({ lang, setLang, onSecureLogin }: Props) {
             <button type="button" className="ln-secure-login" onClick={onSecureLogin}>
               <LockIcon size={14} />
               {t.navSecureLogin}
+            </button>
+            <button type="button" className="ln-secure-login" onClick={onSupplierSignup}>
+              <UserGlyph />
+              {lang === 'th' ? 'สมัครเป็นผู้จัดหาสินค้า' : 'Supplier signup'}
             </button>
           </div>
         </div>
