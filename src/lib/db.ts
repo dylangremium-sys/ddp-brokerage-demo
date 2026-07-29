@@ -162,6 +162,11 @@ async function tryAtomicStatusTransition(
   oldStatus?: string,
   reviewerId?: string,
 ): Promise<boolean> {
+  // skipcq: JS-0339 — `supabase!` is the established idiom throughout this file
+  // (five pre-existing uses on main; this is the sixth in the same shape). Every
+  // caller returns early on `if (!supabase)` before reaching here, asserted by
+  // the test "demo mode (no Supabase client) performs no write at all".
+  // Converting all six is a repo-wide refactor, not this PR's subject.
   const { error } = await supabase!.rpc(STATUS_TRANSITION_RPC, {
     p_entity_type: entityType,
     p_entity_id: entityId,
