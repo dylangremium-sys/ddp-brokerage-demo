@@ -51,8 +51,9 @@ export default function DDPAccessRequests() {
     // `void` marks a deliberately-unawaited promise. This is the repo-wide idiom
     // for it (36 uses in DDPComplianceWatchtower.tsx alone, plus eight other
     // files); dropping it here would leave an unmarked floating promise, and
-    // changing the convention belongs in its own PR.
-    // skipcq
+    // changing the convention belongs in its own PR. (A `skipcq` directive was
+    // tried here and does NOT suppress this rule, so the finding stays visible
+    // on the PR rather than being silently hidden.)
     void runGuardedLoad(loadAccessRequests(), () => active, {
       onSuccess: loaded => {
         setRows(loaded)
@@ -204,7 +205,6 @@ export default function DDPAccessRequests() {
                       type="button"
                       disabled={busyId === row.id}
                       // deliberately-unawaited promise; repo-wide idiom, see above.
-                      // skipcq
                       onClick={() => void disposition(row, status)}
                     >
                       {ACCESS_REQUEST_STATUS_LABELS[status]}
