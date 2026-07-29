@@ -1,55 +1,68 @@
-# Migration Runtime Status — by Environment
+# Migration Runtime Status — Authoritative Register
 
-**Last verified: 2026-07-14.** This file records where each migration actually is,
-per environment. A migration is never described as "applied" without naming the
-environment it was applied to.
+Last updated: 2026-07-25
 
-Contains no credentials, project URLs, or connection strings.
+This register is environment-specific. No migration is described as applied
+without naming the environment and evidence source.
 
-## Status table
+## Evidence policy
 
-| | Migration 10 — Buyer Pack snapshots | Migration 17 — Procurement decisions |
-|---|---|---|
-| **Repository** | Committed on `main`. Executable SQL unchanged since it was applied to staging. | Committed on `main`. Executable SQL unchanged since it was applied to staging. |
-| **Staging** | **APPLIED + VERIFIED** (2026-07-14) | **APPLIED + VERIFIED** (2026-07-14) |
-| **Production** | **NOT applied.** Not run, not deployed. | **NOT applied.** Not run, not deployed. |
-| **Runtime verification — staging** | V1–V6 executed and matched expectations. Behavioural checks run inside a **rolled-back** transaction. | `17_..._VERIFY.sql` returned `ok` for all 8 checks. Behavioural checks run inside a **rolled-back** transaction. |
-| **Runtime verification — production** | **None. Never executed.** | **None. Never executed.** |
-| **VERIFY script** | `10_..._VERIFY.sql` — V1–V6 are **active, read-only, and directly runnable**. V7 writes and is commented out, outside the default path. | `17_..._VERIFY.sql` — read-only, directly runnable, safe against any environment. |
-| **Rollback** | `10_..._ROLLBACK.sql` present. | `17_..._ROLLBACK.sql` present — **destructive**: dropping the table destroys the decision audit trail. Export first; prefer rolling back the app deploy. |
-| **Remaining blockers (production)** | Backup + explicit approval. Revisit the `ACL-TEST-EXEMPT` marker once these functions exist in production. | Depends on migration 10. No TRUNCATE guard of its own (covered in staging by migration 14's default privileges). |
+- Repository evidence is read from `origin/main` via git tree inspection.
+- Local branch evidence is read from the current working branch file set.
+- Runtime evidence (staging/production) is only accepted from direct database
+  queries or recorded execution logs.
+- Where access is missing, status is `UNKNOWN` and the missing evidence is
+  listed explicitly.
 
-## What is true right now
+## Current repository and branch context
 
-- **Staging has both migrations**, and staging verification **passed**.
-- **Production has neither migration.**
-- **Production therefore still uses the application's localStorage fallback.** The
-  server-side decision trail and server-side snapshot persistence exist in the
-  deployed code but are **not active in production**, because the schema is absent
-  and the app feature-detects that and degrades.
-- **No production SQL verification has occurred.** Not for migration 10, not for
-  migration 17, and not for `16_PRODUCTION_SAFETY_VERIFY.sql`.
+- `origin/main` SHA: `3c51627b58fc0b3890e06b33d74a43a86b3be091`
+- Current local branch during this update: `feature/admin-operations-desk-readonly`
 
-## Ordering — not optional
+## Migration register (10, 17, 19-27)
 
-**Migration 10 MUST be applied before migration 17.** Migration 17 holds a hard FK
-to `public.buyer_pack_snapshots(snapshot_id)`. Applying 17 first fails outright with
-`relation "public.buyer_pack_snapshots" does not exist`.
+Legend:
 
-The coupling between 17 and 10 remains an **open review item** for production
-planning. It is not settled by this document.
+- `PRESENT`: file exists in that code context.
+- `ABSENT`: file does not exist in that code context.
+- `APPLIED+VERIFIED`: direct runtime evidence exists.
+- `UNKNOWN`: no direct runtime evidence available.
 
-## Before any production cutover
+| Migration | `origin/main` files | Current local branch files | Staging runtime state | Production runtime state | Evidence source |
+|---|---|---|---|---|---|
+| 10 | PRESENT | PRESENT | APPLIED+VERIFIED (2026-07-14) | NOT APPLIED (at last verified checkpoint) | `docs/MIGRATION_RUNTIME_STATUS.md` historical entries |
+| 17 | PRESENT | PRESENT | APPLIED+VERIFIED (2026-07-14) | NOT APPLIED (at last verified checkpoint) | `docs/MIGRATION_RUNTIME_STATUS.md` historical entries |
+| 19 | PRESENT | PRESENT | UNKNOWN | UNKNOWN | No direct staging/production query evidence in this update |
+| 20 | PRESENT | PRESENT | UNKNOWN | UNKNOWN | No direct staging/production query evidence in this update |
+| 21 | PRESENT | ABSENT | UNKNOWN | UNKNOWN | Present on `origin/main` tree, absent on local branch file set |
+| 22 | PRESENT | ABSENT | UNKNOWN | UNKNOWN | Present on `origin/main` tree, absent on local branch file set |
+| 23 | PRESENT | PRESENT | UNKNOWN | UNKNOWN | No direct staging/production query evidence in this update |
+| 24 | PRESENT | ABSENT | UNKNOWN | UNKNOWN | Present on `origin/main` tree, absent on local branch file set |
+| 25 | PRESENT | ABSENT | UNKNOWN | UNKNOWN | `origin/main` uses Watchtower 25; no direct runtime query in this update |
+| 26 | PRESENT | ABSENT | UNKNOWN | UNKNOWN | `origin/main` uses Watchtower 26; no direct runtime query in this update |
+| 27 | ABSENT | ABSENT | UNKNOWN | UNKNOWN | No migration 27 file on `origin/main` or current local branch |
 
-1. Take a **pre-application backup** of production and confirm it restores.
-2. Obtain **explicit sign-off**. Application to staging does **not** imply production
-   readiness and must not be read as approval.
-3. Run **`16_PRODUCTION_SAFETY_VERIFY.sql`** (read-only) against production — it is
-   **still outstanding** and has never been executed.
-4. Apply **10 → 17**, in that order.
-5. Run **`10_..._VERIFY.sql`** and **`17_..._VERIFY.sql`** against production and
-   confirm every check. In particular, `17` V6 must report that `authenticated` holds
-   neither UPDATE nor DELETE.
-6. Do **not** run `10_..._VERIFY.sql` section **V7** as part of any pipeline. It
-   writes, and is safe only when run manually inside a transaction ending in
-   `rollback;`.
+## Verified technical constraints
+
+1. Migration ordering: 10 must be present before 17 due to the FK from 17 to
+   `buyer_pack_snapshots`.
+2. Migration numbering collision risk remains active for unmerged PRs that still
+   attempt to add a different migration using ordinal `25`.
+3. Current local branch does not contain all migration files present on
+   `origin/main` (notably 21, 22, 24, 25, 26).
+
+## What is missing before launch sign-off
+
+Direct runtime evidence is missing for staging and production on migrations 19,
+20, 21, 22, 23, 24, 25, 26, and candidate 27. This prevents a truthful
+environment parity claim.
+
+Required evidence must include, per environment:
+
+1. migration history rows,
+2. object presence checks (tables/functions/triggers/policies),
+3. verification script outcomes,
+4. timestamped execution logs.
+
+See `docs/PRODUCTION_READ_ONLY_VERIFICATION_BUNDLE.md` for the exact query set
+and execution protocol.
