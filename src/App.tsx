@@ -1075,7 +1075,7 @@ export default function App() {
         <main className="main-content public-auth-shell">
           <SetPasswordPage
             lang={lang}
-            redirect={authRedirect ?? { kind: 'error', code: null, description: null }}
+            redirect={authRedirect ?? { kind: 'error', code: null }}
             onDone={handleSetPasswordComplete}
             onRequestNewLink={goToForgotPassword}
           />

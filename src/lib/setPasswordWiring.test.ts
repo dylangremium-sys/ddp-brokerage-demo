@@ -111,6 +111,61 @@ describe('the invited user can reach the screen', () => {
   })
 })
 
+describe('the form is bound to the account the LINK names', () => {
+  // Raised in review of #91. "A session exists" is not "this is the session the
+  // link created". With an admin already signed in on the browser, a spent
+  // invite link (#type=invite, no usable token) satisfied a mere existence
+  // check — and submitting called updateUser against the ADMIN'S account,
+  // changing the wrong password while the invited account stayed unreachable.
+  it('compares the session user against the link subject, not just presence', () => {
+    expect(SET_PASSWORD_PAGE).toMatch(/getSessionUserId/)
+    expect(SET_PASSWORD_PAGE).toMatch(/userId === subject/)
+    // The old presence-only helper must be gone, not merely unused.
+    expect(SET_PASSWORD_PAGE).not.toMatch(/hasActiveSession/)
+    expect(AUTH_SERVICE).not.toMatch(/hasActiveSession/)
+  })
+
+  it('treats a link with no subject as dead rather than falling back to storage', () => {
+    // Resolved in the INITIAL state, not from inside the effect, so the form is
+    // never rendered for an instant and then withdrawn.
+    expect(SET_PASSWORD_PAGE).toMatch(
+      /useState<Phase>\(linkSubject \? 'checking' : 'unavailable'\)/,
+    )
+    expect(SET_PASSWORD_PAGE).toMatch(/if \(!linkSubject\) return/)
+  })
+
+  it('the auth service returns an identity, not a boolean', () => {
+    expect(AUTH_SERVICE).toMatch(/export async function getSessionUserId\(\): Promise<string \| null>/)
+  })
+})
+
+describe('nothing from the URL is rendered on the branded page', () => {
+  // Raised in review of #91. Echoing `error_description` let anyone put
+  // arbitrary phishing copy on DDP's own origin without holding a token.
+  it('the screen never renders a URL-supplied description', () => {
+    // Comments are stripped first: the block explaining WHY this is forbidden
+    // names `error_description`, and matching that would make the test pass or
+    // fail on prose rather than on code.
+    const code = SET_PASSWORD_PAGE
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    expect(code).not.toMatch(/redirect\.description/)
+    expect(code).not.toMatch(/error_description/)
+  })
+
+  it('the parser does not even carry the description', () => {
+    // Defence in depth: a value that is never parsed cannot later be rendered
+    // by someone adding a well-meaning "show the reason" line.
+    const AUTH_REDIRECT = source(import.meta.glob('./authRedirect.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+    expect(AUTH_REDIRECT).not.toMatch(/description:/)
+  })
+
+  it('the displayed reason comes from a trusted map keyed by error code', () => {
+    expect(SET_PASSWORD_PAGE).toMatch(/TRUSTED_REASON/)
+    expect(SET_PASSWORD_PAGE).toMatch(/otp_expired: t\.setPwReasonExpired/)
+  })
+})
+
 describe('the invitation email points at this app, not at a dashboard setting', () => {
   // Without this the invite link goes wherever the Supabase project's Site URL
   // points — invisible from this repo, unversioned, shared by every auth email.

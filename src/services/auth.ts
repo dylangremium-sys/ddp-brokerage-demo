@@ -95,17 +95,25 @@ export async function requestPasswordReset(email: string): Promise<void> {
 }
 
 /**
- * Whether a session exists right now.
+ * The user id of the current session, or null if there is none.
  *
- * The set-password screen calls this to tell "your invite is ready, choose a
- * password" apart from "this link has already been used or has expired". Read
- * from the local session rather than getUser() so an expired link is reported
- * as such instead of as a network failure.
+ * The set-password screen uses this to tell "your invite is ready, choose a
+ * password" apart from "this link has already been used or has expired" — and,
+ * critically, to check WHICH account the session belongs to.
+ *
+ * It returns the id rather than a boolean on purpose. A yes/no answer was not
+ * enough: an admin already signed in on the same browser who opened a spent
+ * invite link satisfied "a session exists", and the form then changed THAT
+ * account's password instead of the invited one. The caller compares this id
+ * against the identity named by the link itself.
+ *
+ * Read from the local session rather than getUser() so an expired link is
+ * reported as expired instead of as a network failure.
  */
-export async function hasActiveSession(): Promise<boolean> {
-  if (!supabase) return false
+export async function getSessionUserId(): Promise<string | null> {
+  if (!supabase) return null
   const { data: { session } } = await supabase.auth.getSession()
-  return !!session
+  return session?.user?.id ?? null
 }
 
 // NOTE: public self-registration has been removed. There is deliberately no

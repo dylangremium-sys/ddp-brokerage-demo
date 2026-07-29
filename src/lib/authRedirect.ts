@@ -43,9 +43,32 @@
  * word itself correctly ("Choose your password" vs "Set a new password").
  */
 export type AuthRedirect =
-  | { kind: 'invite' }
-  | { kind: 'recovery' }
-  | { kind: 'error'; code: string | null; description: string | null }
+  | { kind: 'invite'; subject: string | null }
+  | { kind: 'recovery'; subject: string | null }
+  | { kind: 'error'; code: string | null }
+
+/**
+ * `subject` — the user id (`sub`) carried by the link's own access token, or
+ * null when the link carried no usable token.
+ *
+ * WHY THE SCREEN NEEDS THIS
+ *   Asking "is there a session?" is not the same as asking "is this the session
+ *   the link created". If an admin is already signed in on this browser and
+ *   opens a spent invite link (`#type=invite` with no usable token), a
+ *   session-exists check says yes — and the set-password form would then call
+ *   updateUser against the ADMIN'S OWN account, changing the wrong user's
+ *   password while the invited account stays untouched and still unreachable.
+ *
+ *   Binding to `sub` makes the screen refuse anything but the identity the link
+ *   itself names. A link with no token yields null, which the screen must treat
+ *   as a dead link rather than falling back to whatever session is in storage.
+ *
+ * NOT a security boundary. The token is not verified here — it does not need to
+ * be. Supabase verifies it when establishing the session, and this comparison
+ * only decides which of two failure screens to show. Its job is to fail CLOSED:
+ * any mismatch, malformed token or missing claim resolves to null and the user
+ * is told the link is dead.
+ */
 
 /** Query/fragment keys that belong to an auth redirect and to nothing else. */
 const AUTH_PARAM_KEYS = [
@@ -94,21 +117,44 @@ export function parseAuthRedirect(hash: string, search: string): AuthRedirect | 
 
   const error = get('error') ?? get('error_code')
   if (error) {
-    return {
-      kind: 'error',
-      code: get('error_code') ?? get('error'),
-      // Supabase percent-encodes spaces as '+' here; URLSearchParams decodes it.
-      description: get('error_description'),
-    }
+    // `error_description` is deliberately NOT carried. It is attacker-controlled
+    // free text, and rendering it on this branded page would let anyone put
+    // arbitrary phishing instructions on the app's own origin without holding a
+    // token. The code is kept only as a lookup key into trusted copy.
+    return { kind: 'error', code: get('error_code') ?? get('error') }
   }
+
+  const subject = decodeJwtSubject(get('access_token'))
 
   switch (get('type')) {
     case 'invite':
-      return { kind: 'invite' }
+      return { kind: 'invite', subject }
     case 'recovery':
-      return { kind: 'recovery' }
+      return { kind: 'recovery', subject }
     default:
       return null
+  }
+}
+
+/**
+ * The `sub` claim of a JWT, or null if it cannot be read.
+ *
+ * Signature is NOT checked — see the note on `subject` above. Every failure
+ * path (absent token, wrong shape, bad base64, non-JSON, missing or non-string
+ * `sub`) returns null, so a malformed token can only ever make the screen
+ * stricter, never looser.
+ */
+export function decodeJwtSubject(token: string | null | undefined): string | null {
+  if (!token) return null
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  try {
+    // base64url -> base64. atob rejects '-' and '_', and tolerates missing '='.
+    const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
+    const sub: unknown = JSON.parse(json)?.sub
+    return typeof sub === 'string' && sub.length > 0 ? sub : null
+  } catch {
+    return null
   }
 }
 

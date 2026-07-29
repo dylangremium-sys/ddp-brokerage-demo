@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { hasActiveSession, setPassword } from '../../services/auth'
+import { getSessionUserId, setPassword } from '../../services/auth'
 import { validateNewPassword, type PasswordRejection } from '../../lib/passwordPolicy'
 import { T } from '../../translations'
 import type { Lang } from '../../types'
@@ -35,7 +35,15 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
   const t = T[lang]
   const isRecovery = redirect.kind === 'recovery'
 
-  const [phase, setPhase] = useState<Phase>(redirect.kind === 'error' ? 'unavailable' : 'checking')
+  // The identity the LINK itself names, or null when it carried no usable
+  // token. Everything below binds to this rather than to "some session exists".
+  const linkSubject = redirect.kind === 'error' ? null : redirect.subject
+
+  // A link that names nobody is dead on arrival — there is no session to bind
+  // to and none may be borrowed from storage. Derived here rather than set from
+  // inside the effect, so the screen never renders a password form for an
+  // instant before withdrawing it.
+  const [phase, setPhase] = useState<Phase>(linkSubject ? 'checking' : 'unavailable')
   const [password, setPasswordValue] = useState('')
   const [confirm, setConfirm] = useState('')
   const [reveal, setReveal] = useState(false)
@@ -49,27 +57,39 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
     if (error) errorRef.current?.focus()
   }, [error])
 
-  // Resolve the session ONCE. supabase-js establishes it asynchronously from the
-  // link's fragment, so this may run before the session exists; the auth
-  // subscription in App re-renders us and the effect re-runs on `phase`
-  // returning to 'checking' only via a fresh mount, so a short retry window is
-  // used instead of trusting the first read.
+  // Resolve the session ONCE, and bind it to the identity the LINK names.
+  //
+  // supabase-js establishes the session asynchronously from the link's
+  // fragment, so the first read may come back empty; a bounded retry window is
+  // used, because telling a user with a perfectly good invite that it expired
+  // is the worse of the two errors.
+  //
+  // The subject check is the load-bearing part. Accepting "some session exists"
+  // meant that an admin already signed in on this browser who opened a spent
+  // invite link (`#type=invite`, no usable token) satisfied the check — and
+  // submitting then called updateUser against the ADMIN'S account, changing the
+  // wrong password while the invited account stayed unreachable. A link with no
+  // subject is a dead link, full stop; it never falls back to session storage
+  // — that case is already resolved to 'unavailable' by the initial state above,
+  // so this effect simply has nothing to do.
   useEffect(() => {
-    if (redirect.kind === 'error') return
+    if (!linkSubject) return
+    const subject = linkSubject
+
     let active = true
     let attempts = 0
 
     async function check() {
-      const ok = await hasActiveSession()
+      const userId = await getSessionUserId()
       if (!active) return
-      if (ok) {
+      if (userId && userId === subject) {
         setPhase('ready')
         return
       }
-      // The link's session can take a moment to be exchanged. Give it a bounded
-      // number of tries before declaring the link dead — reporting "expired" to
-      // a user holding a perfectly good invite is the worse error of the two.
-      if (++attempts < 10) {
+      // Retry only while NOTHING is signed in — the session may still be being
+      // exchanged. A session belonging to somebody else is a settled answer and
+      // is refused immediately; retrying could not turn it into the right one.
+      if (!userId && ++attempts < 10) {
         setTimeout(() => { if (active) void check() }, 250)
         return
       }
@@ -78,7 +98,7 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
 
     void check()
     return () => { active = false }
-  }, [redirect.kind])
+  }, [linkSubject])
 
   const REJECTION_MESSAGE: Record<PasswordRejection, string> = {
     'empty': t.pwErrEmpty,
@@ -115,6 +135,15 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
   const heading = isRecovery ? t.setPwHeadingRecovery : t.setPwHeadingInvite
   const description = isRecovery ? t.setPwDescRecovery : t.setPwDescInvite
 
+  // Known Supabase error codes mapped to OUR copy. The code is only ever a
+  // lookup key — nothing from the URL reaches the DOM.
+  const TRUSTED_REASON: Record<string, string> = {
+    otp_expired: t.setPwReasonExpired,
+    access_denied: t.setPwReasonUsed,
+  }
+  const reason =
+    redirect.kind === 'error' && redirect.code ? TRUSTED_REASON[redirect.code] : undefined
+
   return (
     <div className="page-wrap auth-page">
       <div className="card form-card auth-card">
@@ -134,9 +163,15 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
 
         {phase === 'unavailable' && (
           <>
-            {redirect.kind === 'error' && redirect.description && (
+            {/* Trusted copy chosen by error CODE. The URL's own
+                `error_description` is never carried here and never rendered:
+                it is attacker-controlled free text, and echoing it would let
+                anyone display arbitrary phishing instructions on DDP's own
+                branded origin without holding a token. An unrecognised code
+                shows nothing extra rather than anything from the URL. */}
+            {reason && (
               <div role="alert" className="alert alert-danger" style={{ marginTop: 0, marginBottom: 16 }}>
-                {redirect.description}
+                {reason}
               </div>
             )}
             <button
