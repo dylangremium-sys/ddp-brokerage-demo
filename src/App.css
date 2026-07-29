@@ -5004,3 +5004,29 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   .ops-desk-field input { min-width: 0; width: 100%; }
   .ops-desk-field { flex: 1 1 100%; }
 }
+
+/* ── Supplier-enquiry notices ────────────────────────────────────────────────
+   `.notice` was referenced by DDPAccessRequests.tsx but defined in no
+   stylesheet, so every load error, action error and success confirmation on
+   that page rendered as unstyled body text. An admin could miss a failed
+   provisioning entirely — or, worse, miss the confirmation that an account WAS
+   created and invite the same supplier twice.
+
+   Scoped under .ddp-wrap and built from the light-theme --ddp-* tokens, because
+   this page lives on the cream admin panel rather than the dark shell. Used by
+   exactly one component, so this adds no risk to any other surface. */
+.ddp-wrap .notice {
+  padding: 11px 15px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ddp-line-strong);
+  border-left: 3px solid var(--ddp-success-700);
+  background: var(--ddp-paper);
+  color: var(--ddp-ink-950);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.ddp-wrap .notice-error {
+  border-left-color: var(--ddp-risk-700);
+  color: var(--ddp-risk-700);
+}
