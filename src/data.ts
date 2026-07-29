@@ -713,6 +713,17 @@ export const SEED_BENCHMARKS: MarketBenchmark[] = [
 ]
 
 export function loadMarketBenchmarks(): MarketBenchmark[] {
+  // Supabase mode returns EMPTY, exactly as loadInventory()/loadFarms() do.
+  //
+  // These are PRICE HINTS SHOWN TO REAL FARMERS. This function previously
+  // returned SEED_BENCHMARKS unconditionally, and App.tsx seeds its
+  // marketBenchmarks state from it at mount in every mode — so a production
+  // farmer was shown fictional prices (35,000–55,000 THB/kg flower and four
+  // more) before any query ran, and kept seeing them if the real query returned
+  // nothing. Fabricated commercial guidance is worse than none: a farmer can act
+  // on a price. Empty renders no benchmark panel at all, which is honest.
+  if (sbConfigured) return []
+
   const stored = localStorage.getItem(MARKET_BENCHMARKS_KEY)
   if (stored) {
     try { return JSON.parse(stored) } catch { /* malformed JSON — fall through to seed */ }
