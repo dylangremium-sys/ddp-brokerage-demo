@@ -156,6 +156,40 @@ No further production change has been made during this freeze. This log is now t
 authoritative record; §4's verification cannot distinguish an authorised change from
 drift unless every future event is appended here **before** it is executed.
 
+## 5b. Migration code merged during the freeze — NOT applied
+
+**Recorded 2026-07-29.** Fourteen pull requests were merged to `main` on this date, four of
+them carrying migration SQL: **27** (#44), **28** (#73), **35** (#83) and **36** (#85).
+
+This is **not** a breach of §1, and is recorded here so that nobody later mistakes a
+repository state for a database state:
+
+- §1 freezes **execution** against the production database. Merging a `.sql` file to `main`
+  executes nothing. There is no auto-apply step in either workflow — `Deploy to Production`
+  runs `vercel deploy --prebuilt`, and no job in `.github/workflows/` connects to a database.
+- §2 permits application deploys from `main` through the gated CI path provided they carry no
+  migration. The deploys triggered by these merges carried application code only.
+
+**Applied-state is unchanged by any of this.** The following migrations now exist in the
+repository and are applied **nowhere** — not production, not staging:
+
+| Migration | Source PR | Applied to prod? | Applied to staging? |
+|---|---|---|---|
+| 27 — compliance audit-log actor | #44 | **No** | No |
+| 28 — evidence digest dedup | #73 | **No** | No |
+| 29 — buyer-pack contaminant gate | earlier | **No** | No |
+| 30 — procurement overrides | earlier | **No** | No |
+| 35 — atomic status transition | #83 | **No** | No |
+| 36 — public intake hardening | #85 | **No** | No |
+
+**Migration 36 carries an ordering precondition.** It revokes the anon INSERT the public
+supplier form relies on. Applying it before `/api/public/access-request` is deployed **and**
+`SUPABASE_SERVICE_ROLE_KEY` is set in Vercel Production takes the intake form offline. As of
+2026-07-29 that variable is **not set**. See `docs/runbooks/P1_SET_SUPABASE_SERVICE_ROLE_KEY.md`.
+
+Applying any of the six remains a §3 break-glass event requiring written authorisation
+recorded **before** execution.
+
 ## 6. Signature
 
 - **Adopted by (name / title):** Dylan Murtagh — DDP release owner
