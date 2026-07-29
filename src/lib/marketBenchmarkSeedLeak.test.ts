@@ -23,9 +23,10 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 
 const SEEDED_FLOWER_MIN = 35000
 
-// The suite runs in the 'node' environment, so localStorage is stubbed the same
-// way db.persist.test.ts does it.
-const store: Record<string, string> = {}
+// The suite runs in the 'node' environment, so localStorage is stubbed. Backed by
+// a Map rather than db.persist.test.ts's plain object, so resetting between tests
+// does not need `delete` on a computed key.
+let store = new Map<string, string>()
 
 describe('market benchmarks — no demo seed in Supabase mode', () => {
   afterEach(() => {
@@ -35,12 +36,12 @@ describe('market benchmarks — no demo seed in Supabase mode', () => {
 
   describe('data.ts loadMarketBenchmarks()', () => {
     beforeEach(() => {
-      for (const k of Object.keys(store)) delete store[k]
+      store = new Map()
       vi.stubGlobal('localStorage', {
-        getItem: (k: string) => store[k] ?? null,
-        setItem: (k: string, v: string) => { store[k] = v },
-        removeItem: (k: string) => { delete store[k] },
-        clear: () => { for (const k of Object.keys(store)) delete store[k] },
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => { store.set(k, v) },
+        removeItem: (k: string) => { store.delete(k) },
+        clear: () => { store.clear() },
       })
       vi.resetModules()
     })
