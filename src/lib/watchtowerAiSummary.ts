@@ -9,6 +9,7 @@ import type {
   AiSummaryGuardCode,
   AiSummaryResultCode,
 } from './complianceAiSummarisation'
+import { evaluateCannamonitorPolicy } from './complianceCannamonitorPolicy'
 
 // ─── Watchtower AI draft-summary controller (Phase 2H) ──────────────────────
 //
@@ -33,7 +34,30 @@ import type {
 // approve, certify, create a rule, or enforce anything (the orchestration and
 // wording guard enforce that upstream).
 
-export type AiSummaryOutcomeCode = AiSummaryResultCode | 'stale_selection'
+// ─── Source-policy AI gate (Cannamonitor defence-in-depth) ──────────────────
+//
+// The metadata-only projection in complianceCannamonitorPolicy.ts already stops
+// prohibited Cannamonitor text from entering `rawText` on the automated RSS
+// ingestion path, so in principle nothing prohibited can reach the AI. This gate
+// exists because that guarantee only covers ONE path into `rawText`, and the AI
+// call consumes `update.rawText` regardless of how it got there:
+//
+//   • an admin can paste Cannamonitor text straight into the manual legal-update
+//     form, which never touches the RSS parser or the projection;
+//   • a legal_update row created before this policy existed still carries
+//     whatever raw text it was created with;
+//   • a future parser/wiring regression could reintroduce body text upstream.
+//
+// A projection guards INGESTION. This guards CONSUMPTION — keyed on the update's
+// own sourceUrl, so it holds whatever the provenance. Sending prohibited text to
+// a third-party AI provider is an irreversible disclosure, which is exactly the
+// kind of failure that warrants a second, independent control.
+//
+// It is strictly source-specific: a non-Cannamonitor update is evaluated exactly
+// as before. No provider configuration, model, prompt or general AI behaviour is
+// changed by this gate.
+
+export type AiSummaryOutcomeCode = AiSummaryResultCode | 'stale_selection' | 'cannamonitor_permission_unverified'
 
 /** Whether an AI provider is wired in. `null` provider ⇒ unavailable (the
  *  production app injects null: no provider is configured in this repository). */
@@ -45,10 +69,29 @@ export function isAiSummaryProviderAvailable(
 
 export interface AiSummaryEligibility {
   canGenerate: boolean
-  /** 'ok' when allowed, otherwise the guard's rejection code. */
-  code: 'ok' | AiSummaryGuardCode
+  /** 'ok' when allowed, otherwise the guard's (or source policy's) rejection code. */
+  code: 'ok' | AiSummaryGuardCode | 'cannamonitor_permission_unverified'
   /** Human-readable reason (safe to show in a tooltip / disabled-button title). */
   reason: string
+}
+
+/**
+ * Returns a rejection when the update's source is policy-blocked from AI
+ * processing, or null when the source policy permits it. Pure; source-specific.
+ */
+function sourcePolicyAiRejection(
+  update: LegalUpdate | null,
+): { code: 'cannamonitor_permission_unverified'; reason: string } | null {
+  if (!update) return null
+  const policy = evaluateCannamonitorPolicy({ url: update.sourceUrl ?? '' })
+  if (policy.matched && !policy.aiAllowed) {
+    return {
+      code: 'cannamonitor_permission_unverified',
+      reason:
+        'AI summarisation is blocked for Cannamonitor-derived updates while commercial permission is unverified. Cannamonitor content may not be sent to an AI provider.',
+    }
+  }
+  return null
 }
 
 export interface AiSummaryEligibilityOptions {
@@ -68,6 +111,13 @@ export function evaluateAiSummaryEligibility(
   update: LegalUpdate | null,
   opts: AiSummaryEligibilityOptions,
 ): AiSummaryEligibility {
+  // Source-policy gate first: a policy-blocked source can never be summarised,
+  // whatever the generic guard would say.
+  const blocked = sourcePolicyAiRejection(update)
+  if (blocked) {
+    return { canGenerate: false, code: blocked.code, reason: blocked.reason }
+  }
+
   const decision = guardAiSummarisationRequest(update, {
     providerAvailable: isAiSummaryProviderAvailable(opts.provider),
     requestInProgress: opts.requestInProgress,
@@ -96,6 +146,8 @@ export const AI_SUMMARY_MESSAGES: Record<AiSummaryOutcomeCode, string> = {
   empty_output: 'The AI provider returned an empty draft. It was discarded.',
   unsafe_output: 'The AI draft was blocked because it made an unqualified claim, and was discarded before display.',
   stale_selection: 'The selected legal update changed before the draft finished — the draft was discarded.',
+  cannamonitor_permission_unverified:
+    'AI summarisation is blocked for Cannamonitor-derived updates while commercial permission is unverified. Cannamonitor content may not be sent to an AI provider.',
 }
 
 export function messageForAiSummaryCode(code: AiSummaryOutcomeCode): string {
@@ -128,6 +180,15 @@ export async function runAiDraftSummary(
   provider: ComplianceAiSummaryProvider | null,
   opts: RunAiDraftSummaryOptions,
 ): Promise<RunAiDraftSummaryOutcome> {
+  // Enforced here too, not only in evaluateAiSummaryEligibility — the eligibility
+  // check drives button state, and a UI that forgot to consult it must still not
+  // be able to reach the provider. This returns BEFORE generateAiDraftSummary, so
+  // no request is ever constructed and the provider is never called.
+  const blocked = sourcePolicyAiRejection(update)
+  if (blocked) {
+    return { ok: false, code: blocked.code, message: blocked.reason }
+  }
+
   const result = await generateAiDraftSummary(update, provider, {
     requestInProgress: opts.requestInProgress,
     maxEvidenceChars: opts.maxEvidenceChars,

@@ -207,3 +207,38 @@ describe('safety guarantees', () => {
     expect(MODULE_SOURCE).not.toMatch(/setInterval|setTimeout|cron|\bschedule\b|localStorage|sessionStorage/)
   })
 })
+
+// ─── Source-policy eligibility gate (Cannamonitor integration) ───────────────
+
+describe('source policy eligibility gate', () => {
+  const cannamonitor: RegulatorySource = {
+    id: 'src-canna',
+    name: 'Cannamonitor — international cannabis intelligence',
+    jurisdiction: 'International — secondary commercial intelligence',
+    sourceType: 'other',
+    url: 'https://cannamonitor.com/feed/',
+    isActive: true, // deliberately ACTIVE: activation alone must not enable it
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-01T00:00:00.000Z',
+  }
+
+  it('denies an ACTIVE Cannamonitor source — active is not sufficient', () => {
+    const e = evaluateManualMonitoringEligibility(cannamonitor)
+    expect(e.eligible).toBe(false)
+    expect(e.code).toBe('source_policy_denied')
+  })
+
+  it('never reaches the injected fetch for a policy-denied source', async () => {
+    let called = false
+    const fetchImpl: RssFetchImpl = async () => {
+      called = true
+      throw new Error('network call attempted')
+    }
+    const result = await runManualRssMonitoring(cannamonitor, fetchImpl)
+    expect(called).toBe(false)
+    expect(result.ok).toBe(false)
+    expect(result.errorCode).toBe('source_policy_denied')
+    expect(result.performsPersistence).toBe(false)
+    expect(result.canCallAI).toBe(false)
+  })
+})

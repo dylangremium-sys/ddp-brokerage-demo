@@ -31,6 +31,12 @@ import * as sourceRegistry from '../../lib/complianceSourceRegistry'
 import { SUPPORTED_SOURCE_TYPES, deriveRegulatorySourceStatus, type RegulatorySourceStatus } from '../../lib/complianceSourceRegistry'
 import { buildMonitoringDecision, prepareMonitoringLegalUpdateIntake, decideDraftCreation, type MonitoringDecision, type SourceContentSnapshot } from '../../lib/complianceSourceMonitoring'
 import {
+  evaluateCannamonitorPolicy,
+  CANNAMONITOR_REVIEW_HEADLINE,
+  CANNAMONITOR_NON_AUTHORITATIVE_NOTICE,
+  CANNAMONITOR_DETECTION_LIMITATION,
+} from '../../lib/complianceCannamonitorPolicy'
+import {
   runManualRssMonitoring,
   evaluateManualMonitoringEligibility,
   canStartManualRun,
@@ -1773,11 +1779,47 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                   {sources.map(source => {
                     const status = deriveRegulatorySourceStatus(source)
                     const feedEligibility = evaluateManualMonitoringEligibility(source)
+                    // Source-specific policy (today: Cannamonitor). Display only —
+                    // the actual enforcement happens in the policy module, the
+                    // connector and the manual-monitoring gate, not here.
+                    const sourcePolicy = evaluateCannamonitorPolicy(source)
                     return (
                       <tr key={source.id}>
                         <td>
                           <span className="td-bold">{source.name}</span><br />
                           <a href={source.url} target="_blank" rel="noreferrer" className="td-muted">{source.url}</a>
+                          {sourcePolicy.matched && (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                padding: '8px 10px',
+                                borderRadius: 6,
+                                border: '1px solid #d9822b',
+                                background: 'rgba(217, 130, 43, 0.08)',
+                                fontSize: 12,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              <strong>Secondary commercial intelligence — non-authoritative.</strong>
+                              <div style={{ marginTop: 4 }}>{CANNAMONITOR_REVIEW_HEADLINE}</div>
+                              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                                {CANNAMONITOR_NON_AUTHORITATIVE_NOTICE.map(line => <li key={line}>{line}</li>)}
+                              </ul>
+                              <div style={{ marginTop: 6 }}>
+                                <strong>Monitoring: {sourcePolicy.monitoringAllowed ? 'permitted' : 'DENIED'}</strong>
+                                {' · '}
+                                <strong>AI: {sourcePolicy.aiAllowed ? 'permitted' : 'BLOCKED'}</strong>
+                                {' · '}
+                                <strong>Permission: {sourcePolicy.permission}</strong>
+                              </div>
+                              {!sourcePolicy.monitoringAllowed && (
+                                <div style={{ marginTop: 4 }}>{sourcePolicy.reason}</div>
+                              )}
+                              <div style={{ marginTop: 6 }}>
+                                <strong>Detection limit:</strong> {CANNAMONITOR_DETECTION_LIMITATION}
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td>{source.jurisdiction}</td>
                         <td>{statusText(source.sourceType)}</td>

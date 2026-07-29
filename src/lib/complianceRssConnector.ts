@@ -12,6 +12,7 @@ import {
   type MonitoringDecision,
   type SourceContentSnapshot,
 } from './complianceSourceMonitoring'
+import { evaluateCannamonitorPolicy } from './complianceCannamonitorPolicy'
 
 // ─── Read-only RSS / Atom compliance connector (Phase 2C) ───────────────────
 //
@@ -53,6 +54,8 @@ export type RssConnectorErrorCode =
   | 'fetch_failed'
   | 'malformed_feed'
   | 'not_a_feed'
+  /** A source-specific policy (e.g. Cannamonitor) denied retrieval before any fetch. */
+  | 'source_policy_denied'
 
 export interface RssConnectorOptions {
   /** Descriptive User-Agent. Required: this connector supplies no default UA. */
@@ -200,7 +203,7 @@ function atomLink(block: string): string | null {
 
 // ─── Item assembly (pure) ────────────────────────────────────────────────────
 
-interface FeedItemFields {
+export interface FeedItemFields {
   title: string | null
   link: string | null
   id: string | null
@@ -209,14 +212,35 @@ interface FeedItemFields {
   published: string | null
 }
 
-function finalizeItem(fields: FeedItemFields): ParsedFeedItem {
-  const rawText = [fields.title, fields.link, fields.id, fields.published, fields.summary, fields.content]
-    .map(v => v ?? '')
-    .join('\n')
-  return { ...fields, rawText }
+/**
+ * A source-specific content-minimisation hook, applied to the parsed FIELDS of
+ * a feed item *before* `rawText` is assembled from them.
+ *
+ * The ordering is the whole point and is not an implementation detail. A policy
+ * that ran after finalizeItem() would have to scrub prohibited text back out of
+ * an already-built string, which means the prohibited text would have existed in
+ * a retained value — briefly present in the checksum basis and one refactor away
+ * from being persisted. Projecting the fields first means prohibited content is
+ * never concatenated at all, so it cannot reach the checksum, the monitoring
+ * decision, a proposed draft, the repository, or an AI provider.
+ *
+ * Default (no policy) is identity: every existing source behaves exactly as
+ * before.
+ */
+export interface FeedItemFieldPolicy {
+  policyId: string
+  projectFields(fields: FeedItemFields): FeedItemFields
 }
 
-export function extractRssItems(xml: string): ParsedFeedItem[] {
+function finalizeItem(fields: FeedItemFields, policy?: FeedItemFieldPolicy | null): ParsedFeedItem {
+  const projected = policy ? policy.projectFields(fields) : fields
+  const rawText = [projected.title, projected.link, projected.id, projected.published, projected.summary, projected.content]
+    .map(v => v ?? '')
+    .join('\n')
+  return { ...projected, rawText }
+}
+
+export function extractRssItems(xml: string, policy?: FeedItemFieldPolicy | null): ParsedFeedItem[] {
   const blocks = [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].map(m => m[1])
   return blocks.map(block => {
     const description = firstTag(block, 'description')
@@ -227,11 +251,11 @@ export function extractRssItems(xml: string): ParsedFeedItem[] {
       summary: description,
       content: description,
       published: firstTag(block, 'pubDate'),
-    })
+    }, policy)
   })
 }
 
-export function extractAtomItems(xml: string): ParsedFeedItem[] {
+export function extractAtomItems(xml: string, policy?: FeedItemFieldPolicy | null): ParsedFeedItem[] {
   const blocks = [...xml.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/gi)].map(m => m[1])
   return blocks.map(block => {
     const summary = firstTag(block, 'summary')
@@ -243,7 +267,7 @@ export function extractAtomItems(xml: string): ParsedFeedItem[] {
       summary,
       content: content ?? summary,
       published: firstTag(block, 'published') ?? firstTag(block, 'updated'),
-    })
+    }, policy)
   })
 }
 
@@ -260,7 +284,7 @@ function feedTitle(xml: string, itemTag: string): string | null {
  * detected root element is not terminated (a cheap well-formedness signal,
  * since there is no real XML parser available). Pure.
  */
-export function parseRssOrAtomFeed(xml: string): ParsedFeed {
+export function parseRssOrAtomFeed(xml: string, policy?: FeedItemFieldPolicy | null): ParsedFeed {
   if (typeof xml !== 'string' || xml.trim().length === 0) {
     throw new FeedParseError('not_a_feed', 'empty or non-string document')
   }
@@ -272,14 +296,14 @@ export function parseRssOrAtomFeed(xml: string): ParsedFeed {
     if (!/<\/rss>/i.test(xml) && !/<\/rdf:RDF>/i.test(xml)) {
       throw new FeedParseError('malformed_feed', 'unterminated <rss> document')
     }
-    return { kind: 'rss', title: feedTitle(xml, 'item'), items: extractRssItems(xml) }
+    return { kind: 'rss', title: feedTitle(xml, 'item'), items: extractRssItems(xml, policy) }
   }
 
   if (isAtom) {
     if (!/<\/feed>/i.test(xml)) {
       throw new FeedParseError('malformed_feed', 'unterminated <feed> document')
     }
-    return { kind: 'atom', title: feedTitle(xml, 'entry'), items: extractAtomItems(xml) }
+    return { kind: 'atom', title: feedTitle(xml, 'entry'), items: extractAtomItems(xml, policy) }
   }
 
   throw new FeedParseError('not_a_feed', 'document is neither RSS nor Atom')
@@ -388,6 +412,18 @@ export async function executeRssConnector(
   const maxBytes = options.maxResponseBytes ?? 5_000_000
   const allowedPorts = options.allowedPorts ?? []
 
+  // 0) Source-specific policy gate. Evaluated FIRST and BEFORE any network call,
+  //    so a policy-denied source (today: Cannamonitor, whose commercial
+  //    permission is unverified) never reaches fetchImpl at all. This gate lives
+  //    inside the connector rather than only in the caller so it cannot be
+  //    bypassed by calling executeRssConnector directly. Unmatched sources are
+  //    unaffected: `fieldPolicy` is null and behaviour is identical to before.
+  const sourcePolicy = evaluateCannamonitorPolicy(source)
+  if (sourcePolicy.matched && !sourcePolicy.monitoringAllowed) {
+    return fail(source.id, 'source_policy_denied', sourcePolicy.reason)
+  }
+  const fieldPolicy = sourcePolicy.fieldPolicy
+
   // 1) Pre-fetch safety gate — reuses HTTPS-only + allowlist + SSRF + kind.
   const plan = buildConnectorRunPlan(source, allowedHosts, allowedPorts)
   if (plan.status !== 'ready') {
@@ -453,10 +489,12 @@ export async function executeRssConnector(
     return fail(source.id, 'oversized_response', `response body exceeds max ${maxBytes} bytes`)
   }
 
-  // 6) Parse.
+  // 6) Parse. The source policy's field projection (if any) is applied during
+  //    parsing, so prohibited content is discarded before rawText is assembled
+  //    — it is never concatenated, hashed, or carried into a decision.
   let feed: ParsedFeed
   try {
-    feed = parseRssOrAtomFeed(body)
+    feed = parseRssOrAtomFeed(body, fieldPolicy)
   } catch (err) {
     if (err instanceof FeedParseError) return fail(source.id, err.code, err.message)
     return fail(source.id, 'malformed_feed', err instanceof Error ? err.message : 'failed to parse feed')

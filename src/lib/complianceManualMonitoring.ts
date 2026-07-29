@@ -9,6 +9,7 @@ import {
   type RssFetchImpl,
 } from './complianceRssConnector'
 import type { MonitoringDecision, SourceContentSnapshot } from './complianceSourceMonitoring'
+import { evaluateCannamonitorPolicy } from './complianceCannamonitorPolicy'
 
 // ─── Manual Watchtower RSS monitoring — orchestration (Phase 2D) ────────────
 //
@@ -34,7 +35,12 @@ import type { MonitoringDecision, SourceContentSnapshot } from './complianceSour
 export const DEFAULT_MANUAL_MONITORING_USER_AGENT =
   'DDP-Compliance-Watchtower/1.0 (+manual read-only regulatory feed check)'
 
-export type ManualMonitoringIneligibleCode = 'inactive_source' | 'invalid_url' | 'unsupported_connector'
+export type ManualMonitoringIneligibleCode =
+  | 'inactive_source'
+  | 'invalid_url'
+  | 'unsupported_connector'
+  /** A source-specific policy (today: Cannamonitor) denies retrieval. */
+  | 'source_policy_denied'
 
 export interface ManualMonitoringEligibility {
   eligible: boolean
@@ -55,6 +61,19 @@ export function evaluateManualMonitoringEligibility(source: RegulatorySource): M
   if (!source.isActive) {
     return { eligible: false, reason: 'Source is inactive.', code: 'inactive_source' }
   }
+
+  // Source-specific policy gate. Checked here — ahead of any connector call —
+  // so the UI can disable the action with an honest reason AND no fetch is
+  // attempted. Note this is evaluated even though `isActive` is already true:
+  // an active Cannamonitor source is still denied while its commercial
+  // permission is unverified, so marking a source active can never, on its own,
+  // enable retrieval. The connector re-checks the same policy independently, so
+  // this is a UX gate layered on top of an enforced one, not a substitute.
+  const sourcePolicy = evaluateCannamonitorPolicy(source)
+  if (sourcePolicy.matched && !sourcePolicy.monitoringAllowed) {
+    return { eligible: false, reason: sourcePolicy.reason, code: 'source_policy_denied' }
+  }
+
   if (!normalizeConnectorHost(source.url)) {
     return { eligible: false, reason: 'Source URL is missing or not a valid http(s) URL.', code: 'invalid_url' }
   }

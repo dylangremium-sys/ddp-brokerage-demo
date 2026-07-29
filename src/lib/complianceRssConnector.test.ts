@@ -398,3 +398,60 @@ describe('safety guarantees', () => {
     }
   })
 })
+
+// ─── Source-policy field projection (Cannamonitor integration) ───────────────
+//
+// The connector gained an optional FeedItemFieldPolicy. These tests pin the two
+// properties that matter: it is OFF by default (no existing source changes
+// behaviour), and when supplied it runs BEFORE rawText is assembled.
+
+describe('feed item field policy', () => {
+  const FEED = `<rss version="2.0"><channel><item>
+    <title>Synthetic Title</title>
+    <link>https://example.com/a</link>
+    <guid>https://example.com/?p=1</guid>
+    <pubDate>Fri, 10 Jul 2026 09:00:00 +0000</pubDate>
+    <description>SYNTHETIC_DESCRIPTION_MARKER</description>
+  </item></channel></rss>`
+
+  it('is identity when no policy is supplied — existing behaviour is unchanged', () => {
+    const feed = parseRssOrAtomFeed(FEED)
+    expect(feed.items[0].summary).toBe('SYNTHETIC_DESCRIPTION_MARKER')
+    expect(feed.items[0].rawText).toContain('SYNTHETIC_DESCRIPTION_MARKER')
+  })
+
+  it('applies the projection before rawText is assembled', () => {
+    const metadataOnly = {
+      policyId: 'test-metadata-only',
+      projectFields: (f: { title: string | null; link: string | null; id: string | null; published: string | null }) => ({
+        ...f,
+        summary: null,
+        content: null,
+      }),
+    }
+    const feed = parseRssOrAtomFeed(FEED, metadataOnly)
+    expect(feed.items[0].summary).toBeNull()
+    expect(feed.items[0].content).toBeNull()
+    // The prohibited value is absent from rawText — not stripped afterwards, but
+    // never concatenated in the first place.
+    expect(feed.items[0].rawText).not.toContain('SYNTHETIC_DESCRIPTION_MARKER')
+    expect(feed.items[0].rawText).toContain('Synthetic Title')
+  })
+
+  it('projects atom entries too', () => {
+    const ATOM = `<feed xmlns="http://www.w3.org/2005/Atom"><entry>
+      <title>Synthetic Atom Title</title>
+      <link href="https://example.com/b"/>
+      <id>urn:uuid:1</id>
+      <published>2026-07-10T09:00:00Z</published>
+      <summary>SYNTHETIC_SUMMARY_MARKER</summary>
+    </entry></feed>`
+    const metadataOnly = {
+      policyId: 'test-metadata-only',
+      projectFields: (f: Record<string, string | null>) => ({ ...f, summary: null, content: null }),
+    }
+    const feed = parseRssOrAtomFeed(ATOM, metadataOnly as never)
+    expect(feed.items[0].rawText).not.toContain('SYNTHETIC_SUMMARY_MARKER')
+    expect(feed.items[0].rawText).toContain('Synthetic Atom Title')
+  })
+})
