@@ -99,7 +99,10 @@ describe('INVARIANT: every navigation target offered to a signed-out visitor is 
   function publicSurfaceTargets(): Page[] {
     const targets = new Set<Page>()
     // e.g.  onSupplierSignup={() => goTo('farmer-register')}
-    for (const match of APP_SOURCE.matchAll(/on(?:SecureLogin|SupplierSignup|Complete)=\{\(\)\s*=>\s*goTo\('([a-z-]+)'\)\}/g)) {
+    // ForgotPassword/BackToLogin are the password-flow affordances: the only
+    // route back in for a supplier whose invite expired, and therefore the last
+    // links in the app that may quietly become no-ops.
+    for (const match of APP_SOURCE.matchAll(/on(?:SecureLogin|SupplierSignup|Complete|ForgotPassword|BackToLogin)=\{\(\)\s*=>\s*goTo\('([a-z-]+)'\)\}/g)) {
       targets.add(match[1] as Page)
     }
     return [...targets]
@@ -111,6 +114,17 @@ describe('INVARIANT: every navigation target offered to a signed-out visitor is 
     // below would silently pass on an empty set — fail loudly instead.
     expect(targets.length).toBeGreaterThanOrEqual(2)
     expect(targets).toContain('farmer-register')
+    expect(targets).toContain('forgot-password')
+  })
+
+  it('REGRESSION: reaches the password screens — the supplier onboarding blocker', () => {
+    // An invited supplier lands on 'set-password' holding a transient session
+    // and no password; a locked-out one reaches 'forgot-password' from the login
+    // card. If the guard bounced either to login, the account would have no
+    // route to a usable password at all — which is exactly the state the app
+    // shipped in before this flow existed.
+    expect(isReachableWhileSignedOut('set-password')).toBe(true)
+    expect(isReachableWhileSignedOut('forgot-password')).toBe(true)
   })
 
   it.each(publicSurfaceTargets())(

@@ -393,6 +393,10 @@ export interface RiskRegisterEntry {
 export type Page =
   | 'landing'
   | 'login'
+  // Where a Supabase invite / password-recovery link lands. Reached from the
+  // captured redirect (lib/authRedirect.ts), never from a nav affordance.
+  | 'set-password'
+  | 'forgot-password'
   | 'farmer-register'
   | 'farmer-dashboard'
   | 'farmer-onboarding'

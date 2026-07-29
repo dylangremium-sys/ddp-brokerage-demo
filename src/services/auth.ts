@@ -46,6 +46,68 @@ export async function signIn(email: string, password: string) {
   return data
 }
 
+/**
+ * Sets the password of the CURRENTLY AUTHENTICATED user.
+ *
+ * This is the last step of both onboarding paths. An admin-provisioned supplier
+ * arrives from the invite email holding a transient session and no password; a
+ * user who forgot theirs arrives from a recovery link the same way. Supabase's
+ * updateUser applies to whoever the session belongs to — there is no user id
+ * parameter and none can be supplied, so this can never change another
+ * account's password even if the caller wanted to.
+ *
+ * Fails loudly. The single most damaging outcome here is a screen that says
+ * "password saved" when it was not: the user closes the tab, the transient
+ * session expires, and the account becomes permanently unreachable. So the
+ * error is thrown, never swallowed, and the caller must not navigate until this
+ * resolves.
+ */
+export async function setPassword(password: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await supabase.auth.updateUser({ password })
+  if (error) throw new Error(error.message)
+  // updateUser resolves with the updated user. A resolution carrying no user is
+  // not a success this function is willing to report as one.
+  if (!data?.user) throw new Error('Password update did not return a user.')
+}
+
+/**
+ * Sends a password-reset email.
+ *
+ * `redirectTo` points at this app's own origin so the recovery link returns
+ * here rather than to whatever the Supabase project's Site URL happens to be —
+ * the app is served from three hostnames (apex, www, and the vercel.app
+ * domain), and a user who started on one should come back to it. Supabase only
+ * honours a redirect that is on its allow-list and otherwise falls back to the
+ * Site URL, so an unlisted origin degrades to a working link rather than a
+ * broken one.
+ *
+ * Resolves on success. Note that a nonexistent address is a SUCCESS as far as
+ * Supabase is concerned — it deliberately does not reveal whether an account
+ * exists — so the caller must show the same neutral confirmation either way and
+ * must never present this as proof an account was found.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const redirectTo = typeof window === 'undefined' ? undefined : window.location.origin
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Whether a session exists right now.
+ *
+ * The set-password screen calls this to tell "your invite is ready, choose a
+ * password" apart from "this link has already been used or has expired". Read
+ * from the local session rather than getUser() so an expired link is reported
+ * as such instead of as a network failure.
+ */
+export async function hasActiveSession(): Promise<boolean> {
+  if (!supabase) return false
+  const { data: { session } } = await supabase.auth.getSession()
+  return !!session
+}
+
 // NOTE: public self-registration has been removed. There is deliberately no
 // client wrapper around the Supabase Auth public sign-up endpoint — a public
 // caller must never be able to create an operational account. Farmers are

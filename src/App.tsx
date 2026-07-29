@@ -35,7 +35,7 @@ import {
   getCurrentProfile,
   type UserProfile,
 } from './services/auth'
-import { resolvePostLoginDecision, nextBootstrapRouting, resolveBootstrap } from './lib/postLoginRouting'
+import { resolvePostLoginDecision, resolveAuthResolutionAction } from './lib/postLoginRouting'
 import { reviewRequestScopeKey, reviewRequestScopeChanged, scopeReviewRequestsToFarmer, deskReviewRequestsView } from './lib/reviewRequestScope'
 import { loadStoredComplianceAlerts, loadStoredComplianceRules } from './lib/complianceLocalAlerts'
 import { runGuardedLoad } from './lib/asyncLoadGuard'
@@ -48,6 +48,8 @@ import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlert
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
 import LoginPage from './pages/public/LoginPage'
+import SetPasswordPage from './pages/public/SetPasswordPage'
+import ForgotPasswordPage from './pages/public/ForgotPasswordPage'
 import FarmerRegister from './pages/farmer/FarmerRegister'
 import FarmerDashboard from './pages/farmer/FarmerDashboard'
 import FarmerOnboarding from './pages/farmer/FarmerOnboarding'
@@ -76,7 +78,8 @@ import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
-import { FARMER_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
+import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
+import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
 
 // FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
 // lib/navigationGuard.ts so they can be unit tested. PUBLIC_PAGES once omitted
@@ -89,7 +92,21 @@ const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'd
 // ─── Main App ────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [page, setPage] = useState<Page>('landing')
+  // The invite / password-recovery redirect this page load arrived with, if any.
+  //
+  // The authority is the module-scope capture in lib/authRedirect.ts, which ran
+  // before supabase-js could strip the fragment from the URL. This state is a
+  // render-visible mirror of it — held as state, not a ref, so that clearing it
+  // when the flow completes actually re-renders. Code running OUTSIDE render
+  // (the auth subscription) reads getAuthRedirect() directly instead, so it can
+  // never act on a stale closure of this value.
+  const [authRedirect, setAuthRedirect] = useState(() => getAuthRedirect())
+
+  // A user arriving from an invite or recovery link starts ON the set-password
+  // screen. Landing them anywhere else — even for a moment — is the defect:
+  // their session is transient, and once it lapses the account has no password
+  // and no way to obtain one.
+  const [page, setPage] = useState<Page>(() => (getAuthRedirect() ? 'set-password' : 'landing'))
   const [lang, setLang] = useState<Lang>('en')
   const [inventory, setInventory] = useState<InventoryItem[]>(() => getInventoryBatches())
   const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
@@ -220,25 +237,30 @@ export default function App() {
       // Bootstrap routing: on the FIRST auth resolution after a (re)load, route a
       // restored session to its role page (a reload resets `page` to the public
       // landing). Guarded to run once so later events cannot override navigation.
-      const isFirstResolution = !didBootstrapRoute.current
-      const routing = nextBootstrapRouting(didBootstrapRoute.current, profile)
-      didBootstrapRoute.current = routing.routed
-      if (routing.routeTo) {
-        setPage(routing.routeTo)
+      //
+      // The decision — including the revoke-session branch below and the
+      // suppression that keeps an invited supplier on the set-password screen —
+      // is pure and lives in lib/postLoginRouting.ts, where it is unit-tested.
+      // This block keeps only the side effects.
+      //
+      // revoke-session is defence in depth: a FRESH login by an unresolved-role
+      // (e.g. 'pending') account is denied AND its session revoked
+      // (handleLoginSuccess's fail-closed branch), but a page reload restored
+      // that same session intact — bootstrap correctly declined to route, yet
+      // the session survived and isSignedIn became true. Nothing is reachable
+      // through it (no nav affordance renders, DDP pages fail closed to
+      // AccessDenied, RLS denies the reads); this closes the asymmetry so both
+      // entry paths agree the session must not persist.
+      const { routed, action } = resolveAuthResolutionAction({
+        alreadyRouted: didBootstrapRoute.current,
+        profile,
+        passwordSetupPending: getAuthRedirect() !== null,
+      })
+      didBootstrapRoute.current = routed
+      if (action.kind === 'route') {
+        setPage(action.page)
         window.scrollTo(0, 0)
-      } else if (isFirstResolution && profile && resolveBootstrap(profile).state === 'authenticated-unresolved') {
-        // Defence in depth: a FRESH login by an unresolved-role (e.g. 'pending')
-        // account is denied AND its session revoked (handleLoginSuccess's
-        // fail-closed branch), but a page reload restored that same session
-        // intact — bootstrap correctly declined to route, yet the session
-        // survived and isSignedIn became true. Nothing is reachable through it
-        // (no nav affordance renders, DDP pages fail closed to AccessDenied,
-        // RLS denies the reads); this closes the asymmetry so both entry paths
-        // agree the session must not persist. Scoped to the FIRST resolution
-        // only: a token refresh for an already-resolved operator re-fires this
-        // subscription with didBootstrapRoute already true, so it can never
-        // revoke a working session. The ref itself is written only by the
-        // assignment above, preserving the once-only routing guard.
+      } else if (action.kind === 'revoke-session') {
         void signOut()
         setCurrentProfile(null)
       }
@@ -584,7 +606,9 @@ export default function App() {
   // covers <main>, so body kept painting navy behind it — visible during route
   // transitions and on overscroll. Tag the document instead, and let CSS own it.
   useEffect(() => {
-    const isPublicAuthPage = page === 'login' || page === 'farmer-register'
+    // Derived from PUBLIC_AUTH_PAGES rather than an inline page !== chain, so a
+    // new auth screen cannot be added without picking up the cream treatment.
+    const isPublicAuthPage = PUBLIC_AUTH_PAGES.includes(page)
     document.body.classList.toggle('public-auth-page', isPublicAuthPage)
     return () => document.body.classList.remove('public-auth-page')
   }, [page])
@@ -626,6 +650,26 @@ export default function App() {
     setDbError(reportAppMessage('Your account does not have an assigned DDP role. Please contact DDP support.'))
     setPage('login')
     window.scrollTo(0, 0)
+  }
+
+  // Called once the password has actually been saved. Ends the redirect flow —
+  // clearing the capture also scrubs the spent token from the address bar, so a
+  // reload cannot re-enter the screen — then routes by role through the SAME
+  // decision a normal sign-in uses, including its fail-closed branch for an
+  // account with no operator role.
+  async function handleSetPasswordComplete() {
+    clearAuthRedirect()
+    setAuthRedirect(null)
+    await handleLoginSuccess()
+  }
+
+  // Leaving the set-password screen to request a fresh link. The redirect is
+  // cleared because the token it carried is spent or expired — keeping it would
+  // send the user straight back to the dead screen on the next auth event.
+  function goToForgotPassword() {
+    clearAuthRedirect()
+    setAuthRedirect(null)
+    goTo('forgot-password')
   }
 
   // ── Data handlers ─────────────────────────────────────────────────────────
@@ -949,7 +993,7 @@ export default function App() {
     <div className="app">
 
       {/* ── Navbar (all non-landing pages; the editorial shell draws its own) ── */}
-      {!useEditorialShell && page !== 'landing' && page !== 'login' && page !== 'farmer-register' && (
+      {!useEditorialShell && !PUBLIC_PAGES.includes(page) && (
         <nav className="navbar">
           <div
             className="navbar-brand"
@@ -1017,6 +1061,33 @@ export default function App() {
             lang={lang}
             onSuccess={handleLoginSuccess}
             onSupplierSignup={() => goTo('farmer-register')}
+            onForgotPassword={() => goTo('forgot-password')}
+          />
+        </main>
+      )}
+
+      {/* ── Set password (invite / recovery landing) ──
+          Reached from the captured auth redirect, not from a nav affordance.
+          `authRedirect` may be null if a user navigates here by other
+          means; treating that as an expired link is the correct fail-closed
+          reading, since without a redirect there is no session to update. */}
+      {page === 'set-password' && (
+        <main className="main-content public-auth-shell">
+          <SetPasswordPage
+            lang={lang}
+            redirect={authRedirect ?? { kind: 'error', code: null, description: null }}
+            onDone={handleSetPasswordComplete}
+            onRequestNewLink={goToForgotPassword}
+          />
+        </main>
+      )}
+
+      {/* ── Forgot password (no navbar) ── */}
+      {page === 'forgot-password' && (
+        <main className="main-content public-auth-shell">
+          <ForgotPasswordPage
+            lang={lang}
+            onBackToLogin={() => goTo('login')}
           />
         </main>
       )}
@@ -1035,7 +1106,7 @@ export default function App() {
       )}
 
       {/* ── App pages ── */}
-      {page !== 'landing' && page !== 'login' && page !== 'farmer-register' && (() => {
+      {!PUBLIC_PAGES.includes(page) && (() => {
         const appPages = (
           <>
 

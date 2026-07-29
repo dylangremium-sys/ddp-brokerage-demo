@@ -7,9 +7,10 @@ interface Props {
   lang?: Lang
   onSuccess: () => void
   onSupplierSignup: () => void
+  onForgotPassword: () => void
 }
 
-export default function LoginPage({ lang = 'en', onSuccess, onSupplierSignup }: Props) {
+export default function LoginPage({ lang = 'en', onSuccess, onSupplierSignup, onForgotPassword }: Props) {
   const t = T[lang]
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -92,6 +93,17 @@ export default function LoginPage({ lang = 'en', onSuccess, onSupplierSignup }: 
             disabled={loading}
           >
             {loading ? t.loginLoading : t.loginBtn}
+          </button>
+          {/* The only route back in for a locked-out supplier. Without it an
+              expired invite — or a forgotten password — is terminal, because
+              nothing else in the app can set one. */}
+          <button
+            type="button"
+            className="btn btn-ghost btn-lg"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={onForgotPassword}
+          >
+            {t.loginForgotLink}
           </button>
           <button
             type="button"
