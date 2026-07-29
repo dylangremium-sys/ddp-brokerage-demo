@@ -88,9 +88,18 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   email text,
   role text
 );
+-- `status`, `reviewed_by` and `updated_at` are the columns an admin review
+-- action writes (src/lib/db.ts updateFarmProfileStatus / updateInventoryStatus)
+-- and are what migration 35's RPC transitions. Shapes copied from production,
+-- measured read-only 2026-07-28: status text NULL, reviewed_by uuid NULL,
+-- updated_at timestamptz NOT NULL DEFAULT now(), and NO check constraint on
+-- status (the status vocabulary is enforced in TypeScript, not in the database).
 CREATE TABLE IF NOT EXISTS public.farms (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_by uuid
+  created_by uuid,
+  status text,
+  reviewed_by uuid,
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS public.farm_profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -99,7 +108,25 @@ CREATE TABLE IF NOT EXISTS public.farm_profiles (
 CREATE TABLE IF NOT EXISTS public.inventory_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
-  created_by uuid
+  created_by uuid,
+  status text,
+  reviewed_by uuid,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- public.status_history — the compliance artefact recording how an entity
+-- reached its current status. Created by the pre-numbering schema
+-- (SUPABASE_SCHEMA.sql), so it is substrate, not part of any migration under
+-- test. Column shapes copied from production, measured read-only 2026-07-28:
+-- entity_type/entity_id/old_status/new_status/note are all NULLABLE, and
+-- entity_id carries NO foreign key (it addresses two different tables).
+CREATE TABLE IF NOT EXISTS public.status_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_type text,
+  entity_id uuid,
+  old_status text,
+  new_status text,
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS public.farm_memberships (
   farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
