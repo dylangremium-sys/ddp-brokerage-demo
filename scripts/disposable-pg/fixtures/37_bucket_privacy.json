@@ -1,0 +1,64 @@
+{
+  "id": "37_bucket_privacy",
+  "title": "Migration 37 \u2014 Storage bucket privacy (buckets only)",
+  "description": "Applies migration 37, runs VERIFY A-C, then rolls back on a disposable PostgreSQL 18 cluster. Migration 37 now covers BUCKETS ONLY: it asserts public = false on both farmer buckets and creates farmer-photos private. The object policies were split into migration 38 because they require OWNERSHIP of storage.objects while a bucket write needs only table privileges -- coupling them meant the achievable half could not be applied either. The rollback deliberately leaves bucket privacy at public = false (a rollback must not reintroduce a vulnerability), so postRollback asserts the buckets remain present rather than removed. The destructive bucket-deletion path is guarded by SET LOCAL bucket_privacy.rollback_destructive and is NOT exercised here; the default no-opt-in path is.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING",
+      "file": "37_STORAGE_BUCKET_PRIVACY_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "37_STORAGE_BUCKET_PRIVACY_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "C"
+    ],
+    "expectedPassCount": 2,
+    "note": "A and C are the assertions. B and D are INFORMATIONAL BY DESIGN and emit no PASSED token: B reports migration 38's policy state (absent is correct here) and D reports migration 22's overlay. Declaring either as an expected pass would force it to assert something migration 37 does not install. The whole file is catalog-SELECT only -- no auth.users fixture, no DML in any section -- so unlike every other VERIFY in this corpus it is safe to run whole against Production under the change freeze."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "37_STORAGE_BUCKET_PRIVACY_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public",
+      "storage"
+    ],
+    "symbols": [
+      "auth.uid",
+      "public.is_ddp_admin",
+      "public.has_operational_farmer_access",
+      "storage.buckets",
+      "storage.objects"
+    ]
+  },
+  "postRollback": {
+    "intact": {
+      "tables": [
+        "storage.buckets",
+        "storage.objects",
+        "public.profiles"
+      ],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.has_operational_farmer_access",
+        "auth.uid"
+      ]
+    }
+  }
+}
