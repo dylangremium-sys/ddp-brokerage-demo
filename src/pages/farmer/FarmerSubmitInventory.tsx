@@ -1,4 +1,9 @@
 import { useState, useRef } from 'react'
+import { validatePhotoFile } from '../../lib/db'
+import {
+  addPhoto, removePhotoAt, fromStoredPreviews, toPreviews, toUploadFiles,
+  type SelectedPhoto,
+} from '../../lib/batchPhotoSelection'
 import type {
   Lang, InventoryItem, FarmProfile, ProductType, TestStatus, MarketBenchmark, ReviewRequest
 } from '../../types'
@@ -7,7 +12,7 @@ interface Props {
   lang: Lang
   farms: FarmProfile[]
   initialItem?: InventoryItem | null
-  onSubmit: (item: InventoryItem, coaFile?: File | null) => void | Promise<void>
+  onSubmit: (item: InventoryItem, coaFile?: File | null, photoFiles?: File[]) => void | Promise<void>
   onBack: () => void
   marketBenchmarks?: MarketBenchmark[]
   openRequests?: ReviewRequest[]
@@ -107,7 +112,16 @@ export default function FarmerSubmitInventory({
   const isTh = lang === 'th'
   const isEdit = !!initialItem
   const [form, setForm] = useState(() => initForm(initialItem))
-  const [photos, setPhotos] = useState<string[]>(initialItem?.photoUrls ?? [])
+  // Preview and File are held as ONE list, not two parallel arrays. The remove
+  // button deletes by index, and two arrays kept in step by hand is exactly how
+  // you end up uploading the photo the farmer just deleted.
+  //
+  // `file` is null for entries restored from a draft: those previews came back as
+  // stored strings and there are no bytes to re-upload.
+  const [photos, setPhotos] = useState<SelectedPhoto[]>(
+    () => fromStoredPreviews(initialItem?.photoUrls),
+  )
+  const [photoError, setPhotoError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [coaFile, setCoaFile] = useState<File | null>(null)
@@ -148,12 +162,30 @@ export default function FarmerSubmitInventory({
   function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    // Reject before showing a preview. The old flow accepted anything the browser
+    // would render, which meant a farmer could see a thumbnail of a file that
+    // would later be refused — a preview is a promise that it is on file.
+    const reason = validatePhotoFile(file)
+    if (reason) {
+      setPhotoError(
+        reason === 'type'
+          ? (isTh ? 'รองรับเฉพาะรูปภาพ JPG, PNG, WebP หรือ HEIC' : 'JPG, PNG, WebP or HEIC images only.')
+          : reason === 'size'
+            ? (isTh ? 'ไฟล์ใหญ่เกิน 10 MB' : 'Image is larger than 10 MB.')
+            : (isTh ? 'ไฟล์ว่างเปล่า' : 'That file is empty.'),
+      )
+      if (photoInputRef.current) photoInputRef.current.value = ''
+      return
+    }
+    setPhotoError(null)
     const reader = new FileReader()
     reader.onload = ev => {
-      const dataUrl = ev.target?.result as string
-      setPhotos(prev => [dataUrl, ...prev.slice(0, 3)])
+      const preview = ev.target?.result as string
+      setPhotos(prev => addPhoto(prev, preview, file))
     }
     reader.readAsDataURL(file)
+    // Clear the input so re-selecting the same file fires onChange again.
+    if (photoInputRef.current) photoInputRef.current.value = ''
   }
 
   function buildItem(isDraft: boolean): InventoryItem {
@@ -179,7 +211,7 @@ export default function FarmerSubmitInventory({
       qualityGrade: 'A',
       pricePerKg,
       certFileName: form.coaFileName,
-      photoUrl: photos[0] ?? '',
+      photoUrl: photos[0]?.preview ?? '',
       storageConditions: form.storageConditions,
       notes: form.farmerNotes,
       status: 'Pending Review',
@@ -201,7 +233,7 @@ export default function FarmerSubmitInventory({
       pesticidesStatus: form.pesticidesStatus || undefined,
       microbialStatus: form.microbialStatus || undefined,
       mycotoxinsStatus: form.mycotoxinsStatus || undefined,
-      photoUrls: photos.length > 0 ? photos : undefined,
+      photoUrls: photos.length > 0 ? toPreviews(photos) : undefined,
       farmerNotes: form.farmerNotes || undefined,
       ownerNotes: initialItem?.ownerNotes,
     }
@@ -220,7 +252,9 @@ export default function FarmerSubmitInventory({
     const item = buildItem(false)
     setUploading(true)
     try {
-      await onSubmit(item, coaFile ?? null)
+      // Only entries with bytes can be uploaded. Draft-restored previews have no
+      // File and are not re-sent; they are already on file or never were.
+      await onSubmit(item, coaFile ?? null, toUploadFiles(photos))
       setSubmitted(true)
     } catch {
       // keep page usable
@@ -601,17 +635,17 @@ export default function FarmerSubmitInventory({
             onChange={handlePhotoFile}
           />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-            {photos.map((url, i) => (
+            {photos.map((photo, i) => (
               <div key={i} style={{ position: 'relative', width: 80, height: 80 }}>
                 <img
-                  src={url}
+                  src={photo.preview}
                   alt={isTh ? `รูปที่อัปโหลด ${i + 1}` : `Uploaded photo ${i + 1}`}
                   loading="lazy"
                   style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }}
                 />
                 <button
                   type="button"
-                  onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
+                  onClick={() => setPhotos(prev => removePhotoAt(prev, i))}
                   aria-label={isTh ? 'ลบรูปภาพ' : 'Remove photo'}
                   style={{
                     position: 'absolute', top: -6, right: -6,
@@ -632,6 +666,9 @@ export default function FarmerSubmitInventory({
             {isTh ? 'ถ่ายรูปหรือเลือกรูป' : 'Take photo or choose image'}
           </button>
           <span className="field-hint">{isTh ? 'รูปดอก บรรจุภัณฑ์ หรือป้ายแบทช์' : 'Bud close-up, packaging, or batch label'}</span>
+          {photoError && (
+            <span role="alert" style={{ display: 'block', color: 'var(--error)', fontSize: 12, marginTop: 4 }}>{photoError}</span>
+          )}
         </div>
 
         <div className="card form-card" style={{ marginBottom: 24 }}>

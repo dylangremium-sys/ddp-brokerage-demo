@@ -505,10 +505,48 @@ export interface InventoryItem {
   pesticidesStatus?: TestStatus
   microbialStatus?: TestStatus
   mycotoxinsStatus?: TestStatus
+  /**
+   * Browser-session photo previews as base64 `data:` URLs.
+   *
+   * These are NOT durable and are deliberately never written to the database —
+   * a single phone photo is 500 KB+ of base64. They exist so the farmer can see
+   * what they attached before submitting.
+   *
+   * The durable record is `storedPhotos` below, backed by the private
+   * `farmer-photos` storage bucket. Before that path existed, every attached
+   * photo was silently discarded on save.
+   */
   photoUrls?: string[]
+  /**
+   * Photos actually on file, as rows in `public.farmer_photos`. Populated on
+   * load from the database; each carries a storage path that must be signed to
+   * be viewed (the bucket is private).
+   */
+  storedPhotos?: StoredPhoto[]
   farmerNotes?: string
   ownerNotes?: string
   coaStoragePath?: string
+}
+
+/** Photo types accepted by `public.farmer_photos.photo_type` (FARMER_MVP_MIGRATION). */
+export type BatchPhotoType = 'product' | 'packaging' | 'batch_label' | 'facility' | 'other'
+
+/**
+ * A photo durably on file — one row of `public.farmer_photos`.
+ *
+ * `storagePath` is a path inside the PRIVATE `farmer-photos` bucket, not a
+ * fetchable URL. It must be exchanged for a short-lived signed URL at display
+ * time. Storing a signed URL would be wrong: they expire, so a persisted one is
+ * a link that works today and silently breaks later.
+ */
+export interface StoredPhoto {
+  id: string
+  batchId: string
+  farmId?: string
+  photoType: BatchPhotoType
+  storagePath: string
+  caption?: string
+  createdAt: string
 }
 
 export interface FarmProfile {

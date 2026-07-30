@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { FarmProfile, InventoryItem, InventoryStatus, ReviewRequest } from '../../types'
+import { useState, useEffect } from 'react'
+import type { FarmProfile, InventoryItem, InventoryStatus, ReviewRequest, StoredPhoto } from '../../types'
 import { deriveComplianceTier, COMPLIANCE_TIER_LABEL } from '../../data'
 import { DocumentCard } from '../../components/shared/DocumentCard'
 
@@ -22,6 +22,7 @@ interface Props {
   onAction: (itemId: string, action: string) => void
   onSendRequest?: (req: Omit<ReviewRequest, 'id' | 'createdAt'>) => void
   onGetCoaUrl?: (storagePath: string) => Promise<string | null>
+  onGetPhotoUrl?: (storagePath: string) => Promise<string | null>
   onSaveNote?: (itemId: string, note: string) => void
 }
 
@@ -30,6 +31,73 @@ const STATUS_CLASS: Record<InventoryStatus, string> = {
   'Approved': 'badge-approved',
   'Missing Document': 'badge-missing',
   'Rejected': 'badge-rejected',
+}
+
+/**
+ * One thumbnail for a photo held in the private farmer-photos bucket.
+ *
+ * The bucket is private, so there is no URL to render directly — a short-lived
+ * signed URL has to be fetched per photo. Each thumbnail resolves its own so one
+ * unreadable photo degrades to a placeholder instead of blanking the gallery.
+ *
+ * `revoked` guards against setting state after unmount, which happens routinely
+ * here: a reviewer clicking through batches unmounts this mid-fetch.
+ */
+function StoredPhotoThumb({
+  photo,
+  onGetPhotoUrl,
+}: {
+  photo: StoredPhoto
+  onGetPhotoUrl?: (storagePath: string) => Promise<string | null>
+}) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [fetchFailed, setFetchFailed] = useState(false)
+
+  useEffect(() => {
+    // No resolver means there is nothing to fetch — that is derived below, not
+    // written to state. Setting state synchronously inside an effect triggers a
+    // cascading render, which the lint rule correctly refuses.
+    if (!onGetPhotoUrl) return
+    let revoked = false
+    onGetPhotoUrl(photo.storagePath)
+      .then(signed => {
+        if (revoked) return
+        if (signed) setUrl(signed)
+        else setFetchFailed(true)
+      })
+      .catch(() => { if (!revoked) setFetchFailed(true) })
+    return () => { revoked = true }
+  }, [photo.storagePath, onGetPhotoUrl])
+
+  // Unavailable when we cannot even try, or when the attempt failed.
+  const failed = !onGetPhotoUrl || fetchFailed
+
+  const box: React.CSSProperties = {
+    width: 100, height: 100, borderRadius: 6,
+    border: '1px solid var(--border)', objectFit: 'cover',
+  }
+
+  if (failed) {
+    return (
+      <div
+        style={{ ...box, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, textAlign: 'center', padding: 4 }}
+        className="text-muted"
+        title={photo.storagePath}
+      >
+        Photo unavailable
+      </div>
+    )
+  }
+
+  if (!url) {
+    return <div style={{ ...box, background: 'var(--surface-2, rgba(0,0,0,0.06))' }} aria-busy="true" />
+  }
+
+  return (
+    <a href={url} target="_blank" rel="noreferrer" title={photo.photoType}>
+      <img src={url} alt={`Batch photo (${photo.photoType})`} loading="lazy" style={box} />
+    </a>
+  )
 }
 
 function CheckRow({ label, pass }: { label: string; pass: boolean }) {
@@ -41,7 +109,7 @@ function CheckRow({ label, pass }: { label: string; pass: boolean }) {
   )
 }
 
-export default function DDPInventoryReview({ item, farm, onBack, onAction, onSendRequest, onGetCoaUrl, onSaveNote }: Props) {
+export default function DDPInventoryReview({ item, farm, onBack, onAction, onSendRequest, onGetCoaUrl, onGetPhotoUrl, onSaveNote }: Props) {
   const [reqType, setReqType] = useState<RequestType>('general')
   const [reqMsg, setReqMsg] = useState('')
   const [reqSent, setReqSent] = useState(false)
@@ -89,7 +157,10 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
     { label: 'CBD recorded', pass: item.cbdPct > 0 },
     { label: 'Moisture recorded', pass: item.moisturePct > 0 },
     { label: 'Water activity recorded', pass: !!item.waterActivity },
-    { label: 'Product photo supplied', pass: !!item.photoUrl },
+    // Counts photos actually ON FILE, not a browser-session preview. photoUrl is a
+    // base64 data: URL that is never persisted, so passing this check on it told a
+    // reviewer evidence existed when nothing had been stored.
+    { label: 'Product photo on file', pass: (item.storedPhotos?.length ?? 0) > 0 },
     { label: 'Storage conditions supplied', pass: !!item.storageConditions },
   ]
   const passCount = checks.filter(c => c.pass).length
@@ -190,6 +261,21 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
               <div className="detail-block">
                 <div className="detail-block-title">Photo Preview</div>
                 <img src={item.photoUrl} alt="Product" loading="lazy" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
+              </div>
+            )}
+
+            {(item.storedPhotos?.length ?? 0) > 0 && (
+              <div className="detail-block">
+                <div className="detail-block-title">Photos on file ({item.storedPhotos!.length})</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {item.storedPhotos!.map(photo => (
+                    <StoredPhotoThumb
+                      key={photo.id}
+                      photo={photo}
+                      onGetPhotoUrl={onGetPhotoUrl}
+                    />
+                  ))}
+                </div>
               </div>
             )}
 
