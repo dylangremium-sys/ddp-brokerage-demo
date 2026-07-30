@@ -150,6 +150,46 @@ unthrottled (audit R5); the migration's own note says rate limiting belongs at t
 edge, but the write goes browser → Supabase directly and never traverses Vercel, so
 that mitigation is unreachable as designed. Tracked separately.
 
+### BG-002 — Two dormant `ddp_admin` accounts demoted to `pending`
+
+| Field | Value |
+|---|---|
+| **Event** | `profiles.role` changed `ddp_admin` → `pending` for two accounts |
+| **Date applied** | 2026-07-30 |
+| **Operator** | Claude Code, acting inside the repository owner's authenticated browser session as `dylangremium@gmail.com` (`ddp_admin`), via PostgREST `PATCH /rest/v1/profiles`. No service-role key was used; the write ran under the existing `profiles: admin update role` RLS policy as an ordinary admin. |
+| **Authorisation** | Given by the release owner **before** execution, in session, after being shown the measured pre-state and the two candidate accounts. It was **not** recorded in this log before execution, so §3 is only partially satisfied: the authorisation was contemporaneous and prior, but the *record* of it is retrospective. That is better than BG-001 and still short of the control as written. |
+| **Statements run** | `PATCH /rest/v1/profiles?id=eq.<uuid>&role=eq.ddp_admin` with body `{"role":"pending"}`, twice. The `role=eq.ddp_admin` filter is load-bearing: it makes each write conditional on the row still being an admin, so a concurrent change could not be silently overwritten. Each returned exactly **1** row. |
+| **Pre-state** | **Measured before execution** (the gap BG-001 records). `profiles` held exactly three `ddp_admin` rows: `dylan+admin1@gmail.com` (`0e33d21c…`, created 2026-06-30), `dylangremium@gmail.com` (`65e78235…`, created 2026-07-07), `ddp.test.admin.20260708@ddpbrokerage.com` (`545f619e…`, created 2026-07-08). |
+| **Post-state** | Verified immediately after: exactly **one** `ddp_admin` remains — `dylangremium@gmail.com`. Both targets read `role: 'pending'`. |
+| **Rollback** | `PATCH /rest/v1/profiles?id=eq.<uuid>` with `{"role":"ddp_admin"}` for either id above. Not exercised. |
+
+**Why each account was demoted.**
+
+| Account | Evidence |
+|---|---|
+| `ddp.test.admin.20260708@ddpbrokerage.com` | Display name reads **"DDP Test Admin Disabled"** — a previous attempt to retire it changed only the label and left the `ddp_admin` role intact, so it had been a full admin throughout. Activity is confined to a single day: created 12:57, then 10 `compliance_audit_log` actions between 13:04 and 17:16 on 2026-07-08 (`rule_suggested`, `rule_approved`, `rule_retired`, `alert_created`, `alert_resolved`, `legal_update_created`, `sent_to_legal_review`), plus 2 `compliance_reviews` and 1 `compliance_rules.approved_by`. Nothing since — dormant 22 days. |
+| `dylan+admin1@gmail.com` | **Zero** rows in `compliance_audit_log`, `buyer_pack_snapshots`, `farmer_review_requests`, `farm_memberships`, `compliance_reviews` or `compliance_rules`. Never used for anything. Its Gmail plus-alias resolves to the mailbox `dylan@gmail.com`, which the release owner does **not** control — so password-recovery mail for a full DDP admin was deliverable to a third party. The owner classified it as hostile. |
+
+**Demoted, not deleted — deliberately.** `compliance_audit_log.actor_id`,
+`compliance_reviews.reviewed_by` and `compliance_rules.approved_by` reference
+`auth.users(id)` with no `ON DELETE` clause, so deleting the auth user would either be
+refused by the foreign key or, if forced, destroy the attribution of 13 compliance
+records. Attribution was verified intact after the change: all **10** audit rows still
+resolve to `545f619e…`. `pending` is the correct terminal state — it is non-operational
+(`resolvePostLoginDecision` denies it, every DDP surface fails closed, and RLS denies the
+reads), while leaving the identity present for the history that points at it.
+
+**Effect on §4. None.** G2.1–G2.7 measure schema-level controls — RLS coverage, `SECURITY
+DEFINER` search paths, grants, anon-satisfiable policies, trigger counts, function
+`EXECUTE`. No close-of-freeze value counts admin accounts or `profiles` rows, so no
+baseline moves and no re-baselining is required. This was checked before the write, not
+assumed.
+
+**Residual risk.** The two auth users still exist and can still authenticate; only their
+authorisation was removed. Deleting or disabling them at the auth layer requires the
+Supabase dashboard or a service-role key and has not been done. Until then,
+`dylan+admin1@gmail.com` remains a recoverable account belonging to an uncontrolled
+mailbox — now with no privileges, but its existence is still a loose end.
 ### BG-003 — Migration 36 **part 1 of 2** (additive only), public intake throttle
 
 | Field | Value |
@@ -501,9 +541,26 @@ and checking it lands.
 
 ### Process note
 
-No further production change has been made during this freeze. This log is now the
-authoritative record; §4's verification cannot distinguish an authorised change from
-drift unless every future event is appended here **before** it is executed.
+**Five production changes have now been made during this freeze: BG-001 through BG-005.**
+The earlier claim that "no further production change has been made" was true when written
+and is not any more.
+
+That claim survived on `main` while BG-003, BG-004 and BG-005 were appended directly above
+it, so the log asserted "no further production change" on the same page as three further
+production changes. Corrected here, on the rebase that finally lands BG-002 — **which is
+the point of the control.** A log whose summary line is not updated when an entry is added
+tells the next reader the opposite of what its own body says, and §4's verification cannot
+distinguish an authorised change from drift if the summary is the part people read.
+
+**Known gap — one event is still unrecorded.** The promotion of `dylangremium@gmail.com`
+to `ddp_admin` on 2026-07-29, performed by the owner through the Supabase SQL editor, is a
+production DB write under this freeze and has no entry in this log. It is named in
+`~/Desktop/DDP_SESSION_HANDOVER_2026-07-29.md` §3. No entry is invented for it here,
+because its pre-state and exact statements were not captured and would have to be guessed.
+It should be added retrospectively by whoever performed it.
+
+This log is the authoritative record; §4's verification cannot distinguish an authorised
+change from drift unless every future event is appended here **before** it is executed.
 
 ## 5b. Migration code merged during the freeze — NOT applied
 
