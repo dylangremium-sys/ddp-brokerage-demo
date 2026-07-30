@@ -156,6 +156,34 @@ describe('createServerAiSummaryProvider — transport', () => {
     })
   })
 
+  it('classifies a 4xx as a rejected request and a 5xx as unavailable', async () => {
+    // The adapter now sends `thinking` and `output_config`, which a model that
+    // predates adaptive thinking rejects outright — every request would fail.
+    // The coarse class is what lets an operator tell that misconfiguration
+    // apart from the vendor being down; nothing else about the response
+    // crosses this boundary.
+    const reject = (status: number) =>
+      createServerAiSummaryProvider({
+        apiKey: 'sk-secret',
+        model: 'claude-test',
+        fetchImpl: async () => jsonResponse({ error: { message: 'model not found sk-secret' } }, status),
+      }).draftSummary(INPUT)
+
+    await expect(reject(400)).rejects.toMatchObject({ name: 'AiProviderRequestRejectedError' })
+    await expect(reject(404)).rejects.toMatchObject({ name: 'AiProviderRequestRejectedError' })
+    // Transient statuses stay in the retryable class even though they are 4xx.
+    await expect(reject(429)).rejects.toMatchObject({ name: 'AiProviderUnavailableError' })
+    await expect(reject(529)).rejects.toMatchObject({ name: 'AiProviderUnavailableError' })
+
+    // The class is the ONLY thing that crosses — no status, body, or key.
+    await reject(400).catch((e: unknown) => {
+      const error = e as Error
+      expect(error.message).toBe('AI provider request failed.')
+      expect(error.message).not.toContain('sk-secret')
+      expect(error.message).not.toContain('400')
+    })
+  })
+
   it('aborts via AbortController on timeout and surfaces an AbortError', async () => {
     const provider = createServerAiSummaryProvider({
       apiKey: 'sk-x',

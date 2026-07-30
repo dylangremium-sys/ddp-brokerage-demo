@@ -151,6 +151,53 @@ const PROVIDER_SRC = Object.values(
   import.meta.glob('./serverAiProvider.ts', { query: '?raw', import: 'default', eager: true }),
 )[0] as string
 
+describe('AI summary boundary — fabricated citations across the wire', () => {
+  it('drops fabrications server-side AND reports the count to the browser', () => {
+    // The two halves of this assertion failed independently before: the guard
+    // ran only where the count could not be seen. The server filters, so the
+    // browser's own pass necessarily finds nothing left to drop — if the count
+    // is not carried over the wire the reviewer is shown zero discards for a
+    // draft that was pruned, which reads as "the model cited nothing it could
+    // not support": the exact opposite of what happened.
+    const captured: { authorization?: string } = {}
+    const deps = adminDeps(async () =>
+      output({
+        ...SAFE,
+        sourceReferences: [
+          'Thai FDA',
+          'Ministerial Regulation No. 8 (2565), Annex IV',
+          'Notification of the Ministry of Public Health, s.44',
+        ],
+      }),
+    )
+    const client = createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => 'session-token',
+      fetchImpl: inProcessFetch(deps, captured),
+    })
+
+    return generateAiDraftSummary(makeUpdate(), client, { requestInProgress: false }).then(result => {
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.draft.sourceReferences).toEqual(['Thai FDA'])
+      expect(result.draft.droppedSourceReferences).toBe(2)
+    })
+  })
+
+  it('reports zero discards when every reference is grounded', () => {
+    const captured: { authorization?: string } = {}
+    const client = createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => 'session-token',
+      fetchImpl: inProcessFetch(adminDeps(async () => output(SAFE)), captured),
+    })
+
+    return generateAiDraftSummary(makeUpdate(), client, { requestInProgress: false }).then(result => {
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.draft.droppedSourceReferences).toBe(0)
+    })
+  })
+})
+
 describe('boundary source — no persistence, rules, approval, enforcement, or scheduling', () => {
   const boundary = [
     ['api', API_SRC],

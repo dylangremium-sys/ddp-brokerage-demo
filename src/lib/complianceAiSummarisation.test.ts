@@ -311,7 +311,11 @@ describe('generateAiDraftSummary — guarded orchestration', () => {
 
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.draft.sourceReferences).toContain(quotation)
+      // Rendered as the enclosing sentence read back out of the evidence, so
+      // the reviewer sees the claim in its actual context.
+      expect(result.draft.sourceReferences).toEqual([
+        `Licence holders may export only ${quotation} before shipment.`,
+      ])
       expect(result.draft.droppedSourceReferences).toBe(0)
     }
   })
@@ -335,6 +339,44 @@ describe('generateAiDraftSummary — guarded orchestration', () => {
       expect(result.draft.droppedSourceReferences).toBe(1)
       // The prose is untouched — only the citation list is filtered.
       expect(result.draft.draftSummary).toBe(SAFE_SECTIONS.draftSummary)
+    }
+  })
+
+  it('adds an upstream layer’s discards to its own count', async () => {
+    // The browser receives sections the server already filtered, so its own
+    // pass finds nothing to drop. Without carrying the server's count the
+    // reviewer is told nothing was discarded from a draft that was pruned.
+    const provider = stubProvider(async () => {
+      const output = makeOutput({ ...SAFE_SECTIONS, sourceReferences: ['Thai FDA'] })
+      return { ...output, provenance: { ...output.provenance, upstreamDroppedReferences: 2 } }
+    })
+
+    const result = await generateAiDraftSummary(makeUpdate(), provider, RUN)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.draft.sourceReferences).toEqual(['Thai FDA'])
+      expect(result.draft.droppedSourceReferences).toBe(2)
+    }
+  })
+
+  it('reports provider_rejected, not provider_error, when the request shape is refused', async () => {
+    // A rejected request is a configuration fault (unknown model, unsupported
+    // parameter) that no retry fixes. Collapsing it into provider_error makes
+    // a misconfigured deployment indistinguishable from a vendor outage.
+    const provider = stubProvider(async () => {
+      const error = new Error('AI provider request failed.')
+      error.name = 'AiProviderRequestRejectedError'
+      throw error
+    })
+
+    const result = await generateAiDraftSummary(makeUpdate(), provider, RUN)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('provider_rejected')
+      // Still no vendor text, status, or key in what reaches the caller.
+      expect(result.reason).not.toMatch(/\b[45]\d\d\b|anthropic|api[_-]?key/i)
     }
   })
 

@@ -118,6 +118,10 @@ export interface AiSummarySuccessBody {
   ok: true
   sections: AiSummarySections
   provenance: { provider: string; model: string; generatedAt: string }
+  /** How many model-returned source references this server discarded as
+   *  ungrounded. Carried so the browser can tell the reviewer; it cannot
+   *  recompute the number, because `sections` is already filtered. */
+  referenceIntegrity: { droppedReferences: number }
   requiresHumanReview: true
   label: string
 }
@@ -319,6 +323,9 @@ const RESULT_STATUS: Record<AiSummaryResultCode, number> = {
   missing_evidence: 400,
   oversized_evidence: 413,
   provider_error: 502,
+  // 503, matching provider_unconfigured: the provider is reachable but this
+  // deployment's AI settings are not usable, and a retry will not help.
+  provider_rejected: 503,
   provider_timeout: 504,
   malformed_output: 502,
   empty_output: 502,
@@ -399,6 +406,7 @@ export async function handleAiSummaryRequest(
       sourceReferences: draft.sourceReferences,
     },
     provenance: { provider: draft.providerId, model: draft.modelId, generatedAt: draft.generatedAt },
+    referenceIntegrity: { droppedReferences: draft.droppedSourceReferences },
     requiresHumanReview: true,
     label: AI_DRAFT_LABEL,
   }

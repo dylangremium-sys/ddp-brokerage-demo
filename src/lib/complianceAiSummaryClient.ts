@@ -43,6 +43,9 @@ interface ServerSuccessBody {
   ok: true
   sections: AiDraftSummarySections
   provenance: { provider: string; model: string; generatedAt: string }
+  /** Optional so an older server response still parses; absent is read as
+   *  "nothing upstream filtered", never as an error. */
+  referenceIntegrity?: { droppedReferences?: unknown }
 }
 
 function isServerSuccess(v: unknown): v is ServerSuccessBody {
@@ -106,6 +109,10 @@ export function createComplianceAiSummaryHttpClient(
           throw new Error('The AI draft summary response was unreadable.')
         }
 
+        // The server has already run the reference guard, so `sections` is
+        // filtered and the browser's own pass will find nothing to drop. Carry
+        // the server's count forward or the reviewer is shown a zero.
+        const upstreamDropped = json.referenceIntegrity?.droppedReferences
         return {
           value: json.sections,
           confidence: 0,
@@ -115,6 +122,10 @@ export function createComplianceAiSummaryHttpClient(
             modelInfo: { provider: json.provenance.provider, model: json.provenance.model },
             generatedAt: json.provenance.generatedAt,
             requiresHumanReview: true,
+            upstreamDroppedReferences:
+              typeof upstreamDropped === 'number' && Number.isFinite(upstreamDropped) && upstreamDropped > 0
+                ? Math.floor(upstreamDropped)
+                : undefined,
           },
         }
       } finally {

@@ -1739,9 +1739,10 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                 ? <ul style={{ margin: 0 }}>{aiDraft.sourceReferences.map((r, i) => <li key={i}>{r}</li>)}</ul>
                 : <p className="td-muted" style={{ margin: 0 }}>None. No reference could be matched to the recorded source evidence.</p>}
               <p className="td-muted" style={{ marginTop: 4, fontSize: 12 }}>
-                Each reference above was matched against the recorded source name, URL, or raw evidence
-                before display. References the AI produced that could not be matched are discarded, so this
-                list is not a citation of the underlying legislation — the primary source text is not held here.
+                Each entry above is quoted from the recorded source — the sentence as it appears in the stored
+                evidence, or the recorded source name or URL — not the AI's wording of it. References the AI
+                produced that could not be matched to the stored evidence are discarded. This list is therefore
+                not a citation of the underlying legislation: the primary source text is not held here.
                 {aiDraft.droppedSourceReferences > 0
                   ? ` ${aiDraft.droppedSourceReferences} unmatched reference(s) were discarded from this draft.`
                   : ''}

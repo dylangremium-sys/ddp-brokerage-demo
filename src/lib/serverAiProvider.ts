@@ -220,8 +220,23 @@ export function createServerAiSummaryProvider(config: ServerAiProviderConfig): C
       }
 
       if (!response.ok) {
-        // Generic — never surface vendor status text, body, or the key upstream.
-        throw new Error('AI provider request failed.')
+        // Generic message — never surface vendor status text, body, or the key
+        // upstream. Only a COARSE CLASS derived from the status code crosses
+        // this boundary, carried on `name` so the orchestration can map it.
+        //
+        // The distinction earns its keep because this adapter now sends
+        // `thinking` and `output_config`, which a pre-4.6 model rejects
+        // outright: if AI_SUMMARY_MODEL names one, every request fails. Without
+        // the class, that misconfiguration is indistinguishable in the logs
+        // from the vendor being down, and an operator has nothing to go on.
+        const rejected =
+          response.status >= 400 &&
+          response.status < 500 &&
+          response.status !== 408 &&
+          response.status !== 429
+        const error = new Error('AI provider request failed.')
+        error.name = rejected ? 'AiProviderRequestRejectedError' : 'AiProviderUnavailableError'
+        throw error
       }
 
       let parsed: unknown

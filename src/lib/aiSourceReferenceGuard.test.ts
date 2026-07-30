@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_REFERENCE_CONTEXT_CHARS,
   MAX_SOURCE_REFERENCES,
   MIN_QUOTED_REFERENCE_CHARS,
   verifySourceReferences,
@@ -36,12 +37,16 @@ describe('verifySourceReferences — grounds accepted', () => {
     expect(result.droppedCount).toBe(0)
   })
 
-  it('keeps a verbatim quotation from the raw evidence', () => {
+  it('keeps a verbatim quotation, rendered as its enclosing sentence', () => {
     const result = verifySourceReferences(
       ['Section 12 of the Cannabis Act'],
       CONTEXT,
     )
-    expect(result.verified).toEqual(['Section 12 of the Cannabis Act'])
+    // Read back out of the evidence, not echoed from the model — see the
+    // DISPLAY rule in the guard header.
+    expect(result.verified).toEqual([
+      'Section 12 of the Cannabis Act applies to all registered cultivators.',
+    ])
     expect(result.droppedCount).toBe(0)
   })
 
@@ -52,8 +57,24 @@ describe('verifySourceReferences — grounds accepted', () => {
     )
     expect(result.verified).toHaveLength(2)
     expect(result.droppedCount).toBe(0)
-    // Display text keeps the model's original characters, only trimmed.
-    expect(result.verified[0]).toBe('"section  12   OF the cannabis act"')
+    // Both render the recorded sentence, in the recorded casing.
+    expect(result.verified[0]).toBe(
+      'Section 12 of the Cannabis Act applies to all registered cultivators.',
+    )
+    expect(result.verified[1]).toBe(
+      'Licence holders must retain harvest batch records for five years.',
+    )
+  })
+
+  it('accepts a quotation that ends in a full stop or is wrapped in ellipses', () => {
+    // Models routinely punctuate their quotations. Edge punctuation carries no
+    // matching signal, and discarding a correct citation over it would teach
+    // reviewers the reference list is unreliable.
+    const stop = verifySourceReferences(['Section 12 of the Cannabis Act.'], CONTEXT)
+    const ellipsis = verifySourceReferences(['... Section 12 of the Cannabis Act ...'], CONTEXT)
+    expect(stop.droppedCount).toBe(0)
+    expect(ellipsis.droppedCount).toBe(0)
+    expect(stop.verified).toEqual(ellipsis.verified)
   })
 
   it('keeps a short reference when it exactly matches recorded metadata', () => {
@@ -107,8 +128,57 @@ describe('verifySourceReferences — ungrounded references dropped', () => {
       ['Thai FDA', 'Ministerial Regulation No. 8', 'Section 12 of the Cannabis Act', 'Annex IV'],
       CONTEXT,
     )
-    expect(result.verified).toEqual(['Thai FDA', 'Section 12 of the Cannabis Act'])
+    expect(result.verified).toEqual([
+      'Thai FDA',
+      'Section 12 of the Cannabis Act applies to all registered cultivators.',
+    ])
     expect(result.droppedCount).toBe(2)
+  })
+})
+
+// ─── Display rule: shown text is ours, never the model's ────────────────────
+//
+// Regression tests for two attacks the earlier echo-the-model implementation
+// admitted. Both were confirmed live before this rule existed.
+
+describe('verifySourceReferences — display text comes from the record', () => {
+  it('restores a negation the model cut out of its span', () => {
+    // "would not require certification" contains the verbatim span "require
+    // certification of exports". Echoed back alone, it cites the source as
+    // saying the opposite of what it says.
+    const context = {
+      ...CONTEXT,
+      rawEvidence: 'The proposal would not require certification of exports.',
+    }
+    const result = verifySourceReferences(['require certification of exports'], context)
+
+    expect(result.verified).toEqual(['The proposal would not require certification of exports.'])
+    expect(result.verified[0]).toContain('not')
+  })
+
+  it('renders the recorded URL, not the model spelling of it', () => {
+    // URL paths are case-sensitive, so /NOTICE need not be /notice. Matching is
+    // lenient; what gets shown is the recorded value either way.
+    const result = verifySourceReferences(['HTTPS://EXAMPLE.TEST/NOTICE'], CONTEXT)
+    expect(result.verified).toEqual([CONTEXT.sourceUrl])
+  })
+
+  it('bounds a rendered sentence rather than pasting a wall of text', () => {
+    const runOn = `Preamble ${'lorem ipsum dolor sit amet '.repeat(60)}quoted clause here`
+    const result = verifySourceReferences(['quoted clause here'], { ...CONTEXT, rawEvidence: runOn })
+    expect(result.verified).toHaveLength(1)
+    expect(result.verified[0].length).toBeLessThanOrEqual(MAX_REFERENCE_CONTEXT_CHARS + 1)
+  })
+
+  it('collapses two fragments of one sentence into a single entry', () => {
+    const result = verifySourceReferences(
+      ['Section 12 of the Cannabis', 'the Cannabis Act applies to all'],
+      CONTEXT,
+    )
+    expect(result.verified).toEqual([
+      'Section 12 of the Cannabis Act applies to all registered cultivators.',
+    ])
+    expect(result.droppedCount).toBe(1)
   })
 })
 

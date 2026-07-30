@@ -151,6 +151,9 @@ export interface AiDraftSummary {
 export type AiSummaryResultCode =
   | AiSummaryGuardCode
   | 'provider_error'
+  /** The provider rejected the request shape (bad model, unsupported
+   *  parameter) — a configuration fault, not a transient outage. */
+  | 'provider_rejected'
   | 'provider_timeout'
   | 'malformed_output'
   | 'empty_output'
@@ -222,12 +225,22 @@ export async function generateAiDraftSummary(
   try {
     output = await activeProvider.draftSummary(request)
   } catch (err) {
-    const aborted = err instanceof Error && err.name === 'AbortError'
-    return {
-      ok: false,
-      code: aborted ? 'provider_timeout' : 'provider_error',
-      reason: aborted ? 'The AI provider timed out.' : 'The AI provider could not complete the request.',
+    const name = err instanceof Error ? err.name : ''
+    if (name === 'AbortError') {
+      return { ok: false, code: 'provider_timeout', reason: 'The AI provider timed out.' }
     }
+    if (name === 'AiProviderRequestRejectedError') {
+      // The provider rejected the request itself rather than failing to serve
+      // it — a configuration fault (unknown model, unsupported parameter),
+      // which retrying will not fix. Separated from provider_error so the
+      // server log distinguishes "misconfigured" from "vendor unavailable".
+      return {
+        ok: false,
+        code: 'provider_rejected',
+        reason: 'The AI provider rejected the request. The configured model or request settings are not valid.',
+      }
+    }
+    return { ok: false, code: 'provider_error', reason: 'The AI provider could not complete the request.' }
   }
 
   const sections = output?.value
@@ -275,7 +288,11 @@ export async function generateAiDraftSummary(
     uncertainties: sections.uncertainties,
     reviewQuestions: sections.reviewQuestions,
     sourceReferences: references.verified,
-    droppedSourceReferences: references.droppedCount,
+    // This pass plus anything an upstream layer already discarded, so a draft
+    // that reached the browser through the server endpoint reports the
+    // server's discards rather than its own (always zero) recount.
+    droppedSourceReferences:
+      references.droppedCount + (output.provenance.upstreamDroppedReferences ?? 0),
     guardDecision: 'allowed',
     status: 'draft_generated',
     requiresHumanReview: true,
