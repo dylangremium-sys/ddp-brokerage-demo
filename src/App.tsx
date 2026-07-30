@@ -43,6 +43,7 @@ import { commitMutation } from './lib/mutationCommit'
 import { resolveAdminDataApply, deskAdminDataView } from './lib/adminDataLoad'
 import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
+import { startAuthBootstrapGuard } from './lib/authBootstrapGuard'
 import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
@@ -203,6 +204,32 @@ export default function App() {
   // ── Auth subscription ────────────────────────────────────────────────────
   // authLoading is initialised to false in demo mode via useState, so no
   // synchronous setState is needed in the early-return branch.
+  // Bootstrap guard. `authLoading` was cleared ONLY by the callback below, with no
+  // timeout and no error path, so a Supabase client that never emitted its first
+  // auth event pinned the app on the "Loading…" screen indefinitely — a permanent
+  // blue page on the public domain with no route to the landing page or sign-in.
+  // The realistic trigger is a stale stored session whose refresh hangs.
+  //
+  // Timing out ends auth RESOLUTION, it does not grant anything: currentProfile
+  // stays null, so this renders exactly the signed-out public app and every
+  // downstream permission check still fails closed. A late event is still
+  // honoured — bootstrap routing runs on first resolution either way.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+    const cancel = startAuthBootstrapGuard(() => {
+      setAuthLoading((stillLoading) => {
+        if (stillLoading) {
+          console.warn(
+            'Auth bootstrap timed out before any auth event arrived — rendering the ' +
+            'signed-out app. No session was established.',
+          )
+        }
+        return false
+      })
+    })
+    return cancel
+  }, [])
+
   useEffect(() => {
     if (!isSupabaseConfigured) return
     const unsubscribe = subscribeToAuthChanges((profile) => {
