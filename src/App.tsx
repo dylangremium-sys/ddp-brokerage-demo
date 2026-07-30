@@ -20,6 +20,9 @@ import {
   loadFarmerInventoryFromDB,
   loadFarmerFarmsFromDB,
   uploadCoaFile,
+  uploadBatchPhoto,
+  recordBatchPhoto,
+  getPhotoSignedUrl,
   getCoaSignedUrl,
   resetDemoData,
   isSupabaseConfigured,
@@ -44,7 +47,7 @@ import { resolveAdminDataApply, deskAdminDataView } from './lib/adminDataLoad'
 import { resolveDeskComplianceAlerts } from './lib/operationsDeskComplianceAlerts'
 import { complianceRefetchStarted } from './lib/complianceRefetch'
 import { startAuthBootstrapGuard } from './lib/authBootstrapGuard'
-import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert } from './types'
+import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, CarbonProgrammeStatus, ComplianceRule, ComplianceAlert, StoredPhoto } from './types'
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
@@ -705,7 +708,11 @@ export default function App() {
   // handler that resolves identically on success and failure told the caller
   // nothing, so a rejected insert still sent the farmer to a stock list that
   // did not contain their submission.
-  async function handleInventorySubmit(item: InventoryItem, coaFile?: File | null): Promise<boolean> {
+  async function handleInventorySubmit(
+    item: InventoryItem,
+    coaFile?: File | null,
+    photoFiles?: File[],
+  ): Promise<boolean> {
     // The batch must exist in the database before the farmer is shown it, and
     // before their scope is widened to include it. The previous ordering showed
     // a submitted batch — and granted scope over it — even when the insert was
@@ -762,6 +769,76 @@ export default function App() {
             ))
           },
           onError: onDbError,
+        },
+      )
+    }
+    // Photos, same shape as the COA attachment above and for the same reasons:
+    // the batch is already committed, so a failed photo upload must surface as an
+    // error rather than discard the submission.
+    //
+    // Each photo is uploaded THEN recorded, never the reverse — a farmer_photos
+    // row written before its bytes would point at nothing. Photos are uploaded
+    // one at a time and independently: one rejected image (a HEIC the browser
+    // mislabels, a file that grew past the cap) must not throw away the others.
+    //
+    // Before this existed, every attached photo was silently dropped on save with
+    // no warning, so a farmer believed photos were on file when none were.
+    if (photoFiles?.length && isSupabaseConfigured && isFarmerRole && currentProfile && item.id) {
+      await commitMutation(
+        async () => {
+          const stored: StoredPhoto[] = []
+          const failures: string[] = []
+          for (const file of photoFiles) {
+            try {
+              const { storagePath } = await uploadBatchPhoto(
+                file,
+                currentProfile.id,
+                item.farmId ?? '',
+                item.id,
+              )
+              stored.push(await recordBatchPhoto({
+                farmId: item.farmId,
+                batchId: item.id,
+                storagePath,
+              }))
+            } catch (err) {
+              failures.push(file.name)
+              console.error('Photo attachment failed', file.name, err)
+            }
+          }
+          // Report a partial failure loudly. Returning quietly here would tell the
+          // farmer every photo was saved when some were not — the exact deception
+          // this whole change exists to remove.
+          if (failures.length > 0) {
+            const err = new Error(
+              `${failures.length} of ${photoFiles.length} photo(s) failed to attach: ${failures.join(', ')}`,
+            )
+            ;(err as Error & { partial?: StoredPhoto[] }).partial = stored
+            throw err
+          }
+          return stored
+        },
+        {
+          onCommitted: (stored) => {
+            setInventory(prev => prev.map(i =>
+              i.id === item.id
+                ? { ...i, storedPhotos: [...(i.storedPhotos ?? []), ...stored] }
+                : i
+            ))
+          },
+          onError: (err) => {
+            // Whatever DID upload is still on file and must show as such, even
+            // though the overall step failed.
+            const partial = (err as Error & { partial?: StoredPhoto[] }).partial ?? []
+            if (partial.length > 0) {
+              setInventory(prev => prev.map(i =>
+                i.id === item.id
+                  ? { ...i, storedPhotos: [...(i.storedPhotos ?? []), ...partial] }
+                  : i
+              ))
+            }
+            onDbError(err)
+          },
         },
       )
     }
@@ -1297,6 +1374,11 @@ export default function App() {
               }}
               onSendRequest={handleSendReviewRequest}
               onGetCoaUrl={isSupabaseConfigured ? getCoaSignedUrl : undefined}
+              // Photos are wired to the batch-review screen ONLY. Deliberately NOT
+              // passed to DDPBuyerPreview: farmer_photos includes 'facility' and
+              // 'batch_label' types, which identify the farm in image form — a leak
+              // no column-level control can catch. See the double-blind requirement.
+              onGetPhotoUrl={isSupabaseConfigured ? getPhotoSignedUrl : undefined}
               onSaveNote={handleSaveOwnerNote}
             />
           )}

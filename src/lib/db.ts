@@ -7,7 +7,7 @@ import {
   saveFarms as lsSaveFarms,
   resetDemo as lsResetDemo,
 } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus } from '../types'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType } from '../types'
 
 export { isSupabaseConfigured }
 
@@ -465,7 +465,13 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
   console.log('Creating inventory batch in Supabase', { id: item.id, productName: item.productName })
 
   // Filter out data URLs — they can be 500 KB+ and don't belong in the DB.
-  // In production, replace with Supabase Storage URLs.
+  //
+  // This filter used to be where farmer photos SILENTLY DIED: every attached
+  // photo is a data: URL, nothing uploaded them anywhere, and no warning was
+  // shown. The durable path now exists — uploadBatchPhoto + recordBatchPhoto
+  // put the bytes in the private farmer-photos bucket and the path in
+  // public.farmer_photos — and the caller runs it after this row is committed.
+  // So dropping the previews here is now correct rather than lossy.
   const storablePhotoUrls = (item.photoUrls ?? []).filter(u => !u.startsWith('data:'))
 
   await sbUpsert('inventory_batches', {
@@ -770,6 +776,194 @@ export async function getCoaSignedUrl(storagePath: string): Promise<string | nul
 }
 
 // ---------------------------------------------------------------------------
+// Batch photos — durable storage path (migration 37 bucket + farmer_photos)
+//
+// Before this existed, a farmer could attach photos to a batch and every one was
+// SILENTLY DISCARDED at save: they are held as base64 `data:` URLs and
+// createInventoryBatch filters those out, with no upload path and no warning.
+// The farmer believed the photos were on file; nothing was.
+//
+// The durable path mirrors the COA one exactly: bytes go to a PRIVATE bucket,
+// and only the storage PATH is recorded in the database. The row goes in
+// public.farmer_photos, which has carried the right RLS since FARMER_MVP_MIGRATION
+// (admin all / farmer select own / farmer insert own gated on the batch being
+// created_by auth.uid()) — the table was ready, the code was missing.
+// ---------------------------------------------------------------------------
+
+/** The bucket asserted private by migration 37. */
+const PHOTO_BUCKET = 'farmer-photos'
+
+/**
+ * Image types accepted for upload.
+ *
+ * An explicit allow-list, not a `startsWith('image/')` test. The input carries
+ * `accept="image/*"`, which is a browser hint a caller can bypass, and `image/*`
+ * also admits SVG — which can carry script and would then be served from our own
+ * origin. Fail closed on anything not named here.
+ *
+ * HEIC/HEIF are included deliberately: they are the iPhone default, so omitting
+ * them would reject the most common phone photo on the platform most farmers use.
+ */
+export const ACCEPTED_PHOTO_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+] as const
+
+/** Matches the file_size_limit migration 37 sets on the bucket (10 MiB). */
+export const MAX_PHOTO_BYTES = 10 * 1024 * 1024
+
+/**
+ * Validate a candidate photo before any upload is attempted.
+ *
+ * Returns null when acceptable, or a reason code the UI maps to a translated
+ * message. Rejecting here rather than at the storage API means the farmer is
+ * told why, in their own language, instead of seeing a bucket error.
+ */
+export function validatePhotoFile(file: File): 'type' | 'size' | 'empty' | null {
+  if (file.size === 0) return 'empty'
+  if (!ACCEPTED_PHOTO_MIME_TYPES.includes(file.type as typeof ACCEPTED_PHOTO_MIME_TYPES[number])) {
+    return 'type'
+  }
+  if (file.size > MAX_PHOTO_BYTES) return 'size'
+  return null
+}
+
+/**
+ * Upload one photo to the private farmer-photos bucket.
+ *
+ * The path is uid-prefixed because every storage policy on these buckets gates
+ * on `auth.uid()::text = (string_to_array(name,'/'))[1]`. A path that does not
+ * start with the uploader's own id is rejected by the database, not by us — so
+ * the prefix is load-bearing, not cosmetic.
+ *
+ * `upsert: false` so a repeated submit cannot overwrite an existing object; the
+ * timestamp already makes collisions vanishingly unlikely, and silently
+ * replacing evidence is worse than failing.
+ */
+export async function uploadBatchPhoto(
+  file: File,
+  userId: string,
+  farmId: string,
+  batchId: string,
+): Promise<{ storagePath: string }> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const reason = validatePhotoFile(file)
+  if (reason) throw new Error(`Photo rejected (${reason}): ${file.name}`)
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100)
+  const storagePath = `${userId}/${farmId}/${batchId}/${Date.now()}-${safeName}`
+  const { error } = await supabase.storage
+    .from(PHOTO_BUCKET)
+    .upload(storagePath, file, { contentType: file.type, upsert: false })
+  if (error) throw new Error(`Photo upload failed: ${error.message}`)
+  return { storagePath }
+}
+
+/**
+ * Record an uploaded photo in public.farmer_photos.
+ *
+ * `file_url` holds the storage PATH, not a URL. The column predates Storage
+ * being wired up and its own migration comment says it "should point to Supabase
+ * Storage once configured" — a path is that reference. A signed URL must never
+ * be persisted here: signed URLs expire, so a stored one is a link that works
+ * today and breaks silently later.
+ *
+ * Called only AFTER the bytes are up, so the table can never advertise a photo
+ * that does not exist. The reverse order would leave a row pointing at nothing.
+ */
+export async function recordBatchPhoto(input: {
+  farmId?: string
+  batchId: string
+  storagePath: string
+  photoType?: BatchPhotoType
+  caption?: string
+}): Promise<StoredPhoto> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const row = {
+    id: crypto.randomUUID(),
+    farm_id: input.farmId && isValidUUID(input.farmId) ? input.farmId : null,
+    inventory_batch_id: input.batchId,
+    photo_type: input.photoType ?? 'product',
+    file_url: input.storagePath,
+    caption: input.caption ?? null,
+  }
+  await sbInsert('farmer_photos', row)
+  return {
+    id: row.id,
+    batchId: input.batchId,
+    farmId: input.farmId,
+    photoType: row.photo_type as BatchPhotoType,
+    storagePath: input.storagePath,
+    caption: input.caption,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+/**
+ * Signed URL for one stored photo. One hour, matching the COA path.
+ * Returns null rather than throwing so a single unreadable photo cannot break a
+ * whole review page.
+ */
+export async function getPhotoSignedUrl(storagePath: string): Promise<string | null> {
+  if (!supabase || !storagePath) return null
+  const { data, error } = await supabase.storage
+    .from(PHOTO_BUCKET)
+    .createSignedUrl(storagePath, 3600)
+  if (error || !data?.signedUrl) return null
+  return data.signedUrl
+}
+
+/**
+ * Load stored photos for a set of batches, keyed by batch id.
+ *
+ * Returns an empty map rather than throwing: photos are supporting evidence, and
+ * a failure to read them must not blank out the inventory they belong to. The
+ * failure IS logged so it is not invisible.
+ */
+export async function loadBatchPhotosFromDB(
+  batchIds: string[],
+): Promise<Map<string, StoredPhoto[]>> {
+  const byBatch = new Map<string, StoredPhoto[]>()
+  const ids = batchIds.filter(isValidUUID)
+  if (!supabase || ids.length === 0) return byBatch
+
+  const { data, error } = await supabase
+    .from('farmer_photos')
+    .select('id, farm_id, inventory_batch_id, photo_type, file_url, caption, created_at')
+    .in('inventory_batch_id', ids)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Supabase error [farmer_photos select]:', error)
+    return byBatch
+  }
+
+  for (const row of data ?? []) {
+    const batchId = row.inventory_batch_id as string
+    // A row whose file_url is empty records no retrievable photo. Skip it rather
+    // than render a broken thumbnail that implies evidence exists.
+    const storagePath = (row.file_url as string) ?? ''
+    if (!batchId || !storagePath) continue
+    const photo: StoredPhoto = {
+      id: row.id as string,
+      batchId,
+      farmId: (row.farm_id as string) ?? undefined,
+      photoType: (row.photo_type as BatchPhotoType) ?? 'other',
+      storagePath,
+      caption: (row.caption as string) ?? undefined,
+      createdAt: (row.created_at as string) ?? '',
+    }
+    const existing = byBatch.get(batchId)
+    if (existing) existing.push(photo)
+    else byBatch.set(batchId, [photo])
+  }
+
+  return byBatch
+}
+
+// ---------------------------------------------------------------------------
 // Row mappers — convert raw Supabase rows to frontend shapes.
 // ---------------------------------------------------------------------------
 
@@ -1058,6 +1252,26 @@ export async function loadFarmsFromDB(): Promise<FarmProfile[]> {
 }
 
 // Fetch all inventory batches. Used by admin pages.
+/**
+ * Attach durable photo records to freshly loaded batches.
+ *
+ * Applied inside BOTH load paths rather than at the call site, so admin and
+ * farmer views cannot drift — a photo visible to one and not the other would look
+ * like missing evidence rather than a wiring bug.
+ *
+ * Never throws: loadBatchPhotosFromDB already degrades to an empty map, so a
+ * photo-query failure leaves the inventory intact and simply photo-less.
+ */
+async function withStoredPhotos(items: InventoryItem[]): Promise<InventoryItem[]> {
+  if (items.length === 0) return items
+  const byBatch = await loadBatchPhotosFromDB(items.map(i => i.id))
+  if (byBatch.size === 0) return items
+  return items.map(i => {
+    const photos = byBatch.get(i.id)
+    return photos && photos.length > 0 ? { ...i, storedPhotos: photos } : i
+  })
+}
+
 export async function loadInventoryFromDB(): Promise<InventoryItem[]> {
   if (!supabase) return []
   const { data, error } = await supabase
@@ -1070,7 +1284,7 @@ export async function loadInventoryFromDB(): Promise<InventoryItem[]> {
     throw new Error(`loadInventoryFromDB: ${error.message}`)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((row: any) => batchRowToInventoryItem(row))
+  return withStoredPhotos((data ?? []).map((row: any) => batchRowToInventoryItem(row)))
 }
 
 // Fetch the actual inventory rows for a specific farmer's scope.
@@ -1103,7 +1317,7 @@ export async function loadFarmerInventoryFromDB(
     return []
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((row: any) => batchRowToInventoryItem(row))
+  return withStoredPhotos((data ?? []).map((row: any) => batchRowToInventoryItem(row)))
 }
 
 // ---------------------------------------------------------------------------
