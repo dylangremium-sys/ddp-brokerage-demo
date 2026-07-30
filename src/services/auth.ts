@@ -182,6 +182,16 @@ export async function isFarmer(): Promise<boolean> {
 // Subscribe to Supabase auth state changes.
 // The callback fires immediately with the current session (INITIAL_SESSION event),
 // then again on every login/logout. Returns an unsubscribe function.
+/**
+ * Per-attempt budget for the profile lookup that follows an auth event.
+ *
+ * Deliberately HALF the previous single-shot 8s, because there are now two
+ * attempts: the worst case is unchanged, but a transient stall self-heals.
+ * Must stay comfortably under AUTH_BOOTSTRAP_TIMEOUT_MS (lib/authBootstrapGuard.ts)
+ * so both attempts complete before the app gives up and renders signed-out.
+ */
+export const PROFILE_LOOKUP_TIMEOUT_MS = 4000
+
 export function subscribeToAuthChanges(
   callback: (profile: UserProfile | null) => void,
 ): () => void {
@@ -194,19 +204,59 @@ export function subscribeToAuthChanges(
         return
       }
       try {
-        // Prevent a hung network/profile query from pinning the app on auth loading.
-        const profileQuery = supabase!
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single()
+        // A TIMEOUT IS NOT EVIDENCE OF "NO SESSION" — retry before concluding that.
+        //
+        // Observed in production 2026-07-30: on the first load after the tab has
+        // been idle, this query hangs. The old code raced it against a single 8s
+        // timeout and, on expiry, reported `null` — which the app renders as
+        // SIGNED OUT. An administrator with a perfectly valid session was shown
+        // the blue loading screen and then the logged-out marketing page.
+        //
+        // The user's own workaround was to reload, and reloading fixed it. That
+        // is precisely a manual retry: the second attempt succeeds (verified —
+        // the retry load returned HTTP 200 for the same query in ~1s). So the
+        // right fix is to perform that retry ourselves rather than making a
+        // person do it.
+        //
+        // Two attempts at 4s rather than one at 8s: the same worst-case wait, but
+        // a transient stall now self-heals instead of logging the operator out.
+        // Both attempts must finish inside App's bootstrap guard, or the guard
+        // renders the signed-out app while the retry is still in flight — see
+        // AUTH_BOOTSTRAP_TIMEOUT_MS in lib/authBootstrapGuard.ts.
+        const attemptProfileLookup = async () => {
+          const profileQuery = supabase!
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single()
 
-        const timeout = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('profiles lookup timed out')), 8000)
-        })
+          const timeout = new Promise<never>((_, reject) => {
+            setTimeout(
+              () => reject(new Error('profiles lookup timed out')),
+              PROFILE_LOOKUP_TIMEOUT_MS,
+            )
+          })
 
-        const { data, error } = await Promise.race([profileQuery, timeout])
+          return Promise.race([profileQuery, timeout])
+        }
 
+        let result: Awaited<ReturnType<typeof attemptProfileLookup>>
+        try {
+          result = await attemptProfileLookup()
+        } catch (firstErr) {
+          // Only a TIMEOUT is retried. A rejection for any other reason is a real
+          // failure and retrying it would just double the delay before the same
+          // outcome.
+          if (!(firstErr instanceof Error) || !/timed out/.test(firstErr.message)) throw firstErr
+          console.warn('profiles lookup timed out — retrying once before treating the session as absent')
+          result = await attemptProfileLookup()
+        }
+
+        const { data, error } = result
+
+        // A returned `error`, or a missing row, is authoritative: this identity
+        // has no readable profile, so it gets no operator permissions. That is
+        // NOT the timeout case and must not be retried.
         if (error || !data) {
           callback(null)
           return
