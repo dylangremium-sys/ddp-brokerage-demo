@@ -131,7 +131,9 @@ describe('the form is bound to the account the LINK names', () => {
     expect(SET_PASSWORD_PAGE).toMatch(
       /useState<Phase>\(linkSubject \? 'checking' : 'unavailable'\)/,
     )
-    expect(SET_PASSWORD_PAGE).toMatch(/if \(!linkSubject\) return/)
+    // And the session probe itself refuses to run without one, so no code path
+    // can reach getSessionUserId for a link that names nobody.
+    expect(SET_PASSWORD_PAGE).toMatch(/if \(!subject\) return/)
   })
 
   it('the auth service returns an identity, not a boolean', () => {

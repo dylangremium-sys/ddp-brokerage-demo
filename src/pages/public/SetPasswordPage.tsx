@@ -73,13 +73,16 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
   // — that case is already resolved to 'unavailable' by the initial state above,
   // so this effect simply has nothing to do.
   useEffect(() => {
-    if (!linkSubject) return
-    const subject = linkSubject
-
     let active = true
     let attempts = 0
 
-    async function check(): Promise<void> {
+    // Single exit: the cleanup is returned on EVERY path. Bailing out with a
+    // bare `return` for a subject-less link meant this arrow returned a cleanup
+    // down one branch and undefined down the other.
+    const subject = linkSubject
+
+    const check = async (): Promise<void> => {
+      if (!subject) return
       // A rejection here — getSession touching storage, a hostile environment —
       // previously escaped as an unhandled rejection and left the screen sitting
       // on "Checking your link…" forever, with no error and no way forward.
