@@ -41,10 +41,26 @@
 --   The two farmer buckets never received that treatment. This migration gives
 --   it to them.
 --
--- SCOPE — deliberately narrow
+-- SCOPE — buckets ONLY. Split from the policies deliberately; see below.
 --   1. Assert `public = false` on `farmer-documents` and `farmer-photos`.
 --   2. Create `farmer-photos` if it does not exist, private.
---   3. Give `farmer-photos` the object policies it currently lacks.
+--
+-- WHY THE POLICIES ARE NOT HERE (migration 38)
+--   Measured in the production SQL Editor on 2026-07-30: it runs as `postgres`,
+--   and `storage.objects` is owned by `supabase_admin`, of which `postgres` is NOT
+--   a member. `CREATE POLICY` strictly requires ownership, so a file containing
+--   both halves REFUSES ENTIRELY — and takes the achievable half down with it.
+--
+--   The two halves need different privileges:
+--     * writing a bucket row is an ordinary INSERT/UPDATE and needs only TABLE
+--       privileges, which `postgres` HAS (verified: has_table_privilege
+--       'storage.buckets' INSERT and UPDATE both true);
+--     * creating a policy needs OWNERSHIP, which `postgres` has not.
+--
+--   Coupling them made the security-critical half — asserting privacy — depend on
+--   a privilege it never needed. The policies are now migration 38, which can wait
+--   for an escalated role or the dashboard Storage → Policies UI without holding
+--   this back.
 --
 --   It does NOT touch the three existing `farmer-documents` object policies.
 --   Those are applied and enforcing on Production; rewriting them here would
@@ -97,60 +113,38 @@ BEGIN;
 -- -----------------------------------------------------------------------------
 DO $preconditions$
 DECLARE
-  v_owner text;
-  v_rel   text;
+  v_missing text[] := ARRAY[]::text[];
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'is_ddp_admin'
-  ) THEN
+  IF to_regclass('storage.buckets') IS NULL THEN
     RAISE EXCEPTION
-      'migration 37 precondition failed: public.is_ddp_admin() is absent. '
-      'Apply migration 3 / AUTH_RLS_SCHEMA.sql first.';
+      'migration 37 precondition failed: storage.buckets does not exist. The Supabase '
+      'storage schema must be provisioned before this migration.';
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'has_operational_farmer_access'
-  ) THEN
-    RAISE EXCEPTION
-      'migration 37 precondition failed: public.has_operational_farmer_access() is absent. '
-      'It is created by 22_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql, which must be '
-      'applied first. The policies in section 3 call it, and a policy referencing a '
-      'missing function would be created but then deny every caller at evaluation time — '
-      'a silent lockout of the farmer-photos bucket.';
+  -- The privilege that ACTUALLY governs this migration. Writing a bucket row is
+  -- INSERT/UPDATE on a table -- it does NOT require owning it. An earlier revision
+  -- of this file checked ownership here, which would have refused on production
+  -- despite both privileges being present, retiring the whole change on the wrong
+  -- test. Check what the statements need, nothing more.
+  IF NOT has_table_privilege(current_user, 'storage.buckets', 'INSERT') THEN
+    v_missing := array_append(v_missing, 'INSERT');
+  END IF;
+  IF NOT has_table_privilege(current_user, 'storage.buckets', 'UPDATE') THEN
+    v_missing := array_append(v_missing, 'UPDATE');
   END IF;
 
-  FOREACH v_rel IN ARRAY ARRAY['buckets', 'objects'] LOOP
-    SELECT pg_get_userbyid(c.relowner) INTO v_owner
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'storage' AND c.relname = v_rel;
-
-    IF v_owner IS NULL THEN
-      RAISE EXCEPTION
-        'migration 37 precondition failed: storage.% does not exist. The Supabase storage '
-        'schema must be provisioned before this migration.', v_rel;
-    END IF;
-
-    IF NOT pg_has_role(current_user, v_owner, 'USAGE') THEN
-      RAISE EXCEPTION
-        'migration 37 precondition failed: current_user "%" is not a member of "%", which '
-        'owns storage.%. The writes in this migration would fail and roll back the whole '
-        'transaction. Re-run as a role holding that membership (in Supabase: '
-        'supabase_storage_admin). The read-only ddp_ro role cannot apply this migration.',
-        current_user, v_owner, v_rel;
-    END IF;
-  END LOOP;
+  IF array_length(v_missing, 1) > 0 THEN
+    RAISE EXCEPTION
+      'migration 37 precondition failed: current_user "%" lacks % on storage.buckets. '
+      'The converging writes below would fail and roll back the transaction. Re-run as a '
+      'role holding both. (The read-only ddp_ro role cannot apply this migration; it has '
+      'no USAGE on schema storage at all.)',
+      current_user, array_to_string(v_missing, ' and ');
+  END IF;
 END
 $preconditions$;
 
 -- -----------------------------------------------------------------------------
--- 1. (reserved — no public-schema changes in this migration)
--- -----------------------------------------------------------------------------
-
 -- -----------------------------------------------------------------------------
 -- 2. Assert bucket privacy.
 --
@@ -186,74 +180,15 @@ VALUES ('farmer-photos', 'farmer-photos', false, 10485760)
 ON CONFLICT (id) DO UPDATE SET public = false;
 
 -- -----------------------------------------------------------------------------
--- 3. farmer-photos object policies.
---
---    Mirrors the three farmer-documents policies from migration 8 (admin all /
---    farmer read own / farmer upload own), with the role check added inline for
---    the reason given in the header.
---
---    NO farmer UPDATE or DELETE policy is created. That matches farmer-documents
---    exactly: under RLS, an operation with no permissive policy is denied. If a
---    product requirement for farmer-initiated photo replacement or removal
---    emerges, it should be added deliberately, in its own migration, with its
---    own reasoning — not inherited by accident here. (Note for whoever picks
---    that up: the 2026-07-26 record shows prior remove() calls silently matched
---    zero objects, so any such change needs a real deletion-enforcement probe,
---    not a cleanup call, as evidence.)
---
---    The uid path-prefix predicate is byte-identical in form to the one already
---    live on farmer-documents, so object layout conventions stay consistent
---    across the two buckets.
--- -----------------------------------------------------------------------------
-
-DROP POLICY IF EXISTS "farmer-photos: admin all" ON storage.objects;
-CREATE POLICY "farmer-photos: admin all"
-  ON storage.objects
-  FOR ALL
-  USING      (bucket_id = 'farmer-photos' AND public.is_ddp_admin())
-  WITH CHECK (bucket_id = 'farmer-photos' AND public.is_ddp_admin());
-
-DROP POLICY IF EXISTS "farmer-photos: farmer read own" ON storage.objects;
-CREATE POLICY "farmer-photos: farmer read own"
-  ON storage.objects
-  FOR SELECT
-  USING (
-    bucket_id = 'farmer-photos'
-    AND (
-      public.is_ddp_admin()
-      OR (
-        public.has_operational_farmer_access()
-        AND auth.uid()::text = (string_to_array(name, '/'))[1]
-      )
-    )
-  );
-
-DROP POLICY IF EXISTS "farmer-photos: farmer upload own" ON storage.objects;
-CREATE POLICY "farmer-photos: farmer upload own"
-  ON storage.objects
-  FOR INSERT
-  WITH CHECK (
-    bucket_id = 'farmer-photos'
-    AND public.has_operational_farmer_access()
-    AND auth.uid()::text = (string_to_array(name, '/'))[1]
-  );
-
--- -----------------------------------------------------------------------------
--- 4. Report what landed, so an operator reading the transcript can see it.
+-- 3. Report what landed, so an operator reading the transcript can see it.
 -- -----------------------------------------------------------------------------
 DO $report$
 DECLARE
   v_public_count integer;
-  v_policy_count integer;
 BEGIN
   SELECT count(*) INTO v_public_count
   FROM storage.buckets
   WHERE id IN ('farmer-documents', 'farmer-photos') AND public IS TRUE;
-
-  SELECT count(*) INTO v_policy_count
-  FROM pg_policies
-  WHERE schemaname = 'storage' AND tablename = 'objects'
-    AND policyname LIKE 'farmer-photos:%';
 
   IF v_public_count <> 0 THEN
     RAISE EXCEPTION
@@ -261,16 +196,12 @@ BEGIN
       'after the converging write. Investigate before committing.', v_public_count;
   END IF;
 
-  IF v_policy_count <> 3 THEN
-    RAISE EXCEPTION
-      'migration 37 failed its own postcondition: expected 3 farmer-photos policies, found %.',
-      v_policy_count;
-  END IF;
-
   RAISE NOTICE
-    'migration 37 applied: farmer-documents and farmer-photos are private (public = false); '
-    '3 farmer-photos object policies installed. Migration 22 storage overlay is NOT installed '
-    'by this migration and remains outstanding — see docs/BREAK_GLASS_REQUEST_STORAGE_OVERLAY_22.md.';
+    'migration 37 applied: farmer-documents and farmer-photos exist and are PRIVATE '
+    '(public = false). Object POLICIES are NOT installed by this migration -- they are '
+    'migration 38, which requires ownership of storage.objects. Until 38 is applied, '
+    'farmer-photos has no permissive policy and is therefore inaccessible to every '
+    'caller: fail-closed, and photo upload (PR #97) will not work yet.';
 END
 $report$;
 

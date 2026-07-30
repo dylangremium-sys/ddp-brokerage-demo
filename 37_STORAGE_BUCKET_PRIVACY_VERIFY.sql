@@ -19,12 +19,12 @@
 --
 -- Sections:
 --   A — both farmer buckets exist and are PRIVATE (the migration's whole point)
---   B — farmer-photos carries its three object policies, with correct shape
+--   B — informational: farmer-photos object policies (migration 38, NOT asserted here)
 --   C — RLS is enabled on storage.objects
 --   D — informational: migration 22's overlay, reported but NOT asserted
 --
--- Expected on success: three PASSED notices (A, B, C), one informational NOTICE (D),
--- and no exception.
+-- Expected on success: two PASSED notices (A, C) and two informational NOTICEs
+-- (B, D), with no exception.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -93,69 +93,35 @@ END
 $verify_a$;
 
 -- -----------------------------------------------------------------------------
--- B. farmer-photos object policies — presence AND shape.
+-- B. farmer-photos object policies — INFORMATIONAL ONLY.
 --
---    Presence alone is insufficient: a policy that exists but omits the role
---    check, or whose WITH CHECK is weaker than its USING, would pass a naive
---    count and still leave the bucket open to a `pending` identity.
+--    Migration 37 no longer installs these; they are migration 38, which requires
+--    ownership of storage.objects. Reported, never asserted: failing here would
+--    make migration 37 un-verifiable on a database where it is correctly and
+--    completely applied, which is how a real gate gets disabled by whoever hits
+--    the false failure first.
 -- -----------------------------------------------------------------------------
 DO $verify_b$
 DECLARE
-  r            record;
-  v_count      integer := 0;
-  v_problems   text[]  := ARRAY[]::text[];
+  v_count integer;
 BEGIN
-  FOR r IN
-    SELECT policyname, permissive, cmd, coalesce(qual, '') AS qual,
-           coalesce(with_check, '') AS with_check
-    FROM pg_policies
-    WHERE schemaname = 'storage' AND tablename = 'objects'
-      AND policyname IN (
-        'farmer-photos: admin all',
-        'farmer-photos: farmer read own',
-        'farmer-photos: farmer upload own'
-      )
-  LOOP
-    v_count := v_count + 1;
+  SELECT count(*) INTO v_count
+  FROM pg_policies
+  WHERE schemaname = 'storage' AND tablename = 'objects'
+    AND policyname LIKE 'farmer-photos:%';
 
-    IF r.permissive <> 'PERMISSIVE' THEN
-      v_problems := array_append(v_problems, format('%s is %s, expected PERMISSIVE', r.policyname, r.permissive));
-    END IF;
-
-    IF (r.qual || r.with_check) NOT LIKE '%farmer-photos%' THEN
-      v_problems := array_append(v_problems, format('%s does not scope to the farmer-photos bucket', r.policyname));
-    END IF;
-
-    -- The two farmer-facing policies must carry the operational-farmer role
-    -- check. The admin policy legitimately does not.
-    IF r.policyname <> 'farmer-photos: admin all'
-       AND (r.qual || r.with_check) NOT LIKE '%has_operational_farmer_access%'
-    THEN
-      v_problems := array_append(v_problems,
-        format('%s omits has_operational_farmer_access() — a pending identity would pass', r.policyname));
-    END IF;
-
-    -- Uploads must be constrained by the uid path prefix, not merely by role,
-    -- or one farmer could write under another farmer's prefix.
-    IF r.policyname = 'farmer-photos: farmer upload own'
-       AND r.with_check NOT LIKE '%string_to_array%'
-    THEN
-      v_problems := array_append(v_problems,
-        format('%s WITH CHECK lacks the uid path-prefix predicate', r.policyname));
-    END IF;
-  END LOOP;
-
-  IF v_count <> 3 THEN
-    RAISE EXCEPTION
-      'VERIFY B FAILED: expected 3 farmer-photos policies on storage.objects, found %. '
-      'Migration 37 section 3 has not been applied, or a policy was dropped.', v_count;
+  IF v_count = 3 THEN
+    RAISE NOTICE 'VERIFY B (informational): 3 farmer-photos policies present — migration 38 is applied here.';
+  ELSIF v_count = 0 THEN
+    RAISE NOTICE
+      'VERIFY B (informational): farmer-photos has NO object policies. Expected until '
+      'migration 38 is applied. RLS is on, so the bucket is inaccessible to every caller '
+      '— fail-closed, but photo upload will not work until 38 lands. NOT a migration-37 failure.';
+  ELSE
+    RAISE NOTICE
+      'VERIFY B (informational): farmer-photos has % of 3 expected policies — a PARTIAL '
+      'migration-38 state. Investigate; run 38_..._VERIFY.sql for the assertion.', v_count;
   END IF;
-
-  IF array_length(v_problems, 1) > 0 THEN
-    RAISE EXCEPTION 'VERIFY B FAILED: %', array_to_string(v_problems, '; ');
-  END IF;
-
-  RAISE NOTICE 'VERIFY B PASSED: 3 farmer-photos policies present, bucket-scoped, role-checked, and upload is prefix-bound.';
 END
 $verify_b$;
 

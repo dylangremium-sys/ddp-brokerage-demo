@@ -84,9 +84,9 @@ BEGIN
 END
 $rollback_precondition$;
 
-DROP POLICY IF EXISTS "farmer-photos: admin all"        ON storage.objects;
-DROP POLICY IF EXISTS "farmer-photos: farmer read own"  ON storage.objects;
-DROP POLICY IF EXISTS "farmer-photos: farmer upload own" ON storage.objects;
+-- Nothing to drop: migration 37 creates no policies. Those are migration 38 and
+-- are reversed by 38_..._ROLLBACK.sql. Dropping them here would exceed this
+-- rollback's scope and remove controls migration 37 never installed.
 
 -- -----------------------------------------------------------------------------
 -- 2. Bucket deletion — refused by default.

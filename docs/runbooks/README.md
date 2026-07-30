@@ -18,7 +18,8 @@ and labelled as such. Do not add a second one.
 | P3 | Apply migration 29 — server-side contaminant gate | P2 first + break-glass | [P3](P3_APPLY_MIGRATION_29_CONTAMINANT_GATE.md) |
 | P4 | Apply migration 22's storage overlay | break-glass (see the correction below) | [P4](P4_APPLY_MIGRATION_22_STORAGE_OVERLAY.md) |
 | P5 | Turn OFF Supabase self-signup | Supabase dashboard access | [P5](P5_DISABLE_SUPABASE_SELF_SIGNUP.md) |
-| P6 | Apply migration 37 — assert bucket privacy | break-glass | [P6](P6_APPLY_MIGRATION_37_BUCKET_PRIVACY.md) |
+| P6 | Apply migration 37 — assert bucket privacy (buckets only) | break-glass **only** — SQL Editor is sufficient, measured | [P6](P6_APPLY_MIGRATION_37_BUCKET_PRIVACY.md) |
+| P7 | Apply migration 38 — `farmer-photos` object policies | ownership of `storage.objects` (`supabase_admin`) **or** the dashboard Storage → Policies UI | [P6 §P7](P6_APPLY_MIGRATION_37_BUCKET_PRIVACY.md) |
 
 ## Correction, 2026-07-30 — "DB write credential" was the wrong blocker
 
@@ -39,11 +40,28 @@ the owner's decision to make, and not on obtaining a credential that may never
 arrive. Do not carry "blocked on a credential" forward without testing it.
 
 **Test it, do not assume it — in either direction.** [P6](P6_APPLY_MIGRATION_37_BUCKET_PRIVACY.md)
-Step 0 is a read-only capability probe that reports, per object, whether the current
-role can perform the change. Reuse that pattern before declaring any of these blocked.
-Storage-schema changes (P4, P6) are the doubtful case, because they need membership in
-`supabase_storage_admin`; ordinary `public`-schema DDL (P2, P3) is far more likely to
-succeed and has never been tested.
+Steps 0 and 0b are read-only capability probes. Reuse that pattern before declaring any
+of these blocked. Ordinary `public`-schema DDL (P2, P3) has never been tested and is far
+more likely to succeed than the storage cases.
+
+**Measured on production 2026-07-30, and it cuts both ways:**
+
+| Question | Answer |
+|---|---|
+| SQL Editor runs as | `postgres` |
+| `has_table_privilege('storage.buckets','INSERT'/'UPDATE')` | **true / true** |
+| Member of the owner of `storage.objects`? | **false** |
+| Owner of `storage.objects` | **`supabase_admin`** (not `supabase_storage_admin`) |
+
+So bucket **writes** work from the SQL Editor and `CREATE POLICY` on `storage.objects`
+does not. Migration 37 was **split** on that boundary — 37 for buckets, 38 for policies
+— because a single file would have refused entirely and taken the achievable,
+security-critical half down with the blocked one.
+
+**Probe the privilege the statement actually needs.** An earlier revision of P6 Step 0
+tested *ownership* of `storage.buckets`, which no bucket write requires; its `false`
+would have retired migration 37 on a mismeasurement. `CREATE POLICY` needs ownership;
+`INSERT`/`UPDATE` need table privileges. Ask the right question.
 
 **One trap that makes the editor look broken:** it does **not** display
 `RAISE NOTICE` output. Every migration here reports success through notices, so a

@@ -2,9 +2,16 @@
 
 **Source:** `37_STORAGE_BUCKET_PRIVACY_HARDENING.sql` (PR #96).
 **Owner:** release owner.
-**STATUS 2026-07-30:** the SQL Editor runs as `postgres`, which does **not** own
-`storage.objects` — so **section 3 (the policies) cannot be applied this way.** See the
-correction in Step 0. Section 2 (bucket privacy) may still be possible; Step 0b decides.
+**RESOLVED 2026-07-30 — the migration was SPLIT.** Step 0/0b measured that the SQL
+Editor runs as `postgres`, which holds INSERT and UPDATE on `storage.buckets` but is
+**not** a member of `supabase_admin`, the owner of `storage.objects`. Since a bucket
+write needs only table privileges and `CREATE POLICY` needs ownership, keeping both in
+one file meant the achievable half could not be applied either.
+
+* **Migration 37 — buckets only.** Applyable from the SQL Editor **today**.
+* **Migration 38 — the three `farmer-photos` policies.** Needs a role holding
+  `supabase_admin`, or the dashboard **Storage → Policies** UI. Tracked as **P7**
+  below; not a blocker for 37.
 **Break-glass required:** **YES** — freeze §1.3 (RLS policy) and §1.4 (storage).
 **Verify:** `37_STORAGE_BUCKET_PRIVACY_VERIFY.sql` — read-only, safe on production whole.
 
@@ -134,13 +141,17 @@ SELECT
 `has_table_privilege` cannot even resolve the table name. It must be run in the SQL
 Editor.
 
-- **Both `true`** → apply migration 37's **section 2 only** (the two
-  `INSERT … ON CONFLICT` statements). Skip section 3. Section 0's precondition loop
-  checks ownership of `buckets` as well, so the file as written will still refuse —
-  run the two bucket statements directly, and record on the PR that section 3 was
-  deferred.
-- **Either `false`** → the whole migration needs an escalated role.
-- `objects_owner` names the role to request access to.
+**Measured on production 2026-07-30:** `can_insert_buckets = true`,
+`can_update_buckets = true`, `objects_owner = supabase_admin`.
+
+- **Both `true`** → apply **`37_STORAGE_BUCKET_PRIVACY_HARDENING.sql` whole.** Its
+  precondition now checks exactly these two privileges — not ownership — so the file
+  runs as written. No statement-picking, no partial paste.
+- **Either `false`** → migration 37 needs an escalated role too, and its precondition
+  will refuse cleanly rather than half-applying.
+- `objects_owner` names the role to request for **migration 38**. On this project it is
+  **`supabase_admin`** — not `supabase_storage_admin`, which is what an earlier
+  revision of this runbook guessed. Request the measured name.
 
 ### The parts that need no SQL at all
 
@@ -186,6 +197,25 @@ the response is wider than this runbook.
 
 ---
 
+## P7 — Migration 38, the policies (separate, blocked differently)
+
+Not part of P6's critical path. Migration 37 is complete and verifiable without it.
+
+**What it needs:** ownership of `storage.objects` — on this project, membership in
+`supabase_admin`. Two routes:
+
+1. **Dashboard → Storage → Policies → New policy**, three times, mirroring
+   `38_FARMER_PHOTOS_OBJECT_POLICIES_HARDENING.sql` section 1. The dashboard performs
+   the change server-side rather than through your SQL session, so it is not bound by
+   the `postgres` ownership limit. Verify afterwards with
+   `38_FARMER_PHOTOS_OBJECT_POLICIES_VERIFY.sql`, or the Step 3 policy query below.
+2. **Escalate** for a role holding `supabase_admin` and apply migration 38 as a file.
+
+**Until 38 is applied**, `farmer-photos` has no permissive policy. With RLS on, that
+makes it inaccessible to **every** caller including admins — fail-closed and safe, but
+**photo upload (PR #97) will not work.** Migration 38 refuses to install if the bucket
+is absent or public, so it cannot be applied out of order.
+
 ## Step 2 — Apply to STAGING first
 
 Project `szqocdabwkjrggrddocx`. Paste the **whole** contents of
@@ -210,7 +240,8 @@ WHERE id IN ('farmer-documents', 'farmer-photos')
 ORDER BY id;
 -- Expect 2 rows, is_private_ok = true on both.
 
--- 2. The three farmer-photos policies landed with the right shape.
+-- 2. The three farmer-photos policies — MIGRATION 38, not 37. Zero rows here is the
+--    expected result until P7 is done, and is NOT a migration-37 failure.
 SELECT policyname, permissive, cmd,
        (coalesce(qual,'') || coalesce(with_check,'')) LIKE '%farmer-photos%'
          AS scoped_ok,
@@ -224,9 +255,11 @@ ORDER BY policyname;
 -- role_checked must be true for the two farmer policies; the admin policy is
 -- legitimately false — it gates on is_ddp_admin() instead.
 
--- 3. Nothing pre-existing was disturbed: 3 old + 3 new = 6.
+-- 3. Nothing pre-existing was disturbed. Expect 3 after migration 37 alone (it adds
+--    no policies), and 6 once migration 38 / P7 has been done.
 SELECT count(*) AS storage_policies_total
 FROM pg_policies WHERE schemaname='storage' AND tablename='objects';
+-- Expect 3 (migration 37 applied, 38 not yet) or 6 (both applied).
 
 -- 4. Migration 22's overlay — reported, NOT required by P6. Still absent is
 --    expected and is not a P6 failure; see P4.
@@ -296,10 +329,11 @@ bucket. That is the pre-P6 state, and it is fail-closed.
   check, so a `pending` identity can still read and upload under its own prefix
   there. `farmer-photos` is not exposed this way — its policies carry the check
   inline, precisely because P4 is unresolved.
-- **It does not make photo upload work.** That is the application code in PR #97,
-  which writes to the bucket P6 creates. **Ship them together:** with the bucket
-  absent, PR #97's uploads fail loudly per file, which is correct but visible to
-  farmers.
+- **It does not install the `farmer-photos` object policies.** That is migration 38 /
+  P7 above, blocked on ownership of `storage.objects`.
+- **It does not make photo upload work.** That needs the bucket (P6) **and** the
+  policies (P7) **and** the application code (PR #97). With any of the three missing,
+  uploads fail loudly per file — correct, but visible to farmers. Sequence them.
 - It does not migrate any existing `photo_urls` data. Those were base64 previews,
   never durable evidence.
 
@@ -319,8 +353,8 @@ bucket. That is the pre-P6 state, and it is fail-closed.
 | Date / time (ISO 8601, UTC) | |
 | Applied via | Supabase SQL Editor / psql / other: |
 | Step 3: both buckets `is_private_ok = true` | ☐ |
-| Step 3: 3 farmer-photos policies, correct shape | ☐ |
-| Step 3: total storage policies = 6 | ☐ |
+| Step 3: total storage policies = 3 (37 only) or 6 (37 + 38) | ☐ |
+| Migration 38 / P7 status: deferred / applied via UI / applied as file | |
 | Public-path probe: `Bucket not found` for all five, incl. `farmer-photos` | ☐ |
 | Staging applied and verified before production | ☐ |
 | PR #97 shipped in the same release | ☐ / N/A |
