@@ -1,7 +1,10 @@
 # P6 — Apply migration 37: assert storage bucket privacy
 
 **Source:** `37_STORAGE_BUCKET_PRIVACY_HARDENING.sql` (PR #96).
-**Owner:** release owner. **A DB operator is NOT required — see below.**
+**Owner:** release owner.
+**STATUS 2026-07-30:** the SQL Editor runs as `postgres`, which does **not** own
+`storage.objects` — so **section 3 (the policies) cannot be applied this way.** See the
+correction in Step 0. Section 2 (bucket privacy) may still be possible; Step 0b decides.
 **Break-glass required:** **YES** — freeze §1.3 (RLS policy) and §1.4 (storage).
 **Verify:** `37_STORAGE_BUCKET_PRIVACY_VERIFY.sql` — read-only, safe on production whole.
 
@@ -78,20 +81,80 @@ SELECT
 `pg_has_role` is called with the owner's **OID**, not its name, so this cannot error
 out just because a role name differs between projects.
 
-**Required to proceed — all five must hold:**
+### CORRECTION 2026-07-30 — `can_write_storage_buckets` above tests the wrong thing
+
+Measured result from the production SQL Editor:
+
+```
+running_as | can_change_storage_policies | can_write_storage_buckets | helper | admin_fn | rls
+postgres   | false                       | false                     | true   | true     | true
+```
+
+`can_change_storage_policies = false` is **correct and decisive**: `CREATE POLICY`
+strictly requires ownership of the table, so the policy section of migration 37
+cannot be applied from the SQL Editor. That part stands.
+
+**`can_write_storage_buckets` is a bad test.** Writing a row to `storage.buckets` is
+an ordinary `INSERT`/`UPDATE` and needs only **table privileges** — not ownership. The
+probe asked the ownership question for both, so a `false` here says nothing about
+whether the bucket write would succeed. Use Step 0b instead; do not conclude the
+bucket half is blocked from the row above.
+
+**Required to proceed with the POLICY section — must hold:**
 
 | Column | Required |
 |---|---|
 | `can_change_storage_policies` | `true` |
-| `can_write_storage_buckets` | `true` |
 | `helper_present` | `true` |
 | `admin_fn_present` | `true` |
 | `storage_objects_rls` | `true` |
 
-**If `can_change_storage_policies` is `false`, STOP.** The migration would fail at
-its own precondition — a clean, whole-transaction refusal, not a partial apply, so
-attempting it is not dangerous. But there is no point: escalate for a role holding
-`supabase_storage_admin` instead.
+**If `can_change_storage_policies` is `false` — as measured on production — STOP on
+the policy section.** The migration would fail at its own precondition: a clean,
+whole-transaction refusal, not a partial apply, so attempting it is not dangerous,
+but it cannot succeed. Escalate for a role holding `supabase_storage_admin`, or create
+the three policies through the dashboard's **Storage → Policies** UI, which performs
+the change server-side rather than through your SQL session.
+
+## Step 0b — Can the bucket half be applied? (READ-ONLY)
+
+This is the security-critical half: asserting `public = false`. It needs INSERT and
+UPDATE on `storage.buckets`, nothing more.
+
+```sql
+SELECT
+  has_table_privilege('storage.buckets', 'INSERT') AS can_insert_buckets,
+  has_table_privilege('storage.buckets', 'UPDATE') AS can_update_buckets,
+  pg_get_userbyid((SELECT c.relowner FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'storage' AND c.relname = 'objects')) AS objects_owner;
+```
+
+`ddp_ro` cannot run this — it has no USAGE on schema `storage`, so
+`has_table_privilege` cannot even resolve the table name. It must be run in the SQL
+Editor.
+
+- **Both `true`** → apply migration 37's **section 2 only** (the two
+  `INSERT … ON CONFLICT` statements). Skip section 3. Section 0's precondition loop
+  checks ownership of `buckets` as well, so the file as written will still refuse —
+  run the two bucket statements directly, and record on the PR that section 3 was
+  deferred.
+- **Either `false`** → the whole migration needs an escalated role.
+- `objects_owner` names the role to request access to.
+
+### The parts that need no SQL at all
+
+Creating a private bucket is a dashboard action and always has been — migration 8
+PART B records `farmer-documents` as exactly that, a "MANUAL Supabase Dashboard step".
+So regardless of the above:
+
+**Storage → New bucket → name `farmer-photos` → leave "Public bucket" OFF.**
+
+That achieves the same end state as migration 37 section 2 for the new bucket, and
+the existing bucket's privacy can be confirmed or corrected under
+**Storage → farmer-documents → Edit bucket**. Prefer the SQL when it is available,
+because it is idempotent and reviewable; use the UI when it is not. Either way,
+verify with Step 3's queries — the end state is what matters, not the route.
 
 **If `helper_present` is `false`, STOP.** Migration 22 is not applied here. Migration
 37's policies call that function; creating them without it would produce policies
