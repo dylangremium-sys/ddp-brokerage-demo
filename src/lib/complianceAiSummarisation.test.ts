@@ -50,7 +50,9 @@ const SAFE_SECTIONS: AiDraftSummarySections = {
   possibleSignificance: 'May affect how farms log harvest batches; a reviewer should confirm.',
   uncertainties: 'The effective date is unclear and should be checked against the source.',
   reviewQuestions: ['Does this apply to existing licences?', 'What is the effective date?'],
-  sourceReferences: ['Thai FDA notice', 'https://example.test/notice'],
+  // Both are grounded against makeUpdate()'s recorded metadata, so the
+  // reference guard keeps them and the happy path stays a happy path.
+  sourceReferences: ['Thai FDA', 'https://example.test/notice'],
 }
 
 // A provider that can be built inline for each case. Compile-time proof that
@@ -213,6 +215,7 @@ describe('generateAiDraftSummary — guarded orchestration', () => {
     expect(draft.draftSummary).toBe(SAFE_SECTIONS.draftSummary)
     expect(draft.reviewQuestions).toEqual(SAFE_SECTIONS.reviewQuestions)
     expect(draft.sourceReferences).toEqual(SAFE_SECTIONS.sourceReferences)
+    expect(draft.droppedSourceReferences).toBe(0)
 
     // Non-negotiable labelling + capability guarantees.
     expect(draft.status).toBe('draft_generated')
@@ -292,18 +295,60 @@ describe('generateAiDraftSummary — guarded orchestration', () => {
   })
 
   it('does NOT treat echoed source references as AI claims', async () => {
-    // "certified" here is an echo of a source name, not an AI-authored claim,
-    // so it must not trip the wording guard (which runs over prose only).
+    // "certified" here is quoted source text, not an AI-authored claim, so it
+    // must not trip the wording guard (which runs over prose only). The
+    // quotation is grounded in the evidence, so the reference guard keeps it —
+    // proving the draft survives both guards rather than passing one by luck.
+    const quotation = 'produce certified by an accredited laboratory'
+    const update = makeUpdate({
+      rawText: `Licence holders may export only ${quotation} before shipment.`,
+    })
+    const provider = stubProvider(async () =>
+      makeOutput({ ...SAFE_SECTIONS, sourceReferences: [quotation] }),
+    )
+
+    const result = await generateAiDraftSummary(update, provider, RUN)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.draft.sourceReferences).toContain(quotation)
+      expect(result.draft.droppedSourceReferences).toBe(0)
+    }
+  })
+
+  it('discards a fabricated source reference without failing the draft', async () => {
+    // A model-invented citation renders under "Source references", where it
+    // reads as provenance. It must not reach a reviewer — but the prose may be
+    // perfectly good, so an ungrounded citation is dropped, not fatal.
     const provider = stubProvider(async () =>
       makeOutput({
         ...SAFE_SECTIONS,
-        sourceReferences: ['Certified Organic Board circular', 'https://example.test/certified'],
+        sourceReferences: ['Thai FDA', 'Ministerial Regulation No. 8 (2565), Annex IV'],
       }),
     )
+
     const result = await generateAiDraftSummary(makeUpdate(), provider, RUN)
+
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.draft.sourceReferences).toContain('Certified Organic Board circular')
+      expect(result.draft.sourceReferences).toEqual(['Thai FDA'])
+      expect(result.draft.droppedSourceReferences).toBe(1)
+      // The prose is untouched — only the citation list is filtered.
+      expect(result.draft.draftSummary).toBe(SAFE_SECTIONS.draftSummary)
+    }
+  })
+
+  it('returns no references at all when none can be grounded', async () => {
+    const provider = stubProvider(async () =>
+      makeOutput({ ...SAFE_SECTIONS, sourceReferences: ['Invented Act s.1', 'Invented Act s.2'] }),
+    )
+
+    const result = await generateAiDraftSummary(makeUpdate(), provider, RUN)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.draft.sourceReferences).toEqual([])
+      expect(result.draft.droppedSourceReferences).toBe(2)
     }
   })
 })

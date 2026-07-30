@@ -1,5 +1,6 @@
 import type { LegalUpdate } from '../types'
 import { guardAiDraftedFields } from './aiComplianceGuard.js'
+import { verifySourceReferences } from './aiSourceReferenceGuard.js'
 import { evaluateCannamonitorAiGate } from './complianceCannamonitorPolicy.js'
 import type {
   AiDraftSummarySections,
@@ -131,7 +132,11 @@ export interface AiDraftSummary {
   possibleSignificance: string
   uncertainties: string
   reviewQuestions: string[]
+  /** Only references the reference guard could ground in the recorded evidence.
+   *  Never the raw model list. */
   sourceReferences: string[]
+  /** How many model-returned references this pass discarded as ungrounded. */
+  droppedSourceReferences: number
   guardDecision: 'allowed'
   status: 'draft_generated'
   requiresHumanReview: true
@@ -174,8 +179,9 @@ function isSectionsShape(v: unknown): v is AiDraftSummarySections {
 /**
  * The single orchestration entry point. Guards the request, calls the injected
  * provider, validates the shape, runs the wording guard over the AI-authored
- * prose (not the echoed source references), and returns a labelled draft. It
- * performs no persistence and never overwrites the legal update's summary.
+ * prose and the reference guard over the AI-returned citations, and returns a
+ * labelled draft. It performs no persistence and never overwrites the legal
+ * update's summary.
  */
 export async function generateAiDraftSummary(
   update: LegalUpdate | null,
@@ -232,8 +238,10 @@ export async function generateAiDraftSummary(
     return { ok: false, code: 'empty_output', reason: 'The AI provider returned an empty draft summary.' }
   }
 
-  // Wording guard over AI-AUTHORED prose only (source references echo the
-  // source name/URL and must not be treated as AI claims).
+  // Wording guard over AI-AUTHORED prose only. Source references are excluded
+  // here because a quoted regulation may legitimately contain "certified" or
+  // "approved" — they get their own, stricter treatment below, where an
+  // ungrounded reference is discarded outright.
   const wording = guardAiDraftedFields({
     draftSummary: sections.draftSummary,
     possibleSignificance: sections.possibleSignificance,
@@ -244,6 +252,19 @@ export async function generateAiDraftSummary(
     return { ok: false, code: 'unsafe_output', reason: 'The AI draft made an unqualified compliance/approval claim and was blocked before display.' }
   }
 
+  // Reference guard over the model's citations. Unlike the wording guard an
+  // ungrounded reference does not fail the whole draft — the prose may be
+  // perfectly good — it is discarded, and the count is carried so a reviewer
+  // can see the model cited something we could not find. Runs at every layer
+  // that calls this function (server endpoint and browser controller alike);
+  // the second pass is idempotent because the first already filtered.
+  const references = verifySourceReferences(sections.sourceReferences, {
+    sourceName: request.sourceName,
+    sourceUrl: request.sourceUrl,
+    itemTitle: request.itemTitle,
+    rawEvidence: request.rawEvidence,
+  })
+
   const draft: AiDraftSummary = {
     legalUpdateId: activeUpdate.id,
     providerId: output.provenance.modelInfo.provider,
@@ -253,7 +274,8 @@ export async function generateAiDraftSummary(
     possibleSignificance: sections.possibleSignificance,
     uncertainties: sections.uncertainties,
     reviewQuestions: sections.reviewQuestions,
-    sourceReferences: sections.sourceReferences,
+    sourceReferences: references.verified,
+    droppedSourceReferences: references.droppedCount,
     guardDecision: 'allowed',
     status: 'draft_generated',
     requiresHumanReview: true,

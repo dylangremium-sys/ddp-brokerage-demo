@@ -39,7 +39,7 @@ function buildDeps(): ServerAiSummaryDeps | null {
   if (!supabaseUrl || !supabaseAnonKey) return null
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY
-  const model = process.env.AI_SUMMARY_MODEL || 'claude-opus-4-8'
+  const model = process.env.AI_SUMMARY_MODEL || 'claude-opus-5'
   const provider: ComplianceAiSummaryProvider | null = anthropicKey
     ? createServerAiSummaryProvider({
         apiKey: anthropicKey,
