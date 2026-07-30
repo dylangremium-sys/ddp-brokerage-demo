@@ -3,6 +3,7 @@ import {
   handleProvisionFarmer,
   type ProvisioningDeps,
 } from '../../src/lib/serverFarmerProvisioning.js'
+import { resolveInviteRedirectUrl } from '../../src/lib/inviteRedirect.js'
 
 // ─── DDP admin farmer-invitation Vercel Function ────────────────────────────
 //
@@ -66,7 +67,19 @@ function buildDeps(): ProvisioningDeps | null {
     },
 
     async inviteFarmer(input) {
+      // Where the emailed link returns to. Previously omitted entirely, which
+      // sent every invitation to the Supabase project's Site URL — a dashboard
+      // setting invisible from this repo. The link MUST reach the app that
+      // renders the set-password screen, or the supplier lands somewhere that
+      // cannot set a password and the account dies with the session.
+      //
+      // Undefined when APP_PUBLIC_URL is unset or unusable, in which case the
+      // key is omitted below and the previous Site URL behaviour is restored
+      // exactly — a mistyped variable must not stop invitations being sent.
+      const redirectTo = resolveInviteRedirectUrl(process.env)
+
       const { data, error } = await admin.auth.admin.inviteUserByEmail(input.email, {
+        ...(redirectTo ? { redirectTo } : {}),
         data: {
           display_name: input.displayName ?? '',
           province: input.province ?? '',

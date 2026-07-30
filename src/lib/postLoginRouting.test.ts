@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { resolvePostLoginDecision, resolveBootstrap, nextBootstrapRouting } from './postLoginRouting'
+import {
+  resolvePostLoginDecision,
+  resolveBootstrap,
+  nextBootstrapRouting,
+  resolveAuthResolutionAction,
+} from './postLoginRouting'
 import type { UserProfile } from '../services/auth'
 import type { Page } from '../types'
 
@@ -135,5 +140,97 @@ describe('nextBootstrapRouting (route-once gate)', () => {
     expect(first.routed).toBe(true)
     expect(nextBootstrapRouting(first.routed, { ...baseProfile, role: 'ddp_admin' }))
       .toEqual({ routed: true, routeTo: null })
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveAuthResolutionAction — the whole auth-subscription response, including
+// the suppression that makes supplier onboarding completable.
+//
+// THE DEFECT THIS ENCODES
+//   An invite / password-recovery link grants a REAL session. Bootstrap routing
+//   therefore resolved the invited supplier's role and sent them to the farmer
+//   dashboard — past the only screen in the app that can give their account a
+//   password. They looked signed in, worked normally, and were locked out
+//   permanently the moment the transient session expired. For an account still
+//   at role 'pending' it was worse: the revoke branch signed them out mid-flow,
+//   destroying the session auth.updateUser needs.
+describe('resolveAuthResolutionAction', () => {
+  const FARMER = { ...baseProfile, role: 'farmer' as const }
+  const ADMIN = { ...baseProfile, role: 'ddp_admin' as const }
+  const PENDING = { ...baseProfile, role: 'pending' as const }
+
+  describe('while the set-password flow is pending', () => {
+    it('does NOT route an invited farmer to their dashboard', () => {
+      // The core regression. Without the suppression this returns
+      // { kind: 'route', page: 'farmer-dashboard' } and the supplier never sees
+      // the set-password screen.
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: false, profile: FARMER, passwordSetupPending: true }),
+      ).toEqual({ routed: true, action: { kind: 'none' } })
+    })
+
+    it('does NOT route an invited admin either', () => {
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: false, profile: ADMIN, passwordSetupPending: true }),
+      ).toEqual({ routed: true, action: { kind: 'none' } })
+    })
+
+    it('does NOT revoke a pending account mid-flow', () => {
+      // Revoking here destroys the session the password update runs on, so the
+      // user is bounced to a dead end with their account still password-less.
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: false, profile: PENDING, passwordSetupPending: true }),
+      ).toEqual({ routed: true, action: { kind: 'none' } })
+    })
+
+    it('consumes the one-shot, so a late auth event cannot route afterwards', () => {
+      const first = resolveAuthResolutionAction({
+        alreadyRouted: false, profile: FARMER, passwordSetupPending: true,
+      })
+      expect(first.routed).toBe(true)
+      // Flow finished: the redirect is cleared, the app has routed by role. A
+      // token refresh arriving now must not navigate again.
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: first.routed, profile: ADMIN, passwordSetupPending: false }),
+      ).toEqual({ routed: true, action: { kind: 'none' } })
+    })
+  })
+
+  describe('ordinary resolutions are unchanged', () => {
+    it('routes a restored farmer', () => {
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: false, profile: FARMER, passwordSetupPending: false }),
+      ).toEqual({ routed: true, action: { kind: 'route', page: 'farmer-dashboard' } })
+    })
+
+    it('routes a restored admin', () => {
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: false, profile: ADMIN, passwordSetupPending: false }),
+      ).toEqual({ routed: true, action: { kind: 'route', page: 'ddp-overview' } })
+    })
+
+    it('revokes a restored pending session (fail closed)', () => {
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: false, profile: PENDING, passwordSetupPending: false }),
+      ).toEqual({ routed: true, action: { kind: 'revoke-session' } })
+    })
+
+    it('does nothing when there is no session', () => {
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: false, profile: null, passwordSetupPending: false }),
+      ).toEqual({ routed: true, action: { kind: 'none' } })
+    })
+
+    it('never revokes a working session on a later event', () => {
+      // A token refresh for an already-resolved operator re-fires the
+      // subscription with alreadyRouted true.
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: true, profile: PENDING, passwordSetupPending: false }),
+      ).toEqual({ routed: true, action: { kind: 'none' } })
+      expect(
+        resolveAuthResolutionAction({ alreadyRouted: true, profile: ADMIN, passwordSetupPending: false }),
+      ).toEqual({ routed: true, action: { kind: 'none' } })
+    })
   })
 })

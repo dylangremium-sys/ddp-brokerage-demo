@@ -78,3 +78,63 @@ export function nextBootstrapRouting(
   const boot = resolveBootstrap(profile)
   return { routed: true, routeTo: boot.state === 'authenticated' ? boot.page : null }
 }
+
+/**
+ * Everything the auth subscription does in response to one resolution, as a
+ * single pure decision.
+ *
+ *   route          → navigate to this page
+ *   revoke-session → sign out: authenticated but with no operator role
+ *   none           → leave the app exactly where it is
+ *
+ * WHY THIS SUBSUMES THE TWO OLDER BRANCHES
+ *   The set-password flow needs BOTH of them suppressed, and expressing that as
+ *   an early return inside a React effect put the most consequential rule in the
+ *   app somewhere no test could reach it. The rule is:
+ *
+ *     An invite or recovery session is a real session. Left to itself,
+ *     bootstrap routing resolves the invited supplier's role and lands them on
+ *     the farmer dashboard — past the only screen that can give their account a
+ *     password. They appear signed in, work normally, and are locked out
+ *     permanently once the transient session expires. And for an account still
+ *     sitting at role 'pending', the revocation branch would sign them out
+ *     mid-flow, destroying the very session auth.updateUser needs.
+ *
+ *   Suppressing both is safe: the user is held on a public auth screen, and
+ *   every operator surface stays gated by its own role checks and by RLS.
+ *
+ * `routed` is returned true even when suppressed, so that once the password is
+ * set and the flow ends, a late auth event (e.g. a token refresh arriving after
+ * the app has already routed by role) cannot yank the user somewhere else.
+ */
+export type AuthResolutionAction =
+  | { kind: 'route'; page: Page }
+  | { kind: 'revoke-session' }
+  | { kind: 'none' }
+
+export interface AuthResolutionInput {
+  /** Whether bootstrap routing has already run for this page load. */
+  alreadyRouted: boolean
+  profile: UserProfile | null
+  /** True while the user is in the invite / recovery set-password flow. */
+  passwordSetupPending: boolean
+}
+
+export function resolveAuthResolutionAction(
+  input: AuthResolutionInput,
+): { routed: boolean; action: AuthResolutionAction } {
+  if (input.passwordSetupPending) return { routed: true, action: { kind: 'none' } }
+
+  const routing = nextBootstrapRouting(input.alreadyRouted, input.profile)
+  if (routing.routeTo) return { routed: routing.routed, action: { kind: 'route', page: routing.routeTo } }
+
+  // Only on the FIRST resolution, and only for a session that really is
+  // authenticated-but-roleless. A token refresh for an already-resolved
+  // operator must never be able to revoke a working session.
+  const isFirstResolution = !input.alreadyRouted
+  const unresolved =
+    Boolean(input.profile) && resolveBootstrap(input.profile).state === 'authenticated-unresolved'
+  if (isFirstResolution && unresolved) return { routed: routing.routed, action: { kind: 'revoke-session' } }
+
+  return { routed: routing.routed, action: { kind: 'none' } }
+}

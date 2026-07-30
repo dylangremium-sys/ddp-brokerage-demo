@@ -24,17 +24,35 @@
 import type { Page } from '../types'
 
 /**
+ * The public pages that are NOT the landing page: the cream-themed auth cards.
+ *
+ * Kept separate because the landing page owns its own chrome and background,
+ * while these four share the `public-auth-shell` treatment. App.tsx derives its
+ * shell/navbar decisions from these lists rather than from a hand-written
+ * `page !== 'x' && page !== 'y' && …` chain — that chain is how a new page ends
+ * up silently rendered inside the wrong shell.
+ */
+export const PUBLIC_AUTH_PAGES: Page[] = [
+  'login', 'farmer-register', 'set-password', 'forgot-password',
+]
+
+/**
  * Pages a signed-out visitor may reach.
  *
  * INVARIANT: every page an unauthenticated surface links to MUST appear here,
  * or that link becomes a silent no-op. navigationGuard.test.ts enforces this
  * against the affordances the landing and login pages actually offer.
+ *
+ * 'set-password' and 'forgot-password' are public by necessity: the users who
+ * need them are precisely the ones who cannot sign in. set-password does still
+ * require a session — but it is the invite/recovery link that grants it, not a
+ * prior login, so the navigation guard must not demand one.
  */
-export const PUBLIC_PAGES: Page[] = ['landing', 'login', 'farmer-register']
+export const PUBLIC_PAGES: Page[] = ['landing', ...PUBLIC_AUTH_PAGES]
 
 /** Farmer-scoped pages. An admin is steered away from the operational ones. */
 export const FARMER_PAGES: Page[] = [
-  'landing', 'login', 'farmer-register',
+  ...PUBLIC_PAGES,
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
