@@ -182,6 +182,14 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
                 {reason}
               </div>
             )}
+            {/* A reset link does NOT reissue an unaccepted invitation: that
+                identity is still unconfirmed, so Supabase sends no recovery
+                mail. The button below is still the right move for anyone who
+                already has a password, so it stays — but it is no longer
+                allowed to imply it will rescue an expired invite. */}
+            <p className="field-hint" style={{ marginBottom: 16 }}>
+              {t.setPwExpiredInviteHelp}
+            </p>
             <button
               type="button"
               className="btn btn-primary btn-lg"

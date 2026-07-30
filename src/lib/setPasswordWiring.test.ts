@@ -215,9 +215,23 @@ describe('a locked-out user has a way back in', () => {
     expect(APP).toMatch(/onForgotPassword=\{\(\)\s*=>\s*goTo\('forgot-password'\)\}/)
   })
 
-  it('a dead invite link offers a new one rather than a dead end', () => {
+  it('a dead invite link offers a route onward rather than a dead end', () => {
     expect(SET_PASSWORD_PAGE).toContain('onRequestNewLink')
     expect(APP).toMatch(/onRequestNewLink=\{goToForgotPassword\}/)
+  })
+
+  it('neither screen promises an email that cannot be sent', () => {
+    // resetPasswordForEmail does NOT reissue an unaccepted invitation — that
+    // identity is unconfirmed, so no recovery mail goes out. Both screens must
+    // say so, or they send the expired-invite user round a loop that can never
+    // complete while telling them help is on the way.
+    expect(SET_PASSWORD_PAGE).toContain('t.setPwExpiredInviteHelp')
+    expect(FORGOT_PAGE).toContain('t.forgotInviteNote')
+    for (const copy of [T.en.setPwExpiredInviteHelp, T.en.forgotInviteNote]) {
+      expect(copy).toMatch(/contact DDP Support/i)
+    }
+    // The old unconditional promise must be gone from the dead-link body.
+    expect(T.en.setPwLinkInvalidBody).not.toMatch(/will be emailed to you/i)
   })
 
   it('the spent token is cleared from the URL once the password is set', () => {

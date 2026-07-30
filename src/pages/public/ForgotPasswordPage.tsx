@@ -72,6 +72,17 @@ export default function ForgotPasswordPage({ lang = 'en', onBackToLogin }: Props
           </div>
         )}
 
+        {/* Shown alongside the confirmation, not instead of it. Supabase
+            deliberately reports success for an address it does not recognise,
+            and it ALSO sends nothing for an identity that was invited but never
+            accepted — so a bare "a link is on its way" is a promise this screen
+            cannot keep for exactly the people most likely to be reading it. */}
+        {sent && (
+          <p className="field-hint" style={{ marginBottom: 16 }}>
+            {t.forgotInviteNote}
+          </p>
+        )}
+
         {error && (
           <div
             ref={noticeRef}
