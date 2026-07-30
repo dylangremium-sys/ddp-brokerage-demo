@@ -9,7 +9,7 @@ import {
   type AccessRequestRow,
   type AccessRequestStatus,
 } from '../../lib/accessRequestAdmin'
-import { inviteFarmer } from '../../services/adminProvisioning'
+import { inviteFarmer, resendInvitation } from '../../services/adminProvisioning'
 import { resolveProvisionDecision } from '../../lib/accessRequestProvisioning'
 
 /**
@@ -38,6 +38,10 @@ export default function DDPAccessRequests() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // A one-time invitation link the provider declined to email, scoped to the row
+  // it belongs to. Held in memory only — never written to storage and never
+  // logged, because anyone holding it can set that supplier's password.
+  const [resendLink, setResendLink] = useState<{ rowId: string; url: string } | null>(null)
   const [showResolved, setShowResolved] = useState(false)
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
 
@@ -141,6 +145,38 @@ export default function DDPAccessRequests() {
       }
     } catch {
       setActionError('The account could not be created. Please try again.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  /**
+   * Re-issue an invitation whose link expired before the supplier opened it.
+   *
+   * Changes no enquiry status: the enquiry is already 'invited' and still is —
+   * nothing about the triage decision has changed, only the delivery. Writing a
+   * status here would be recording an event that did not happen.
+   */
+  async function resend(row: AccessRequestRow) {
+    setBusyId(row.id)
+    setActionError(null)
+    setActionNotice(null)
+    setResendLink(null)
+
+    try {
+      const result = await resendInvitation(row.email)
+      if (!result.ok) {
+        setActionError(result.error)
+        return
+      }
+      if (result.delivered === 'link') {
+        setResendLink({ rowId: row.id, url: result.actionLink })
+        setActionNotice(`A new invitation link was created for ${row.email}. Send it to them yourself — see below.`)
+        return
+      }
+      setActionNotice(`A new invitation email has been sent to ${row.email}.`)
+    } catch {
+      setActionError('The invitation could not be re-issued. Please try again.')
     } finally {
       setBusyId(null)
     }
@@ -300,7 +336,49 @@ export default function DDPAccessRequests() {
                       {busyId === row.id ? 'Creating account…' : 'Invite & create account'}
                     </button>
                   )}
+
+                  {/* Offered only once an account exists. A supplier who never
+                      opened their invitation before it expired cannot rescue
+                      themselves: "forgot password" sends nothing for an
+                      unconfirmed identity, so this is the only route back in. */}
+                  {row.status === 'invited' && (
+                    <button
+                      type="button"
+                      // btn-ghost, NOT btn-secondary: the latter is defined only
+                      // under `.eo-farmer`, which this admin page is not inside,
+                      // so it would render unstyled. That is the exact defect
+                      // PR #90 fixed on this very page — a class referenced from
+                      // a stylesheet that does not apply here.
+                      className="btn btn-ghost"
+                      disabled={busyId === row.id}
+                      onClick={() => { resend(row).catch(() => undefined) }}
+                    >
+                      {busyId === row.id ? 'Re-issuing…' : 'Resend invitation'}
+                    </button>
+                  )}
                 </div>
+
+                {/* A one-time link the provider would not email. It is a
+                    CREDENTIAL — whoever holds it can set this supplier's
+                    password — so it is shown only to the admin who asked for it,
+                    for this row, and is never persisted or logged. */}
+                {resendLink?.rowId === row.id && (
+                  <div className="notice" style={{ marginTop: 10 }}>
+                    <p style={{ marginTop: 0 }}>
+                      Email delivery was refused, so here is a one-time invitation link.
+                      Send it to the supplier yourself (LINE, WhatsApp, or your own email).
+                      <strong> Treat it like a password — anyone who opens it can set their password.</strong>
+                    </p>
+                    <input
+                      type="text"
+                      readOnly
+                      value={resendLink.url}
+                      onFocus={e => e.currentTarget.select()}
+                      style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.8em' }}
+                      aria-label="One-time invitation link"
+                    />
+                  </div>
+                )}
 
                 {/* Stated in the UI, not just in the migration, so the absence of a
                     delete button reads as a decision rather than an omission. */}

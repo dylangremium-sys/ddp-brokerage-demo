@@ -36,6 +36,66 @@ export type InviteFarmerResult =
       userId?: string
     }
 
+// ── Resend invitation ───────────────────────────────────────────────────────
+// For a supplier whose invitation expired before they opened it. The public
+// "forgot password" path cannot help them: their identity is still unconfirmed,
+// so Supabase sends no recovery mail at all. Only an admin re-issue works.
+
+export type ResendReason =
+  | 'no_such_account'
+  | 'ambiguous_account'
+  | 'already_active'
+  | 'reissue_failed'
+export type ResendRecovery =
+  | 'invite_and_create_account'
+  | 'resolve_duplicate_profiles'
+  | 'use_password_reset'
+
+export type ResendResult =
+  /** The provider sent the email; nothing further for the admin to do. */
+  | { ok: true; delivered: 'email' }
+  /**
+   * The provider would not send, but a valid one-time link exists. The ADMIN
+   * delivers it. Treat it as a credential — anyone holding it can set the
+   * supplier's password.
+   */
+  | { ok: true; delivered: 'link'; actionLink: string }
+  | { ok: false; error: string; reason?: ResendReason; recovery?: ResendRecovery }
+
+const RESEND_ENDPOINT = '/api/admin/resend-invitation'
+
+export async function resendInvitation(email: string): Promise<ResendResult> {
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' }
+
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) return { ok: false, error: 'You must be signed in as a DDP admin.' }
+
+  let res: Response
+  try {
+    res = await fetch(RESEND_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email }),
+    })
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Network error.' }
+  }
+
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
+  if (res.ok && body.ok === true) {
+    return body.delivered === 'link' && typeof body.actionLink === 'string'
+      ? { ok: true, delivered: 'link', actionLink: body.actionLink }
+      : { ok: true, delivered: 'email' }
+  }
+  return {
+    ok: false,
+    error: typeof body.error === 'string' ? body.error : 'The invitation could not be re-issued.',
+    reason: typeof body.reason === 'string' ? (body.reason as ResendReason) : undefined,
+    recovery: typeof body.recovery === 'string' ? (body.recovery as ResendRecovery) : undefined,
+  }
+}
+
 const ENDPOINT = '/api/admin/provision-farmer'
 
 export async function inviteFarmer(input: InviteFarmerInput): Promise<InviteFarmerResult> {
