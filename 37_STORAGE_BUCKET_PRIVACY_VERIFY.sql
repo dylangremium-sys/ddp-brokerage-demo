@@ -110,17 +110,17 @@ BEGIN
   WHERE schemaname = 'storage' AND tablename = 'objects'
     AND policyname LIKE 'farmer-photos:%';
 
-  IF v_count = 3 THEN
-    RAISE NOTICE 'VERIFY B (informational): 3 farmer-photos policies present — migration 38 is applied here.';
-  ELSIF v_count = 0 THEN
+  IF v_count > 0 THEN
+    RAISE NOTICE
+      'VERIFY B (informational): % policy/policies govern farmer-photos — migration 38 is applied '
+      'here by some route. The count varies by route: the migration creates 3 (one FOR ALL admin), '
+      'the Supabase dashboard creates 6 (it splits FOR ALL into one policy per operation). Run '
+      '38_..._VERIFY.sql for the assertion.', v_count;
+  ELSE
     RAISE NOTICE
       'VERIFY B (informational): farmer-photos has NO object policies. Expected until '
       'migration 38 is applied. RLS is on, so the bucket is inaccessible to every caller '
       '— fail-closed, but photo upload will not work until 38 lands. NOT a migration-37 failure.';
-  ELSE
-    RAISE NOTICE
-      'VERIFY B (informational): farmer-photos has % of 3 expected policies — a PARTIAL '
-      'migration-38 state. Investigate; run 38_..._VERIFY.sql for the assertion.', v_count;
   END IF;
 END
 $verify_b$;
