@@ -31,13 +31,16 @@
  * How long to wait for the first auth event before giving up and rendering the
  * public app.
  *
- * Matches the 8s profile-lookup timeout in services/auth.ts deliberately: those
- * are the two halves of the same "auth is taking too long" budget, and a visitor
- * should not be made to sit through them back to back on a slow connection. Long
- * enough that a normal cold start on a poor mobile connection resolves first;
- * short enough that a hung client does not read as a broken site.
+ * MUST EXCEED the profile-lookup budget in services/auth.ts, which is now two
+ * attempts of PROFILE_LOOKUP_TIMEOUT_MS (4s each = 8s worst case). If this fired
+ * first it would render the signed-out app WHILE THE RETRY WAS STILL IN FLIGHT —
+ * defeating the retry and logging out an operator whose session was valid, which
+ * is the exact production symptom the retry exists to fix.
+ *
+ * 12s leaves 4s of headroom over that 8s worst case. Pinned by a test against the
+ * auth constant so the two cannot drift into that failure.
  */
-export const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000
+export const AUTH_BOOTSTRAP_TIMEOUT_MS = 12000
 
 /**
  * Start the guard. Calls `onTimeout` once if it is still pending when the timer

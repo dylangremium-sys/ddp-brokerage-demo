@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startAuthBootstrapGuard, AUTH_BOOTSTRAP_TIMEOUT_MS } from './authBootstrapGuard'
+import { PROFILE_LOOKUP_TIMEOUT_MS } from '../services/auth'
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
@@ -66,14 +67,40 @@ describe('startAuthBootstrapGuard — the blue-screen guard', () => {
 })
 
 describe('AUTH_BOOTSTRAP_TIMEOUT_MS', () => {
-  it('matches the profile-lookup timeout in services/auth.ts', () => {
-    // Both halves of the same "auth is taking too long" budget. If they drift, a
-    // visitor on a slow connection can be made to sit through them back to back.
-    expect(AUTH_BOOTSTRAP_TIMEOUT_MS).toBe(8000)
+  it('EXCEEDS the full two-attempt profile-lookup budget', () => {
+    // THE REGRESSION THIS PINS. services/auth.ts makes TWO profile-lookup
+    // attempts of PROFILE_LOOKUP_TIMEOUT_MS each. If this guard fired first it
+    // would render the signed-out app while the retry was still in flight —
+    // logging out an operator whose session was perfectly valid, which is the
+    // exact production symptom the retry exists to fix.
+    //
+    // Strict `>`: equality is not enough, because the guard and the second
+    // attempt would then race and the winner would be arbitrary.
+    expect(AUTH_BOOTSTRAP_TIMEOUT_MS).toBeGreaterThan(PROFILE_LOOKUP_TIMEOUT_MS * 2)
+  })
+
+  it('leaves real headroom, not a single millisecond', () => {
+    // Enough slack for the auth event itself, JS parsing and the render before
+    // the first attempt even starts.
+    expect(AUTH_BOOTSTRAP_TIMEOUT_MS - PROFILE_LOOKUP_TIMEOUT_MS * 2).toBeGreaterThanOrEqual(2000)
   })
 
   it('is long enough for a slow cold start and short enough not to read as broken', () => {
+    // A blue screen is what the visitor actually experiences while this runs, so
+    // the ceiling matters as much as the floor.
     expect(AUTH_BOOTSTRAP_TIMEOUT_MS).toBeGreaterThanOrEqual(5000)
     expect(AUTH_BOOTSTRAP_TIMEOUT_MS).toBeLessThanOrEqual(15000)
+  })
+})
+
+describe('PROFILE_LOOKUP_TIMEOUT_MS', () => {
+  it('is short enough that two attempts beat one long wait', () => {
+    // The point of halving it was to fit a retry into the SAME worst case the
+    // single 8s attempt used to occupy.
+    expect(PROFILE_LOOKUP_TIMEOUT_MS * 2).toBeLessThanOrEqual(8000)
+  })
+
+  it('is long enough for a normal query on a poor connection', () => {
+    expect(PROFILE_LOOKUP_TIMEOUT_MS).toBeGreaterThanOrEqual(3000)
   })
 })
