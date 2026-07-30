@@ -188,11 +188,55 @@ describe('vercel.json disables Git production deploys for main — and nothing m
   })
 
   it('adds no unrelated Vercel configuration', () => {
-    // Scope guard: rewrites, build overrides and crons are separate decisions and
-    // must not ride along. `headers` was added deliberately (audit R6 — the live
-    // site sent no CSP/XFO/nosniff/Referrer-Policy/Permissions-Policy) and is
-    // pinned by its own describe block below rather than merely tolerated here.
-    expect(Object.keys(VERCEL_CONFIG)).toEqual(['git', 'headers'])
+    // Scope guard: build overrides and crons are separate decisions and must not
+    // ride along. Each key here was added deliberately and is pinned by its own
+    // assertions rather than merely tolerated:
+    //   `headers`  — audit R6: the live site sent no CSP/XFO/nosniff/
+    //                Referrer-Policy/Permissions-Policy (own describe block below)
+    //   `rewrites` — SPA deep links: without it every path except `/` returned a
+    //                raw Vercel 404 (pinned immediately below)
+    expect(Object.keys(VERCEL_CONFIG)).toEqual(['git', 'rewrites', 'headers'])
+  })
+})
+
+// ─── SPA deep-link rewrites ─────────────────────────────────────────────────
+//
+// Client-side routing means only `/` exists as a real file. Without a rewrite,
+// `https://www.ddpbrokerage.com/login` returned Vercel's UNSTYLED `404: NOT_FOUND`
+// — verified against production 2026-07-30. Invitation links survived only because
+// resolveInviteRedirectUrl() strips the path and Supabase appends the session as a
+// fragment, so they land on `/`. Set APP_PUBLIC_URL with a path and every
+// invitation would have 404'd.
+describe('vercel.json SPA rewrites', () => {
+  it('declares exactly one rewrite', () => {
+    // More than one invites ordering questions that nothing here would catch.
+    expect(Array.isArray(VERCEL_CONFIG.rewrites)).toBe(true)
+    expect(VERCEL_CONFIG.rewrites).toHaveLength(1)
+  })
+
+  it('serves the SPA shell, not some other document', () => {
+    expect(VERCEL_CONFIG.rewrites[0].destination).toBe('/index.html')
+  })
+
+  it('EXCLUDES /api so function routes are never masked by the SPA', () => {
+    // Vercel matches the filesystem (including functions) before rewrites, so a
+    // valid /api route is unaffected either way. The exclusion matters for an
+    // INVALID one: without it a typo'd or removed endpoint would return the HTML
+    // shell with HTTP 200 instead of a 404, so a broken API call would surface as
+    // "unexpected token '<' in JSON" rather than as a missing route.
+    const { source } = VERCEL_CONFIG.rewrites[0]
+    expect(source).toContain('?!api/')
+
+    const pattern = new RegExp(`^${source}$`)
+    expect(pattern.test('/api/admin/provision-farmer')).toBe(false)
+    expect(pattern.test('/api/public/access-request')).toBe(false)
+  })
+
+  it('DOES rewrite the app routes that were 404ing', () => {
+    const pattern = new RegExp(`^${VERCEL_CONFIG.rewrites[0].source}$`)
+    for (const path of ['/login', '/set-password', '/forgot-password', '/anything/deep']) {
+      expect(pattern.test(path), `${path} should be rewritten to the SPA`).toBe(true)
+    }
   })
 })
 

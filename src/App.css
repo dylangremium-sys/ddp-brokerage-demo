@@ -1106,7 +1106,36 @@ body.public-auth-page {
   letter-spacing: 0.2px;
   white-space: nowrap;
   padding-left: 12px;
+  /* The descriptor is decorative, the menu is not — so the descriptor is what
+     gives way when the header runs out of room.
+
+     `white-space: nowrap` alone made it overflow its flex item and print ON TOP
+     of the nav links: at 1260px (the container's own max width) "Regulated Supply
+     Intelligence" and "Capabilities" rendered over each other on the live site.
+     A flex item defaults to `min-width: auto`, so it refuses to shrink below its
+     content and spills instead. `min-width: 0` lets it shrink and the overflow
+     rules clip it cleanly rather than letting it escape. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+/* HIDDEN AT EVERY WIDTH, deliberately — this is not a responsive breakpoint.
+
+   `.ln-nav-inner` is capped at `max-width: 1260px`, so the space available to the
+   header is CONSTANT above ~1320px of viewport; a wider monitor grants no extra
+   room. Measured against that 1260px: the logo, six nav items, the EN/ไทย toggle
+   and two buttons already consume it, and "Regulated Supply Intelligence" does
+   not fit at ANY viewport size. It was previously printing on top of the menu.
+
+   Ellipsising it produces "Regulated …", which reads as a rendering fault rather
+   than a subtitle — a different bug, not a fix. So it is hidden until a design
+   decision is taken. To bring it back, pick one:
+     * shorten the copy (`navBrandDescriptor` in translations.ts) to ~15 chars, or
+     * raise `.ln-nav-inner`'s max-width, or
+     * move the descriptor out of the header row.
+   The overflow guards above stay regardless: whatever the copy becomes, it can
+   never overlap the menu again. */
+.ln-brand-descriptor { display: none; }
 .ln-nav-menu {
   display: flex;
   align-items: center;
