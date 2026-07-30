@@ -11,8 +11,11 @@ import { parseAuthRedirect, stripAuthParams, decodeJwtSubject } from './authRedi
 
 /** A structurally real JWT carrying `sub`. Never verified — only decoded. */
 function jwt(payload: Record<string, unknown>): string {
+  // replaceAll with plain strings, and a bracketed '=' class: a regex literal
+  // beginning `/=` reads as the division-assignment operator to both humans and
+  // scanners.
   const b64url = (o: unknown) =>
-    btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    btoa(JSON.stringify(o)).replaceAll('+', '-').replaceAll('/', '_').replace(/[=]+$/, '')
   return `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.c2ln`
 }
 

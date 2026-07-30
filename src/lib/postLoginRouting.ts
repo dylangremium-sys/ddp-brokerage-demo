@@ -133,7 +133,7 @@ export function resolveAuthResolutionAction(
   // operator must never be able to revoke a working session.
   const isFirstResolution = !input.alreadyRouted
   const unresolved =
-    !!input.profile && resolveBootstrap(input.profile).state === 'authenticated-unresolved'
+    Boolean(input.profile) && resolveBootstrap(input.profile).state === 'authenticated-unresolved'
   if (isFirstResolution && unresolved) return { routed: routing.routed, action: { kind: 'revoke-session' } }
 
   return { routed: routing.routed, action: { kind: 'none' } }

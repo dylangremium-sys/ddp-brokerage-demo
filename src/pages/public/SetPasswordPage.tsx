@@ -79,8 +79,13 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
     let active = true
     let attempts = 0
 
-    async function check() {
-      const userId = await getSessionUserId()
+    async function check(): Promise<void> {
+      // A rejection here — getSession touching storage, a hostile environment —
+      // previously escaped as an unhandled rejection and left the screen sitting
+      // on "Checking your link…" forever, with no error and no way forward.
+      // Treated as "no session yet" so it retries, then settles on the dead-link
+      // state, which at least offers a route onward.
+      const userId = await getSessionUserId().catch(() => null)
       if (!active) return
       if (userId && userId === subject) {
         setPhase('ready')
@@ -90,13 +95,13 @@ export default function SetPasswordPage({ lang = 'en', redirect, onDone, onReque
       // exchanged. A session belonging to somebody else is a settled answer and
       // is refused immediately; retrying could not turn it into the right one.
       if (!userId && ++attempts < 10) {
-        setTimeout(() => { if (active) void check() }, 250)
+        setTimeout(() => { if (active) check() }, 250)
         return
       }
       setPhase('unavailable')
     }
 
-    void check()
+    check()
     return () => { active = false }
   }, [linkSubject])
 

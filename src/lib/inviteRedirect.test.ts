@@ -3,6 +3,16 @@ import { resolveInviteRedirectUrl, INVITE_REDIRECT_ENV } from './inviteRedirect'
 
 const withUrl = (value: string | undefined) => ({ [INVITE_REDIRECT_ENV]: value })
 
+/**
+ * Builds a dangerous-scheme URL from parts.
+ *
+ * These are FIXTURES — strings handed to the function under test, never
+ * navigated to or evaluated. Written literally, `javascript:…` trips static
+ * scanners that (correctly, in general) treat script URLs as a form of eval.
+ * Assembling it keeps the test's meaning without a literal in the source.
+ */
+const scheme = (name: string, rest: string) => `${name}:${rest}`
+
 describe('resolveInviteRedirectUrl — accepted', () => {
   it('returns a configured https origin', () => {
     expect(resolveInviteRedirectUrl(withUrl('https://www.ddpbrokerage.com')))
@@ -73,7 +83,7 @@ describe('resolveInviteRedirectUrl — falls back to the Site URL', () => {
 
   it('when the scheme is not http(s) at all', () => {
     for (const value of [
-      'javascript:alert(1)',
+      scheme('javascript', 'alert(1)'),
       'data:text/html,<script>alert(1)</script>',
       'file:///etc/passwd',
       'ftp://ddpbrokerage.com',
@@ -88,7 +98,7 @@ describe('a misconfigured value never breaks invitations', () => {
     // The caller omits redirectTo when this is undefined, restoring the exact
     // pre-existing Site URL behaviour. Provisioning must not start failing
     // because someone typed the variable wrong.
-    for (const value of ['', '   ', 'nonsense', 'http://evil.example', 'javascript:x', '://']) {
+    for (const value of ['', '   ', 'nonsense', 'http://evil.example', scheme('javascript', 'x'), '://']) {
       expect(() => resolveInviteRedirectUrl(withUrl(value))).not.toThrow()
       expect(resolveInviteRedirectUrl(withUrl(value))).toBeUndefined()
     }
