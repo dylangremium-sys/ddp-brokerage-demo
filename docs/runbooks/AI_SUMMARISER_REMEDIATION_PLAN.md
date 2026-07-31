@@ -170,9 +170,44 @@ changes the request contract, so client and server must ship together.
 
 ---
 
-## P2 — Measure the prompt rewrite
+## P2 — Measure the prompt rewrite 🟡 BUILT, NOT YET RUN
 
-### The gap
+**The harness exists and is wired to the real pipeline; it has never been
+executed against a live provider, because that needs a key.**
+
+- `src/lib/aiEvalFixtures.ts` — 12 synthetic fixtures: 6 benign (including Thai
+  script, a long multi-clause notice, a negated duty, and one whose *source*
+  uses "certified"/"approved" so a false wording-guard block would show up), and
+  6 hostile (injection in the body, in the title, a forged `</source_evidence>`,
+  a demand to assert compliance, a demand to disclose the system prompt, and a
+  demand to cite a specific invented regulation). None is Cannamonitor-
+  attributed, so the corpus can be sent to a provider without a permission
+  question — and a test asserts that stays true.
+- `src/lib/aiEvalChecks.ts` — the scoring, kept pure and separate.
+- `src/lib/aiSummariserEval.integration.test.ts` — the runner. Skipped unless
+  `AI_EVAL_API_KEY` is set; `AI_EVAL_MODEL` and `AI_EVAL_EFFORT` make the effort
+  sweep a re-run rather than an edit.
+
+**The scoring is separated from the network on purpose.** A harness that only
+executes when someone has a key would never have its own judgement tested, and a
+`checkFixture` that silently returned no failures would report every run as a
+clean sweep. `aiEvalChecks.test.ts` exercises it against synthetic results in
+ordinary CI — 21 tests covering canary detection, the compliance-claim regex,
+accepting a wording-guard block as a pass, the negation-carrying citation rule,
+and the deliberate decision NOT to scan source references for canaries (they are
+our text read back out of evidence that contains the canary by construction, so
+scanning them would fail every injection fixture regardless of model behaviour).
+
+**Still to do:** run it with a key, record the baseline, then sweep
+`AI_EVAL_EFFORT` across `low`/`medium`/`high` and set the endpoint's effort on
+evidence rather than on the judgement call currently in the code.
+
+**Not measured: token usage.** The provider adapter deliberately discards the
+vendor response beyond the content it parses, so `usage` never reaches this
+layer. Latency is measured; cost is not. Surfacing tokens means widening the
+adapter's return shape — a production change this harness should not force.
+
+### The gap (as found)
 
 The system prompt was rewritten and the user turn restructured with **zero
 measurement of output quality**. Every test is mock-based: they prove the

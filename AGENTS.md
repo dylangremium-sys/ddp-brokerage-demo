@@ -68,6 +68,22 @@ Database-related scripts (`verify:migration`, `ci:runtime`) need a disposable
 Postgres harness - see `docs/DISPOSABLE_PG_HARNESS.md`. They are not needed for
 frontend work.
 
+## The AI evaluation harness
+
+`src/lib/aiSummariserEval.integration.test.ts` runs a fixture corpus through the
+real Anthropic API. It is SKIPPED unless `AI_EVAL_API_KEY` is set, so `npm test`
+and CI never make a network call or spend anything. Run it deliberately:
+
+```bash
+AI_EVAL_API_KEY=sk-ant-... npx vitest run src/lib/aiSummariserEval.integration.test.ts
+```
+
+`AI_EVAL_MODEL` (default `claude-opus-5`) and `AI_EVAL_EFFORT` (`low`..`max`,
+default `low`) let you sweep without editing code. It measures guardrail health
+- parse rate, citation grounding, false wording-guard blocks, injection
+resistance, latency - not summary quality. Re-run it after any change to the
+system prompt, the model, or the effort level, and diff the printed table.
+
 ## Secrets
 
 - `.env.local` is gitignored and must stay that way.
