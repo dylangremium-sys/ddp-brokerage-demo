@@ -142,6 +142,13 @@ export interface ServerAiSummaryDeps {
   authenticate: (accessToken: string) => Promise<{ userId: string } | null>
   /** Read ONLY the authenticated caller's own profile role (RLS enforced). */
   getProfileRole: (userId: string) => Promise<string | null>
+  /**
+   * Read the STORED legal update by id, under the caller's own RLS. Required,
+   * not optional: it is the only thing that makes the evidence authoritative,
+   * and an endpoint that could silently fall back to the request body would
+   * reopen every gap it exists to close.
+   */
+  getLegalUpdate: (legalUpdateId: string) => Promise<LegalUpdate | null>
   /** Server-side provider; null when no provider is configured (fail closed). */
   provider: ComplianceAiSummaryProvider | null
   maxEvidenceChars?: number
@@ -273,33 +280,12 @@ export function validateAiSummaryBody(raw: unknown): RequestValidation {
   }
 }
 
-/**
- * Reconstructs the minimal LegalUpdate the reused orchestration expects from
- * the validated evidence. Only fields buildAiSummaryRequest reads carry data;
- * the checksum round-trips through reviewerNotes so provenance is preserved.
- * The server never trusts a client capability flag — buildAiSummaryRequest
- * stamps the literal draft-only guarantees.
- */
-export function reconstructLegalUpdate(req: ParsedAiSummaryRequest): LegalUpdate {
-  return {
-    id: req.legalUpdateId,
-    sourceId: null,
-    title: req.itemTitle,
-    jurisdiction: req.jurisdiction,
-    sourceName: req.sourceName,
-    sourceUrl: req.sourceUrl,
-    publishedAt: req.publishedAt,
-    detectedAt: '',
-    rawText: req.rawEvidence,
-    summary: '',
-    affectedAreas: [],
-    aiRiskLevel: null,
-    status: req.status,
-    reviewerNotes: req.provenanceChecksum ? `Checksum: ${req.provenanceChecksum}` : '',
-    createdAt: '',
-    updatedAt: '',
-  }
-}
+// `reconstructLegalUpdate` used to live here: it built a LegalUpdate out of the
+// request body for the orchestration to guard. It is deliberately deleted
+// rather than left unused — as long as such a function exists, the cheapest way
+// to fix any future "the endpoint needs an update object" problem is to call it
+// again, which silently restores caller-supplied evidence. The handler now
+// reads the stored row via deps.getLegalUpdate.
 
 // ─── Error mapping (no secrets, no stack traces) ─────────────────────────────
 
@@ -385,8 +371,38 @@ export async function handleAiSummaryRequest(
     return err(VALIDATION_STATUS[validation.code], validation.code, validation.reason)
   }
 
-  const update = reconstructLegalUpdate(validation.value)
-  const result = await generateAiDraftSummary(update, deps.provider, {
+  // ─── The evidence comes from the DATABASE, never from the caller ──────────
+  //
+  // Everything downstream — the Cannamonitor permission gate, the status
+  // eligibility check, the evidence size bound, and the reference guard that
+  // grounds the model's citations — reads its input from this update. While it
+  // was reconstructed from the request body, every one of those checks was
+  // validating a caller's submission against itself:
+  //
+  //   - a caller could declare a non-Cannamonitor sourceUrl while sending
+  //     Cannamonitor evidence, and the gate would pass (attribution is by URL);
+  //   - a caller could declare status 'new' for an already-reviewed update;
+  //   - a caller could supply evidence containing whatever citation they wanted
+  //     the reference guard to accept as grounded.
+  //
+  // The body is still validated for shape (a malformed request is still a 400)
+  // but its evidence values are now ignored.
+  let stored: LegalUpdate | null
+  try {
+    stored = await deps.getLegalUpdate(validation.value.legalUpdateId)
+  } catch {
+    // A read failure must not fall through to the caller's copy. Fail closed.
+    return err(RESULT_STATUS.missing_update, 'missing_update', 'The legal update could not be read.')
+  }
+  if (!stored) {
+    return err(
+      RESULT_STATUS.missing_update,
+      'missing_update',
+      'No such legal update exists.',
+    )
+  }
+
+  const result = await generateAiDraftSummary(stored, deps.provider, {
     requestInProgress: false,
     maxEvidenceChars: deps.maxEvidenceChars ?? DEFAULT_MAX_EVIDENCE_CHARS,
   })

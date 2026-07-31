@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { LegalUpdate } from '../types'
 import type {
   AiDraftSummarySections,
   AiSummaryProviderInput,
@@ -60,13 +61,52 @@ function spyProvider(
   }
 }
 
+/** The STORED row. The endpoint reads its evidence from here, never from the
+ *  request body — these values mirror VALID_BODY so existing expectations hold,
+ *  and the tests that matter deliberately make them disagree. */
+const STORED_UPDATE: LegalUpdate = {
+  id: 'lu-1',
+  sourceId: null,
+  title: 'Cultivation record-keeping notice',
+  jurisdiction: 'Thailand',
+  sourceName: 'Thai FDA',
+  sourceUrl: 'https://example.test/notice',
+  publishedAt: '2026-06-01T00:00:00.000Z',
+  detectedAt: '',
+  rawText: 'Full raw source evidence text describing the regulatory change.',
+  summary: '',
+  affectedAreas: [],
+  aiRiskLevel: null,
+  status: 'new',
+  reviewerNotes: '',
+  createdAt: '',
+  updatedAt: '',
+}
+
 function makeDeps(overrides: Partial<ServerAiSummaryDeps> = {}): ServerAiSummaryDeps {
   return {
     authenticate: async () => ({ userId: 'user-1' }),
     getProfileRole: async () => 'ddp_admin',
+    getLegalUpdate: async (id) => (id === STORED_UPDATE.id ? STORED_UPDATE : null),
     provider: spyProvider(),
     ...overrides,
   }
+}
+
+/**
+ * Deps whose STORED row differs from the default fixture. Since the endpoint
+ * reads its evidence from the database, a test that wants a Cannamonitor URL,
+ * a non-`new` status, or oversized evidence has to put it HERE — putting it in
+ * the request body is exactly what no longer has any effect.
+ */
+function depsWithStored(
+  stored: Partial<LegalUpdate>,
+  overrides: Partial<ServerAiSummaryDeps> = {},
+): ServerAiSummaryDeps {
+  return makeDeps({
+    getLegalUpdate: async (id) => (id === STORED_UPDATE.id ? { ...STORED_UPDATE, ...stored } : null),
+    ...overrides,
+  })
 }
 
 const VALID_BODY: Record<string, unknown> = {
@@ -221,20 +261,23 @@ describe('handleAiSummaryRequest — strict request validation', () => {
 })
 
 describe('handleAiSummaryRequest — guard reuse (never re-implemented)', () => {
-  it('rejects a non-new status via the request guard (422) without calling the provider', async () => {
+  it('rejects a non-new STORED status via the request guard (422) without calling the provider', async () => {
     const provider = spyProvider()
-    const r = await handleAiSummaryRequest(req({ body: { ...VALID_BODY, status: 'reviewed' } }), makeDeps({ provider }))
+    // Status comes from the row. The body still declares 'new' — and is ignored.
+    const r = await handleAiSummaryRequest(
+      req({ body: { ...VALID_BODY, status: 'new' } }),
+      depsWithStored({ status: 'reviewed' }, { provider }),
+    )
     expect(r.status).toBe(422)
     expect((r.body as { error: string }).error).toBe('unsupported_status')
     expect(provider.calls).toHaveLength(0)
   })
 
-  it('rejects oversized evidence (over the summarisation bound) via the guard', async () => {
-    // Passes field validation (under MAX_REQUEST_CHARS) but exceeds the 20k
-    // summarisation evidence bound → guard rejects → mapped to 413.
+  it('rejects oversized STORED evidence (over the summarisation bound) via the guard', async () => {
+    // Exceeds the 20k summarisation evidence bound → guard rejects → 413.
     const r = await handleAiSummaryRequest(
-      req({ body: { ...VALID_BODY, rawEvidence: 'y'.repeat(20_001) } }),
-      makeDeps(),
+      req(),
+      depsWithStored({ rawText: 'y'.repeat(20_001) }),
     )
     expect(r.status).toBe(413)
     expect((r.body as { error: string }).error).toBe('oversized_evidence')
@@ -313,7 +356,7 @@ describe('handleAiSummaryRequest — success is always a labelled draft', () => 
     const provider = spyProvider(async (input) =>
       output({ ...SAFE_SECTIONS, draftSummary: `Draft: ${input.rawEvidence}` }),
     )
-    const r = await handleAiSummaryRequest(req({ body: { ...VALID_BODY, rawEvidence: thai } }), makeDeps({ provider }))
+    const r = await handleAiSummaryRequest(req(), depsWithStored({ rawText: thai }, { provider }))
     expect(r.status).toBe(200)
     if (!r.body.ok) return
     expect(r.body.sections.draftSummary).toContain(thai)
@@ -322,8 +365,10 @@ describe('handleAiSummaryRequest — success is always a labelled draft', () => 
   it('gives the server-constructed capability lock to the provider (never a client flag)', async () => {
     const provider = spyProvider()
     await handleAiSummaryRequest(
-      req({ body: { ...VALID_BODY, provenanceChecksum: 'a'.repeat(64) } }),
-      makeDeps({ provider }),
+      // The body declares a DIFFERENT checksum; the stored row's is the one
+      // that must reach the provider.
+      req({ body: { ...VALID_BODY, provenanceChecksum: 'b'.repeat(64) } }),
+      depsWithStored({ reviewerNotes: `Checksum: ${'a'.repeat(64)}` }, { provider }),
     )
     const input = provider.calls[0] as unknown as Record<string, unknown>
     expect(input.canApprove).toBe(false)
@@ -331,9 +376,10 @@ describe('handleAiSummaryRequest — success is always a labelled draft', () => 
     expect(input.canEnforce).toBe(false)
     expect(input.makesBuyerFacingDecision).toBe(false)
     expect(input.requiresHumanReview).toBe(true)
-    // permitted evidence round-trips; checksum recovered from reconstructed notes.
-    expect(input.rawEvidence).toBe(VALID_BODY.rawEvidence)
+    // Evidence and checksum both come from the STORED row, not the body.
+    expect(input.rawEvidence).toBe(STORED_UPDATE.rawText)
     expect(input.provenanceChecksum).toBe('a'.repeat(64))
+    expect(input.provenanceChecksum).not.toBe('b'.repeat(64))
   })
 
   it('error bodies expose only {ok,error,message} — no stack, token, or secret', async () => {
@@ -365,11 +411,14 @@ describe('validateAiSummaryBody — direct unit checks', () => {
 describe('handleAiSummaryRequest — Cannamonitor source blocked server-side', () => {
   const RAW_MARKER = 'CANNAMONITOR_SERVER_RAW_MARKER_MUST_NOT_REACH_PROVIDER'
 
-  it('authenticated-admin POST with a Cannamonitor sourceUrl → 403, provider never called, raw evidence never sent', async () => {
+  it('STORED Cannamonitor sourceUrl → 403, provider never called, raw evidence never sent', async () => {
     const provider = spyProvider()
     const r = await handleAiSummaryRequest(
-      req({ body: { ...VALID_BODY, sourceUrl: 'https://www.cannamonitor.com/brief/x', rawEvidence: RAW_MARKER } }),
-      makeDeps({ provider }),
+      req(),
+      depsWithStored(
+        { sourceUrl: 'https://www.cannamonitor.com/brief/x', rawText: RAW_MARKER },
+        { provider },
+      ),
     )
     expect(r.status).toBe(403)
     expect(r.body.ok).toBe(false)
@@ -381,8 +430,8 @@ describe('handleAiSummaryRequest — Cannamonitor source blocked server-side', (
   it('denial occurs after admin authz and yields no summary body', async () => {
     const provider = spyProvider()
     const r = await handleAiSummaryRequest(
-      req({ body: { ...VALID_BODY, sourceUrl: 'https://cannamonitor.com/feed/' } }),
-      makeDeps({ provider }),
+      req(),
+      depsWithStored({ sourceUrl: 'https://cannamonitor.com/feed/' }, { provider }),
     )
     expect(r.status).toBe(403)
     expect(r.body.ok).toBe(false)
@@ -394,10 +443,27 @@ describe('handleAiSummaryRequest — Cannamonitor source blocked server-side', (
   it('REGRESSION: an unrelated official source still succeeds (200) through the server', async () => {
     const provider = spyProvider()
     const r = await handleAiSummaryRequest(
-      req({ body: { ...VALID_BODY, sourceUrl: 'https://regulator.example.gov/notice' } }),
-      makeDeps({ provider }),
+      req(),
+      depsWithStored({ sourceUrl: 'https://regulator.example.gov/notice' }, { provider }),
     )
     expect(r.status).toBe(200)
     expect(provider.calls).toHaveLength(1)
+  })
+
+  it('CANNOT be walked around by declaring a benign sourceUrl in the body', async () => {
+    // The gate attributes by source URL. While the update was rebuilt from the
+    // request, a caller could declare a benign URL and have Cannamonitor
+    // evidence forwarded to the provider anyway. The stored row decides now.
+    const provider = spyProvider()
+    const r = await handleAiSummaryRequest(
+      req({ body: { ...VALID_BODY, sourceUrl: 'https://regulator.example.gov/notice' } }),
+      depsWithStored(
+        { sourceUrl: 'https://cannamonitor.com/feed/', rawText: RAW_MARKER },
+        { provider },
+      ),
+    )
+    expect(r.status).toBe(403)
+    expect(provider.calls).toHaveLength(0)
+    expect(JSON.stringify(provider.calls)).not.toContain(RAW_MARKER)
   })
 })

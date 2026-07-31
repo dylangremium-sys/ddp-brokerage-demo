@@ -31,6 +31,8 @@ Fulfilment and chain-of-custody tracking are **planned, not implemented** — se
 
 On the Watchtower and AI: intake and detection of legal/regulatory updates are currently **manual** (a paste form) — there is no automated source monitoring. **AI-assisted draft summarisation** of a single update exists and runs server-side. Every summary is transient, is stamped as requiring human review, and is never persisted. **AI does not approve rules, certify compliance, or enforce anything automatically.** A human reviews each update and explicitly approves a rule, and only human-approved rules affect alerts.
 
+The evidence summarised is read **server-side from the stored `legal_updates` row**, never from the request body — under the caller's own RLS, with no service-role key. Everything downstream (the Cannamonitor permission gate, status eligibility, the evidence size bound, and the reference guard) therefore checks a database record rather than a caller's submission.
+
 Three guards sit around that one AI call, and the limits are as important as the guards:
 
 - **Wording guard** (`aiComplianceGuard.ts`) — an unqualified compliance/approval claim in the AI's prose blocks the whole draft before display.

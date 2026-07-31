@@ -8,7 +8,7 @@ import type {
 import type { AIComplianceOutput } from './aiComplianceTypes'
 import { AI_DRAFT_LABEL, generateAiDraftSummary } from './complianceAiSummarisation'
 import { createComplianceAiSummaryHttpClient } from './complianceAiSummaryClient'
-import { handleAiSummaryRequest } from './serverAiSummary'
+import { handleAiSummaryRequest, SUPPORTED_CAPABILITY } from './serverAiSummary'
 import type { ServerAiSummaryDeps } from './serverAiSummary'
 
 // ─── Phase 2I — full-stack boundary integration + security source sweep ─────
@@ -36,11 +36,17 @@ function output(value: AiDraftSummarySections): AIComplianceOutput<AiDraftSummar
 
 function adminDeps(
   impl: (input: AiSummaryProviderInput) => Promise<AIComplianceOutput<AiDraftSummarySections>>,
+  storedOverrides: Partial<LegalUpdate> = {},
 ): ServerAiSummaryDeps {
   const provider: ComplianceAiSummaryProvider = { draftSummary: impl }
   return {
     authenticate: async (token) => (token ? { userId: 'admin-user' } : null),
     getProfileRole: async () => 'ddp_admin',
+    // The stored row is what the endpoint summarises. Defaults to the same
+    // update the client sends, so a test only has to diverge them when that
+    // divergence is the point.
+    getLegalUpdate: async (id) =>
+      id === 'lu-1' ? makeUpdate({ id: 'lu-1', ...storedOverrides }) : null,
     provider,
   }
 }
@@ -150,6 +156,127 @@ const CORE_SRC = Object.values(
 const PROVIDER_SRC = Object.values(
   import.meta.glob('./serverAiProvider.ts', { query: '?raw', import: 'default', eager: true }),
 )[0] as string
+
+describe('AI summary boundary — the evidence is the stored row, not the request', () => {
+  /** Posts a body directly, bypassing the client adapter, so the request can
+   *  disagree with the stored row the way a hostile caller would. */
+  async function postDirect(
+    body: Record<string, unknown>,
+    deps: ServerAiSummaryDeps,
+  ): ReturnType<typeof handleAiSummaryRequest> {
+    return handleAiSummaryRequest(
+      {
+        method: 'POST',
+        contentType: 'application/json',
+        authorization: 'Bearer session-token',
+        body: JSON.stringify(body),
+      },
+      deps,
+    )
+  }
+
+  function validBody(overrides: Record<string, unknown> = {}) {
+    return {
+      legalUpdateId: 'lu-1',
+      sourceName: 'Thai FDA',
+      sourceUrl: 'https://example.test/notice',
+      jurisdiction: 'Thailand',
+      itemTitle: 'Cultivation notice',
+      publishedAt: '2026-06-01T00:00:00.000Z',
+      rawEvidence: 'Evidence the CALLER supplied.',
+      provenanceChecksum: null,
+      status: 'new',
+      capability: SUPPORTED_CAPABILITY,
+      ...overrides,
+    }
+  }
+
+  it('summarises the stored evidence and ignores the body’s copy', async () => {
+    let seen: AiSummaryProviderInput | null = null
+    const deps = adminDeps(
+      async (input) => {
+        seen = input
+        return output(SAFE)
+      },
+      { rawText: 'Evidence the DATABASE holds.' },
+    )
+
+    const result = await postDirect(validBody(), deps)
+
+    expect(result.status).toBe(200)
+    expect(seen!.rawEvidence).toBe('Evidence the DATABASE holds.')
+    expect(seen!.rawEvidence).not.toContain('CALLER')
+  })
+
+  it('cannot be walked around the Cannamonitor permission gate', async () => {
+    // Attribution is by source URL. While the update was rebuilt from the body,
+    // declaring a benign URL sent Cannamonitor evidence to the provider anyway.
+    // The stored row decides now, so the declared URL is irrelevant.
+    let reached = false
+    const deps = adminDeps(
+      async () => {
+        reached = true
+        return output(SAFE)
+      },
+      {
+        sourceUrl: 'https://cannamonitor.com/alerts/thai-notice-1',
+        rawText: 'Cannamonitor proprietary alert body.',
+      },
+    )
+
+    const result = await postDirect(validBody({ sourceUrl: 'https://example.test/notice' }), deps)
+
+    expect(result.status).toBe(403)
+    expect(reached).toBe(false)
+  })
+
+  it('cannot re-open an already-reviewed update by declaring status new', async () => {
+    let reached = false
+    const deps = adminDeps(
+      async () => {
+        reached = true
+        return output(SAFE)
+      },
+      { status: 'reviewed' },
+    )
+
+    const result = await postDirect(validBody({ status: 'new' }), deps)
+
+    expect(result.status).toBe(422)
+    expect(reached).toBe(false)
+  })
+
+  it('rejects an id that does not exist rather than summarising the body', async () => {
+    let reached = false
+    const deps = adminDeps(async () => {
+      reached = true
+      return output(SAFE)
+    })
+
+    const result = await postDirect(validBody({ legalUpdateId: 'lu-does-not-exist' }), deps)
+
+    expect(result.status).toBe(400)
+    expect(reached).toBe(false)
+  })
+
+  it('fails closed when the stored row cannot be read', async () => {
+    let reached = false
+    const deps: ServerAiSummaryDeps = {
+      ...adminDeps(async () => {
+        reached = true
+        return output(SAFE)
+      }),
+      getLegalUpdate: async () => {
+        throw new Error('db unavailable')
+      },
+    }
+
+    const result = await postDirect(validBody(), deps)
+
+    expect(result.status).toBe(400)
+    expect(reached).toBe(false)
+  })
+})
 
 describe('AI summary boundary — fabricated citations across the wire', () => {
   it('drops fabrications server-side AND reports the count to the browser', () => {

@@ -69,9 +69,41 @@ Deploy first, switch the model second.
 
 ---
 
-## P1 — Make the server authoritative over the evidence
+## P1 — Make the server authoritative over the evidence ✅ DONE
 
-### The defect
+**Implemented on `feature/ai-summary-server-authoritative`.** CI gate green,
+2578 tests. The endpoint now reads the stored `legal_updates` row via a required
+`getLegalUpdate` dep and ignores the request body's evidence entirely.
+
+**One consequence was worse than this plan predicted, and was confirmed by probe
+before it was fixed: the Cannamonitor permission gate could be walked around.**
+That gate attributes by source URL and is documented as "the authoritative gate
+for BOTH the client controller and the server endpoint" — but its input was
+caller-supplied. A caller could declare a benign `sourceUrl` while sending
+Cannamonitor evidence in `rawEvidence`, and the proprietary body reached the AI
+provider with a 200. This was not a provenance-soundness issue; it was a
+commercial-permission control that did not hold. It holds now — the stored row
+decides. Regression tests cover it at both the unit and boundary layers.
+
+Two smaller holes closed with it: a caller could declare `status: 'new'` for an
+already-reviewed update, and could summarise an id that does not exist at all.
+
+Also fixed while implementing: `provenanceChecksum` is recovered from
+`reviewer_notes`, so the row read has to select that column — omitting it would
+have silently made the checksum `null` on every request, sourcing provenance
+from nowhere instead of from the record.
+
+**Deliberately not done: the opportunistic `content_hash` check.** It would add
+async hashing and a logging dependency to detect stored-data corruption, but an
+attacker who can rewrite `raw_text` can rewrite `content_hash` beside it, and the
+column is `NULL` on the manual-paste rows this actually runs against. It buys
+nothing here.
+
+**`reconstructLegalUpdate` was deleted, not left unused.** While a function
+exists that builds a LegalUpdate out of the request body, the cheapest fix for
+any future "the endpoint needs an update object" problem is to call it again.
+
+### The defect (as found)
 
 `handleAiSummaryRequest` builds the legal update **entirely from the request
 body** (`reconstructLegalUpdate`, `serverAiSummary.ts:279`) and never reads the
