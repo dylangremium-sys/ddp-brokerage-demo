@@ -255,7 +255,59 @@ harness exists to answer.
 
 ---
 
-## P3 — The architectural gap (decide, do not drift)
+## P3 — The architectural gap (cheaper than it looks; blocked on PR #95)
+
+**Re-scoped 2026-07-31 after measuring, not estimating.** This section previously
+said P3 was "larger than P0–P2 combined". That was wrong in one direction and
+right in another, and both halves matter.
+
+**The hard part already exists.** `src/lib/serverSourceRetrieval.ts` on
+`origin/feature/coa-source-bound-watchtower-review` (**PR #95, still DRAFT**) is
+the first module in this codebase that actually fetches a regulatory source. It
+is server-side only, deny-by-default host allowlisting, HTTPS-only, follows
+redirects **manually and re-validates every hop** so an allowlisted host cannot
+bounce to an internal address, resolves hostnames to catch DNS rebinding
+(`api/_lib/nodeHostResolver.ts`), streams with a size cap so a lying
+`Content-Length` cannot exhaust memory, enforces a content-type allowlist, and
+returns a **SHA-256 `contentFingerprint`** — the source version identity P3
+needs for provenance. PR #95 reports 20 red-team probes against it.
+
+Writing that from scratch is the expensive, dangerous part of P3. It is written.
+
+**The reference guard needs no change at all.** It already matches citations as
+verbatim spans against whatever is in the stored evidence body. Point that body
+at retrieved primary text and its guarantee upgrades from "traceable to a feed
+summary" to "traceable to the primary source" **with no edit to the guard**. The
+part everyone assumes is expensive is already done and is currently aimed at a
+weak target.
+
+**Server-side is the only route, and that is measured, not assumed.**
+`docs/CSP_FEED_RETRIEVAL_DECISION.md` records that both eligible RSS sources
+return no `Access-Control-Allow-Origin`, so browser retrieval fails on CORS
+before CSP is even considered. Any plan that fetches from the browser is dead on
+arrival.
+
+**What is actually left:**
+
+1. **Land PR #95, or deliberately extract the two modules.** Neither
+   `serverSourceRetrieval.ts` nor `complianceSourceUrlSafety.ts` is on `main`.
+   This is the real blocker, and it is someone else's in-flight work —
+   duplicating the module to avoid waiting would be strictly worse than waiting.
+2. **Ingestion wiring:** fetch `item.link` and store the retrieved text as the
+   evidence body, with its fingerprint.
+3. **A storage decision:** `raw_text` or a new column. Note the trap —
+   `legal_updates.content_hash` already exists and is the SHA-256 of the
+   *normalised feed text*. Overloading it with a retrieved-document fingerprint
+   would silently conflate two different identities.
+4. **An allowlist policy per registered source.** Deny-by-default means an empty
+   list allows nothing, so this is a real content task, not a config default.
+
+**The judgement that has not changed:** this is what decides whether an AI draft
+can ever be citable compliance evidence. Steps 2–4 are ordinary work. Step 1 is
+a scheduling question for the owner. Deciding to leave it is legitimate;
+drifting into claiming otherwise is not.
+
+### Original framing
 
 `complianceRssConnector.ts:237` builds `rawText` from
 `[title, link, id, published, summary, content]`, where `link` is the URL
