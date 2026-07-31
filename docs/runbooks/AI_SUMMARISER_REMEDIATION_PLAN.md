@@ -75,6 +75,25 @@ Deploy first, switch the model second.
 2578 tests. The endpoint now reads the stored `legal_updates` row via a required
 `getLegalUpdate` dep and ignores the request body's evidence entirely.
 
+**Verified against LIVE PRODUCTION, 2026-07-31, read-only as `ddp_ro`.** CI
+proves the code is self-consistent; it does not prove the query works against
+the real database. The new read names nine columns and depends on a policy — if
+any name were wrong, PostgREST would error, `getLegalUpdate` would return
+`null`, and *every* request would become `missing_update`. Silent, total, and
+invisible to every mock-based test in the suite. Measured instead of assumed:
+
+| Assumption | Result |
+|---|---|
+| All nine selected columns exist on `public.legal_updates` | ✅ `id, title, jurisdiction, source_name, source_url, published_at, raw_text, status, reviewer_notes` all present |
+| RLS is enabled on the table | ✅ `relrowsecurity = t` |
+| An admin-readable policy exists | ✅ `legal_updates: admin all`, `cmd = ALL`, `qual = is_ddp_admin()` |
+| That predicate resolves for a token-bound client | ✅ `is_ddp_admin()` is `EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'ddp_admin')`, `STABLE SECURITY DEFINER`, `search_path` pinned to `public, auth, pg_temp` |
+
+`auth.uid()` resolves from the caller's JWT, which is what `sessionClient`
+carries — the same client already used for the role lookup. So the read
+succeeds for exactly the callers the endpoint has already authorised, and no
+service-role key is involved anywhere in the chain.
+
 **One consequence was worse than this plan predicted, and was confirmed by probe
 before it was fixed: the Cannamonitor permission gate could be walked around.**
 That gate attributes by source URL and is documented as "the authoritative gate
