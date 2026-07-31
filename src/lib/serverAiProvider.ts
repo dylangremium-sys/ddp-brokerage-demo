@@ -89,7 +89,7 @@ const SYSTEM_PROMPT = [
 
 // Matches any tag-shaped construct naming one of our delimiters, in either
 // direction and with arbitrary internal whitespace.
-const DELIMITER_RE = new RegExp(`<\\s*/?\\s*(?:${METADATA_TAG}|${EVIDENCE_TAG})\\s*/?\\s*>`, 'gi')
+const DELIMITER_RE = new RegExp(`<\\s*/?\\s*(?:${METADATA_TAG}|${EVIDENCE_TAG})\\s*/?\\s*>`, 'giu')
 
 /**
  * Escapes the angle brackets of any delimiter-shaped construct occurring inside
@@ -98,7 +98,7 @@ const DELIMITER_RE = new RegExp(`<\\s*/?\\s*(?:${METADATA_TAG}|${EVIDENCE_TAG})\
  * constructs are touched — ordinary markup in a feed body survives intact.
  */
 function neutralizeDelimiters(text: string): string {
-  return text.replace(DELIMITER_RE, match => match.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+  return text.replace(DELIMITER_RE, match => match.replace(/</gu, '&lt;').replace(/>/gu, '&gt;'))
 }
 
 /** Builds the user-content evidence block from ONLY the permitted input fields.

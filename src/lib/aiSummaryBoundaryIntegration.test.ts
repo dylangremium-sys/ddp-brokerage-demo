@@ -192,11 +192,13 @@ describe('AI summary boundary — the evidence is the stored row, not the reques
   }
 
   it('summarises the stored evidence and ignores the body’s copy', async () => {
-    let seen: AiSummaryProviderInput | null = null
+    // Collected rather than held in a nullable, so "the provider was never
+    // called" fails as a length assertion rather than as a crash.
+    const seen: AiSummaryProviderInput[] = []
     const deps = adminDeps(
-      async (input) => {
-        seen = input
-        return output(SAFE)
+      (input) => {
+        seen.push(input)
+        return Promise.resolve(output(SAFE))
       },
       { rawText: 'Evidence the DATABASE holds.' },
     )
@@ -204,8 +206,9 @@ describe('AI summary boundary — the evidence is the stored row, not the reques
     const result = await postDirect(validBody(), deps)
 
     expect(result.status).toBe(200)
-    expect(seen!.rawEvidence).toBe('Evidence the DATABASE holds.')
-    expect(seen!.rawEvidence).not.toContain('CALLER')
+    expect(seen).toHaveLength(1)
+    expect(seen[0].rawEvidence).toBe('Evidence the DATABASE holds.')
+    expect(seen[0].rawEvidence).not.toContain('CALLER')
   })
 
   it('cannot be walked around the Cannamonitor permission gate', async () => {

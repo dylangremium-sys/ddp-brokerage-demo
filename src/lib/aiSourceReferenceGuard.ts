@@ -75,14 +75,14 @@ const SENTENCE_SEARCH_WINDOW = 160
  *  the edges of a reference, and models routinely add them ("…s.12…", 'Act.').
  *  Stripping them at the edges only — never inside — is what stops a correct
  *  quotation from being discarded for its typography. */
-const EDGE_NOISE_RE = /^[\s"'‘’“”«»([.,;:!?…\-–—]+|[\s"'‘’“”«»)\].,;:!?…\-–—]+$/g
+const EDGE_NOISE_RE = /^[\s"'‘’“”«»([.,;:!?…\-–—]+|[\s"'‘’“”«»)\].,;:!?…\-–—]+$/gu
 
-const SENTENCE_TERMINATOR_RE = /[.!?\n]/
+const SENTENCE_TERMINATOR_RE = /[.!?\n]/u
 
 /** Case-folds and collapses whitespace. Used for both sides of a comparison so
  *  a quotation is matched on its text rather than its typography. */
 function collapse(value: string): string {
-  return value.replace(/\s+/g, ' ').trim().toLowerCase()
+  return value.replace(/\s+/gu, ' ').trim().toLowerCase()
 }
 
 /** Collapse plus edge-noise stripping. Applied to references and to the
@@ -104,7 +104,7 @@ function collapseWithSourceMap(value: string): { text: string; sourceIndex: numb
 
   for (let i = 0; i < value.length; i++) {
     const char = value[i]
-    if (/\s/.test(char)) {
+    if (/\s/u.test(char)) {
       pendingSpace = out.length > 0
       continue
     }
@@ -136,7 +136,7 @@ function enclosingSentence(evidence: string, start: number, end: number): string
   while (to < rightLimit && !SENTENCE_TERMINATOR_RE.test(evidence[to])) to++
   if (to < rightLimit) to++ // keep the terminator itself
 
-  const text = evidence.slice(from, to).replace(/\s+/g, ' ').trim()
+  const text = evidence.slice(from, to).replace(/\s+/gu, ' ').trim()
   return text.length > MAX_REFERENCE_CONTEXT_CHARS
     ? `${text.slice(0, MAX_REFERENCE_CONTEXT_CHARS).trimEnd()}…`
     : text
