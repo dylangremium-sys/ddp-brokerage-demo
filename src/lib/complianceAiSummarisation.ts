@@ -268,15 +268,29 @@ export async function generateAiDraftSummary(
   // Reference guard over the model's citations. Unlike the wording guard an
   // ungrounded reference does not fail the whole draft — the prose may be
   // perfectly good — it is discarded, and the count is carried so a reviewer
-  // can see the model cited something we could not find. Runs at every layer
-  // that calls this function (server endpoint and browser controller alike);
-  // the second pass is idempotent because the first already filtered.
-  const references = verifySourceReferences(sections.sourceReferences, {
-    sourceName: request.sourceName,
-    sourceUrl: request.sourceUrl,
-    itemTitle: request.itemTitle,
-    rawEvidence: request.rawEvidence,
-  })
+  // can see the model cited something we could not find.
+  //
+  // It runs where the AUTHORITATIVE evidence is, and only there. The server
+  // reads the stored row; the browser holds a copy that can be stale. Re-running
+  // the guard in the browser over a server-verified list adds no security — the
+  // server already checked it against the real text — and can only produce
+  // false drops: a reviewer would be shown zero citations and told some were
+  // discarded, which reads as "the model cited things it could not support"
+  // when the opposite happened. `upstreamDroppedReferences` being present is
+  // the signal that a layer with authoritative evidence has already decided.
+  //
+  // The WORDING guard above is different and still runs at both layers: it
+  // reads the model's prose, which the browser has in full.
+  const upstream = output.provenance.upstreamDroppedReferences
+  const references =
+    upstream === undefined
+      ? verifySourceReferences(sections.sourceReferences, {
+          sourceName: request.sourceName,
+          sourceUrl: request.sourceUrl,
+          itemTitle: request.itemTitle,
+          rawEvidence: request.rawEvidence,
+        })
+      : { verified: sections.sourceReferences, droppedCount: upstream }
 
   const draft: AiDraftSummary = {
     legalUpdateId: activeUpdate.id,
@@ -288,11 +302,7 @@ export async function generateAiDraftSummary(
     uncertainties: sections.uncertainties,
     reviewQuestions: sections.reviewQuestions,
     sourceReferences: references.verified,
-    // This pass plus anything an upstream layer already discarded, so a draft
-    // that reached the browser through the server endpoint reports the
-    // server's discards rather than its own (always zero) recount.
-    droppedSourceReferences:
-      references.droppedCount + (output.provenance.upstreamDroppedReferences ?? 0),
+    droppedSourceReferences: references.droppedCount,
     guardDecision: 'allowed',
     status: 'draft_generated',
     requiresHumanReview: true,

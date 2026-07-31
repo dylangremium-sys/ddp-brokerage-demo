@@ -313,6 +313,32 @@ describe('AI summary boundary — fabricated citations across the wire', () => {
     })
   })
 
+  it('does not re-drop server-verified citations against a stale browser copy', () => {
+    // The browser passes ITS OWN update to the orchestration, and that copy can
+    // be stale. Re-running the reference guard there over a list the server
+    // already verified against the stored row adds no security and can only
+    // produce false drops — the reviewer would see zero citations plus "N
+    // discarded", which reads as "the model cited things it could not support"
+    // when the server had in fact verified them.
+    const captured: { authorization?: string } = {}
+    const client = createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => 'session-token',
+      fetchImpl: inProcessFetch(
+        adminDeps(async () => output({ ...SAFE, sourceReferences: ['Thai FDA'] })),
+        captured,
+      ),
+    })
+
+    const staleCopy = makeUpdate({ rawText: 'An older revision with entirely different wording.' })
+
+    return generateAiDraftSummary(staleCopy, client, { requestInProgress: false }).then(result => {
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.draft.sourceReferences).toEqual(['Thai FDA'])
+      expect(result.draft.droppedSourceReferences).toBe(0)
+    })
+  })
+
   it('reports zero discards when every reference is grounded', () => {
     const captured: { authorization?: string } = {}
     const client = createComplianceAiSummaryHttpClient({
