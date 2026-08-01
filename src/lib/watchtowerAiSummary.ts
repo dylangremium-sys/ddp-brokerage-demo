@@ -134,6 +134,8 @@ export const AI_SUMMARY_MESSAGES: Record<AiSummaryOutcomeCode, string> = {
   missing_evidence: 'This legal update has no source evidence to summarise.',
   oversized_evidence: 'The source evidence is too large for AI draft summarisation.',
   provider_error: 'The AI provider could not complete the request. No draft was produced.',
+  request_invalid:
+    'The request was rejected before it reached the AI provider, so nothing was sent and no draft was produced. Check the request, your permissions, or the stored legal update — this is not an AI provider fault.',
   provider_rejected: 'The AI provider rejected the request — the configured model or settings are not valid. This needs an administrator, not a retry.',
   provider_timeout: 'The AI provider timed out. No draft was produced.',
   malformed_output: 'The AI provider returned an unreadable draft. It was discarded.',

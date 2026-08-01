@@ -143,10 +143,23 @@ describe('createComplianceAiSummaryHttpClient — orchestration integration', ()
     expect(result.draft.draftSummary).toBe(SERVER_SECTIONS.draftSummary)
   })
 
-  it('maps a server error into provider_error via the orchestration', async () => {
+  // Was: "maps a server error into provider_error". It mapped EVERY status that
+  // way, so a 4xx this endpoint rejected on its own — bad field, wrong role —
+  // was reported as an AI provider outage for a request no provider ever saw.
+  it('maps a 4xx into request_invalid via the orchestration', async () => {
     const client = createComplianceAiSummaryHttpClient({
       getAccessToken: async () => 'token',
       fetchImpl: async () => new Response(JSON.stringify({ ok: false, error: 'forbidden', message: 'x' }), { status: 403 }),
+    })
+    const result = await generateAiDraftSummary(makeUpdate(), client, { requestInProgress: false })
+    expect(result).toMatchObject({ ok: false, code: 'request_invalid' })
+  })
+
+  it('still maps a 5xx into provider_error via the orchestration', async () => {
+    const client = createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => 'token',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ ok: false, error: 'provider_error', message: 'x' }), { status: 502 }),
     })
     const result = await generateAiDraftSummary(makeUpdate(), client, { requestInProgress: false })
     expect(result).toMatchObject({ ok: false, code: 'provider_error' })

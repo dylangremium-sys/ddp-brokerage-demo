@@ -228,6 +228,31 @@ describe('handleAiSummaryRequest — strict request validation', () => {
     expect((r.body as { error: string }).error).toBe('invalid_url')
   })
 
+  // Regression: this returned 400 invalid_url in production, which made the
+  // "Generate AI Draft Summary" button a permanent dead end for every manually
+  // pasted update with no attribution — `source_url` is `TEXT NOT NULL DEFAULT ''`
+  // so '' is the stored value the client forwards, not a malformed one.
+  it('ACCEPTS an empty sourceUrl — the stored value for "no attribution"', async () => {
+    const r = await handleAiSummaryRequest(req({ body: { ...VALID_BODY, sourceUrl: '' } }), makeDeps())
+    expect(r.status).toBe(200)
+  })
+
+  it('ACCEPTS an omitted sourceUrl', async () => {
+    const { sourceUrl: _omit, ...noUrl } = VALID_BODY
+    void _omit
+    const r = await handleAiSummaryRequest(req({ body: noUrl }), makeDeps())
+    expect(r.status).toBe(200)
+  })
+
+  // The relaxation must not become a hole: a DECLARED value is still shape-checked.
+  it('still rejects a non-http(s) scheme when a sourceUrl IS declared', async () => {
+    for (const bad of ['javascript:alert(1)', 'file:///etc/passwd', 'ftp://x.example/y']) {
+      const r = await handleAiSummaryRequest(req({ body: { ...VALID_BODY, sourceUrl: bad } }), makeDeps())
+      expect(r.status).toBe(400)
+      expect((r.body as { error: string }).error).toBe('invalid_url')
+    }
+  })
+
   it('rejects a non-hex provenanceChecksum with 400', async () => {
     const r = await handleAiSummaryRequest(req({ body: { ...VALID_BODY, provenanceChecksum: 'zzz' } }), makeDeps())
     expect(r.status).toBe(400)

@@ -237,7 +237,14 @@ export function validateAiSummaryBody(raw: unknown): RequestValidation {
   if (failed(legalUpdateId)) return legalUpdateId.fail
   const sourceName = str('sourceName', MAX_SHORT_FIELD_CHARS)
   if (failed(sourceName)) return sourceName.fail
-  const sourceUrl = str('sourceUrl', MAX_URL_CHARS)
+  // Optional on purpose. `legal_updates.source_url` is `TEXT NOT NULL DEFAULT ''`
+  // (9_COMPLIANCE_WATCHTOWER_MVP.sql:27), so '' is the schema's own way of saying
+  // "no source URL" — the ordinary shape of a manually pasted update with no
+  // attribution, which complianceAiSummarisation already supports. Requiring a
+  // valid URL here made every such update permanently un-summarisable: the client
+  // forwards the stored '' verbatim, and the button failed 100% of the time while
+  // still rendering as eligible.
+  const sourceUrl = str('sourceUrl', MAX_URL_CHARS, false)
   if (failed(sourceUrl)) return sourceUrl.fail
   const jurisdiction = str('jurisdiction', MAX_SHORT_FIELD_CHARS)
   if (failed(jurisdiction)) return jurisdiction.fail
@@ -251,8 +258,16 @@ export function validateAiSummaryBody(raw: unknown): RequestValidation {
   if (failed(provenanceChecksum)) return provenanceChecksum.fail
 
   // Narrowed: every str() result above is now string | null (failures returned).
-  if (!isHttpUrl(sourceUrl as string)) {
-    return { ok: false, code: 'invalid_url', reason: 'sourceUrl must be a valid http(s) URL.' }
+  //
+  // A DECLARED url is still shape-checked — a caller may not pass "javascript:"
+  // or a garbage string. Absent ('' or omitted) is accepted and normalised to ''.
+  // This weakens nothing: the handler ignores this value entirely and reads the
+  // stored row (see the comment above `deps.getLegalUpdate`), so the Cannamonitor
+  // gate, the status check and the reference guard are unaffected by what is
+  // declared here.
+  const declaredSourceUrl = (sourceUrl as string | null) ?? ''
+  if (declaredSourceUrl !== '' && !isHttpUrl(declaredSourceUrl)) {
+    return { ok: false, code: 'invalid_url', reason: 'sourceUrl must be a valid http(s) URL when provided.' }
   }
   if (provenanceChecksum !== null && !CHECKSUM_RE.test(provenanceChecksum as string)) {
     return { ok: false, code: 'invalid_checksum', reason: 'provenanceChecksum must be a 64-hex string.' }
@@ -269,7 +284,7 @@ export function validateAiSummaryBody(raw: unknown): RequestValidation {
     value: {
       legalUpdateId: legalUpdateId as string,
       sourceName: sourceName as string,
-      sourceUrl: sourceUrl as string,
+      sourceUrl: declaredSourceUrl,
       jurisdiction: jurisdiction as string,
       itemTitle: itemTitle as string,
       publishedAt: (publishedAt as string | null) ?? null,
@@ -309,6 +324,11 @@ const RESULT_STATUS: Record<AiSummaryResultCode, number> = {
   missing_evidence: 400,
   oversized_evidence: 413,
   provider_error: 502,
+  // Produced by the BROWSER orchestration when this endpoint returns a 4xx; the
+  // server never emits it itself (a request the server rejects already carries
+  // its own validation status). Mapped here only to keep the record exhaustive,
+  // and to 400 so it can never be mistaken for a provider fault if that changes.
+  request_invalid: 400,
   // 503, matching provider_unconfigured: the provider is reachable but this
   // deployment's AI settings are not usable, and a retry will not help.
   provider_rejected: 503,
