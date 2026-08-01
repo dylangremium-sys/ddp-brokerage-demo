@@ -21,6 +21,17 @@ and labelled as such. Do not add a second one.
 | P6 | Apply migration 37 — assert bucket privacy (buckets only) | break-glass **only** — SQL Editor is sufficient, measured | [P6](P6_APPLY_MIGRATION_37_BUCKET_PRIVACY.md) |
 | P7 | Apply migration 38 — `farmer-photos` object policies | ownership of `storage.objects` (`supabase_admin`) **or** the dashboard Storage → Policies UI | [P6 §P7](P6_APPLY_MIGRATION_37_BUCKET_PRIVACY.md) |
 
+## Not a database action
+
+One plan here touches no database and is therefore outside the freeze, but its
+first phase still needs owner authority (a Vercel deploy and an environment
+variable), so it is indexed alongside the rest rather than left to be found by
+accident.
+
+| Plan | Blocked on | Document |
+|---|---|---|
+| AI draft summariser — remediation | P0 only: Vercel deploy + `AI_SUMMARY_MODEL`. P1/P2 are ordinary engineering work. | [AI summariser plan](AI_SUMMARISER_REMEDIATION_PLAN.md) |
+
 ## Correction, 2026-07-30 — "DB write credential" was the wrong blocker
 
 P2 and P4 were recorded above as blocked on a **DB write credential**, and since

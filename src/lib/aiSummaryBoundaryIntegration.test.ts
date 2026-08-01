@@ -8,7 +8,7 @@ import type {
 import type { AIComplianceOutput } from './aiComplianceTypes'
 import { AI_DRAFT_LABEL, generateAiDraftSummary } from './complianceAiSummarisation'
 import { createComplianceAiSummaryHttpClient } from './complianceAiSummaryClient'
-import { handleAiSummaryRequest } from './serverAiSummary'
+import { handleAiSummaryRequest, SUPPORTED_CAPABILITY } from './serverAiSummary'
 import type { ServerAiSummaryDeps } from './serverAiSummary'
 
 // ─── Phase 2I — full-stack boundary integration + security source sweep ─────
@@ -36,11 +36,17 @@ function output(value: AiDraftSummarySections): AIComplianceOutput<AiDraftSummar
 
 function adminDeps(
   impl: (input: AiSummaryProviderInput) => Promise<AIComplianceOutput<AiDraftSummarySections>>,
+  storedOverrides: Partial<LegalUpdate> = {},
 ): ServerAiSummaryDeps {
   const provider: ComplianceAiSummaryProvider = { draftSummary: impl }
   return {
     authenticate: async (token) => (token ? { userId: 'admin-user' } : null),
     getProfileRole: async () => 'ddp_admin',
+    // The stored row is what the endpoint summarises. Defaults to the same
+    // update the client sends, so a test only has to diverge them when that
+    // divergence is the point.
+    getLegalUpdate: async (id) =>
+      id === 'lu-1' ? makeUpdate({ id: 'lu-1', ...storedOverrides }) : null,
     provider,
   }
 }
@@ -150,6 +156,203 @@ const CORE_SRC = Object.values(
 const PROVIDER_SRC = Object.values(
   import.meta.glob('./serverAiProvider.ts', { query: '?raw', import: 'default', eager: true }),
 )[0] as string
+
+describe('AI summary boundary — the evidence is the stored row, not the request', () => {
+  /** Posts a body directly, bypassing the client adapter, so the request can
+   *  disagree with the stored row the way a hostile caller would. */
+  async function postDirect(
+    body: Record<string, unknown>,
+    deps: ServerAiSummaryDeps,
+  ): ReturnType<typeof handleAiSummaryRequest> {
+    return handleAiSummaryRequest(
+      {
+        method: 'POST',
+        contentType: 'application/json',
+        authorization: 'Bearer session-token',
+        body: JSON.stringify(body),
+      },
+      deps,
+    )
+  }
+
+  function validBody(overrides: Record<string, unknown> = {}) {
+    return {
+      legalUpdateId: 'lu-1',
+      sourceName: 'Thai FDA',
+      sourceUrl: 'https://example.test/notice',
+      jurisdiction: 'Thailand',
+      itemTitle: 'Cultivation notice',
+      publishedAt: '2026-06-01T00:00:00.000Z',
+      rawEvidence: 'Evidence the CALLER supplied.',
+      provenanceChecksum: null,
+      status: 'new',
+      capability: SUPPORTED_CAPABILITY,
+      ...overrides,
+    }
+  }
+
+  it('summarises the stored evidence and ignores the body’s copy', async () => {
+    // Collected rather than held in a nullable, so "the provider was never
+    // called" fails as a length assertion rather than as a crash.
+    const seen: AiSummaryProviderInput[] = []
+    const deps = adminDeps(
+      (input) => {
+        seen.push(input)
+        return Promise.resolve(output(SAFE))
+      },
+      { rawText: 'Evidence the DATABASE holds.' },
+    )
+
+    const result = await postDirect(validBody(), deps)
+
+    expect(result.status).toBe(200)
+    expect(seen).toHaveLength(1)
+    expect(seen[0].rawEvidence).toBe('Evidence the DATABASE holds.')
+    expect(seen[0].rawEvidence).not.toContain('CALLER')
+  })
+
+  it('cannot be walked around the Cannamonitor permission gate', async () => {
+    // Attribution is by source URL. While the update was rebuilt from the body,
+    // declaring a benign URL sent Cannamonitor evidence to the provider anyway.
+    // The stored row decides now, so the declared URL is irrelevant.
+    let reached = false
+    const deps = adminDeps(
+      async () => {
+        reached = true
+        return output(SAFE)
+      },
+      {
+        sourceUrl: 'https://cannamonitor.com/alerts/thai-notice-1',
+        rawText: 'Cannamonitor proprietary alert body.',
+      },
+    )
+
+    const result = await postDirect(validBody({ sourceUrl: 'https://example.test/notice' }), deps)
+
+    expect(result.status).toBe(403)
+    expect(reached).toBe(false)
+  })
+
+  it('cannot re-open an already-reviewed update by declaring status new', async () => {
+    let reached = false
+    const deps = adminDeps(
+      async () => {
+        reached = true
+        return output(SAFE)
+      },
+      { status: 'reviewed' },
+    )
+
+    const result = await postDirect(validBody({ status: 'new' }), deps)
+
+    expect(result.status).toBe(422)
+    expect(reached).toBe(false)
+  })
+
+  it('rejects an id that does not exist rather than summarising the body', async () => {
+    let reached = false
+    const deps = adminDeps(async () => {
+      reached = true
+      return output(SAFE)
+    })
+
+    const result = await postDirect(validBody({ legalUpdateId: 'lu-does-not-exist' }), deps)
+
+    expect(result.status).toBe(400)
+    expect(reached).toBe(false)
+  })
+
+  it('fails closed when the stored row cannot be read', async () => {
+    let reached = false
+    const deps: ServerAiSummaryDeps = {
+      ...adminDeps(async () => {
+        reached = true
+        return output(SAFE)
+      }),
+      getLegalUpdate: async () => {
+        throw new Error('db unavailable')
+      },
+    }
+
+    const result = await postDirect(validBody(), deps)
+
+    expect(result.status).toBe(400)
+    expect(reached).toBe(false)
+  })
+})
+
+describe('AI summary boundary — fabricated citations across the wire', () => {
+  it('drops fabrications server-side AND reports the count to the browser', () => {
+    // The two halves of this assertion failed independently before: the guard
+    // ran only where the count could not be seen. The server filters, so the
+    // browser's own pass necessarily finds nothing left to drop — if the count
+    // is not carried over the wire the reviewer is shown zero discards for a
+    // draft that was pruned, which reads as "the model cited nothing it could
+    // not support": the exact opposite of what happened.
+    const captured: { authorization?: string } = {}
+    const deps = adminDeps(async () =>
+      output({
+        ...SAFE,
+        sourceReferences: [
+          'Thai FDA',
+          'Ministerial Regulation No. 8 (2565), Annex IV',
+          'Notification of the Ministry of Public Health, s.44',
+        ],
+      }),
+    )
+    const client = createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => 'session-token',
+      fetchImpl: inProcessFetch(deps, captured),
+    })
+
+    return generateAiDraftSummary(makeUpdate(), client, { requestInProgress: false }).then(result => {
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.draft.sourceReferences).toEqual(['Thai FDA'])
+      expect(result.draft.droppedSourceReferences).toBe(2)
+    })
+  })
+
+  it('does not re-drop server-verified citations against a stale browser copy', () => {
+    // The browser passes ITS OWN update to the orchestration, and that copy can
+    // be stale. Re-running the reference guard there over a list the server
+    // already verified against the stored row adds no security and can only
+    // produce false drops — the reviewer would see zero citations plus "N
+    // discarded", which reads as "the model cited things it could not support"
+    // when the server had in fact verified them.
+    const captured: { authorization?: string } = {}
+    const client = createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => 'session-token',
+      fetchImpl: inProcessFetch(
+        adminDeps(async () => output({ ...SAFE, sourceReferences: ['Thai FDA'] })),
+        captured,
+      ),
+    })
+
+    const staleCopy = makeUpdate({ rawText: 'An older revision with entirely different wording.' })
+
+    return generateAiDraftSummary(staleCopy, client, { requestInProgress: false }).then(result => {
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.draft.sourceReferences).toEqual(['Thai FDA'])
+      expect(result.draft.droppedSourceReferences).toBe(0)
+    })
+  })
+
+  it('reports zero discards when every reference is grounded', () => {
+    const captured: { authorization?: string } = {}
+    const client = createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => 'session-token',
+      fetchImpl: inProcessFetch(adminDeps(async () => output(SAFE)), captured),
+    })
+
+    return generateAiDraftSummary(makeUpdate(), client, { requestInProgress: false }).then(result => {
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.draft.droppedSourceReferences).toBe(0)
+    })
+  })
+})
 
 describe('boundary source — no persistence, rules, approval, enforcement, or scheduling', () => {
   const boundary = [

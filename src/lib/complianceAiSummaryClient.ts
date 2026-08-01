@@ -43,6 +43,9 @@ interface ServerSuccessBody {
   ok: true
   sections: AiDraftSummarySections
   provenance: { provider: string; model: string; generatedAt: string }
+  /** Optional so an older server response still parses; absent is read as
+   *  "nothing upstream filtered", never as an error. */
+  referenceIntegrity?: { droppedReferences?: unknown }
 }
 
 function isServerSuccess(v: unknown): v is ServerSuccessBody {
@@ -106,6 +109,17 @@ export function createComplianceAiSummaryHttpClient(
           throw new Error('The AI draft summary response was unreadable.')
         }
 
+        // ALWAYS set, including zero. This field is the signal that the
+        // references were already verified against the AUTHORITATIVE evidence
+        // — the stored row the server read — not merely a count to display.
+        // Setting it only when the count was non-zero made it useless as that
+        // signal in the ordinary case, and left the browser re-verifying a
+        // server-verified list against its own copy of the evidence.
+        const upstreamDropped = json.referenceIntegrity?.droppedReferences
+        const dropped =
+          typeof upstreamDropped === 'number' && Number.isFinite(upstreamDropped) && upstreamDropped > 0
+            ? Math.floor(upstreamDropped)
+            : 0
         return {
           value: json.sections,
           confidence: 0,
@@ -115,6 +129,7 @@ export function createComplianceAiSummaryHttpClient(
             modelInfo: { provider: json.provenance.provider, model: json.provenance.model },
             generatedAt: json.provenance.generatedAt,
             requiresHumanReview: true,
+            upstreamDroppedReferences: dropped,
           },
         }
       } finally {

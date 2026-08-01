@@ -1,5 +1,6 @@
 import type { LegalUpdate } from '../types'
 import { guardAiDraftedFields } from './aiComplianceGuard.js'
+import { verifySourceReferences } from './aiSourceReferenceGuard.js'
 import { evaluateCannamonitorAiGate } from './complianceCannamonitorPolicy.js'
 import type {
   AiDraftSummarySections,
@@ -131,7 +132,11 @@ export interface AiDraftSummary {
   possibleSignificance: string
   uncertainties: string
   reviewQuestions: string[]
+  /** Only references the reference guard could ground in the recorded evidence.
+   *  Never the raw model list. */
   sourceReferences: string[]
+  /** How many model-returned references this pass discarded as ungrounded. */
+  droppedSourceReferences: number
   guardDecision: 'allowed'
   status: 'draft_generated'
   requiresHumanReview: true
@@ -146,6 +151,9 @@ export interface AiDraftSummary {
 export type AiSummaryResultCode =
   | AiSummaryGuardCode
   | 'provider_error'
+  /** The provider rejected the request shape (bad model, unsupported
+   *  parameter) — a configuration fault, not a transient outage. */
+  | 'provider_rejected'
   | 'provider_timeout'
   | 'malformed_output'
   | 'empty_output'
@@ -174,8 +182,9 @@ function isSectionsShape(v: unknown): v is AiDraftSummarySections {
 /**
  * The single orchestration entry point. Guards the request, calls the injected
  * provider, validates the shape, runs the wording guard over the AI-authored
- * prose (not the echoed source references), and returns a labelled draft. It
- * performs no persistence and never overwrites the legal update's summary.
+ * prose and the reference guard over the AI-returned citations, and returns a
+ * labelled draft. It performs no persistence and never overwrites the legal
+ * update's summary.
  */
 export async function generateAiDraftSummary(
   update: LegalUpdate | null,
@@ -216,12 +225,22 @@ export async function generateAiDraftSummary(
   try {
     output = await activeProvider.draftSummary(request)
   } catch (err) {
-    const aborted = err instanceof Error && err.name === 'AbortError'
-    return {
-      ok: false,
-      code: aborted ? 'provider_timeout' : 'provider_error',
-      reason: aborted ? 'The AI provider timed out.' : 'The AI provider could not complete the request.',
+    const name = err instanceof Error ? err.name : ''
+    if (name === 'AbortError') {
+      return { ok: false, code: 'provider_timeout', reason: 'The AI provider timed out.' }
     }
+    if (name === 'AiProviderRequestRejectedError') {
+      // The provider rejected the request itself rather than failing to serve
+      // it — a configuration fault (unknown model, unsupported parameter),
+      // which retrying will not fix. Separated from provider_error so the
+      // server log distinguishes "misconfigured" from "vendor unavailable".
+      return {
+        ok: false,
+        code: 'provider_rejected',
+        reason: 'The AI provider rejected the request. The configured model or request settings are not valid.',
+      }
+    }
+    return { ok: false, code: 'provider_error', reason: 'The AI provider could not complete the request.' }
   }
 
   const sections = output?.value
@@ -232,8 +251,10 @@ export async function generateAiDraftSummary(
     return { ok: false, code: 'empty_output', reason: 'The AI provider returned an empty draft summary.' }
   }
 
-  // Wording guard over AI-AUTHORED prose only (source references echo the
-  // source name/URL and must not be treated as AI claims).
+  // Wording guard over AI-AUTHORED prose only. Source references are excluded
+  // here because a quoted regulation may legitimately contain "certified" or
+  // "approved" — they get their own, stricter treatment below, where an
+  // ungrounded reference is discarded outright.
   const wording = guardAiDraftedFields({
     draftSummary: sections.draftSummary,
     possibleSignificance: sections.possibleSignificance,
@@ -244,6 +265,33 @@ export async function generateAiDraftSummary(
     return { ok: false, code: 'unsafe_output', reason: 'The AI draft made an unqualified compliance/approval claim and was blocked before display.' }
   }
 
+  // Reference guard over the model's citations. Unlike the wording guard an
+  // ungrounded reference does not fail the whole draft — the prose may be
+  // perfectly good — it is discarded, and the count is carried so a reviewer
+  // can see the model cited something we could not find.
+  //
+  // It runs where the AUTHORITATIVE evidence is, and only there. The server
+  // reads the stored row; the browser holds a copy that can be stale. Re-running
+  // the guard in the browser over a server-verified list adds no security — the
+  // server already checked it against the real text — and can only produce
+  // false drops: a reviewer would be shown zero citations and told some were
+  // discarded, which reads as "the model cited things it could not support"
+  // when the opposite happened. `upstreamDroppedReferences` being present is
+  // the signal that a layer with authoritative evidence has already decided.
+  //
+  // The WORDING guard above is different and still runs at both layers: it
+  // reads the model's prose, which the browser has in full.
+  const upstream = output.provenance.upstreamDroppedReferences
+  const references =
+    upstream === undefined
+      ? verifySourceReferences(sections.sourceReferences, {
+          sourceName: request.sourceName,
+          sourceUrl: request.sourceUrl,
+          itemTitle: request.itemTitle,
+          rawEvidence: request.rawEvidence,
+        })
+      : { verified: sections.sourceReferences, droppedCount: upstream }
+
   const draft: AiDraftSummary = {
     legalUpdateId: activeUpdate.id,
     providerId: output.provenance.modelInfo.provider,
@@ -253,7 +301,8 @@ export async function generateAiDraftSummary(
     possibleSignificance: sections.possibleSignificance,
     uncertainties: sections.uncertainties,
     reviewQuestions: sections.reviewQuestions,
-    sourceReferences: sections.sourceReferences,
+    sourceReferences: references.verified,
+    droppedSourceReferences: references.droppedCount,
     guardDecision: 'allowed',
     status: 'draft_generated',
     requiresHumanReview: true,

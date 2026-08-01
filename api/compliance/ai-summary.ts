@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { LegalUpdate } from '../../src/types.js'
 import type { NormalizedRequest, ServerAiSummaryDeps } from '../../src/lib/serverAiSummary.js'
 import { AI_SUMMARY_ROUTE, runAiSummaryEndpoint } from '../../src/lib/serverAiSummaryEndpoint.js'
 import { logServerError, newRequestId } from '../../src/lib/observability.js'
@@ -39,7 +40,7 @@ function buildDeps(): ServerAiSummaryDeps | null {
   if (!supabaseUrl || !supabaseAnonKey) return null
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY
-  const model = process.env.AI_SUMMARY_MODEL || 'claude-opus-4-8'
+  const model = process.env.AI_SUMMARY_MODEL || 'claude-opus-5'
   const provider: ComplianceAiSummaryProvider | null = anthropicKey
     ? createServerAiSummaryProvider({
         apiKey: anthropicKey,
@@ -73,6 +74,43 @@ function buildDeps(): ServerAiSummaryDeps | null {
         .single()
       if (error || !data) return null
       return typeof data.role === 'string' ? data.role : null
+    },
+    // The authoritative evidence read. Uses the SAME caller-bound client as the
+    // role lookup, so the row is fetched under the caller's own RLS — the
+    // `legal_updates: admin all` policy is what permits it, and no service-role
+    // key is introduced. A caller who cannot see the row gets `missing_update`,
+    // which is the correct answer for both "does not exist" and "not yours".
+    getLegalUpdate: async (legalUpdateId) => {
+      if (!sessionClient) return null
+      const { data, error } = await sessionClient
+        .from('legal_updates')
+        // reviewer_notes is selected because buildAiSummaryRequest recovers the
+        // provenance checksum from it. Dropping the column would silently make
+        // provenanceChecksum null on every request — the checksum would come
+        // from nowhere instead of from the record, which is the opposite of
+        // what reading the stored row is for.
+        .select('id, title, jurisdiction, source_name, source_url, published_at, raw_text, status, reviewer_notes')
+        .eq('id', legalUpdateId)
+        .maybeSingle()
+      if (error || !data) return null
+      return {
+        id: String(data.id),
+        sourceId: null,
+        title: String(data.title ?? ''),
+        jurisdiction: String(data.jurisdiction ?? ''),
+        sourceName: String(data.source_name ?? ''),
+        sourceUrl: String(data.source_url ?? ''),
+        publishedAt: data.published_at ? String(data.published_at) : null,
+        detectedAt: '',
+        rawText: String(data.raw_text ?? ''),
+        summary: '',
+        affectedAreas: [],
+        aiRiskLevel: null,
+        status: data.status as LegalUpdate['status'],
+        reviewerNotes: String(data.reviewer_notes ?? ''),
+        createdAt: '',
+        updatedAt: '',
+      }
     },
     provider,
   }

@@ -31,6 +31,16 @@ Fulfilment and chain-of-custody tracking are **planned, not implemented** — se
 
 On the Watchtower and AI: intake and detection of legal/regulatory updates are currently **manual** (a paste form) — there is no automated source monitoring. **AI-assisted draft summarisation** of a single update exists and runs server-side. Every summary is transient, is stamped as requiring human review, and is never persisted. **AI does not approve rules, certify compliance, or enforce anything automatically.** A human reviews each update and explicitly approves a rule, and only human-approved rules affect alerts.
 
+The evidence summarised is read **server-side from the stored `legal_updates` row**, never from the request body — under the caller's own RLS, with no service-role key. Everything downstream (the Cannamonitor permission gate, status eligibility, the evidence size bound, and the reference guard) therefore checks a database record rather than a caller's submission.
+
+Three guards sit around that one AI call, and the limits are as important as the guards:
+
+- **Wording guard** (`aiComplianceGuard.ts`) — an unqualified compliance/approval claim in the AI's prose blocks the whole draft before display.
+- **Untrusted-input fencing** (`serverAiProvider.ts`) — the update's title, source, and body all originate from a third-party feed, so all of them are neutralised and fenced in `<source_metadata>` / `<source_evidence>` elements, and the system prompt states that their contents are material to summarise and never instruction. This raises the cost of prompt injection; it does not eliminate it.
+- **Reference guard** (`aiSourceReferenceGuard.ts`) — every entry the model returns under "Source references" must be the recorded source name/URL/title, or a verbatim quotation from the recorded raw evidence. Anything else is discarded before a reviewer sees it, and the discarded count is carried to the browser and shown. What is *displayed* is always read back out of the record — the enclosing sentence for a quotation, the recorded value for a metadata match — never the model's own string, so a matched span cannot drop a negation and cite the source as saying the opposite of what it says.
+
+**What the reference guard does not do:** the ingestion path records a source URL but never fetches it (`complianceRssConnector.ts` builds `rawText` from feed fields only), so the primary legislative text is not held in this system. References are therefore traceable to *stored evidence*, not to a legislative clause. Until retrieval of the primary source lands, an AI draft is not citable compliance evidence — see `docs/DDP_AI_LEGAL_PRODUCTION_READINESS_MASTER_REPORT.md` (Work Package 5).
+
 Application data in local demo mode lives entirely in browser `localStorage`; resetting the demo clears it and restores seed data. In Supabase mode the "Reset Demo" button still only clears local state. There is **no traditional dedicated backend server** — no long-running Express/Fastify/Nest process. The repository does, however, contain two serverless API routes, used only when the relevant hosted configuration is present:
 
 - `api/admin/provision-farmer.ts` — controlled farmer provisioning

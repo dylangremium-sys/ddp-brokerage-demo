@@ -46,6 +46,15 @@ export interface AIComplianceProvenance {
    * review — see ComplianceAIProvider in aiComplianceProvider.ts.
    */
   requiresHumanReview: true
+  /**
+   * References an EARLIER layer already discarded as ungrounded, when this
+   * output reached us through one (the browser receives sections the server
+   * has already filtered). Without it the count is lost at the wire and the
+   * browser reports zero discards for a draft the server pruned — telling a
+   * reviewer the model cited nothing it could not support, which is the
+   * opposite of what happened. Undefined when nothing upstream filtered.
+   */
+  upstreamDroppedReferences?: number
 }
 
 /**
