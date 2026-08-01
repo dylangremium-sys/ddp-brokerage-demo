@@ -27,10 +27,17 @@ architectural gap.
 
 ---
 
-## P0 — Ship what is already built
+## P0 — Ship what is already built ✅ STEPS 1–3 DONE (2026-08-01)
 
 Nothing here is code. It is the smallest set of steps that converts committed
 work into running behaviour, and it must happen before P1/P2 build on it.
+
+**Status.** PR #102 squash-merged as `0e65608` and live: `curl
+https://www.ddpbrokerage.com/version.json` returns that SHA, built 11:28:04Z.
+`AI_SUMMARY_MODEL` was reset to `claude-opus-5` at 11:35Z. **Step 2's smoke test
+has NOT been run** — no `ddp_admin` draft has been generated against the live
+build, so the switch is confirmed only at the configuration level, not
+behaviourally. That is the remaining P0 work.
 
 **Order matters.** The currently-deployed code sends `max_tokens: 1500` and no
 `thinking` field. Pointing production at Claude Opus 5 *before* deploying would
@@ -42,12 +49,21 @@ Deploy first, switch the model second.
    git push -u origin feature/ai-summary-hardening
    gh pr create --fill
    ```
-   `main` is protected and `vercel.json` sets `deploymentEnabled.main = false`,
-   so merging does not auto-deploy — the deploy is a separate, deliberate step.
+   > **CORRECTION (2026-08-01).** The next sentence used to read: "`main` is
+   > protected and `vercel.json` sets `deploymentEnabled.main = false`, so
+   > merging does not auto-deploy — the deploy is a separate, deliberate step."
+   > **That is wrong, and merging #102 proved it.** `deploymentEnabled.main =
+   > false` only disables Vercel's *git integration*; the deploy is performed by
+   > the `deploy-production` job in `.github/workflows/security-ci.yml`, which
+   > triggers on push to `main`. Merging to `main` DEPLOYS TO PRODUCTION
+   > IMMEDIATELY — build, `vercel deploy --prebuilt --prod`, and alias promotion,
+   > then a poll of `www.ddpbrokerage.com/version.json` until it serves the new
+   > SHA. Treat a merge here as a release, not as a staging step.
 
-2. **Deploy the merged code**, then smoke-test the endpoint as a `ddp_admin`
-   against one `new` legal update. Expected: a draft renders, and the new
-   "Source references" caption appears beneath it.
+2. **Smoke-test the deployed code** as a `ddp_admin` against one `new` legal
+   update. Expected: a draft renders, and the new "Source references" caption
+   appears beneath it. (The deploy itself needs no action — see the correction
+   above. Only one status check gates `main`: "Static security & build checks".)
 
 3. **Set the model explicitly.**
    ```sh
@@ -58,6 +74,19 @@ Deploy first, switch the model second.
    (sensitive values are redacted), so the current value **cannot be read from
    the CLI**. Setting it explicitly removes the unknown instead of investigating
    it. Same price as Opus 4.8 — $5/$25 per MTok.
+
+   Two things measured while doing this on 2026-08-01:
+
+   - **An env-var change does not reach production on its own.** Values bind to a
+     deployment when it is built, so the running deployment keeps the old value
+     until something redeploys. `workflow_dispatch` will NOT do it — the
+     `deploy-production` job is gated on `github.event_name == 'push'`. A push to
+     `main` is the only path, which is why this correction ships as a commit.
+   - **The value cannot be read back by anyone, including the dashboard.** Vercel
+     marks it `Sensitive` on creation, so there is no reveal control. Belt and
+     braces: `api/compliance/ai-summary.ts:43` reads
+     `process.env.AI_SUMMARY_MODEL || 'claude-opus-5'`, so an empty or unset
+     value resolves to the same model rather than to a broken request.
 
 4. **Confirm the switch.** Re-run the smoke test. If it now fails, the failure
    is legible by design: `provider_rejected` in the response and the server log
