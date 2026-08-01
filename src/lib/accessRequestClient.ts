@@ -9,22 +9,17 @@
 // ENQUIRY to a real, server-side queue and tells the visitor the truth about
 // what happens next. It never creates an account and never grants a role.
 //
-// Submission currently inserts into Supabase directly from the browser, under
-// migration 34's `farmer_access_requests: public submit` anon policy. That is a
-// TEMPORARY INCIDENT REVERT of #85 and it reopens audit finding R5 — see the
-// block comment on submitAccessRequest() for why, and for the condition under
-// which it must be undone. The intended end state is a POST to our own server
-// function, /api/public/access-request, which throttles per client and inserts
-// with a server-side credential; that endpoint cannot work until migration 36 is
-// applied, because the RPCs it calls do not exist until then.
-//
-// Either way the row is pinned to status='new' with no reviewer, by the INSERT
-// policy's WITH CHECK.
+// Submission POSTs to our own server function, /api/public/access-request, which
+// rate-limits per client and inserts using its own server-side credential (audit
+// fix R5). It does NOT insert into Supabase from the browser: that path never
+// traversed Vercel, so no edge rate limit could see it, and migration 36 revokes
+// the anon INSERT that made it possible. The row is still pinned to status='new'
+// with no reviewer, by the server-only INSERT policy migration 36 substitutes.
 //
 // Reads remain admin-only — a submitter cannot read back their own request, or
 // anyone else's. The administrator's view of the queue is accessRequestAdmin.ts.
 
-import { supabase, isSupabaseConfigured } from './supabase'
+import { isSupabaseConfigured } from './supabase'
 
 export interface AccessRequestInput {
   fullName: string
@@ -77,42 +72,9 @@ export function validateAccessRequest(input: AccessRequestInput): string | null 
  * Returns nothing on success: there is deliberately no row to read back, because
  * the queue is admin-only. The caller shows a confirmation from the fact that no
  * error was thrown.
- *
- * *** TEMPORARY — INCIDENT REVERT, 2026-07-29. UNDO WHEN THE CONDITION BELOW IS MET. ***
- * ---------------------------------------------------------------------------------
- * This writes browser -> Supabase directly, which is the pre-#85 behaviour and
- * REOPENS AUDIT FINDING R5: the write does not traverse Vercel, so no edge
- * throttle can see it and public intake is unbounded again.
- *
- * WHY IT WAS REVERTED. #85 pointed this client at /api/public/access-request.
- * That endpoint calls two RPCs — public.reserve_public_intake_slot() and
- * public.has_open_access_request() — which exist ONLY in migration 36. Migration
- * 36 is applied NOWHERE (measured against production, read-only, 2026-07-29:
- * both absent from pg_proc, and public.public_intake_attempts absent). The
- * endpoint therefore fails closed with 503 on every real submission, and the
- * public supplier form has been down since the #85 deploy.
- *
- * Note that setting the server-only Supabase key that audit R1 names (the one
- * api/public/access-request.ts reads, spelled out there and in the runbook — it
- * is deliberately not spelled here, because a boundary test forbids that token
- * anywhere in shipped client source) alone does NOT fix it. The handler
- * checks method -> deps -> body -> bucket -> throttle in that order, so the key
- * turns an invalid-body probe from 503 into 400 while every VALID submission
- * still 503s at the missing throttle RPC. The probe reads as "configured" while
- * the form is still broken. Do not accept it as proof.
- *
- * UNDO CONDITION — all three, in this order:
- *   1. The server-only Supabase key (audit R1) is set for Vercel Production.
- *   2. This revert is itself reverted and deployed, so the deployed client posts
- *      to /api/public/access-request again.
- *   3. Migration 36 is applied under authorised break-glass, and a real
- *      submission is confirmed end to end.
- * Step 2 must precede step 3: migration 36 revokes the anon INSERT that THIS
- * code depends on, so applying it while this revert is live takes the form
- * offline again.
  */
 export async function submitAccessRequest(input: AccessRequestInput): Promise<void> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!isSupabaseConfigured) {
     throw new AccessRequestError(
       'not_configured',
       'The request could not be sent because the backend is not configured.',
@@ -124,36 +86,53 @@ export async function submitAccessRequest(input: AccessRequestInput): Promise<vo
     throw new AccessRequestError('invalid_input', `The ${invalid} field is not valid.`)
   }
 
-  const { error } = await supabase.from('farmer_access_requests').insert({
-    full_name: input.fullName.trim(),
-    email: input.email.trim(),
-    phone: input.phone.trim(),
-    province: input.province,
-    position: input.position,
-    preferred_language: input.preferredLanguage,
-    note: (input.note ?? '').trim(),
-    status: 'new',
-  })
-
-  if (error) {
-    // PGRST205 = the table is not in PostgREST's schema cache, i.e. migration 34
-    // has not been applied to this environment. Distinguished from a genuine
-    // failure so the UI can tell the visitor to reach us another way instead of
-    // asking them to retry something that cannot succeed.
-    //
-    // 42501 = insufficient_privilege, which is what migration 36 produces once it
-    // revokes the anon INSERT this path depends on. Mapped to the same honest
-    // message so that applying 36 while this revert is still live degrades to
-    // "contact us directly" rather than a bare "try again" the visitor cannot
-    // ever satisfy.
-    const code = (error as { code?: string }).code
-    if (code === 'PGRST205' || code === '42501') {
-      throw new AccessRequestError(
-        'backend_unavailable',
-        'The request form is not available yet. Please contact the DDP team directly.',
-      )
-    }
-    // The driver message can name columns and constraints; keep it out of the UI.
+  // Submission goes through our own server function, NOT browser -> Supabase.
+  // That is the entire point of audit fix R5: a direct Supabase insert never
+  // traverses Vercel, so no edge rate limit can see it. Migration 36 revokes the
+  // anon INSERT so this is the only remaining path.
+  let response: Response
+  try {
+    response = await fetch('/api/public/access-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: input.fullName.trim(),
+        email: input.email.trim(),
+        phone: input.phone.trim(),
+        province: input.province,
+        position: input.position,
+        preferredLanguage: input.preferredLanguage,
+        note: (input.note ?? '').trim(),
+      }),
+    })
+  } catch {
     throw new AccessRequestError('submit_failed', 'The request could not be sent. Please try again.')
   }
+
+  if (response.ok) return
+
+  // 503 = the endpoint is deployed but not configured, or the throttle could not
+  // be evaluated. Distinguished from a genuine failure so the UI tells the
+  // visitor to reach us another way rather than asking them to retry something
+  // that cannot succeed — the same honest path the direct-insert version used
+  // for PGRST205, and what makes the app safe to deploy before migration 36.
+  if (response.status === 503) {
+    throw new AccessRequestError(
+      'backend_unavailable',
+      'The request form is not available yet. Please contact the DDP team directly.',
+    )
+  }
+
+  if (response.status === 429) {
+    throw new AccessRequestError(
+      'rate_limited',
+      'Too many requests have been sent from this connection. Please try again later, or contact the DDP team directly.',
+    )
+  }
+
+  if (response.status === 400) {
+    throw new AccessRequestError('invalid_input', 'One of the fields is not valid.')
+  }
+
+  throw new AccessRequestError('submit_failed', 'The request could not be sent. Please try again.')
 }
