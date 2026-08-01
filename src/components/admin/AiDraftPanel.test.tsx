@@ -55,7 +55,7 @@ describe('AiDraftPanel — what the reviewer actually sees', () => {
         })}
         updateTitle="Thai labelling notice"
         busy={false}
-        onDiscard={() => {}}
+        onDiscard={vi.fn()}
       />,
     )
 
@@ -81,7 +81,7 @@ describe('AiDraftPanel — what the reviewer actually sees', () => {
         draft={draft({ sourceReferences: ['Annex IV, para 1', 'Annex IV, para 2'] })}
         updateTitle="x"
         busy={false}
-        onDiscard={() => {}}
+        onDiscard={vi.fn()}
       />,
     )
     const list = screen.getByText('Source references').nextElementSibling as HTMLElement
@@ -90,46 +90,46 @@ describe('AiDraftPanel — what the reviewer actually sees', () => {
 
   it('says plainly when nothing could be matched, instead of showing an empty list', () => {
     render(
-      <AiDraftPanel draft={draft({ sourceReferences: [] })} updateTitle="x" busy={false} onDiscard={() => {}} />,
+      <AiDraftPanel draft={draft({ sourceReferences: [] })} updateTitle="x" busy={false} onDiscard={vi.fn()} />,
     )
     expect(
-      screen.getByText(/None\. No reference could be matched to the recorded source evidence\./),
+      screen.getByText(/None\. No reference could be matched to the recorded source evidence\./u),
     ).toBeTruthy()
   })
 
   it('renders the apostrophe as a character, not an HTML entity', () => {
     // Shipped as `&apos;` to satisfy a lint rule. If that ever regresses to a
     // raw entity in a text node the reviewer reads "the AI&apos;s wording".
-    render(<AiDraftPanel draft={draft()} updateTitle="x" busy={false} onDiscard={() => {}} />)
-    const caption = screen.getByText(/not the AI's wording of it/)
+    render(<AiDraftPanel draft={draft()} updateTitle="x" busy={false} onDiscard={vi.fn()} />)
+    const caption = screen.getByText(/not the AI's wording of it/u)
     expect(caption.textContent).toContain("the AI's wording")
     expect(caption.textContent).not.toContain('&apos;')
   })
 
   it('states the draft is transient and names the update it belongs to', () => {
-    render(<AiDraftPanel draft={draft()} updateTitle="Thai labelling notice" busy={false} onDiscard={() => {}} />)
-    expect(screen.getByText(/This draft is transient — it is not saved/)).toBeTruthy()
+    render(<AiDraftPanel draft={draft()} updateTitle="Thai labelling notice" busy={false} onDiscard={vi.fn()} />)
+    expect(screen.getByText(/This draft is transient — it is not saved/u)).toBeTruthy()
     expect(screen.getByText('Thai labelling notice')).toBeTruthy()
     expect(screen.getByText('AI-generated draft — requires human legal review')).toBeTruthy()
     expect(screen.getByText('Draft only')).toBeTruthy()
   })
 
   it('attributes the draft to the provider and model that produced it', () => {
-    render(<AiDraftPanel draft={draft()} updateTitle="x" busy={false} onDiscard={() => {}} />)
+    render(<AiDraftPanel draft={draft()} updateTitle="x" busy={false} onDiscard={vi.fn()} />)
     expect(
-      screen.getByText(/Provider: anthropic · Model: claude-opus-5 · Generated: 2026-08-01T13:32:01\.852Z/),
+      screen.getByText(/Provider: anthropic · Model: claude-opus-5 · Generated: 2026-08-01T13:32:01\.852Z/u),
     ).toBeTruthy()
   })
 
   it('reports discarded references only when some were discarded', () => {
     const { unmount } = render(
-      <AiDraftPanel draft={draft({ droppedSourceReferences: 2 })} updateTitle="x" busy={false} onDiscard={() => {}} />,
+      <AiDraftPanel draft={draft({ droppedSourceReferences: 2 })} updateTitle="x" busy={false} onDiscard={vi.fn()} />,
     )
-    expect(screen.getByText(/2 unmatched reference\(s\) were discarded from this draft\./)).toBeTruthy()
+    expect(screen.getByText(/2 unmatched reference\(s\) were discarded from this draft\./u)).toBeTruthy()
     unmount()
 
-    render(<AiDraftPanel draft={draft({ droppedSourceReferences: 0 })} updateTitle="x" busy={false} onDiscard={() => {}} />)
-    expect(screen.queryByText(/unmatched reference\(s\) were discarded/)).toBeNull()
+    render(<AiDraftPanel draft={draft({ droppedSourceReferences: 0 })} updateTitle="x" busy={false} onDiscard={vi.fn()} />)
+    expect(screen.queryByText(/unmatched reference\(s\) were discarded/u)).toBeNull()
   })
 
   it('never renders approval or certification wording', () => {
@@ -138,11 +138,11 @@ describe('AiDraftPanel — what the reviewer actually sees', () => {
         draft={draft({ sourceReferences: ['Thai FDA'], droppedSourceReferences: 1 })}
         updateTitle="x"
         busy={false}
-        onDiscard={() => {}}
+        onDiscard={vi.fn()}
       />,
     )
     expect(document.body.textContent).not.toMatch(
-      /AI-approved|legally confirmed|compliance verified|certified compliant|ready for enforcement/i,
+      /AI-approved|legally confirmed|compliance verified|certified compliant|ready for enforcement/iu,
     )
   })
 
