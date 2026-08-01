@@ -9,6 +9,7 @@ import type { AIComplianceOutput } from './aiComplianceTypes'
 import { AI_DRAFT_LABEL, generateAiDraftSummary } from './complianceAiSummarisation'
 import { createComplianceAiSummaryHttpClient } from './complianceAiSummaryClient'
 import { handleAiSummaryRequest, SUPPORTED_CAPABILITY } from './serverAiSummary'
+import { messageForAiSummaryCode } from './watchtowerAiSummary'
 import type { ServerAiSummaryDeps } from './serverAiSummary'
 
 // ─── Phase 2I — full-stack boundary integration + security source sweep ─────
@@ -130,7 +131,12 @@ describe('AI summary boundary — full client→server→guard round trip', () =
     expect(result.draft.certifiesCompliance).toBe(false)
   })
 
-  it('rejects a non-admin caller end-to-end (server 403 → client provider_error)', async () => {
+  // This previously asserted `provider_error`, and its own name said so:
+  // "server 403 → client provider_error". That was the defect written down as
+  // an expectation — an AUTHORISATION failure was reported to the operator as
+  // "The AI provider could not complete the request", for a request the vendor
+  // never saw. The gate itself always held; only the reporting was wrong.
+  it('rejects a non-admin caller end-to-end (server 403 → client request_invalid)', async () => {
     const captured: { authorization?: string } = {}
     const deps: ServerAiSummaryDeps = { ...adminDeps(async () => output(SAFE)), getProfileRole: async () => 'farmer' }
     const client = createComplianceAiSummaryHttpClient({
@@ -138,7 +144,9 @@ describe('AI summary boundary — full client→server→guard round trip', () =
       fetchImpl: inProcessFetch(deps, captured),
     })
     const result = await generateAiDraftSummary(makeUpdate(), client, { requestInProgress: false })
-    expect(result).toMatchObject({ ok: false, code: 'provider_error' })
+    expect(result).toMatchObject({ ok: false, code: 'request_invalid' })
+    // The draft is still refused — only the label changed, never the gate.
+    expect(result.ok).toBe(false)
   })
 })
 
@@ -336,6 +344,53 @@ describe('AI summary boundary — fabricated citations across the wire', () => {
       if (!result.ok) return
       expect(result.draft.sourceReferences).toEqual(['Thai FDA'])
       expect(result.draft.droppedSourceReferences).toBe(0)
+    })
+  })
+
+  // Regression: the client mapped EVERY non-OK status to provider_error, so a
+  // request rejected before any provider was called surfaced to the operator as
+  // "The AI provider could not complete the request. No draft was produced."
+  // In production that sent debugging at the vendor for a 400 that never left
+  // the browser. A 4xx must now be reported as what it is.
+  it('reports a 4xx as request_invalid, NOT as a provider failure', () => {
+    const client = createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => 'session-token',
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ ok: false, error: 'invalid_url' }), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          }),
+        ),
+    })
+
+    return generateAiDraftSummary(makeUpdate(), client, { requestInProgress: false }).then(result => {
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.code).toBe('request_invalid')
+      expect(result.code).not.toBe('provider_error')
+      expect(messageForAiSummaryCode(result.code)).not.toMatch(/AI provider could not complete/i)
+    })
+  })
+
+  // 5xx keeps the provider_error path: the server's own 502/503/504 genuinely do
+  // mean the provider failed, and must not be relabelled as a request fault.
+  it('still reports a 5xx as a provider failure', () => {
+    const client = createComplianceAiSummaryHttpClient({
+      getAccessToken: async () => 'session-token',
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ ok: false, error: 'provider_error' }), {
+            status: 502,
+            headers: { 'content-type': 'application/json' },
+          }),
+        ),
+    })
+
+    return generateAiDraftSummary(makeUpdate(), client, { requestInProgress: false }).then(result => {
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.code).toBe('provider_error')
     })
   })
 

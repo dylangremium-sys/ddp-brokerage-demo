@@ -151,6 +151,11 @@ export interface AiDraftSummary {
 export type AiSummaryResultCode =
   | AiSummaryGuardCode
   | 'provider_error'
+  /** The request was rejected BEFORE any provider was called — a fault in the
+   *  request or the stored legal update, not in the vendor. Distinct from
+   *  `provider_error` because collapsing the two told operators the AI had
+   *  failed when nothing had ever been sent to it. */
+  | 'request_invalid'
   /** The provider rejected the request shape (bad model, unsupported
    *  parameter) — a configuration fault, not a transient outage. */
   | 'provider_rejected'
@@ -238,6 +243,16 @@ export async function generateAiDraftSummary(
         ok: false,
         code: 'provider_rejected',
         reason: 'The AI provider rejected the request. The configured model or request settings are not valid.',
+      }
+    }
+    if (name === 'AiRequestInvalidError') {
+      // The transport rejected this request before reaching a provider (a 4xx
+      // from our own endpoint). Reporting it as provider_error blamed the vendor
+      // for a fault that never left the browser.
+      return {
+        ok: false,
+        code: 'request_invalid',
+        reason: 'The request was rejected before it reached the AI provider.',
       }
     }
     return { ok: false, code: 'provider_error', reason: 'The AI provider could not complete the request.' }

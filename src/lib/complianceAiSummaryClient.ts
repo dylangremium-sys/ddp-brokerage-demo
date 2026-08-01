@@ -100,8 +100,39 @@ export function createComplianceAiSummaryHttpClient(
         })
 
         if (!response.ok) {
-          // Map any server error to the orchestration's provider_error path.
-          throw new Error('The AI draft summary request was not completed.')
+          // A non-OK response from OUR OWN endpoint is not evidence that the AI
+          // provider failed. This used to map every status to provider_error,
+          // which surfaced "The AI provider could not complete the request" for
+          // a 400 that never left the browser — sending anyone debugging it to
+          // look at the vendor. 4xx means the request was rejected before a
+          // provider was called; 5xx keeps the provider_error path, because the
+          // server's own 502/503/504 genuinely do mean provider trouble.
+          //
+          // The server's `error` field is already a safe coarse class (it never
+          // carries vendor status text, bodies or keys), so echoing it into the
+          // thrown message leaks nothing that was not already returned.
+          let serverCode: string | null = null
+          try {
+            const problem: unknown = await response.json()
+            if (
+              typeof problem === 'object' && problem !== null &&
+              typeof (problem as { error?: unknown }).error === 'string'
+            ) {
+              serverCode = (problem as { error: string }).error
+            }
+          } catch {
+            // Unreadable body — fall back to the coarse class from the status.
+          }
+
+          const error = new Error(
+            serverCode
+              ? `The AI draft summary request was rejected (${serverCode}).`
+              : 'The AI draft summary request was not completed.',
+          )
+          if (response.status >= 400 && response.status < 500) {
+            error.name = 'AiRequestInvalidError'
+          }
+          throw error
         }
 
         const json: unknown = await response.json()
