@@ -1,12 +1,18 @@
 version = 1
 
-# Test and fixture code, so the analyzer stops applying application-code rules
-# to it. The AI-boundary suites are built almost entirely from dependency-
-# injection stubs — `authenticate: async () => ({ userId: 'user-1' })` and the
-# like — which JS-0116 reads as "async function without any await". The `async`
-# there is not redundant: it is what satisfies the Promise-returning interface
-# the stub stands in for. Rewriting 24 of those as `() => Promise.resolve(...)`
-# would make the security tests harder to read to silence a false positive.
+# Marks test and fixture code as such. MEASURED CAVEAT: this does NOT suppress
+# the analyzer's anti-pattern rules in these files. Run 098e5306 against commit
+# 55c2808 still reported 29 issues here with this setting in force — 24 of them
+# JS-0116 "async function without any await" raised against dependency-injection
+# stubs, where the `async` is precisely what satisfies the Promise-returning
+# interface being stood in for. Those 29 are accepted as a known false-positive
+# red on the advisory "DeepSource: JavaScript" check. Do not re-attempt to
+# silence them with test_patterns; it was tried and it does not work.
+#
+# `main` requires exactly one status check — "Static security & build checks" —
+# so this analyzer gates nothing. The alternative, rewriting 24 stubs as
+# `() => Promise.resolve(...)`, was rejected as making the AI-boundary security
+# tests harder to read in exchange for a cosmetic tick.
 test_patterns = [
   "**/*.test.ts",
   "**/*.test.tsx",
