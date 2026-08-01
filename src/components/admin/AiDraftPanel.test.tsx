@@ -88,6 +88,37 @@ describe('AiDraftPanel — what the reviewer actually sees', () => {
     expect(within(list).getAllByRole('listitem')).toHaveLength(2)
   })
 
+  // The counterpart to the test above, and the reason the two lists are keyed
+  // differently. Review questions are model-authored free text with no dedup
+  // upstream, so two can legitimately be identical.
+  //
+  // Note on what this does and does NOT prove: a first render with duplicate
+  // keys still emits both <li>s — React warns rather than dropping one, and the
+  // reconciliation damage shows up on later updates. So counting list items
+  // cannot tell the two key strategies apart, and asserting the count here would
+  // be a test that passes no matter what the component does. The detectable
+  // difference is the warning, so that is what is asserted.
+  it('renders duplicate review questions without a duplicate-key warning', () => {
+    const question = 'Does this change the COA requirement?'
+    const errors: unknown[][] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args) })
+    try {
+      render(
+        <AiDraftPanel
+          draft={draft({ reviewQuestions: [question, question] })}
+          updateTitle="x"
+          busy={false}
+          onDiscard={vi.fn()}
+        />,
+      )
+      const list = screen.getByText('Questions for human legal review').nextElementSibling as HTMLElement
+      expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+      expect(errors.map(a => String(a[0])).join('\n')).not.toMatch(/same key/iu)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('says plainly when nothing could be matched, instead of showing an empty list', () => {
     render(
       <AiDraftPanel draft={draft({ sourceReferences: [] })} updateTitle="x" busy={false} onDiscard={vi.fn()} />,
@@ -157,7 +188,7 @@ describe('AiDraftPanel — what the reviewer actually sees', () => {
     expect(onDiscard).toHaveBeenCalledTimes(1)
     unmount()
 
-    render(<AiDraftPanel draft={draft()} updateTitle="x" busy={true} onDiscard={onDiscard} />)
+    render(<AiDraftPanel draft={draft()} updateTitle="x" busy onDiscard={onDiscard} />)
     expect((screen.getByRole('button', { name: 'Discard draft' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

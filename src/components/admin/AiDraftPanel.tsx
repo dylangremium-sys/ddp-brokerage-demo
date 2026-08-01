@@ -47,6 +47,15 @@ export function AiDraftPanel({ draft, updateTitle, busy, onDiscard }: AiDraftPan
         <h4 style={{ margin: '8px 0 2px' }}>Uncertainties</h4>
         <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{draft.uncertainties}</p>
         <h4 style={{ margin: '8px 0 2px' }}>Questions for human legal review</h4>
+        {/* Index keys are deliberate here, and are NOT the mistake the analyser's
+            JS-0437 heuristic assumes. This list is model-authored free text with
+            no dedup upstream, so two questions can legitimately be identical, and
+            keying by content would then hand React duplicate keys — a warning and
+            unreliable reconciliation on any later update. The list is render-only:
+            never reordered, filtered, or edited, so an index is stable for the
+            life of the draft. Source references below DO key by content, because
+            the server deduplicates them before they arrive. Both behaviours are
+            pinned by tests in AiDraftPanel.test.tsx. */}
         <ul style={{ margin: 0 }}>{draft.reviewQuestions.map((q, i) => <li key={i}>{q}</li>)}</ul>
         <h4 style={{ margin: '8px 0 2px' }}>Source references</h4>
         {draft.sourceReferences.length > 0
