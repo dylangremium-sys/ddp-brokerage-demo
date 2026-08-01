@@ -13,7 +13,17 @@ const RAW = import.meta.glob('../pages/admin/DDPComplianceWatchtower.tsx', {
   import: 'default',
   eager: true,
 }) as Record<string, string>
-const SRC = Object.values(RAW)[0] ?? ''
+// The transient draft panel now lives in its own component so it can actually be
+// RENDERED (see AiDraftPanel.test.tsx). These are static source guards, so they
+// read both files as one text: the properties asserted below — draft-only
+// labelling, transience, no persistence, no vendor calls — must hold across the
+// whole feature, wherever the markup happens to sit.
+const PANEL_RAW = import.meta.glob('../components/admin/AiDraftPanel.tsx', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>
+const SRC = `${Object.values(RAW)[0] ?? ''}\n${Object.values(PANEL_RAW)[0] ?? ''}`
 
 /** Extracts the argument text of every `useEffect(...)` call via paren-depth
  *  matching, so we can assert none of them invoke the AI summary. */
@@ -99,7 +109,12 @@ describe('DDPComplianceWatchtower — manual AI draft-summary integration (stati
   it('keeps the draft transient — no summary overwrite, no persistence, discardable', () => {
     // Discard clears transient state only.
     expect(SRC).toMatch(/function handleDiscardAiDraft/)
-    expect(SRC).toMatch(/onClick=\{\(\)\s*=>\s*\{\s*handleDiscardAiDraft\(\)/)
+    // Discard is still click-bound, but now across the page/panel seam: the page
+    // hands `handleDiscardAiDraft` to the panel, and the panel binds it to the
+    // button's onClick. Asserted as two halves rather than one literal so the
+    // property survives the extraction instead of the guard being deleted with it.
+    expect(SRC).toMatch(/onDiscard=\{handleDiscardAiDraft\}/)
+    expect(SRC).toMatch(/onClick=\{\(\)\s*=>\s*\{\s*onDiscard\(\)\s*\}\}/)
     expect(SRC).toMatch(/This draft is transient — it is not saved/)
     // Isolate the AI handler block and assert it performs no persistence and
     // never writes legalUpdate.summary or touches rules/enforcement.
