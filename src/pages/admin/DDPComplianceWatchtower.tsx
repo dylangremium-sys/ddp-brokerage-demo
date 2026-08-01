@@ -69,6 +69,7 @@ import {
   SUPPORTED_MONITORING_METHODS,
   SOURCE_TIER_LABELS,
 } from '../../lib/complianceSourceGovernance'
+import { AiDraftPanel } from '../../components/admin/AiDraftPanel'
 import { WatchtowerIngestionPanel } from '../../components/admin/WatchtowerIngestionPanel'
 import { listMissingStarterSources } from '../../lib/watchtowerStarterSources'
 
@@ -1713,45 +1714,12 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
         )}
 
         {aiDraft && aiDraftUpdate && (
-          <div className="card" style={{ marginTop: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div>
-                <span className="badge" style={{ background: '#7a5', color: '#fff' }}>Draft only</span>{' '}
-                <strong>AI-generated draft — requires human legal review</strong>
-              </div>
-              <button className="btn btn-review" disabled={aiDraftBusy} onClick={() => { handleDiscardAiDraft() }}>Discard draft</button>
-            </div>
-            <p className="td-muted" style={{ marginTop: 4 }}>
-              For: <strong>{aiDraftUpdate.title}</strong>. This draft is transient — it is not saved, does not
-              change this legal update, and is not a record of legal review, approval, or compliance status.
-            </p>
-            <div style={{ marginTop: 8 }}>
-              <h4 style={{ margin: '8px 0 2px' }}>Draft factual summary</h4>
-              <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{aiDraft.draftSummary}</p>
-              <h4 style={{ margin: '8px 0 2px' }}>Possible significance</h4>
-              <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{aiDraft.possibleSignificance}</p>
-              <h4 style={{ margin: '8px 0 2px' }}>Uncertainties</h4>
-              <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{aiDraft.uncertainties}</p>
-              <h4 style={{ margin: '8px 0 2px' }}>Questions for human legal review</h4>
-              <ul style={{ margin: 0 }}>{aiDraft.reviewQuestions.map((q, i) => <li key={i}>{q}</li>)}</ul>
-              <h4 style={{ margin: '8px 0 2px' }}>Source references</h4>
-              {aiDraft.sourceReferences.length > 0
-                ? <ul style={{ margin: 0 }}>{aiDraft.sourceReferences.map(ref => <li key={ref}>{ref}</li>)}</ul>
-                : <p className="td-muted" style={{ margin: 0 }}>None. No reference could be matched to the recorded source evidence.</p>}
-              <p className="td-muted" style={{ marginTop: 4, fontSize: 12 }}>
-                Each entry above is quoted from the recorded source — the sentence as it appears in the stored
-                evidence, or the recorded source name or URL — not the AI&apos;s wording of it. References the AI
-                produced that could not be matched to the stored evidence are discarded. This list is therefore
-                not a citation of the underlying legislation: the primary source text is not held here.
-                {aiDraft.droppedSourceReferences > 0
-                  ? ` ${aiDraft.droppedSourceReferences} unmatched reference(s) were discarded from this draft.`
-                  : ''}
-              </p>
-            </div>
-            <p className="td-muted" style={{ marginTop: 8, fontSize: 12 }}>
-              Provider: {aiDraft.providerId} · Model: {aiDraft.modelId} · Generated: {aiDraft.generatedAt}
-            </p>
-          </div>
+          <AiDraftPanel
+            draft={aiDraft}
+            updateTitle={aiDraftUpdate.title}
+            busy={aiDraftBusy}
+            onDiscard={handleDiscardAiDraft}
+          />
         )}
         </>
         )
