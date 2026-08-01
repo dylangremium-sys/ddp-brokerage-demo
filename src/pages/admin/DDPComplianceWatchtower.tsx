@@ -1736,11 +1736,11 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
               <ul style={{ margin: 0 }}>{aiDraft.reviewQuestions.map((q, i) => <li key={i}>{q}</li>)}</ul>
               <h4 style={{ margin: '8px 0 2px' }}>Source references</h4>
               {aiDraft.sourceReferences.length > 0
-                ? <ul style={{ margin: 0 }}>{aiDraft.sourceReferences.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                ? <ul style={{ margin: 0 }}>{aiDraft.sourceReferences.map(ref => <li key={ref}>{ref}</li>)}</ul>
                 : <p className="td-muted" style={{ margin: 0 }}>None. No reference could be matched to the recorded source evidence.</p>}
               <p className="td-muted" style={{ marginTop: 4, fontSize: 12 }}>
                 Each entry above is quoted from the recorded source — the sentence as it appears in the stored
-                evidence, or the recorded source name or URL — not the AI's wording of it. References the AI
+                evidence, or the recorded source name or URL — not the AI&apos;s wording of it. References the AI
                 produced that could not be matched to the stored evidence are discarded. This list is therefore
                 not a citation of the underlying legislation: the primary source text is not held here.
                 {aiDraft.droppedSourceReferences > 0

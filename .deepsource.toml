@@ -1,0 +1,34 @@
+version = 1
+
+# Test and fixture code, so the analyzer stops applying application-code rules
+# to it. The AI-boundary suites are built almost entirely from dependency-
+# injection stubs — `authenticate: async () => ({ userId: 'user-1' })` and the
+# like — which JS-0116 reads as "async function without any await". The `async`
+# there is not redundant: it is what satisfies the Promise-returning interface
+# the stub stands in for. Rewriting 24 of those as `() => Promise.resolve(...)`
+# would make the security tests harder to read to silence a false positive.
+test_patterns = [
+  "**/*.test.ts",
+  "**/*.test.tsx",
+  "**/*.test.mjs",
+]
+
+# Declared explicitly because committing this file switches the repository off
+# DeepSource's zero-config auto-detection. All three analyzers that were running
+# — and passing — before this file existed are listed so none is silently
+# dropped. `plugins = ["react"]` keeps the React rules (JS-0437, JS-0454) that
+# the auto-detected setup was already applying.
+[[analyzers]]
+name = "javascript"
+
+  [analyzers.meta]
+  plugins = ["react"]
+  environment = ["browser", "nodejs", "vitest"]
+  dialect = "typescript"
+  module_system = "es-modules"
+
+[[analyzers]]
+name = "sql"
+
+[[analyzers]]
+name = "secrets"
