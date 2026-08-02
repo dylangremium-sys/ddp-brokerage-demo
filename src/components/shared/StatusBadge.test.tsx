@@ -81,11 +81,11 @@ describe('StatusBadge — every status a reviewer can be shown', () => {
   })
 
   it('EvidenceBadge renders the same pill as StatusBadge for the same status', () => {
-    const a = render(<EvidenceBadge status="documented" lang="th" />)
-    const viaEvidence = pill(a.container).outerHTML
-    a.unmount()
-    const b = render(<StatusBadge status="documented" lang="th" />)
-    expect(viaEvidence).toBe(pill(b.container).outerHTML)
+    const evidenceRender = render(<EvidenceBadge status="documented" lang="th" />)
+    const viaEvidence = pill(evidenceRender.container).outerHTML
+    evidenceRender.unmount()
+    const statusRender = render(<StatusBadge status="documented" lang="th" />)
+    expect(viaEvidence).toBe(pill(statusRender.container).outerHTML)
   })
 })
 

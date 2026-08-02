@@ -28,11 +28,16 @@ function Boom(): never {
 }
 
 let consoleErr: ReturnType<typeof vi.spyOn>
+let logged: unknown[][] = []
 
 beforeEach(() => {
-  // React logs caught render errors to console.error. Silenced so the suite
-  // output stays readable, and captured so it can be asserted on.
-  consoleErr = vi.spyOn(console, 'error').mockImplementation(() => {})
+  // React logs every caught render error to console.error. Silenced so a suite
+  // that throws on purpose does not look like a failing one, and collected so
+  // the assertions below can check what did and did not go out.
+  logged = []
+  consoleErr = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+    logged.push(args)
+  })
 })
 
 afterEach(() => {
@@ -109,5 +114,22 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>,
     )
     expect(screen.getByRole('button', { name: /Reload the page/u })).toBeTruthy()
+  })
+
+  it('does not itself log the error text to the console', () => {
+    // React's own development logging is out of our hands, but this component's
+    // componentDidCatch takes no parameters, so nothing IT emits can carry the
+    // message. Asserted on what the boundary's own code path produced.
+    render(
+      <ErrorBoundary>
+        <Boom />
+      </ErrorBoundary>,
+    )
+    const fromOurCode = logged
+      .flat()
+      .filter(arg => typeof arg === 'string')
+      .filter(arg => !(arg as string).includes('The above error occurred'))
+      .join('\n')
+    expect(fromOurCode).not.toContain('RENDER-CANARY')
   })
 })
