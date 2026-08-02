@@ -13,6 +13,7 @@ import {
   validateAiSummaryBody,
 } from './serverAiSummary'
 import type { NormalizedRequest, ServerAiSummaryDeps } from './serverAiSummary'
+import { AI_SUMMARY_MAX_WINDOW_SECONDS } from './serverAiSummaryThrottle'
 
 // ─── Phase 2I — secure server-side AI draft-summary boundary tests ──────────
 //
@@ -88,6 +89,10 @@ function makeDeps(overrides: Partial<ServerAiSummaryDeps> = {}): ServerAiSummary
     authenticate: async () => ({ userId: 'user-1' }),
     getProfileRole: async () => 'ddp_admin',
     getLegalUpdate: async (id) => (id === STORED_UPDATE.id ? STORED_UPDATE : null),
+    // Default to allowing, so every pre-existing test still exercises the path
+    // it was written for. The throttle's own behaviour is tested explicitly
+    // below by overriding this.
+    reserveAiSummarySlot: () => Promise.resolve({ allowed: true }),
     provider: spyProvider(),
     ...overrides,
   }
@@ -490,5 +495,193 @@ describe('handleAiSummaryRequest — Cannamonitor source blocked server-side', (
     expect(r.status).toBe(403)
     expect(provider.calls).toHaveLength(0)
     expect(JSON.stringify(provider.calls)).not.toContain(RAW_MARKER)
+  })
+})
+
+
+// ─── Spend ceiling ───────────────────────────────────────────────────────────
+//
+// Before these tests the endpoint's only cost bound was `max_tokens: 8000`,
+// which caps one call and says nothing about how many may be made. The property
+// under test throughout is not "a 429 is returned" — it is "no paid call
+// happens", which is a different and stricter claim.
+//
+// The mocks here return `Promise.resolve(...)` rather than being `async`
+// functions with no `await`; the surrounding file predates that convention and
+// is left alone.
+describe('AI summary — throttle and spend ceiling', () => {
+  it('refuses with 429 and names a retry window when the limit is exceeded', async () => {
+    const provider = spyProvider()
+    const result = await handleAiSummaryRequest(
+      req(),
+      makeDeps({
+        provider,
+        reserveAiSummarySlot: () => Promise.resolve({ allowed: false, windowSeconds: 3_600 }),
+      }),
+    )
+
+    expect(result.status).toBe(429)
+    expect(result.body).toMatchObject({ ok: false, error: 'rate_limited', retryAfterSeconds: 3_600 })
+    // THE POINT. A 429 that still bought a model call would be a throttle in
+    // appearance only.
+    expect(provider.calls).toHaveLength(0)
+  })
+
+  it('never tells a refused caller to retry immediately', async () => {
+    // A malformed reply with no windowSeconds must not degrade to 0 — "try
+    // again now" is the one answer that turns the ceiling back off.
+    const result = await handleAiSummaryRequest(
+      req(),
+      makeDeps({ reserveAiSummarySlot: () => Promise.resolve({ allowed: false }) }),
+    )
+
+    expect(result.status).toBe(429)
+    const body = result.body as { retryAfterSeconds?: number }
+    expect(body.retryAfterSeconds).toBe(AI_SUMMARY_MAX_WINDOW_SECONDS)
+    expect(body.retryAfterSeconds).toBeGreaterThan(0)
+  })
+
+  it('fails CLOSED with 503 when the throttle ledger cannot be reached', async () => {
+    const provider = spyProvider()
+    const result = await handleAiSummaryRequest(
+      req(),
+      makeDeps({
+        provider,
+        reserveAiSummarySlot: () => Promise.reject(new Error('ledger unreachable')),
+      }),
+    )
+
+    expect(result.status).toBe(503)
+    expect(result.body).toMatchObject({ ok: false, error: 'throttle_unavailable' })
+    // An unreachable ledger must not become an unbounded budget. This is the
+    // single failure mode that would restore the original defect.
+    expect(provider.calls).toHaveLength(0)
+  })
+
+  it('does not read the stored update when throttled', async () => {
+    // The database read is cheap, but it is still work done on behalf of a
+    // request that has already been refused.
+    let reads = 0
+    const result = await handleAiSummaryRequest(
+      req(),
+      makeDeps({
+        getLegalUpdate: () => {
+          reads += 1
+          return Promise.resolve(STORED_UPDATE)
+        },
+        reserveAiSummarySlot: () => Promise.resolve({ allowed: false, windowSeconds: 60 }),
+      }),
+    )
+
+    expect(result.status).toBe(429)
+    expect(reads).toBe(0)
+  })
+
+  it('attributes the reservation to the AUTHENTICATED caller', async () => {
+    const reserved: string[] = []
+    const result = await handleAiSummaryRequest(
+      req(),
+      makeDeps({
+        authenticate: () => Promise.resolve({ userId: 'admin-42' }),
+        reserveAiSummarySlot: (userId) => {
+          reserved.push(userId)
+          return Promise.resolve({ allowed: true })
+        },
+      }),
+    )
+
+    expect(result.status).toBe(200)
+    expect(reserved).toEqual(['admin-42'])
+  })
+
+  it('never attributes a reservation to an identifier supplied in the body', async () => {
+    const reserved: string[] = []
+    await handleAiSummaryRequest(
+      req({ body: { ...VALID_BODY, userId: 'someone-else' } }),
+      makeDeps({
+        authenticate: () => Promise.resolve({ userId: 'admin-42' }),
+        reserveAiSummarySlot: (userId) => {
+          reserved.push(userId)
+          return Promise.resolve({ allowed: true })
+        },
+      }),
+    )
+
+    // A body-supplied identifier is an unknown field and is rejected outright,
+    // so the request never reaches the throttle — itself the correct behaviour.
+    // What must never happen is a reservation attributed to it.
+    expect(reserved).not.toContain('someone-else')
+  })
+
+  it('does not consume an allowance for an UNAUTHENTICATED caller', async () => {
+    // If the throttle sat in front of the auth gate, any stranger could exhaust
+    // the global daily ceiling and take the feature down for everyone. This is
+    // the test that pins the gate ORDER, not merely the throttle's presence.
+    let reservations = 0
+    const result = await handleAiSummaryRequest(
+      req({ authorization: null }),
+      makeDeps({
+        reserveAiSummarySlot: () => {
+          reservations += 1
+          return Promise.resolve({ allowed: true })
+        },
+      }),
+    )
+
+    expect(result.status).toBe(401)
+    expect(reservations).toBe(0)
+  })
+
+  it('does not consume an allowance for a NON-ADMIN caller', async () => {
+    let reservations = 0
+    const result = await handleAiSummaryRequest(
+      req(),
+      makeDeps({
+        getProfileRole: () => Promise.resolve('farmer'),
+        reserveAiSummarySlot: () => {
+          reservations += 1
+          return Promise.resolve({ allowed: true })
+        },
+      }),
+    )
+
+    expect(result.status).toBe(403)
+    expect(reservations).toBe(0)
+  })
+
+  it('does not consume an allowance for a malformed body', async () => {
+    // A UI bug that loops on a bad payload should not also exhaust the
+    // reviewer's quota and make the feature look broken for the rest of the day.
+    let reservations = 0
+    const result = await handleAiSummaryRequest(
+      req({ body: { nope: true } }),
+      makeDeps({
+        reserveAiSummarySlot: () => {
+          reservations += 1
+          return Promise.resolve({ allowed: true })
+        },
+      }),
+    )
+
+    expect(result.status).toBe(400)
+    expect(reservations).toBe(0)
+  })
+
+  it('consumes the allowance even when the request is later refused downstream', async () => {
+    // Reserve-then-evaluate. If a refusal refunded the slot, a caller could
+    // retry indefinitely at zero cost and the ceiling would never bind.
+    let reservations = 0
+    await handleAiSummaryRequest(
+      req(),
+      makeDeps({
+        getLegalUpdate: () => Promise.resolve(null),
+        reserveAiSummarySlot: () => {
+          reservations += 1
+          return Promise.resolve({ allowed: true })
+        },
+      }),
+    )
+
+    expect(reservations).toBe(1)
   })
 })

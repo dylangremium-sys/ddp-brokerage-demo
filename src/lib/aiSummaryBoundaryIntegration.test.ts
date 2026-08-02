@@ -48,6 +48,7 @@ function adminDeps(
     // divergence is the point.
     getLegalUpdate: async (id) =>
       id === 'lu-1' ? makeUpdate({ id: 'lu-1', ...storedOverrides }) : null,
+    reserveAiSummarySlot: () => Promise.resolve({ allowed: true }),
     provider,
   }
 }
@@ -421,11 +422,38 @@ describe('boundary source — no persistence, rules, approval, enforcement, or s
     for (const [, src] of boundary) expect(src.length).toBeGreaterThan(200)
   })
 
-  it('writes nothing to Supabase and creates/approves/enforces no rule', () => {
+  // THIS PROPERTY WAS DELIBERATELY NARROWED when the spend ceiling was added.
+  //
+  // It previously read "writes nothing to Supabase". That is no longer true and
+  // cannot be: a throttle has to persist an attempt to count it, because two
+  // requests may land on two serverless instances that share no memory. The
+  // endpoint now causes exactly one write — a reservation row — and it makes it
+  // through migration 36's function rather than by touching a table.
+  //
+  // The assertion is therefore tightened rather than deleted: no table write
+  // anywhere, and the api file may call exactly ONE rpc, named here. A second
+  // rpc, or any direct write, fails this test.
+  it('makes no table write, and its only rpc is the throttle reservation', () => {
     for (const [name, src] of boundary) {
-      expect(src, `${name}: no db writes`).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|\.delete\(/)
+      expect(src, `${name}: no db writes`).not.toMatch(/\.insert\(|\.upsert\(|\.delete\(/)
       expect(src, `${name}: no rule ops`).not.toMatch(/insertRule|approveRule|enforceRule|updateRuleStatus|createRule/)
     }
+
+    // `.update(` is no longer banned outright because createHash().update() is a
+    // hashing call, not a table write. Pin it precisely instead: exactly one
+    // occurrence in the api source, and it is the hash.
+    const updates = API_SRC.match(/\.update\(/g) ?? []
+    expect(updates, 'api: only the hash may call .update(').toHaveLength(1)
+    expect(API_SRC).toMatch(/createHash\('sha256'\)\.update\(/)
+    for (const [name, src] of boundary) {
+      if (src === API_SRC) continue
+      expect(src, `${name}: no .update(`).not.toMatch(/\.update\(/)
+    }
+
+    const rpcNames = [...API_SRC.matchAll(/\.rpc\(\s*'([^']+)'/g)].map(m => m[1])
+    expect(rpcNames, 'api: the throttle reservation is the only rpc').toEqual([
+      'reserve_public_intake_slot',
+    ])
   })
 
   it('introduces no scheduler, cron, or polling', () => {
@@ -453,8 +481,38 @@ describe('boundary source — secret handling', () => {
     expect(API_SRC).not.toMatch(/import\.meta\.env/)
     expect(API_SRC).not.toMatch(/VITE_[A-Z_]*(OPENAI|ANTHROPIC|AI_KEY|API_KEY)/)
     expect(API_SRC).not.toMatch(/sk-[A-Za-z0-9]{8,}/)
-    // No service-role key is introduced.
-    expect(API_SRC).not.toMatch(/SERVICE_ROLE|service_role/)
+  })
+
+  // THE SERVICE-ROLE KEY IS NOW USED, AND ITS BLAST RADIUS IS THE THING UNDER TEST.
+  //
+  // This previously asserted `not.toMatch(/SERVICE_ROLE|service_role/)` — no
+  // service-role key at all. The spend ceiling needs one: migration 36 revokes
+  // EXECUTE on reserve_public_intake_slot from anon and authenticated precisely
+  // so a caller cannot reserve, inspect or exhaust its own slots, and a ceiling
+  // the caller can bypass is not a ceiling.
+  //
+  // A blanket ban would now be a test that forces the endpoint to stay
+  // unbounded. What actually matters is that the privileged client is used for
+  // the reservation and NOTHING else — so that is what is asserted, by pinning
+  // the number of places the client is even mentioned. Widening its use fails
+  // this test.
+  it('uses the service-role client for the throttle and nothing else', () => {
+    expect(API_SRC).toMatch(/process\.env\.SUPABASE_SERVICE_ROLE_KEY/)
+
+    // Named exactly twice: where it is created, and where it reserves a slot.
+    const mentions = API_SRC.match(/throttleClient/g) ?? []
+    expect(mentions, 'the privileged client must not spread').toHaveLength(2)
+    expect(API_SRC).toMatch(/throttleClient\.rpc\(/)
+
+    // Every read of real data still goes through the caller-bound client, so RLS
+    // still decides what the caller may see.
+    expect(API_SRC).toMatch(/sessionClient\s*\n?\s*\.from\('profiles'\)/)
+    expect(API_SRC).toMatch(/sessionClient\s*\n?\s*\.from\('legal_updates'\)/)
+    expect(API_SRC).not.toMatch(/throttleClient\s*\n?\s*\.from\(/)
+
+    // Fail closed: no key, no service. An endpoint that cannot enforce its
+    // ceiling must not answer.
+    expect(API_SRC).toMatch(/if\s*\(!serviceRoleKey\)\s*return null/)
   })
 
   it('the browser client knows only our own endpoint — no vendor host, key, or provider header', () => {

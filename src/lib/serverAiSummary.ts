@@ -6,6 +6,10 @@ import {
   AI_DRAFT_LABEL,
 } from './complianceAiSummarisation.js'
 import type { AiSummaryResultCode } from './complianceAiSummarisation.js'
+import {
+  AI_SUMMARY_MAX_WINDOW_SECONDS,
+  type AiSummaryThrottleReservation,
+} from './serverAiSummaryThrottle.js'
 
 // ─── Secure server-side AI draft-summary boundary — core (Phase 2I) ─────────
 //
@@ -130,6 +134,8 @@ export interface AiSummaryErrorBody {
   ok: false
   error: string
   message: string
+  /** Present only on a 429. Seconds until the exceeded window frees a slot. */
+  retryAfterSeconds?: number
 }
 
 export interface HttpResult {
@@ -149,6 +155,20 @@ export interface ServerAiSummaryDeps {
    * reopen every gap it exists to close.
    */
   getLegalUpdate: (legalUpdateId: string) => Promise<LegalUpdate | null>
+  /**
+   * Atomically reserve one model call for this admin and report whether a
+   * throttle window is exceeded. See src/lib/serverAiSummaryThrottle.ts.
+   *
+   * REQUIRED, and deliberately not optional. An optional throttle is one a
+   * future dependency wiring can omit by accident, and the omission would be
+   * invisible: the endpoint would keep returning 200s and simply stop having a
+   * spend ceiling. Making it required means forgetting it is a type error.
+   *
+   * MUST THROW rather than return `{ allowed: true }` when the ledger cannot be
+   * reached — the caller turns a throw into a fail-closed 503. An unreachable
+   * throttle must never read as "no calls yet".
+   */
+  reserveAiSummarySlot: (userId: string) => Promise<AiSummaryThrottleReservation>
   /** Server-side provider; null when no provider is configured (fail closed). */
   provider: ComplianceAiSummaryProvider | null
   maxEvidenceChars?: number
@@ -389,6 +409,51 @@ export async function handleAiSummaryRequest(
   const validation = validateAiSummaryBody(req.body)
   if (!validation.ok) {
     return err(VALIDATION_STATUS[validation.code], validation.code, validation.reason)
+  }
+
+  // ─── Spend ceiling ────────────────────────────────────────────────────────
+  //
+  // Placed HERE, and the position is a decision rather than an accident:
+  //
+  //   * AFTER authentication and the ddp_admin check, so an anonymous or
+  //     non-admin caller cannot burn an admin's allowance — or the global
+  //     ceiling — by firing requests it was never entitled to have served.
+  //     A throttle in front of the auth gate would hand any stranger a denial-
+  //     of-service against the whole feature.
+  //   * AFTER validation, so a malformed body is a free 400. A UI bug that
+  //     sends a bad payload in a loop is annoying; it should not also exhaust
+  //     the reviewer's quota for the day and make the feature look broken.
+  //   * BEFORE getLegalUpdate and the provider call, which are the database read
+  //     and the paid model call this exists to bound.
+  //
+  // The reservation is consumed even when the caller is then refused. That is
+  // deliberate and matches the intake path: retrying must keep consuming the
+  // allowance rather than resetting it, or the limit is trivially defeated by
+  // simply trying again.
+  let reservation: AiSummaryThrottleReservation
+  try {
+    reservation = await deps.reserveAiSummarySlot(auth.userId)
+  } catch {
+    // The ledger could not be reached, so the call cannot be made within a known
+    // bound. Fail closed. Waving it through would mean the ONE condition under
+    // which spending is unbounded is also the condition nobody is watching.
+    return err(
+      503,
+      'throttle_unavailable',
+      'The service is temporarily unavailable. Please try again shortly.',
+    )
+  }
+
+  if (!reservation.allowed) {
+    return {
+      status: 429,
+      body: {
+        ok: false,
+        error: 'rate_limited',
+        message: 'Too many AI summaries requested. Please try again later.',
+        retryAfterSeconds: reservation.windowSeconds ?? AI_SUMMARY_MAX_WINDOW_SECONDS,
+      },
+    }
   }
 
   // ─── The evidence comes from the DATABASE, never from the caller ──────────
