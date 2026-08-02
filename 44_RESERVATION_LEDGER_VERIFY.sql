@@ -69,6 +69,17 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Seam 6 plug point. Nullable and unconstrained on purpose: it becomes the
+  -- buyer-facing reference when `listings` exists, which is a backfill rather
+  -- than a migration of live reservations. Asserted so it cannot be dropped by
+  -- someone who reads it as an unused column.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='reservations'
+                   AND column_name='listing_id' AND is_nullable='YES') THEN
+    v_missing := array_append(v_missing,
+      'reservations.listing_id (seam 6 plug point) is missing or not nullable');
+  END IF;
+
   -- One release per reservation, enforced by a UNIQUE constraint rather than
   -- hoped for in application code.
   IF NOT EXISTS (
@@ -82,7 +93,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY A FAILED: %', array_to_string(v_missing, ', ');
   END IF;
 
-  RAISE NOTICE 'VERIFY A PASSED: all three tables, seven functions, five triggers and the one-release-per-reservation unique constraint are present.';
+  RAISE NOTICE 'VERIFY A PASSED: all three tables, seven functions, five triggers the seam-6 listing_id plug point and the one-release-per-reservation unique constraint are present.';
 END
 $verify_a$;
 
