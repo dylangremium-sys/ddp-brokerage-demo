@@ -87,16 +87,23 @@ correction** (create `commercial_audit_log`, move the commercial actions out of
 that, GitHub could not see it, and this file's own `git log --all` query could not see it** — that
 query finds numbers which already have a file. Only `git worktree list` did.
 
-**The release.** That session then committed `bfcdf4f`, and it did **not** take 45. It amended
+**The release.** That session committed `bfcdf4f` and did **not** take 45. It amended
 `44_RESERVATION_LEDGER_*` in place instead — the migration is already on `main`, but applied to no
-database, so editing it yields a clean final schema with no add-then-move churn. **45 is therefore
-free again**, and the floor returns to 45.
+database, so editing it yields a clean final schema with no add-then-move churn. That work has since
+merged as PR **#115** (`ae057bb`). **45 is therefore free**, and the floor returns to 45.
 
-**The open question this leaves.** `docs/OPTION_B_SEAM_CONTRACT.md` (Seam 7, PR #114, unmerged)
-specifies the opposite: correct forward in 45, and do *not* edit merged files, because rewriting
-them silently invalidates the fixture runs that justified them. Both positions are defensible while
-nothing is applied. **They are not both landable** — one branch amends 44, the other says not to.
-Owner decision, and it should be made before either lands rather than by whichever merges first.
+**Resolved, same day.** That work merged as PR **#115** (`ae057bb`): `commercial_audit_log` is
+created inside migration 44 and carries `reservation_created` / `reservation_released`. Seam 7 in
+`docs/OPTION_B_SEAM_CONTRACT.md` had specified the opposite — correct forward in 45, do not edit
+merged files — and has been amended to record what actually landed and why it was the better call
+here: nothing is applied to any database, so there was no history to preserve, and #115 re-ran the
+fixtures rather than inheriting them. **That licence ends the moment anything is applied.**
+
+Five events specified as moving are still in `compliance_audit_log` on `main`
+(`organisation_created`, `organisation_updated`, `organisation_verification_changed`,
+`organisation_membership_granted`, `organisation_membership_revoked`), so the split is partial —
+tracked in Seam 7, not here. **No migration number is reserved for it**; whoever finishes it decides
+whether it fits in another in-place amendment or needs 45.
 
 **The lesson survives the release.** A claim held for an hour by a branch with no commits was
 invisible to every automated check in this repository. Rules 6 and 7 below exist because of it, not
