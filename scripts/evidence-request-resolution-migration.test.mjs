@@ -1289,9 +1289,33 @@ describe('migration 24 — storage companion', () => {
     expect(STO).not.toMatch(/public\s*=\s*true/)
   })
 
-  it('guards on storage ownership so it cannot half-apply', () => {
-    expect(STO).toMatch(/supabase_storage_admin/)
+  it('guards on storage CAPABILITY, not on a role name, so it cannot half-apply', () => {
+    // This assertion used to require the literal `supabase_storage_admin` in the
+    // executable SQL, because the guard was `pg_has_role(current_user,
+    // 'supabase_storage_admin', 'MEMBER')`. That guard was WRONG — measured
+    // against production 2026-08-02, postgres is not a member of that role and
+    // CREATE POLICY on storage.objects succeeds anyway — so it blocked a step
+    // that worked, and pointed the operator at the Supabase dashboard SQL
+    // editor, which runs as the same role and fails identically.
+    //
+    // The test encoded the same mistake as the code: it pinned the PROXY. It now
+    // pins the property that actually matters — the migration attempts the
+    // operation and fails closed if it genuinely cannot perform it.
     expect(STO).toMatch(/precondition failed/i)
+
+    // A real probe: create a throwaway policy, drop it, and catch the real error.
+    expect(STO).toMatch(/CREATE POLICY "zz_mig24_capability_probe" ON storage\.objects/)
+    expect(STO).toMatch(/DROP POLICY "zz_mig24_capability_probe" ON storage\.objects/)
+    expect(STO).toMatch(/EXCEPTION WHEN insufficient_privilege THEN/)
+
+    // The probe must clean up after itself — a leftover policy on storage.objects
+    // would be a permanent artefact of a precondition check.
+    const created = (STO.match(/CREATE POLICY "zz_mig24_capability_probe"/g) ?? []).length
+    const dropped = (STO.match(/DROP POLICY (IF EXISTS )?"zz_mig24_capability_probe"/g) ?? []).length
+    expect(dropped).toBeGreaterThanOrEqual(created)
+
+    // And it must NOT have regressed to a role-membership guess.
+    expect(STO).not.toMatch(/pg_has_role/)
   })
 
   it('storage DDL is kept out of the forward migration so a storage failure cannot roll it back', () => {

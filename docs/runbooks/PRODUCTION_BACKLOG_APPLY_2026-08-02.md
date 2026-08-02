@@ -1,16 +1,29 @@
 # Applying the migration backlog to production
 
-**Rehearsed end-to-end on staging `szqocdabwkjrggrddocx` on 2026-08-02.** Every expected
-output below was measured on that run, not predicted. Eleven migrations, ten of which now
-verify green; the eleventh fails for a reason you will have to resolve by hand, and it is
-called out where it happens.
+> ## ✅ THIS BACKLOG IS APPLIED TO PRODUCTION — 2026-08-02
+>
+> All eleven migrations (24, 28, 35, 39–46) plus migration 24's storage half were applied to
+> `iihxjrfxmycjafbtjvvq` on 2026-08-02. **Every VERIFY green, 102 sections.** Production went
+> from 34 tables to **48**, policies to **112**, storage buckets 2 → **3**. Existing data
+> untouched (3 farms, 4 batches, 13 profiles). Site returned HTTP 200 and both API endpoints
+> stayed healthy throughout.
+>
+> **The marketplace guarantees are now live**: a batch cannot be oversold, and a suspended
+> buyer loses read access immediately.
+>
+> This document is kept as (a) the record of how it was done, (b) the reference for applying
+> the same set to any other environment, and (c) the corrections it took to get right — see
+> "Migration 24's storage half" and "What this rehearsal changed in the repo".
 
-**Read the whole page before opening the SQL editor.** The order matters, two steps need a
-decision from you, and one failure in the middle is expected and is not a fault.
+**Rehearsed end-to-end on staging `szqocdabwkjrggrddocx` before being applied.** Every expected
+output below was measured on that run, not predicted.
+
+**Read the whole page before applying this anywhere else.** The order matters, and one apparent
+failure mid-run is expected and is not a fault.
 
 ---
 
-## What is missing from production
+## What was missing from production (now applied)
 
 Measured 2026-08-02 by probing for a discriminating function per migration — never by table
 presence, because most of these use `CREATE TABLE IF NOT EXISTS` and a table can exist without
@@ -18,24 +31,24 @@ its migration having run.
 
 | # | Migration | On staging | On production |
 |---|---|---|---|
-| 24 | `24_EVIDENCE_REQUEST_RESOLUTION` | applied | **absent** |
-| 28 | `28_EVIDENCE_DIGEST_DEDUP` | applied | **absent** |
-| 35 | `35_STATUS_TRANSITION_ATOMIC` | applied | **absent** |
-| 39 | `39_COUNTERPARTY_ORGANISATIONS` | applied | **absent** |
-| 40 | `40_LICENCES_AND_PERMITS` | applied | **absent** |
-| 41 | `41_EFFECTIVE_DATED_RULESETS` | applied | **absent** |
-| 42 | `42_EXPORT_ELIGIBILITY_GATE` | applied | **absent** |
-| 43 | `43_MFA_FOR_GATE_APPROVAL` | applied | **absent** |
-| 44 | `44_RESERVATION_LEDGER` | applied | **absent** |
-| 45 | `45_SEAM7_ORGANISATION_EVENT_SPLIT` | applied | **absent** |
-| 46 | `46_SEAM5_VERIFIED_BUYER_READ_PREDICATE` | applied | **absent** |
+| 24 | `24_EVIDENCE_REQUEST_RESOLUTION` | applied | **APPLIED 2026-08-02** |
+| 28 | `28_EVIDENCE_DIGEST_DEDUP` | applied | **APPLIED 2026-08-02** |
+| 35 | `35_STATUS_TRANSITION_ATOMIC` | applied | **APPLIED 2026-08-02** |
+| 39 | `39_COUNTERPARTY_ORGANISATIONS` | applied | **APPLIED 2026-08-02** |
+| 40 | `40_LICENCES_AND_PERMITS` | applied | **APPLIED 2026-08-02** |
+| 41 | `41_EFFECTIVE_DATED_RULESETS` | applied | **APPLIED 2026-08-02** |
+| 42 | `42_EXPORT_ELIGIBILITY_GATE` | applied | **APPLIED 2026-08-02** |
+| 43 | `43_MFA_FOR_GATE_APPROVAL` | applied | **APPLIED 2026-08-02** |
+| 44 | `44_RESERVATION_LEDGER` | applied | **APPLIED 2026-08-02** |
+| 45 | `45_SEAM7_ORGANISATION_EVENT_SPLIT` | applied | **APPLIED 2026-08-02** |
+| 46 | `46_SEAM5_VERIFIED_BUYER_READ_PREDICATE` | applied | **APPLIED 2026-08-02** |
 
 The probe that produced this is reproducible — it is in
 `docs/runbooks/PRODUCTION_BACKLOG_APPLY_2026-08-02.md` §6 below, and it is also how you check
 your own work afterwards.
 
-**Two of these are the marketplace's load-bearing guarantees**, and neither is protecting
-production today because the migration is not there:
+**Two of these are the marketplace's load-bearing guarantees**, and both are now live in
+production:
 
 - **44** — a batch cannot be oversold. Proven under real concurrency 2026-08-02
   (`docs/RESERVATION_CONCURRENCY_TEST_2026-08-02.md`): 20 batches, 17,600 kg, 0 oversold.
@@ -46,9 +59,12 @@ production today because the migration is not there:
 
 ## Before you start
 
-1. **Access.** This machine has **read-only** production access (`~/.ddp_prod.env`,
-   role `ddp_ro`). There is no write credential here and one was searched for. Every apply
-   step below happens in the **Supabase dashboard SQL editor**, signed in as the owner.
+1. **Access.** A read-only credential lives at `~/.ddp_prod.env` (role `ddp_ro`) and is enough
+   for every check on this page. Applying needs a WRITE credential — the `postgres` role, from
+   Supabase → Settings → Database. The 2026-08-02 apply ran from **psql**, not the dashboard;
+   see "Migration 24's storage half" for why the dashboard is not the remedy it was once
+   claimed to be. **Reset the database password after any apply session** if the credential was
+   handled anywhere it could be recorded.
 2. **The dashboard hides `RAISE NOTICE`.** Every VERIFY reports success as notices. In the SQL
    editor a passing VERIFY therefore looks like a blank result, and is indistinguishable from a
    script that silently did nothing. **Judge each step by the checks in §6, not by the editor
@@ -92,7 +108,7 @@ For each migration in the order above:
 
 | # | VERIFY sections passing | Expected outcome |
 |---|---|---|
-| 24 | 17 | **FAILS at section R** — see below. Everything before R passes. |
+| 24 | **18** | clean — but only after you also run `24_..._STORAGE.sql`. Run the HARDENING file, then the STORAGE file, then VERIFY. If you run VERIFY before the STORAGE file you get 17 and a section-R failure, which is the check working, not a fault. |
 | 28 | 13 | clean |
 | 35 | 10 | clean |
 | 39 | 7 | clean |
@@ -104,35 +120,49 @@ For each migration in the order above:
 | 45 | 6 | clean |
 | 46 | 7 | clean |
 
-**101 assertions in total.** If a VERIFY produces *fewer* passes than listed, stop — something
+**102 VERIFY sections in total** (24 now contributes 18). If a VERIFY produces *fewer* passes than listed, stop — something
 differs between production and the rehearsal.
 
 ---
 
-## The one step that needs your hands, and the one expected failure
+## Migration 24's storage half — CORRECTED 2026-08-02
 
-### Migration 24 will fail its VERIFY at section R. This is correct.
+### ~~The one step that needs your hands~~ — it does not. It runs from psql like every other step.
 
-```
-VERIFY R FAILED: expected exactly 1 evidence-request-files bucket, found 0
-```
+**This section previously said the storage half could not be applied from psql, required
+membership of `supabase_storage_admin`, and had to be run in the Supabase dashboard SQL
+editor. All three were wrong**, and the error they caused is worth recording because it cost
+an hour and sent the owner to a dead end.
 
-`24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql` is only half the migration. The other half,
-`24_EVIDENCE_REQUEST_RESOLUTION_STORAGE.sql`, creates the storage bucket and its policies, and
-it requires membership of `supabase_storage_admin`.
+The claim came from a precondition block inside
+`24_EVIDENCE_REQUEST_RESOLUTION_STORAGE.sql` which asserted that a caller without that role
+membership *"would fail"* at `CREATE POLICY`. **Measured against production, 2026-08-02:**
 
-**It cannot be applied from psql, and that is true for production too.**
-`GRANT supabase_storage_admin TO postgres` is refused outright:
+- `postgres` is **not** a member of `supabase_storage_admin` — `pg_has_role` returns false;
+- `CREATE POLICY` on `storage.objects` as `postgres` nevertheless **succeeds**, proven by a
+  rolled-back probe;
+- so the guard refused a step that worked, and the whole storage half never ran.
 
-> role memberships are reserved, only superusers can grant them
+**And the advice made it worse.** It named the dashboard SQL editor as the remedy — but the
+dashboard SQL editor **also runs as `postgres`**, so it fails the identical check. The owner
+pasted the file there and got exactly the same error. A false guard plus a false remedy reads
+as an unclearable permissions wall.
 
-So: run `24_EVIDENCE_REQUEST_RESOLUTION_STORAGE.sql` **in the dashboard SQL editor as the
-owner**, then re-run `24_..._VERIFY.sql`, and section R will pass. Any apply plan that assumes
-psql throughout is wrong about this file. Do not try to route around it — someone already
-looked.
+The precondition is now a **capability probe**: it attempts a throwaway policy and catches
+`insufficient_privilege`. A probe cannot be wrong about the capability the way a role lookup
+can. It was confirmed to discriminate — it passes as `postgres` and correctly refuses as
+`authenticated`.
 
-Sections A–Q of migration 24 passing means the relational half is correct; only the bucket is
-outstanding.
+**So there is no owner-only step.** Run `24_EVIDENCE_REQUEST_RESOLUTION_STORAGE.sql` from psql
+after `24_..._HARDENING.sql`, exactly like every other file, and migration 24's VERIFY goes
+from 17 sections to **18/18** with section R passing.
+
+**Applied to production 2026-08-02**: bucket `evidence-request-files` (private, 100 MB limit)
+plus five object policies; VERIFY 18/18. Same on staging.
+
+The general lesson, which outlives this file: **a precondition should test the capability it
+cares about, not a proxy for it.** `pg_has_role(...)` was a guess about what PostgreSQL would
+allow; `EXECUTE 'CREATE POLICY …'` inside an exception handler is the thing itself.
 
 ---
 
