@@ -150,6 +150,355 @@ unthrottled (audit R5); the migration's own note says rate limiting belongs at t
 edge, but the write goes browser → Supabase directly and never traverses Vercel, so
 that mitigation is unreachable as designed. Tracked separately.
 
+### BG-003 — Migration 36 **part 1 of 2** (additive only), public intake throttle
+
+| Field | Value |
+|---|---|
+| **Event** | Apply the **additive half** of `36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING.sql` to production |
+| **Proposed date** | 2026-08-02 |
+| **Operator** | Repository owner, via the Supabase SQL editor |
+| **Authorisation** | **GRANTED** by the release owner on 2026-08-02, explicitly and in advance, authorising PR #108. The merge was executed by the assistant on that instruction; the authorising decision is the owner's, the mechanical act is not. Recorded **before** execution per §3 — no statement from this entry had been run at the time of merge. |
+| **Why now** | Audit finding **R5** is live and unmitigated: the public supplier form writes browser → Supabase directly, `anon` holds table-level INSERT, and the publishable key is in the public JS bundle. Any party can insert unlimited rows. This step installs the throttle machinery that closes it. |
+
+**(a) Exact statements to run**
+
+The contents of `~/Desktop/DDP_INTAKE_THROTTLE/STEP1_add_throttle.sql` — which is
+`36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING.sql` **with lines 166–181 removed**.
+
+Those 16 removed lines are the privilege reduction (drop the `public submit`
+policy, create `server submit`, revoke INSERT from `anon` and `authenticated`).
+**They are NOT authorised by this entry** and must not be run. They require their
+own record once the application change has shipped and been confirmed.
+
+What this file does, in full:
+
+| Statement | Effect |
+|---|---|
+| `CREATE EXTENSION IF NOT EXISTS pgcrypto` | no-op — already installed, version **1.3** |
+| `CREATE TABLE public.public_intake_attempts` | new table, RLS enabled |
+| 2 × `CREATE INDEX` on that table | new indexes |
+| `REVOKE ALL` on that table from `anon`, `authenticated` | on the **new** table only |
+| `GRANT SELECT, INSERT, DELETE` on that table to `service_role` | on the **new** table only |
+| 1 policy on that table | `service_role` only |
+| `CREATE OR REPLACE FUNCTION reserve_public_intake_slot` | new function |
+| `CREATE OR REPLACE FUNCTION has_open_access_request` | new function |
+| `REVOKE`/`GRANT EXECUTE` on those two functions | on the **new** functions only |
+
+**No existing object is altered.** Every privilege change is scoped to objects
+this file creates. `farmer_access_requests` is read by a precondition check and
+otherwise untouched.
+
+**(b) Pre-state evidence** — measured `2026-08-02T05:07:36Z`, read-only via `ddp_ro`:
+
+| Object | Pre-state |
+|---|---|
+| `public.public_intake_attempts` | **ABSENT** |
+| `public.reserve_public_intake_slot(text,text,jsonb)` | **ABSENT** |
+| `public.has_open_access_request(text)` | **ABSENT** |
+| `pgcrypto` | present, 1.3 |
+| `farmer_access_requests` policies | `admin read` / `admin triage` / `public submit` |
+| `farmer_access_requests` grants | `anon=arwd`, `authenticated=arwd`, `service_role=arwdDxtm` |
+| non-internal triggers | 23 |
+| public functions | 18 |
+
+Expected post-state: functions 18 → 20, one new table, triggers unchanged at 23,
+and `farmer_access_requests` policies and grants **identical** to the above.
+
+**(c) Rollback**
+
+`~/Desktop/DDP_INTAKE_THROTTLE/UNDO_everything.sql`
+(= `36_FARMER_ACCESS_REQUEST_INTAKE_ROLLBACK.sql`, unmodified).
+
+**Exercised, not merely present** — unlike BG-001's. Run on a disposable
+PostgreSQL 18.4 cluster on 2026-08-02 against a production-faithful starting
+state: it removed both functions and the table and restored the intake to its
+current posture.
+
+Because this entry authorises only the additive half, the rollback is strictly
+"remove what was added". Nothing is taken away that would need restoring.
+
+**(d) Operator** — repository owner, Supabase SQL editor.
+
+---
+
+**Risk assessment**
+
+*Impact if it works:* none visible. The supplier form continues to write directly,
+exactly as it does today. The machinery is installed but nothing consumes it until
+the application change ships.
+
+*Impact if it fails:* the file is wrapped in `BEGIN … COMMIT`, so a failure leaves
+production unchanged.
+
+*If run twice:* safe. Verified by running it twice in succession on the disposable
+cluster. This matters because the Supabase SQL editor does not display
+`RAISE NOTICE`, so a successful run and a no-op look identical, and re-pasting is
+the natural operator response.
+
+*What this does NOT do:* it does not throttle anything yet. R5 stays open until
+the application change ships and BG-004 closes the direct write path.
+
+**Verification after execution**
+
+The SQL editor suppresses the VERIFY script's output, so verification is by
+independent read-only probe rather than by reading the editor. Expected:
+`public_intake_attempts` present, both functions present, `farmer_access_requests`
+policies and grants unchanged from (b).
+
+**Effect on §4 close-of-freeze values**
+
+| §4 value | Before | After |
+|---|---|---|
+| non-internal triggers | 23 | 23 (unchanged) |
+| anon-satisfiable write policies | 1 | **1 (unchanged)** |
+| public functions | 18 | 20 |
+
+The anon-satisfiable policy count is deliberately unchanged: this step does not
+touch it. Closing it is BG-004's job.
+
+---
+
+**Honest note on the freeze's current condition.** The freeze baseline SHA is
+`bce42f8c`; production today serves `98883ff`. The migration clause has held —
+migrations 24, 28, 30 and 36 are all measurably absent from production — but
+production has moved off the verified SHA many times through ordinary merges.
+This entry does not attempt to resolve that. It is raised so the freeze is not
+treated as intact when only part of it is.
+
+---
+
+### BG-004 — Migration 36 **part 2 of 2** (the privilege change), closing R5
+
+
+| Field | Value |
+|---|---|
+| **Event** | Apply §2 of `36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING.sql` (lines 166–181) to production |
+| **Proposed date** | 2026-08-02 |
+| **Operator** | Repository owner, via the Supabase SQL editor |
+| **Authorisation** | **GRANTED** by the release owner on 2026-08-02, explicitly and in advance, authorising PR #110. The merge was executed by the assistant on that instruction; the authorising decision is the owner's, the mechanical act is not. Recorded **before** execution per §3 — no statement from this entry had been run at the time of merge. |
+| **Closes** | Audit finding **R5** |
+
+**The migration's own ordering precondition — all four now satisfied**
+
+Its header states a required order "no exceptions". Each is met and evidenced:
+
+| # | Required | Status |
+|---|---|---|
+| 1 | Deploy the application carrying `api/public/access-request.ts` | ✅ production serves `9c0f69b` |
+| 2 | `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set in Vercel Production | ✅ both present |
+| 3 | Confirm the endpoint accepts a submission end to end | ✅ HTTP 200; ledger 0→2; enquiries 6→7 |
+| 4 | Only then apply this migration | ← this entry |
+
+The header's warning that `SUPABASE_SERVICE_ROLE_KEY` is unset was written
+2026-07-28 and is **stale**; it has since been set.
+
+**(a) Exact statements to run**
+
+`~/Desktop/DDP_INTAKE_THROTTLE/STEP3_close_browser_path.sql` — lines 166–181 of the
+migration, wrapped in `BEGIN … COMMIT`, plus the idempotency guard from commit
+`8748284` (already merged via PR #106).
+
+| Statement | Effect |
+|---|---|
+| `DROP POLICY "farmer_access_requests: public submit"` | removes the anon INSERT policy |
+| `DROP POLICY IF EXISTS "… server submit"` | idempotency guard — makes a re-paste safe |
+| `CREATE POLICY "farmer_access_requests: server submit"` | INSERT for `service_role`, same WITH CHECK as before |
+| `REVOKE INSERT … FROM anon` | removes the table-level grant |
+| `REVOKE INSERT … FROM authenticated` | same |
+
+Nothing else is touched. `admin read`, `admin triage`, the stamp trigger, the
+throttle ledger and both functions are all untouched.
+
+**(b) Pre-state evidence** — measured `2026-08-02T06:37:23Z`, read-only via `ddp_ro`:
+
+| Item | Pre-state |
+|---|---|
+| Policies on `farmer_access_requests` | `admin read` / `admin triage` / **`public submit`** |
+| Grants | `anon=arwd`, `authenticated=arwd`, `service_role=arwdDxtm` |
+| INSERT policies naming `anon` | **1** (`public submit`) |
+| `anon` holds INSERT on `farmer_access_requests` | **true** |
+| `reserve_public_intake_slot` | present (BG-003) |
+| `public_intake_attempts` | present (BG-003) |
+
+Expected post-state: `public submit` replaced by `server submit`; INSERT policies
+naming `anon` **1 → 0**; `anon` INSERT on this table **true → false**; throttle
+objects unchanged.
+
+**(c) Rollback**
+
+`~/Desktop/DDP_INTAKE_THROTTLE/UNDO_step3_only.sql` — **not** the migration's own
+rollback file.
+
+This distinction is load-bearing. `36_..._ROLLBACK.sql` also drops the throttle
+ledger and both functions. Running it now would tear out the BG-003 work *and*
+leave the deployed application calling functions that no longer exist — converting
+a reversible privilege change into an outage. The scoped file restores only the
+policy and the grants.
+
+**Exercised**, on a disposable PostgreSQL 18.4 cluster reproducing today's exact
+production shape: browser blocked after apply, server still permitted, throttle
+functions still present after undo, and both files safe to run twice.
+
+**(d) Operator** — repository owner, Supabase SQL editor.
+
+---
+
+**Risk assessment**
+
+*Expected impact:* none visible. The deployed bundle contains the endpoint call
+once and **zero** direct inserts to `farmer_access_requests` — verified against the
+live JavaScript at `9c0f69b`. Nothing in production still uses the path being
+closed.
+
+*If the application were still using it:* the form would fail closed with a
+`503` and the honest message "contact the DDP team directly" — not a silent loss.
+
+*If it fails:* wrapped in a transaction, so production is left unchanged.
+
+*If run twice:* safe, verified. The SQL editor hides `RAISE NOTICE`, so re-pasting
+is the natural response to a silent success.
+
+**Effect on §4 close-of-freeze values**
+
+| §4 value | Before | After |
+|---|---|---|
+| anon-satisfiable INSERT policies | 1 | **0** |
+| `anon` INSERT grant on `farmer_access_requests` | held | **revoked** |
+| non-internal triggers | 23 | 23 |
+| public functions | 20 | 20 |
+
+This restores the "0 anon-satisfiable write policies" expectation that BG-001 had
+to re-baseline away. G2.5 named the single exception; after this there is none.
+
+**What this does NOT do**
+
+`anon` retains table-level INSERT on 23 other tables from Supabase's baseline
+defaults. Those are inert — no permissive INSERT policy admits `anon` on any of
+them — but they are the reason the migration revokes the grant as well as dropping
+the policy: a grant with no policy re-opens the moment any permissive policy is
+added. Out of scope here, worth a separate look.
+
+---
+
+### BG-005 — Migration 30, server-authoritative procurement overrides (audit F2)
+
+
+| Field | Value |
+|---|---|
+| **Event** | Apply `30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_HARDENING.sql` to production |
+| **Proposed date** | 2026-08-02 |
+| **Operator** | Repository owner, via the Supabase SQL editor |
+| **Authorisation** | **GRANTED** by the release owner on 2026-08-02, explicitly and in advance, authorising PR #111. The merge was executed by the assistant on that instruction; the authorising decision is the owner's, the mechanical act is not. Recorded **before** execution per §3. |
+| **Closes** | Audit finding **F2** |
+
+**Why**
+
+RISK-STATUS and REQUIREMENT-STATUS overrides are currently written to
+`localStorage` only — in Supabase mode as well as demo mode. They have no
+server-side record, no recorded approver, are invisible to every other
+administrator, and are destroyed by signing out. The application already carries
+the code to use a server table and falls back to local storage only because the
+table does not exist. This migration provides it.
+
+This is the same condition the `BrowserOnlyProvenanceNotice` component warns
+about on screen. That notice exists because this migration was never applied.
+
+**(a) Exact statements to run**
+
+The full contents of `30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_HARDENING.sql`,
+unmodified. No split is needed — it is additive throughout.
+
+| Creates | Detail |
+|---|---|
+| `public.risk_overrides` | new table, RLS enabled |
+| `public.requirement_overrides` | new table, RLS enabled |
+| 4 indexes | on the new tables |
+| 2 trigger functions + 2 triggers | block `UPDATE`/`DELETE` — append-only |
+| 4 policies | admin `SELECT` and `INSERT` only |
+| 2 views | `*_overrides_current` |
+
+**No existing object is altered.** Every `DROP` in the file is an
+`IF EXISTS` guard on an object the same file creates (idempotency), and every
+`REVOKE` is scoped to the two new tables. Both new tables carry a foreign key to
+`public.profiles`, which is present.
+
+**(b) Pre-state evidence** — measured `2026-08-02T07:36:22Z`, read-only via `ddp_ro`:
+
+| Item | Pre-state |
+|---|---|
+| `risk_overrides` | **ABSENT** |
+| `requirement_overrides` | **ABSENT** |
+| `risk_overrides_current` | **ABSENT** |
+| `prevent_risk_override_mutation` | **ABSENT** |
+| `public.profiles` (FK target) | present |
+| public functions | 20 |
+| non-internal triggers | 23 |
+
+Expected post-state: both tables and both views present, public functions
+20 → 22, non-internal triggers 23 → 25.
+
+**(c) Rollback**
+
+`30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_ROLLBACK.sql`, unmodified.
+
+**Exercised** on a disposable PostgreSQL 18.4 cluster on 2026-08-02: it removed
+both tables cleanly with no residue. Because this migration is purely additive,
+the rollback is strictly "remove what was added" — nothing is taken away that
+would need restoring.
+
+Any override rows recorded before a rollback would be lost with the tables. That
+is the same exposure they have today in `localStorage`, not a new one.
+
+**(d) Operator** — repository owner, Supabase SQL editor.
+
+---
+
+**Rehearsal result** (disposable PG 18.4, 2026-08-02)
+
+| Check | Result |
+|---|---|
+| Applied twice in succession | OK — idempotent |
+| Both tables, both views created | OK |
+| RLS enabled on both | OK |
+| `anon` holds no privilege | OK |
+| `UPDATE` an override row | **blocked** — append-only trigger holds |
+| `DELETE` an override row | **blocked** — append-only trigger holds |
+| `30_..._VERIFY.sql` | **9/9 passed** |
+| Rollback | clean, no residue |
+
+**Risk assessment**
+
+*No deploy is required and none should be made.* The application code is already
+live and detects the tables' absence narrowly (`42P01` / `PGRST205`), degrading to
+local storage. Once the tables exist it switches to the server automatically.
+
+*What changes for an operator:* new overrides gain a server record with a named
+approver, visible to other administrators and surviving sign-out. The on-screen
+"exists only in this browser" notice stops appearing for them.
+
+*What does NOT change:* overrides already recorded in a browser stay there. The
+store keeps loading `localStorage` for backward compatibility, and this migration
+does not migrate them. Anyone relying on an existing override should expect it to
+remain browser-local until it is re-recorded.
+
+*Untested path:* the application's server-write path for overrides has never run
+against a real table anywhere. The rehearsal proves the schema, the append-only
+guarantee and the policies; it does not prove the client writes to it correctly.
+That should be confirmed by recording one override in the admin UI after applying,
+and checking it lands.
+
+*If it fails:* the file is wrapped in a transaction, so production is unchanged.
+
+**Effect on §4 close-of-freeze values**
+
+| §4 value | Before | After |
+|---|---|---|
+| public functions | 20 | 22 |
+| non-internal triggers | 23 | 25 |
+| anon-satisfiable INSERT policies | 0 | **0** (unchanged) |
+
+---
+
 ### Process note
 
 No further production change has been made during this freeze. This log is now the

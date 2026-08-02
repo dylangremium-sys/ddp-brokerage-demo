@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 /**
  * Behavioural coverage for the public supplier-intake CLIENT.
@@ -11,17 +11,28 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
  * them asserted anything about which path this client takes.
  *
  * So these tests assert the TRANSPORT, not just the outcome. A test that only
- * checked "no throw on success" would have passed before and after #85 and would
- * pass again after the next repoint — it would be exactly the kind of test the
- * brief warns about, one that passes whether or not the code works.
+ * checked "no throw on success" would have passed before #85, after #85, and
+ * after #88's revert — it would be exactly the kind of test the brief warns
+ * about, one that passes whether or not the code works.
  *
- * The Supabase client is mocked so the exact insert payload is observable.
+ * DIRECTION OF THE ASSERTION. #88 reverted this client to a direct browser ->
+ * Supabase insert, and this file then pinned that direction ("does NOT call the
+ * server endpoint"). That revert is now itself reverted: the client posts to
+ * /api/public/access-request again, so the transport assertion is inverted with
+ * it. Leaving the old direction pinned would have made the fix un-shippable
+ * while telling us nothing true.
+ *
+ * WHY THIS IS SAFE TO SHIP BEFORE MIGRATION 36. The endpoint fails closed with
+ * 503 when its throttle RPCs are absent. The 503 branch below is what turns that
+ * into an honest "contact the DDP team directly" rather than a retry the visitor
+ * can never satisfy. That branch is asserted here precisely because it is the
+ * behaviour that bounds the risk of deploying ahead of the migration.
+ *
+ * `fetch` is stubbed so the exact request — URL, method, body — is observable.
  */
 
 const supabaseStub = vi.hoisted(() => ({
-  table: null as string | null,
-  inserted: [] as Record<string, unknown>[],
-  result: { error: null as { code?: string; message?: string } | null },
+  fromCalls: [] as string[],
   configured: true,
 }))
 
@@ -29,17 +40,7 @@ vi.mock('./supabase', () => ({
   get isSupabaseConfigured() { return supabaseStub.configured },
   get supabase() {
     return supabaseStub.configured
-      ? {
-          from: (t: string) => {
-            supabaseStub.table = t
-            return {
-              insert: (row: Record<string, unknown>) => {
-                supabaseStub.inserted.push(row)
-                return Promise.resolve(supabaseStub.result)
-              },
-            }
-          },
-        }
+      ? { from: (t: string) => { supabaseStub.fromCalls.push(t); throw new Error('unreachable') } }
       : null
   },
 }))
@@ -56,80 +57,121 @@ const VALID = {
   note: '  200 rai of longan  ',
 }
 
+/** A Response-alike with only the fields this client reads. */
+function reply(status: number): Response {
+  return { ok: status >= 200 && status < 300, status } as Response
+}
+
+let fetchMock: ReturnType<typeof vi.fn>
+
 beforeEach(() => {
-  supabaseStub.table = null
-  supabaseStub.inserted = []
-  supabaseStub.result = { error: null }
+  supabaseStub.fromCalls = []
   supabaseStub.configured = true
-  vi.restoreAllMocks()
+  fetchMock = vi.fn().mockResolvedValue(reply(200))
+  vi.stubGlobal('fetch', fetchMock)
 })
 
-describe('submitAccessRequest — temporary direct-insert path (incident revert)', () => {
-  it('inserts into farmer_access_requests and does NOT call the server endpoint', async () => {
-    // The transport assertion. This is the one that goes red if the client is
-    // repointed at /api/public/access-request while migration 36 is unapplied —
-    // i.e. the exact regression that caused the outage.
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
+describe('submitAccessRequest — throttled server-endpoint path', () => {
+  it('POSTs to /api/public/access-request and never inserts from the browser', async () => {
+    // The transport assertion. This goes red if the client is ever repointed at
+    // a direct Supabase insert again — the path that cannot be rate limited,
+    // because it does not traverse Vercel at all.
     await expect(submitAccessRequest(VALID)).resolves.toBeUndefined()
 
-    expect(supabaseStub.table).toBe('farmer_access_requests')
-    expect(supabaseStub.inserted).toHaveLength(1)
-    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/public/access-request')
+    expect(init.method).toBe('POST')
+    expect(supabaseStub.fromCalls).toEqual([])
   })
 
-  it('trims the payload and pins status to new with no reviewer', async () => {
+  it('sends a trimmed payload in the shape the endpoint validates', async () => {
     await submitAccessRequest(VALID)
 
-    expect(supabaseStub.inserted[0]).toEqual({
-      full_name: 'Somchai Prasert',
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body).toEqual({
+      fullName: 'Somchai Prasert',
       email: 'somchai@example.com',
       phone: '0812345678',
       province: 'Chiang Mai',
       position: 'Owner',
-      preferred_language: 'th',
+      preferredLanguage: 'th',
       note: '200 rai of longan',
-      status: 'new',
     })
-    // A reviewer must never be settable by the submitter.
-    expect(supabaseStub.inserted[0]).not.toHaveProperty('reviewed_by')
-    expect(supabaseStub.inserted[0]).not.toHaveProperty('reviewed_at')
+    // The server pins status and reviewer. A submitter must never supply either,
+    // or the server-authoritative INSERT policy is doing nothing.
+    expect(body).not.toHaveProperty('status')
+    expect(body).not.toHaveProperty('reviewed_by')
+    expect(body).not.toHaveProperty('reviewed_at')
   })
 
-  it('reports an unconfigured backend without attempting a write', async () => {
+  it('sends phone, because the endpoint rejects a submission without it', async () => {
+    // serverAccessRequestIntake.validateSubmission requires phone at 5-40 chars
+    // and returns 400 before the throttle is ever consulted. A payload missing
+    // this field fails in a way that looks like an endpoint fault.
+    await submitAccessRequest(VALID)
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.phone).toBe('0812345678')
+    expect(body.phone.length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('reports an unconfigured backend without sending anything', async () => {
     supabaseStub.configured = false
 
     await expect(submitAccessRequest(VALID)).rejects.toMatchObject({ code: 'not_configured' })
-    expect(supabaseStub.inserted).toHaveLength(0)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('rejects invalid input before any write', async () => {
+  it('rejects invalid input before any request', async () => {
     await expect(submitAccessRequest({ ...VALID, email: 'not-an-email' }))
       .rejects.toMatchObject({ code: 'invalid_input' })
-    expect(supabaseStub.inserted).toHaveLength(0)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('maps PGRST205 (migration 34 absent) to backend_unavailable', async () => {
-    supabaseStub.result = { error: { code: 'PGRST205', message: 'table not in schema cache' } }
+  it('maps 503 (throttle RPCs absent — migration 36 unapplied) to backend_unavailable', async () => {
+    // THE DEPLOY-SAFETY ASSERTION. Between deploying this client and applying
+    // migration 36, the endpoint fails closed with 503. The visitor must be told
+    // to reach DDP another way, not asked to retry something that cannot succeed.
+    fetchMock.mockResolvedValue(reply(503))
 
-    await expect(submitAccessRequest(VALID)).rejects.toMatchObject({ code: 'backend_unavailable' })
+    const err = await submitAccessRequest(VALID).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(AccessRequestError)
+    expect((err as AccessRequestError).code).toBe('backend_unavailable')
+    expect((err as AccessRequestError).message).toMatch(/contact the DDP team directly/i)
   })
 
-  it('maps 42501 (migration 36 revoked the anon INSERT) to backend_unavailable', async () => {
-    // Applying migration 36 while this revert is live is the foreseeable next
-    // failure. It must degrade to "contact us directly", not to a "try again"
-    // the visitor can never satisfy.
-    supabaseStub.result = { error: { code: '42501', message: 'permission denied for table farmer_access_requests' } }
+  it('maps 429 to rate_limited rather than to a generic failure', async () => {
+    // A throttled supplier is not a broken form. Collapsing 429 into
+    // submit_failed would tell a legitimate visitor to retry immediately, which
+    // both fails and burns another slot.
+    fetchMock.mockResolvedValue(reply(429))
 
-    await expect(submitAccessRequest(VALID)).rejects.toMatchObject({ code: 'backend_unavailable' })
+    await expect(submitAccessRequest(VALID)).rejects.toMatchObject({ code: 'rate_limited' })
   })
 
-  it('never leaks the driver message to the UI', async () => {
-    supabaseStub.result = { error: { code: '23514', message: 'violates check constraint "farmer_access_requests_phone_check"' } }
+  it('maps 400 to invalid_input', async () => {
+    fetchMock.mockResolvedValue(reply(400))
+
+    await expect(submitAccessRequest(VALID)).rejects.toMatchObject({ code: 'invalid_input' })
+  })
+
+  it('maps a network failure to submit_failed', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+
+    await expect(submitAccessRequest(VALID)).rejects.toMatchObject({ code: 'submit_failed' })
+  })
+
+  it('never leaks a server message to the UI', async () => {
+    fetchMock.mockResolvedValue(reply(500))
 
     const err = await submitAccessRequest(VALID).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(AccessRequestError)
     expect((err as AccessRequestError).code).toBe('submit_failed')
-    expect((err as AccessRequestError).message).not.toContain('constraint')
+    expect((err as AccessRequestError).message).not.toMatch(/constraint|column|relation|permission/i)
   })
 })

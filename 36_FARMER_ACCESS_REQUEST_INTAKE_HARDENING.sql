@@ -165,6 +165,18 @@ COMMENT ON TABLE public.public_intake_attempts IS
 -- ---------------------------------------------------------------------------
 DROP POLICY IF EXISTS "farmer_access_requests: public submit" ON public.farmer_access_requests;
 
+-- The replacement policy needs its own guard, not just the drop of the one it
+-- replaces. Without this line a second run of this file aborts with
+-- `policy "farmer_access_requests: server submit" ... already exists`, breaking
+-- the idempotency §83 claims. That is not hypothetical: this file is applied by
+-- hand through the Supabase SQL Editor, which does not display RAISE NOTICE, so
+-- a successful run and a no-op run look identical ("Success. No rows returned")
+-- and re-pasting to be sure is the obvious operator response. The BEGIN/COMMIT
+-- wrapper means the failed re-run rolls back safely rather than half-applying —
+-- but it surfaces as an error on the step that closes the public write path,
+-- which is the worst possible moment to be guessing. Measured on PG 18.4.
+DROP POLICY IF EXISTS "farmer_access_requests: server submit" ON public.farmer_access_requests;
+
 CREATE POLICY "farmer_access_requests: server submit" ON public.farmer_access_requests
   FOR INSERT TO service_role
   WITH CHECK (
