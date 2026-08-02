@@ -388,7 +388,7 @@ added. Out of scope here, worth a separate look.
 | **Event** | Apply `30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_HARDENING.sql` to production |
 | **Proposed date** | 2026-08-02 |
 | **Operator** | Repository owner, via the Supabase SQL editor |
-| **Authorisation** | *PENDING — to be granted by the release owner by approving PR #111, before execution, per §3.* |
+| **Authorisation** | **GRANTED** by the release owner on 2026-08-02, explicitly and in advance, authorising PR #111. The merge was executed by the assistant on that instruction; the authorising decision is the owner's, the mechanical act is not. Recorded **before** execution per §3. |
 | **Closes** | Audit finding **F2** |
 
 **Why**
