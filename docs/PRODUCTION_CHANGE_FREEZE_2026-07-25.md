@@ -275,7 +275,7 @@ treated as intact when only part of it is.
 | **Event** | Apply §2 of `36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING.sql` (lines 166–181) to production |
 | **Proposed date** | 2026-08-02 |
 | **Operator** | Repository owner, via the Supabase SQL editor |
-| **Authorisation** | *PENDING — to be granted by the release owner by approving PR #110, before execution, per §3.* |
+| **Authorisation** | **GRANTED** by the release owner on 2026-08-02, explicitly and in advance, authorising PR #110. The merge was executed by the assistant on that instruction; the authorising decision is the owner's, the mechanical act is not. Recorded **before** execution per §3 — no statement from this entry had been run at the time of merge. |
 | **Closes** | Audit finding **R5** |
 
 **The migration's own ordering precondition — all four now satisfied**
