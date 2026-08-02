@@ -111,7 +111,7 @@ DECLARE
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_admin, 'admin44@verify.test') ON CONFLICT DO NOTHING;
   INSERT INTO public.profiles (id, email, role) VALUES (v_admin, 'admin44@verify.test', 'ddp_admin')
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
   PERFORM set_config('request.jwt.claim.sub', v_admin::text, true);
 
   INSERT INTO public.farms (id) VALUES (v_farm) ON CONFLICT DO NOTHING;
@@ -522,7 +522,7 @@ BEGIN
   ON CONFLICT (id) DO NOTHING;
   INSERT INTO public.profiles (id, email, role) VALUES
     (v_buyer_user, 'buyer44@verify.test', 'buyer'), (v_farm_user, 'farm44@verify.test', 'farmer')
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
 
   INSERT INTO public.organisations (org_type, legal_name, country_code, farm_id)
   VALUES ('farm', 'Reserved Stock Farm', 'TH', v_farm) RETURNING id INTO v_farm_org;

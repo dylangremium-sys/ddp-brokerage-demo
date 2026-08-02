@@ -470,7 +470,7 @@ BEGIN
   ON CONFLICT (id) DO NOTHING;
   INSERT INTO public.profiles (id, email, role) VALUES
     (v_farm_user, 'farm40@verify.test', 'farmer'), (v_buyer_user, 'buyer40@verify.test', 'buyer')
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
   INSERT INTO public.farms (id) VALUES (v_farm_id) ON CONFLICT DO NOTHING;
 
   INSERT INTO public.organisations (org_type, legal_name, country_code, farm_id)
