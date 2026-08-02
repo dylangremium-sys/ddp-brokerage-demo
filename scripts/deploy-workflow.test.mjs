@@ -11,7 +11,7 @@
 // So these properties are asserted directly against the workflow source. Each test
 // below corresponds to a way the gate could be quietly disarmed.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
@@ -188,14 +188,45 @@ describe('vercel.json disables Git production deploys for main — and nothing m
   })
 
   it('adds no unrelated Vercel configuration', () => {
-    // Scope guard: build overrides and crons are separate decisions and must not
-    // ride along. Each key here was added deliberately and is pinned by its own
+    // Scope guard: build overrides are a separate decision and must not ride
+    // along. Each key here was added deliberately and is pinned by its own
     // assertions rather than merely tolerated:
     //   `headers`  — audit R6: the live site sent no CSP/XFO/nosniff/
     //                Referrer-Policy/Permissions-Policy (own describe block below)
     //   `rewrites` — SPA deep links: without it every path except `/` returned a
     //                raw Vercel 404 (pinned immediately below)
-    expect(Object.keys(VERCEL_CONFIG)).toEqual(['git', 'rewrites', 'headers'])
+    //   `crons`    — scheduled Watchtower ingestion; every regulatory source was
+    //                previously checked only when a human clicked, and the click
+    //                could not succeed at all (own describe block below)
+    expect(Object.keys(VERCEL_CONFIG)).toEqual(['git', 'crons', 'rewrites', 'headers'])
+  })
+})
+
+// ─── Scheduled Watchtower ingestion ─────────────────────────────────────────
+//
+// The cron is the only thing that makes regulatory monitoring unattended. It is
+// pinned narrowly because both halves are load-bearing: the path must match the
+// deployed function, and the schedule must be modest enough that DDP does not
+// appear in a government access log as a scraper.
+describe('vercel.json scheduled ingestion cron', () => {
+  it('declares exactly one cron', () => {
+    // More than one would mean a second, unreviewed scheduled trigger.
+    expect(Array.isArray(VERCEL_CONFIG.crons)).toBe(true)
+    expect(VERCEL_CONFIG.crons).toHaveLength(1)
+  })
+
+  it('points at the ingestion function that actually exists', () => {
+    // A path typo produces a cron that fires into a 404 forever, and the
+    // symptom is silence — monitoring simply never runs.
+    expect(VERCEL_CONFIG.crons[0].path).toBe('/api/cron/ingest')
+    expect(existsSync(join(ROOT, 'api/cron/ingest.ts'))).toBe(true)
+  })
+
+  it('runs daily, not more often', () => {
+    // Politeness to the regulators, and the reason the throttle numbers are set
+    // where they are. A per-minute schedule would be an IP block waiting to
+    // happen against the exact hosts this feature depends on.
+    expect(VERCEL_CONFIG.crons[0].schedule).toBe('0 2 * * *')
   })
 })
 

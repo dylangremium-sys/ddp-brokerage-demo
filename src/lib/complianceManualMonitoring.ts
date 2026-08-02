@@ -119,7 +119,7 @@ export interface ManualMonitoringRunResult {
   ok: boolean
   sourceId: string
   connectorKind?: 'rss' | 'atom'
-  feedKind?: 'rss' | 'atom'
+  feedKind?: 'rss' | 'atom' | 'html'
   feedTitle: string | null
   itemCount: number
   items: ManualMonitoringItemView[]

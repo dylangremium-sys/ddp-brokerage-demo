@@ -108,7 +108,13 @@ export interface ParsedFeedItem {
 }
 
 export interface ParsedFeed {
-  kind: 'rss' | 'atom'
+  // 'html' is included because the page-change watcher
+  // (complianceHtmlWatchConnector.ts) returns this same result shape, carrying
+  // one synthetic item for the watched page. Widening the union here — rather
+  // than giving that connector a parallel result type — is what lets
+  // watchtowerIngestionService treat both modalities identically, so dedup,
+  // persistence and run accounting have exactly one implementation.
+  kind: 'rss' | 'atom' | 'html'
   title: string | null
   items: ParsedFeedItem[]
 }
@@ -133,7 +139,7 @@ export interface FeedItemSnapshot {
 export interface RssConnectorResult {
   ok: boolean
   sourceId: string
-  feedKind?: 'rss' | 'atom'
+  feedKind?: 'rss' | 'atom' | 'html'
   itemCount: number
   decisions: MonitoringDecision[]
   /** The parsed feed on success (items align 1:1 with `decisions`). Present so

@@ -44,7 +44,7 @@ import {
   runPastedMonitoringDecision,
   type ManualMonitoringRunResult,
 } from '../../lib/complianceManualMonitoring'
-import { createBrowserRssFetch } from '../../lib/browserRssFetch'
+import { createServerProxyRssFetch } from '../../lib/serverProxyRssFetch'
 import { createLocalStorageMonitoringSnapshotRepository } from '../../lib/complianceMonitoringSnapshotStore'
 import {
   baselineToPreviousSnapshots,
@@ -929,7 +929,13 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     setRssComparedBaseline(baseline)
 
     try {
-      const result = await runManualRssMonitoring(source, createBrowserRssFetch(), {
+      // Retrieved through the server, for the same reason as the ingestion run:
+      // a browser fetch to a regulator is refused by the deployed CSP before
+      // CORS is even consulted, so this button could not succeed on any source.
+      const proxyFetch = createServerProxyRssFetch(source.id, {
+        getAccessToken: async () => (await getSession())?.access_token ?? null,
+      })
+      const result = await runManualRssMonitoring(source, proxyFetch, {
         previousSnapshots: baselineToPreviousSnapshots(baseline),
       })
       setRssCheckResult(result)

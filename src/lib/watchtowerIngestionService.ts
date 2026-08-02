@@ -3,7 +3,9 @@ import {
   inferConnectorKind,
 } from './complianceSourceConnectors'
 import { executeRssConnector, type RssConnectorResult, type RssConnectorErrorCode } from './complianceRssConnector'
-import { createBrowserRssFetch } from './browserRssFetch'
+import { createServerProxyRssFetch } from './serverProxyRssFetch'
+import { executeHtmlWatchConnector } from './complianceHtmlWatchConnector'
+import type { SourceContentSnapshot } from './complianceSourceMonitoring'
 import { compareSourcesForMonitoring } from './complianceSourceGovernance'
 import {
   classifyIngestionItem,
@@ -384,24 +386,69 @@ export interface DefaultIngestionDepsConfig {
   actorId?: string | null
   timeoutMs?: number
   maxResponseBytes?: number
+  /**
+   * Returns the caller's Supabase access token for the server retrieval call.
+   *
+   * REQUIRED rather than defaulted. A default would let a call site forget it
+   * and get an ingestion run that fails every source with "no active session" —
+   * a failure that looks like eight unreachable regulators rather than one
+   * missing argument.
+   */
+  getAccessToken: () => Promise<string | null>
+  /**
+   * Previously-seen page snapshots, keyed by htmlWatchItemId(source).
+   *
+   * Only html-monitored sources use this. Absent means every watched page reads
+   * as first-seen, which produces one candidate per page on the first run and
+   * then settles — the correct behaviour for a cold start, and the reason this
+   * is optional rather than required.
+   */
+  previousSnapshots?: Map<string, SourceContentSnapshot>
 }
 
 /**
- * Wires the real repository + the existing RSS/Atom connector (browser fetch
- * adapter). The host allowlist is REQUIRED and deny-by-default — the connector
+ * Wires the real repository + the existing RSS/Atom connector, retrieving
+ * through the SERVER (api/compliance/feed-retrieve) rather than from the
+ * browser. The host allowlist is REQUIRED and deny-by-default — the connector
  * refuses any source whose host is not listed. Only the RSS/Atom/feed modality
  * is auto-fetched today; other kinds surface as an 'unsupported_connector'
  * failed run, which is the correct fail-closed behaviour.
+ *
+ * The transport changed here on purpose and the connector did not. Browser
+ * retrieval never worked and could not be made to work: the deployed CSP
+ * refuses `connect-src` to any regulator, and both registered feeds send no
+ * CORS header either (docs/CSP_FEED_RETRIEVAL_DECISION.md). Every "Run
+ * ingestion now" before this change was guaranteed to record a failed run.
+ *
+ * The fetch implementation is built PER SOURCE because the server endpoint
+ * takes a source ID, not a URL — see createServerProxyRssFetch for why that
+ * asymmetry is load-bearing rather than accidental.
  */
 export function createDefaultIngestionDeps(config: DefaultIngestionDepsConfig): IngestionDeps {
-  const fetchImpl = createBrowserRssFetch()
   return {
-    runConnector: (source) =>
-      executeRssConnector(source, config.allowedHosts, fetchImpl, {
+    runConnector: (source) => {
+      const fetchImpl = createServerProxyRssFetch(source.id, { getAccessToken: config.getAccessToken })
+
+      // Dispatch by modality. Until now this always called executeRssConnector,
+      // which hard-rejects any kind that is not rss/atom — so all six
+      // html-monitored Thai sources (FDA, MOPH, ONCB, Customs, DOA, the Royal
+      // Gazette) recorded `unsupported_connector` on every run, and DDP
+      // monitored the Czech and EU regulators only.
+      if (connectorKindForSource(source) === 'html') {
+        return executeHtmlWatchConnector(source, config.allowedHosts, fetchImpl, {
+          userAgent: config.userAgent,
+          timeoutMs: config.timeoutMs,
+          maxResponseBytes: config.maxResponseBytes,
+          previousSnapshots: config.previousSnapshots,
+        })
+      }
+
+      return executeRssConnector(source, config.allowedHosts, fetchImpl, {
         userAgent: config.userAgent,
         timeoutMs: config.timeoutMs,
         maxResponseBytes: config.maxResponseBytes,
-      }),
+      })
+    },
     fetchKnownIdentity: () => repo.fetchKnownLegalUpdateIdentity(),
     openRun: (input) => repo.openIngestionRun(input),
     closeRun: (id, input) => repo.closeIngestionRun(id, input),

@@ -138,6 +138,11 @@ export function WatchtowerIngestionPanel({ sources, isSupabaseConfigured, isAdmi
         trigger: 'manual',
         actorType: 'admin',
         actorId: session?.user?.id ?? null,
+        // Read per retrieval rather than captured from the `session` above: a
+        // full registry sweep can outlive a short-lived access token, and a
+        // token that expires mid-run would fail the remaining sources with
+        // "no active session" — which reads as unreachable regulators.
+        getAccessToken: async () => (await getSession())?.access_token ?? null,
       })
       const report = await runIngestionBatch(enabledAutoSources, deps)
       setLastReport(report)

@@ -94,3 +94,35 @@ from "CORS error" to "CSP error", both of which surface identically as the conne
 
 **This decision does not make the feature worse in any measured case. It also does not make it
 work.** Option (c) is the follow-up.
+
+---
+
+## RESOLVED 2026-08-02 — option (c) is built
+
+The follow-up this document names is implemented. Browser-side feed retrieval is gone:
+`browserRssFetch.ts` was **deleted** rather than left in place, because a dead transport is an
+invitation to re-wire it.
+
+- `api/compliance/feed-retrieve.ts` — admin-authenticated, throttled, SSRF-guarded server
+  retrieval. It takes a **registered source ID, never a URL**, so it cannot become a
+  general-purpose outbound fetch primitive for an authenticated session.
+- `src/lib/serverProxyRssFetch.ts` — a drop-in `RssFetchImpl`. As this document predicted,
+  `complianceRssConnector.ts` required **no change**.
+- `api/cron/ingest.ts` + the `crons` entry in `vercel.json` — the sweep now runs daily without
+  anyone clicking.
+- `src/lib/complianceHtmlWatchConnector.ts` — the six `html` sources (all six Thai regulators),
+  which this document correctly notes could never reach `fetch` at all, are now watched for
+  page changes.
+
+Two corrections to the measurements above, re-measured 2026-08-02:
+
+1. `sukl.gov.cz/feed/` serves **`application/rss+xml`**, not a generic XML type. The retriever's
+   content-type allowlist did not include that media type, so the SSRF-guarded retriever would
+   have rejected one of the only two working feeds at the content-type gate while accepting
+   EUR-Lex (`application/xml`). Both feed media types are now allowlisted.
+2. Residual risk 1 above is now moot: no feed is fetched from a browser, so `connect-src`
+   cannot break a source that happens to send permissive CORS headers.
+
+Residual risk 2 is closed. The remaining honest limitation is stated in
+`complianceHtmlWatchConnector.ts`: a page-change watcher reports that a page changed, not what
+changed, and on long pages it watches a relevance window rather than the whole document.
