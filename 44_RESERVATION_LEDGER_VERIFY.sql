@@ -18,8 +18,10 @@
 --   H — BEHAVIOURAL, as `authenticated`: the double-blind rule in both
 --       directions
 --   I — anon holds nothing
+--   J — commercial events go to their OWN log, and the compliance log's closed
+--       regulatory vocabulary is never forced open to admit them
 --
--- Expected on success: nine PASSED notices and no exception.
+-- Expected on success: ten PASSED notices and no exception.
 --
 -- NOT PROVEN HERE: that the FOR UPDATE lock in
 -- fn_enforce_reservation_availability() serialises genuinely concurrent
@@ -41,7 +43,7 @@ DECLARE
   t text;
   f text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['reservations', 'reservation_releases'] LOOP
+  FOREACH t IN ARRAY ARRAY['reservations', 'reservation_releases', 'commercial_audit_log'] LOOP
     IF to_regclass('public.' || t) IS NULL THEN
       v_missing := array_append(v_missing, 'table ' || t);
     END IF;
@@ -49,7 +51,8 @@ BEGIN
 
   FOREACH f IN ARRAY ARRAY['reservation_is_active', 'batch_reserved_kg', 'batch_available_kg',
                            'batch_reserved_kg_unchecked', 'fn_enforce_reservation_availability',
-                           'prevent_reservation_mutation'] LOOP
+                           'prevent_reservation_mutation',
+                           'prevent_commercial_audit_log_mutation'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
                    WHERE n.nspname='public' AND p.proname=f) THEN
       v_missing := array_append(v_missing, 'function ' || f);
@@ -57,7 +60,10 @@ BEGIN
   END LOOP;
 
   FOREACH t IN ARRAY ARRAY['reservations_no_update_delete', 'reservation_releases_no_update_delete',
-                           'reservations_enforce_availability', 'reservations_audit'] LOOP
+                           'reservations_enforce_availability', 'reservations_audit',
+                           'commercial_audit_log_no_update_delete',
+                           'reservations_no_truncate', 'reservation_releases_no_truncate',
+                           'commercial_audit_log_no_truncate'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = t AND NOT tgisinternal) THEN
       v_missing := array_append(v_missing, 'trigger ' || t);
     END IF;
@@ -76,7 +82,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY A FAILED: %', array_to_string(v_missing, ', ');
   END IF;
 
-  RAISE NOTICE 'VERIFY A PASSED: both tables, six functions, four triggers and the one-release-per-reservation unique constraint are present.';
+  RAISE NOTICE 'VERIFY A PASSED: all three tables, seven functions, five triggers and the one-release-per-reservation unique constraint are present.';
 END
 $verify_a$;
 
@@ -169,6 +175,7 @@ DECLARE
   v_batch    uuid := (SELECT v FROM v44 WHERE k='batch');
   v_buyer    uuid := (SELECT v FROM v44 WHERE k='buyer');
   v_lapsing  uuid;
+  v_forged   uuid;
   v_problems text[] := ARRAY[]::text[];
   v_before   numeric;
 BEGIN
@@ -220,21 +227,33 @@ BEGIN
     v_problems := array_append(v_problems, 'the default hold is not 7 days');
   END IF;
 
-  -- Quantity freed by expiry is genuinely reservable again.
+  -- created_at is server-authoritative. A future created_at would make the
+  -- availability check measure the batch at a moment when live holds have
+  -- already lapsed — reserving beyond the batch's own quantity, right now.
+  INSERT INTO public.reservations
+    (inventory_batch_id, buyer_organisation_id, quantity_kg, created_at)
+  VALUES (v_batch, v_buyer, 1.000, now() + interval '5 hours')
+  RETURNING id INTO v_forged;
+
+  IF (SELECT created_at FROM public.reservations WHERE id = v_forged) > now() THEN
+    v_problems := array_append(v_problems,
+      'a client-supplied FUTURE created_at was accepted; the availability ceiling can be bypassed by dating a reservation forward');
+  END IF;
+
+  -- And the hold length is capped, or stock could be held indefinitely.
   BEGIN
     INSERT INTO public.reservations
-      (inventory_batch_id, buyer_organisation_id, quantity_kg, created_at, expires_at)
-    VALUES (v_batch, v_buyer, 100.000, now() + interval '2 hours', now() + interval '9 days');
-  EXCEPTION WHEN others THEN
-    v_problems := array_append(v_problems,
-      'quantity freed by an expired hold could not be reserved again');
+      (inventory_batch_id, buyer_organisation_id, quantity_kg, expires_at)
+    VALUES (v_batch, v_buyer, 1.000, now() + interval '400 days');
+    v_problems := array_append(v_problems, 'a 400-day hold was ADMITTED');
+  EXCEPTION WHEN others THEN NULL;
   END;
 
   IF array_length(v_problems, 1) > 0 THEN
     RAISE EXCEPTION 'VERIFY C FAILED: %', array_to_string(v_problems, '; ');
   END IF;
 
-  RAISE NOTICE 'VERIFY C PASSED: a lapsed hold frees its quantity with no sweeper, no row mutation and no release record; the default hold is 7 days; and the freed quantity is reservable again.';
+  RAISE NOTICE 'VERIFY C PASSED: a lapsed hold frees its quantity with no sweeper, no row mutation and no release record; the default hold is 7 days; a client-supplied future created_at is overwritten server-side; and a 400-day hold is refused.';
 END
 $verify_c$;
 
@@ -612,5 +631,128 @@ BEGIN
   RAISE NOTICE 'VERIFY I PASSED: anon holds nothing on either table and cannot execute the availability function, and the unguarded internal sum is not reachable by authenticated.';
 END
 $verify_i$;
+
+-- -----------------------------------------------------------------------------
+-- J. Commercial events live in their OWN log
+--
+-- The regression guard for the whole point of the separation: a closed
+-- regulatory vocabulary is only worth having if it was never opened. If a later
+-- edit routes a commercial action back into compliance_audit_log, this fails.
+-- -----------------------------------------------------------------------------
+DO $verify_j$
+DECLARE
+  v_admin    uuid := (SELECT v FROM v44 WHERE k='admin');
+  v_farm     uuid := (SELECT v FROM v44 WHERE k='farm');
+  v_buyer    uuid := (SELECT v FROM v44 WHERE k='buyer');
+  v_batch    uuid := '00440000-0000-4000-a000-0000000000d1';
+  v_def      text;
+  v_res      uuid;
+  v_count    bigint;
+  v_actor    text;
+  v_problems text[] := ARRAY[]::text[];
+BEGIN
+  -- 1. compliance_audit_log's vocabulary must not admit either commercial action.
+  SELECT pg_get_constraintdef(oid) INTO v_def
+  FROM pg_constraint WHERE conname = 'compliance_audit_log_action_check';
+
+  IF v_def IS NULL THEN
+    v_problems := array_append(v_problems, 'compliance_audit_log_action_check is missing entirely');
+  ELSE
+    IF v_def LIKE '%reservation_created%' OR v_def LIKE '%reservation_released%' THEN
+      v_problems := array_append(v_problems,
+        'compliance_audit_log''s closed regulatory vocabulary has been forced open to admit a COMMERCIAL action');
+    END IF;
+  END IF;
+
+  -- 2. A reservation writes to the commercial log, and only there.
+  PERFORM set_config('request.jwt.claim.sub', v_admin::text, true);
+
+  INSERT INTO public.inventory_batches (id, farm_id, quantity_kg, client_visible)
+  VALUES (v_batch, v_farm, 25.000, true) ON CONFLICT DO NOTHING;
+
+  SELECT count(*) INTO v_count FROM public.compliance_audit_log WHERE entity_type = 'reservation';
+  IF v_count <> 0 THEN
+    v_problems := array_append(v_problems,
+      format('%s reservation row(s) were written to the COMPLIANCE log', v_count));
+  END IF;
+
+  INSERT INTO public.reservations (inventory_batch_id, buyer_organisation_id, quantity_kg, note)
+  VALUES (v_batch, v_buyer, 1.000, 'audit routing check') RETURNING id INTO v_res;
+
+  SELECT count(*) INTO v_count
+  FROM public.commercial_audit_log
+  WHERE entity_type = 'reservation' AND entity_id = v_res::text AND action = 'reservation_created';
+  IF v_count <> 1 THEN
+    v_problems := array_append(v_problems,
+      format('expected exactly 1 commercial audit row for the reservation, found %s', v_count));
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.compliance_audit_log WHERE entity_id = v_res::text;
+  IF v_count <> 0 THEN
+    v_problems := array_append(v_problems, 'the reservation also wrote to the compliance log');
+  END IF;
+
+  -- 3. The actor is recorded as what they actually are.
+  SELECT actor_type INTO v_actor
+  FROM public.commercial_audit_log WHERE entity_id = v_res::text LIMIT 1;
+  IF v_actor IS DISTINCT FROM 'admin' THEN
+    v_problems := array_append(v_problems,
+      format('an admin-created reservation was logged with actor_type %L', v_actor));
+  END IF;
+
+  -- 4. The commercial log is append-only too.
+  BEGIN
+    UPDATE public.commercial_audit_log SET reason = 'rewritten' WHERE entity_id = v_res::text;
+    v_problems := array_append(v_problems, 'UPDATE on commercial_audit_log was ADMITTED');
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    DELETE FROM public.commercial_audit_log WHERE entity_id = v_res::text;
+    v_problems := array_append(v_problems, 'DELETE on commercial_audit_log was ADMITTED');
+  EXCEPTION WHEN others THEN NULL;
+  END;
+
+  -- 5. Its vocabulary is closed: an arbitrary action must be refused.
+  BEGIN
+    INSERT INTO public.commercial_audit_log (actor_type, action, entity_type, entity_id)
+    VALUES ('admin', 'something_invented', 'reservation', v_res::text);
+    v_problems := array_append(v_problems, 'commercial_audit_log accepted an action outside its vocabulary');
+  EXCEPTION WHEN others THEN NULL;
+  END;
+
+  -- 6. No client role may write the audit trail directly.
+  --
+  -- NOTE ON WHAT THIS CANNOT SEE. On hosted Supabase, ALTER DEFAULT PRIVILEGES
+  -- grants `authenticated` direct CRUD on newly created public tables; the
+  -- disposable cluster has no such defaults, so these checks pass here whether
+  -- or not the migration revoked them. The migration therefore revokes from
+  -- authenticated EXPLICITLY rather than relying on this assertion — which is
+  -- why the REVOKE lines name three roles, not two.
+  IF has_table_privilege('authenticated', 'public.commercial_audit_log', 'INSERT') THEN
+    v_problems := array_append(v_problems, 'authenticated holds INSERT on commercial_audit_log');
+  END IF;
+  IF has_table_privilege('authenticated', 'public.commercial_audit_log', 'TRUNCATE') THEN
+    v_problems := array_append(v_problems, 'authenticated holds TRUNCATE on commercial_audit_log');
+  END IF;
+
+  -- 7. TRUNCATE is blocked behaviourally, not merely by privilege — a row-level
+  -- trigger does not fire on it, and service_role inherits TRUNCATE on hosted
+  -- Supabase.
+  BEGIN
+    TRUNCATE public.commercial_audit_log;
+    v_problems := array_append(v_problems, 'TRUNCATE on commercial_audit_log was ADMITTED — the log is not append-only');
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  IF has_table_privilege('anon', 'public.commercial_audit_log', 'SELECT') THEN
+    v_problems := array_append(v_problems, 'anon can read commercial_audit_log');
+  END IF;
+
+  IF array_length(v_problems, 1) > 0 THEN
+    RAISE EXCEPTION 'VERIFY J FAILED: %', array_to_string(v_problems, '; ');
+  END IF;
+
+  RAISE NOTICE 'VERIFY J PASSED: commercial events go to commercial_audit_log and never to the compliance log, whose closed regulatory vocabulary admits neither reservation action; the commercial log names the real actor, is append-only against UPDATE, DELETE and TRUNCATE alike, has its own closed vocabulary, and is writable by no client role.';
+END
+$verify_j$;
 
 ROLLBACK;

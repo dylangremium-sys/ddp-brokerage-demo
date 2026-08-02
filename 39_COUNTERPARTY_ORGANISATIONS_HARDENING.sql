@@ -350,8 +350,8 @@ CREATE POLICY organisation_memberships_write ON public.organisation_memberships
 -- -----------------------------------------------------------------------------
 -- 8. Grants
 -- -----------------------------------------------------------------------------
-REVOKE ALL ON public.organisations            FROM PUBLIC, anon;
-REVOKE ALL ON public.organisation_memberships FROM PUBLIC, anon;
+REVOKE ALL ON public.organisations            FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.organisation_memberships FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.organisations            TO authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.organisation_memberships TO authenticated, service_role;

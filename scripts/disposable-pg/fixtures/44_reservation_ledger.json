@@ -1,28 +1,56 @@
 {
   "id": "44_reservation_ledger",
   "title": "Migration 44 — the marketplace reservation ledger",
-  "description": "Applies migrations 39 then 44, runs 44's VERIFY A-I, then rolls back 44 on a disposable PostgreSQL 18 cluster. First migration of the Option B marketplace, written to docs/OPTION_B_SEAM_CONTRACT.md so that adding physical custody later is a plug-in and not a rewrite. The obvious design -- an inventory_batches.reserved_kg column decremented on reservation -- fails three ways at once: it loses its own history when written, two concurrent buyers both read it before either writes, and when Option A introduces lots that SPLIT the identity the number hangs off stops existing. So a reservation is a row, a release is another row, and availability is a SUM evaluated when asked, exactly as migration 40 already does for permit draw-down. Expiry is computed for the same reason licence expiry is: this repository has no scheduler at all, so a stored expiry flag would be exactly as fresh as a job that never runs.",
+  "description": "Applies migrations 39 then 44, runs 44's VERIFY A-I, then rolls back 44 on a disposable PostgreSQL 18 cluster. First migration of the Option B marketplace, written to docs/OPTION_B_SEAM_CONTRACT.md so that adding physical custody later is a plug-in and not a rewrite. The obvious design -- an inventory_batches.reserved_kg column decremented on reservation -- fails three ways at once: it loses its own history when written, two concurrent buyers both read it before either writes, and when Option A introduces lots that SPLIT the identity the number hangs off stops existing. So a reservation is a row, a release is another row, and availability is a SUM evaluated when asked, exactly as migration 40 already does for permit draw-down. Expiry is computed for the same reason licence expiry is: this repository has no scheduler at all, so a stored expiry flag would be exactly as fresh as a job that never runs. Reservations are commercial events, so 44 creates its own commercial_audit_log instead of forcing open compliance_audit_log's closed regulatory vocabulary.",
   "pgMajor": 18,
   "migrationDir": ".",
   "applyStages": [
-    { "label": "HARDENING-39", "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql" },
-    { "label": "HARDENING-44", "file": "44_RESERVATION_LEDGER_HARDENING.sql" }
+    {
+      "label": "HARDENING-39",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-44",
+      "file": "44_RESERVATION_LEDGER_HARDENING.sql"
+    }
   ],
   "verify": {
     "file": "44_RESERVATION_LEDGER_VERIFY.sql",
-    "expectedSections": ["A", "B", "C", "D", "E", "F", "G", "H", "I"],
-    "expectedPassCount": 9,
-    "note": "C is the section that proves the design rather than the code: it places a hold that lapses in an hour, then asks for availability as at two hours later and requires the full quantity back -- with the reservation row unmutated and no release record written, because expiry that is DERIVED cannot go stale and expiry that is STORED always can. G is the NaN guard in its marketplace form: PostgreSQL sorts numeric NaN above every real number, so an unguarded comparison would treat a NaN-quantity batch as having effectively infinite stock; it also asserts the ledger never writes inventory_batches.stock_status, which would be a second source of truth going stale the instant a hold expired. F proves the refusals AND the equivalent valid reservation, so the refusals cannot be artefacts of a broken fixture. H is behavioural under SET ROLE authenticated and covers the double-blind rule in both directions -- a buyer sees their own reservations but cannot reach the batch row, the farm organisation or supply-side demand; a farmer sees NO reservation rows at all yet still gets the reserved quantity for their own batch through a function. NOT read-only; wrapped in BEGIN..ROLLBACK. NOT PROVEN HERE: that the FOR UPDATE lock serialises genuinely concurrent reservations -- a single session cannot demonstrate that and it needs a two-session test on staging before the marketplace opens.",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I",
+      "J"
+    ],
+    "expectedPassCount": 10,
+    "note": "J is the regression guard for the audit separation: reservations are COMMERCIAL events, so migration 44 creates commercial_audit_log rather than widening compliance_audit_log's closed 15-value regulatory vocabulary (target architecture 2.6 / gap item MC-18). A closed vocabulary is only worth having if it was never opened, so J asserts the compliance constraint admits neither reservation action, that no reservation row reaches the compliance log, and that the commercial log is append-only with its own closed vocabulary and writable by no client role. C is the section that proves the design rather than the code: it places a hold that lapses in an hour, then asks for availability as at two hours later and requires the full quantity back -- with the reservation row unmutated and no release record written, because expiry that is DERIVED cannot go stale and expiry that is STORED always can. G is the NaN guard in its marketplace form: PostgreSQL sorts numeric NaN above every real number, so an unguarded comparison would treat a NaN-quantity batch as having effectively infinite stock; it also asserts the ledger never writes inventory_batches.stock_status, which would be a second source of truth going stale the instant a hold expired. F proves the refusals AND the equivalent valid reservation, so the refusals cannot be artefacts of a broken fixture. H is behavioural under SET ROLE authenticated and covers the double-blind rule in both directions -- a buyer sees their own reservations but cannot reach the batch row, the farm organisation or supply-side demand; a farmer sees NO reservation rows at all yet still gets the reserved quantity for their own batch through a function. NOT read-only; wrapped in BEGIN..ROLLBACK. NOT PROVEN HERE: that the FOR UPDATE lock serialises genuinely concurrent reservations -- a single session cannot demonstrate that and it needs a two-session test on staging before the marketplace opens.",
     "readOnly": false
   },
   "rollback": {
     "stages": [
-      { "label": "main-rollback", "source": "file", "file": "44_RESERVATION_LEDGER_ROLLBACK.sql" }
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "44_RESERVATION_LEDGER_ROLLBACK.sql"
+      }
     ]
   },
   "declaredSubstrate": {
-    "roles": ["anon", "authenticated", "service_role"],
-    "schemas": ["auth", "public"],
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
     "symbols": [
       "auth.uid",
       "auth.users",
@@ -37,7 +65,11 @@
   },
   "postRollback": {
     "removed": {
-      "tables": ["public.reservations", "public.reservation_releases"],
+      "tables": [
+        "public.reservations",
+        "public.reservation_releases",
+        "public.commercial_audit_log"
+      ],
       "functions": [
         "public.reservation_is_active",
         "public.batch_reserved_kg",
@@ -45,13 +77,26 @@
         "public.batch_reserved_kg_unchecked",
         "public.fn_enforce_reservation_availability",
         "public.prevent_reservation_mutation",
-        "public.fn_audit_reservation"
+        "public.fn_audit_reservation",
+        "public.prevent_commercial_audit_log_mutation"
       ],
-      "policies": ["reservations_select", "reservations_insert", "reservation_releases_select"]
+      "policies": [
+        "reservations_select",
+        "reservations_insert",
+        "reservation_releases_select"
+      ]
     },
     "intact": {
-      "tables": ["public.organisations", "public.inventory_batches", "public.compliance_audit_log"],
-      "functions": ["public.is_ddp_admin", "public.has_organisation_membership", "auth.uid"],
+      "tables": [
+        "public.organisations",
+        "public.inventory_batches",
+        "public.compliance_audit_log"
+      ],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.has_organisation_membership",
+        "auth.uid"
+      ],
       "authUsersMinRows": 2
     }
   }

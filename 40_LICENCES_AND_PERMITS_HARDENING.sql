@@ -277,6 +277,16 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.prevent_permit_drawdown_mutation() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.prevent_permit_drawdown_mutation() TO service_role;
 
+-- A row-level trigger does not fire on TRUNCATE, and on hosted Supabase
+-- service_role inherits TRUNCATE on new public tables — so without this a
+-- single statement empties an "append-only" log. Statement-level guard,
+-- modelled on migration 11. The reused function raises on TG_OP alone (no
+-- NEW, no OLD), which is what makes it safe at statement level.
+DROP TRIGGER IF EXISTS permit_drawdowns_no_truncate ON public.permit_drawdowns;
+CREATE TRIGGER permit_drawdowns_no_truncate
+  BEFORE TRUNCATE ON public.permit_drawdowns
+  FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_permit_drawdown_mutation();
+
 DROP TRIGGER IF EXISTS permit_drawdowns_no_update_delete ON public.permit_drawdowns;
 CREATE TRIGGER permit_drawdowns_no_update_delete
   BEFORE UPDATE OR DELETE ON public.permit_drawdowns
@@ -579,9 +589,9 @@ CREATE POLICY permit_drawdowns_insert ON public.permit_drawdowns
 -- -----------------------------------------------------------------------------
 -- 10. Grants
 -- -----------------------------------------------------------------------------
-REVOKE ALL ON public.licences         FROM PUBLIC, anon;
-REVOKE ALL ON public.permits          FROM PUBLIC, anon;
-REVOKE ALL ON public.permit_drawdowns FROM PUBLIC, anon;
+REVOKE ALL ON public.licences         FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.permits          FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.permit_drawdowns FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.licences TO authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.permits  TO authenticated, service_role;

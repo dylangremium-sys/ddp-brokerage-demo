@@ -289,7 +289,7 @@ CREATE POLICY security_settings_write ON public.security_settings
   FOR ALL TO authenticated
   USING (public.is_ddp_admin()) WITH CHECK (public.is_ddp_admin());
 
-REVOKE ALL ON public.security_settings FROM PUBLIC, anon;
+REVOKE ALL ON public.security_settings FROM PUBLIC, anon, authenticated;
 -- No DELETE for anyone: removing the row is not a supported way to change the
 -- setting, and the missing-row default exists to make deletion safe, not useful.
 GRANT SELECT, INSERT, UPDATE ON public.security_settings TO authenticated, service_role;
