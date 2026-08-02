@@ -380,6 +380,125 @@ added. Out of scope here, worth a separate look.
 
 ---
 
+### BG-005 — Migration 30, server-authoritative procurement overrides (audit F2)
+
+
+| Field | Value |
+|---|---|
+| **Event** | Apply `30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_HARDENING.sql` to production |
+| **Proposed date** | 2026-08-02 |
+| **Operator** | Repository owner, via the Supabase SQL editor |
+| **Authorisation** | **GRANTED** by the release owner on 2026-08-02, explicitly and in advance, authorising PR #111. The merge was executed by the assistant on that instruction; the authorising decision is the owner's, the mechanical act is not. Recorded **before** execution per §3. |
+| **Closes** | Audit finding **F2** |
+
+**Why**
+
+RISK-STATUS and REQUIREMENT-STATUS overrides are currently written to
+`localStorage` only — in Supabase mode as well as demo mode. They have no
+server-side record, no recorded approver, are invisible to every other
+administrator, and are destroyed by signing out. The application already carries
+the code to use a server table and falls back to local storage only because the
+table does not exist. This migration provides it.
+
+This is the same condition the `BrowserOnlyProvenanceNotice` component warns
+about on screen. That notice exists because this migration was never applied.
+
+**(a) Exact statements to run**
+
+The full contents of `30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_HARDENING.sql`,
+unmodified. No split is needed — it is additive throughout.
+
+| Creates | Detail |
+|---|---|
+| `public.risk_overrides` | new table, RLS enabled |
+| `public.requirement_overrides` | new table, RLS enabled |
+| 4 indexes | on the new tables |
+| 2 trigger functions + 2 triggers | block `UPDATE`/`DELETE` — append-only |
+| 4 policies | admin `SELECT` and `INSERT` only |
+| 2 views | `*_overrides_current` |
+
+**No existing object is altered.** Every `DROP` in the file is an
+`IF EXISTS` guard on an object the same file creates (idempotency), and every
+`REVOKE` is scoped to the two new tables. Both new tables carry a foreign key to
+`public.profiles`, which is present.
+
+**(b) Pre-state evidence** — measured `2026-08-02T07:36:22Z`, read-only via `ddp_ro`:
+
+| Item | Pre-state |
+|---|---|
+| `risk_overrides` | **ABSENT** |
+| `requirement_overrides` | **ABSENT** |
+| `risk_overrides_current` | **ABSENT** |
+| `prevent_risk_override_mutation` | **ABSENT** |
+| `public.profiles` (FK target) | present |
+| public functions | 20 |
+| non-internal triggers | 23 |
+
+Expected post-state: both tables and both views present, public functions
+20 → 22, non-internal triggers 23 → 25.
+
+**(c) Rollback**
+
+`30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_ROLLBACK.sql`, unmodified.
+
+**Exercised** on a disposable PostgreSQL 18.4 cluster on 2026-08-02: it removed
+both tables cleanly with no residue. Because this migration is purely additive,
+the rollback is strictly "remove what was added" — nothing is taken away that
+would need restoring.
+
+Any override rows recorded before a rollback would be lost with the tables. That
+is the same exposure they have today in `localStorage`, not a new one.
+
+**(d) Operator** — repository owner, Supabase SQL editor.
+
+---
+
+**Rehearsal result** (disposable PG 18.4, 2026-08-02)
+
+| Check | Result |
+|---|---|
+| Applied twice in succession | OK — idempotent |
+| Both tables, both views created | OK |
+| RLS enabled on both | OK |
+| `anon` holds no privilege | OK |
+| `UPDATE` an override row | **blocked** — append-only trigger holds |
+| `DELETE` an override row | **blocked** — append-only trigger holds |
+| `30_..._VERIFY.sql` | **9/9 passed** |
+| Rollback | clean, no residue |
+
+**Risk assessment**
+
+*No deploy is required and none should be made.* The application code is already
+live and detects the tables' absence narrowly (`42P01` / `PGRST205`), degrading to
+local storage. Once the tables exist it switches to the server automatically.
+
+*What changes for an operator:* new overrides gain a server record with a named
+approver, visible to other administrators and surviving sign-out. The on-screen
+"exists only in this browser" notice stops appearing for them.
+
+*What does NOT change:* overrides already recorded in a browser stay there. The
+store keeps loading `localStorage` for backward compatibility, and this migration
+does not migrate them. Anyone relying on an existing override should expect it to
+remain browser-local until it is re-recorded.
+
+*Untested path:* the application's server-write path for overrides has never run
+against a real table anywhere. The rehearsal proves the schema, the append-only
+guarantee and the policies; it does not prove the client writes to it correctly.
+That should be confirmed by recording one override in the admin UI after applying,
+and checking it lands.
+
+*If it fails:* the file is wrapped in a transaction, so production is unchanged.
+
+**Effect on §4 close-of-freeze values**
+
+| §4 value | Before | After |
+|---|---|---|
+| public functions | 20 | 22 |
+| non-internal triggers | 23 | 25 |
+| anon-satisfiable INSERT policies | 0 | **0** (unchanged) |
+
+---
+
 ### Process note
 
 No further production change has been made during this freeze. This log is now the
