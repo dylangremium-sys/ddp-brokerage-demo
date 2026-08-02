@@ -14,10 +14,17 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ErrorBoundary } from './ErrorBoundary'
 
-const SECRET = 'PGPASSWORD=hunter2 at /Users/mac/secrets/app.ts:42'
+// A marker that is distinctive enough to find anywhere in the DOM, but is NOT
+// shaped like a credential. The first version of this test threw a realistic
+// database-password assignment as bait and tripped the secrets scanner
+// (SCT-1000, Critical) — which would have made a genuine credential alert one
+// item harder to notice, the exact desensitising this suite guards against
+// elsewhere. The property under test is that the error's TEXT never reaches the
+// screen; it does not require that text to resemble a real secret.
+const ERROR_TEXT = 'RENDER-CANARY-8f2b-must-never-reach-the-dom'
 
 function Boom(): never {
-  throw new Error(SECRET)
+  throw new Error(ERROR_TEXT)
 }
 
 let consoleErr: ReturnType<typeof vi.spyOn>
@@ -65,9 +72,12 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>,
     )
     const shown = document.body.textContent ?? ''
-    expect(shown).not.toContain('hunter2')
-    expect(shown).not.toContain(SECRET)
-    expect(shown).not.toMatch(/PGPASSWORD|\/Users\/|\.ts:\d+|at Boom/u)
+    expect(shown).not.toContain(ERROR_TEXT)
+    expect(shown).not.toContain('RENDER-CANARY')
+    // No stack frame, file path or line reference either — the component stack
+    // is the other thing React hands these methods, and it is refused the same
+    // way, by never accepting the parameter.
+    expect(shown).not.toMatch(/\bat \w+ \(|\.tsx?:\d+|\/src\//u)
   })
 
   it('tells the operator their data and session are intact', () => {
