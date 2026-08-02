@@ -388,7 +388,7 @@ added. Out of scope here, worth a separate look.
 | **Event** | Apply `30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_HARDENING.sql` to production |
 | **Proposed date** | 2026-08-02 |
 | **Operator** | Repository owner, via the Supabase SQL editor |
-| **Authorisation** | *PENDING — to be granted by the release owner by approving PR __PRNUM__, before execution, per §3.* |
+| **Authorisation** | *PENDING — to be granted by the release owner by approving PR #111, before execution, per §3.* |
 | **Closes** | Audit finding **F2** |
 
 **Why**
