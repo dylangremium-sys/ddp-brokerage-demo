@@ -48,7 +48,7 @@ function adminDeps(
     // divergence is the point.
     getLegalUpdate: async (id) =>
       id === 'lu-1' ? makeUpdate({ id: 'lu-1', ...storedOverrides }) : null,
-    reserveAiSummarySlot: async () => ({ allowed: true }),
+    reserveAiSummarySlot: () => Promise.resolve({ allowed: true }),
     provider,
   }
 }
