@@ -267,6 +267,119 @@ treated as intact when only part of it is.
 
 ---
 
+### BG-004 — Migration 36 **part 2 of 2** (the privilege change), closing R5
+
+
+| Field | Value |
+|---|---|
+| **Event** | Apply §2 of `36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING.sql` (lines 166–181) to production |
+| **Proposed date** | 2026-08-02 |
+| **Operator** | Repository owner, via the Supabase SQL editor |
+| **Authorisation** | **GRANTED** by the release owner on 2026-08-02, explicitly and in advance, authorising PR #110. The merge was executed by the assistant on that instruction; the authorising decision is the owner's, the mechanical act is not. Recorded **before** execution per §3 — no statement from this entry had been run at the time of merge. |
+| **Closes** | Audit finding **R5** |
+
+**The migration's own ordering precondition — all four now satisfied**
+
+Its header states a required order "no exceptions". Each is met and evidenced:
+
+| # | Required | Status |
+|---|---|---|
+| 1 | Deploy the application carrying `api/public/access-request.ts` | ✅ production serves `9c0f69b` |
+| 2 | `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set in Vercel Production | ✅ both present |
+| 3 | Confirm the endpoint accepts a submission end to end | ✅ HTTP 200; ledger 0→2; enquiries 6→7 |
+| 4 | Only then apply this migration | ← this entry |
+
+The header's warning that `SUPABASE_SERVICE_ROLE_KEY` is unset was written
+2026-07-28 and is **stale**; it has since been set.
+
+**(a) Exact statements to run**
+
+`~/Desktop/DDP_INTAKE_THROTTLE/STEP3_close_browser_path.sql` — lines 166–181 of the
+migration, wrapped in `BEGIN … COMMIT`, plus the idempotency guard from commit
+`8748284` (already merged via PR #106).
+
+| Statement | Effect |
+|---|---|
+| `DROP POLICY "farmer_access_requests: public submit"` | removes the anon INSERT policy |
+| `DROP POLICY IF EXISTS "… server submit"` | idempotency guard — makes a re-paste safe |
+| `CREATE POLICY "farmer_access_requests: server submit"` | INSERT for `service_role`, same WITH CHECK as before |
+| `REVOKE INSERT … FROM anon` | removes the table-level grant |
+| `REVOKE INSERT … FROM authenticated` | same |
+
+Nothing else is touched. `admin read`, `admin triage`, the stamp trigger, the
+throttle ledger and both functions are all untouched.
+
+**(b) Pre-state evidence** — measured `2026-08-02T06:37:23Z`, read-only via `ddp_ro`:
+
+| Item | Pre-state |
+|---|---|
+| Policies on `farmer_access_requests` | `admin read` / `admin triage` / **`public submit`** |
+| Grants | `anon=arwd`, `authenticated=arwd`, `service_role=arwdDxtm` |
+| INSERT policies naming `anon` | **1** (`public submit`) |
+| `anon` holds INSERT on `farmer_access_requests` | **true** |
+| `reserve_public_intake_slot` | present (BG-003) |
+| `public_intake_attempts` | present (BG-003) |
+
+Expected post-state: `public submit` replaced by `server submit`; INSERT policies
+naming `anon` **1 → 0**; `anon` INSERT on this table **true → false**; throttle
+objects unchanged.
+
+**(c) Rollback**
+
+`~/Desktop/DDP_INTAKE_THROTTLE/UNDO_step3_only.sql` — **not** the migration's own
+rollback file.
+
+This distinction is load-bearing. `36_..._ROLLBACK.sql` also drops the throttle
+ledger and both functions. Running it now would tear out the BG-003 work *and*
+leave the deployed application calling functions that no longer exist — converting
+a reversible privilege change into an outage. The scoped file restores only the
+policy and the grants.
+
+**Exercised**, on a disposable PostgreSQL 18.4 cluster reproducing today's exact
+production shape: browser blocked after apply, server still permitted, throttle
+functions still present after undo, and both files safe to run twice.
+
+**(d) Operator** — repository owner, Supabase SQL editor.
+
+---
+
+**Risk assessment**
+
+*Expected impact:* none visible. The deployed bundle contains the endpoint call
+once and **zero** direct inserts to `farmer_access_requests` — verified against the
+live JavaScript at `9c0f69b`. Nothing in production still uses the path being
+closed.
+
+*If the application were still using it:* the form would fail closed with a
+`503` and the honest message "contact the DDP team directly" — not a silent loss.
+
+*If it fails:* wrapped in a transaction, so production is left unchanged.
+
+*If run twice:* safe, verified. The SQL editor hides `RAISE NOTICE`, so re-pasting
+is the natural response to a silent success.
+
+**Effect on §4 close-of-freeze values**
+
+| §4 value | Before | After |
+|---|---|---|
+| anon-satisfiable INSERT policies | 1 | **0** |
+| `anon` INSERT grant on `farmer_access_requests` | held | **revoked** |
+| non-internal triggers | 23 | 23 |
+| public functions | 20 | 20 |
+
+This restores the "0 anon-satisfiable write policies" expectation that BG-001 had
+to re-baseline away. G2.5 named the single exception; after this there is none.
+
+**What this does NOT do**
+
+`anon` retains table-level INSERT on 23 other tables from Supabase's baseline
+defaults. Those are inert — no permissive INSERT policy admits `anon` on any of
+them — but they are the reason the migration revokes the grant as well as dropping
+the policy: a grant with no policy re-opens the moment any permissive policy is
+added. Out of scope here, worth a separate look.
+
+---
+
 ### Process note
 
 No further production change has been made during this freeze. This log is now the
