@@ -170,8 +170,8 @@ listing-scoped successor.
 
 ## Seam 7 — commercial events do not go in `compliance_audit_log`
 
-**Mostly done. `commercial_audit_log` exists on `main` (PR #115, `ae057bb`); five events have not
-moved yet — see "What is left" below.**
+**Mostly done. `commercial_audit_log` exists on `main` (PR #115, `ae057bb`); the remaining four
+events move in migration 45, on branch `feature/seam7-audit-log-split` — see "What is left" below.**
 
 `compliance_audit_log.action` was a closed 15-value regulatory vocabulary, and its closedness was
 the point: it is an evidentiary record, and an evidentiary record that absorbs operational noise is
@@ -223,15 +223,27 @@ applied migration is history, not a draft. Do not read #115 as a precedent for e
 
 ### What is left
 
-Five events specified above as moving are **still in `compliance_audit_log` on `main`**:
+**Nothing, once migration 45 lands.** `45_SEAM7_ORGANISATION_EVENT_SPLIT_*`
+(branch `feature/seam7-audit-log-split`) completes the split:
 
-`organisation_created`, `organisation_updated`, `organisation_verification_changed`,
-`organisation_membership_granted`, `organisation_membership_revoked`
+- `organisation_created` and `organisation_updated` are re-pointed to `commercial_audit_log`
+  by replacing `fn_audit_organisation_change()`;
+- `organisation_membership_granted` / `organisation_membership_revoked` move by vocabulary only —
+  measured 2026-08-02, **nothing writes them anywhere in the repository** and
+  `organisation_memberships` carries no audit trigger, so there is no behaviour to move;
+- `organisation_verification_changed` **stays** in `compliance_audit_log`;
+- `compliance_audit_log`'s vocabulary is **narrowed from 30 values to 26** — the first narrowing in
+  the series, and the thing that makes this seam enforceable rather than merely stated.
 
-Under the rule stated above, four of those five move to `commercial_audit_log` and
-`organisation_verification_changed` stays — whether a counterparty is verified is a compliance fact.
-Completing that is the remaining Seam 7 work. It is smaller than the reservation split and carries
-the same deadline: it is cheap while nothing is applied and expensive afterwards.
+**It corrects forward rather than amending 39/42 in place, because the licence above has expired.**
+Migrations 39–44 were applied to staging `szqo…` on 2026-08-02. In-place amendment of an applied
+migration is exactly what the paragraph above forbids.
+
+Migration 45 **refuses to run** if `compliance_audit_log` already holds any of the four moving
+actions, rather than copying rows across and deleting the originals — that would mean mutating an
+append-only evidentiary log, and per the note below it would produce a record that looks clean and
+is not. Measured 2026-08-02: production's vocabulary is still the original 15 values, so it cannot
+physically hold such a row, and the abort is therefore a tripwire rather than an obstacle.
 
 **The window matters.** Once these rows exist in a database, "the regulatory log contains only
 regulatory events" stops being true, and no later migration makes it true again.
