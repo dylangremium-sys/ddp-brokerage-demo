@@ -1,0 +1,63 @@
+{
+  "id": "40_licences_permits",
+  "title": "Migration 40 — licences, permits and permit draw-down",
+  "description": "Applies migration 39 then 40, runs 40's VERIFY A-H, then rolls back 40 on a disposable PostgreSQL 18 cluster. Migration 40 makes three of the export gate's seven conditions askable for the first time: the exporter's licence is in force, the buyer's import permit is in force and matches the regime, and that permit has quantity headroom left. Three design choices carry the weight and are each asserted behaviourally rather than by inspection -- regime is a first-class column so a flower permit can never be compared against an extract consignment (D1); expiry is COMPUTED from expires_on and there is deliberately no 'expired' state, because this repository has no scheduler and a stored expiry flag would be only as fresh as the sweeper that never runs (D4); and draw-down is an append-only ledger with headroom as a SUM under a FOR UPDATE row lock, not a mutable remaining_kg column that two concurrent shipments could both read before either wrote. The dual-calendar CHECK asserts the 543 offset in the database, so a permit keyed from the wrong calendar is rejected at INSERT rather than discovered at the port.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-39",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-40",
+      "file": "40_LICENCES_AND_PERMITS_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "40_LICENCES_AND_PERMITS_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F", "G", "H"],
+    "expectedPassCount": 8,
+    "note": "All eight sections assert. B proves the 543 guard rejects BOTH directions of the error (a BE year never converted and one converted twice) and also that a CORRECT 2026/2569 pair is still accepted -- a constraint that rejects everything would otherwise pass a negative-only test. C proves expiry is derived: a licence lapsed by one day reads invalid while its stored state still says 'active'. F is the NaN guard: PostgreSQL sorts numeric NaN ABOVE every real number, so a lower-bound-only CHECK admits it, and one NaN in a permit limit turns every later headroom comparison false and silently blocks every shipment against that permit. G is behavioural under SET ROLE authenticated. NOT read-only -- wrapped in BEGIN..ROLLBACK, must not run against Production under the change freeze. NOT PROVEN HERE: that the FOR UPDATE lock serialises genuinely concurrent draws; a single session cannot demonstrate that and it needs a two-session test on staging."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "40_LICENCES_AND_PERMITS_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.farms",
+      "public.compliance_audit_log",
+      "public.is_ddp_admin"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": ["public.licences", "public.permits", "public.permit_drawdowns"],
+      "functions": [
+        "public.licence_is_valid",
+        "public.permit_is_valid",
+        "public.permit_drawn_kg",
+        "public.permit_headroom_kg",
+        "public.fn_enforce_permit_headroom",
+        "public.prevent_permit_drawdown_mutation"
+      ],
+      "policies": ["licences_select", "permits_select", "permit_drawdowns_select"]
+    },
+    "intact": {
+      "tables": ["public.organisations", "public.profiles", "public.compliance_audit_log"],
+      "functions": ["public.is_ddp_admin", "public.has_organisation_membership", "auth.uid"],
+      "authUsersMinRows": 2
+    }
+  }
+}
