@@ -85,6 +85,22 @@ CREATE TABLE IF NOT EXISTS public.reservations (
   id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 
   inventory_batch_id     uuid NOT NULL REFERENCES public.inventory_batches(id) ON DELETE RESTRICT,
+
+  -- SEAM 6 PLUG POINT (docs/OPTION_B_SEAM_CONTRACT.md).
+  --
+  -- A batch row carries farm-identifying columns, so a buyer-facing record bound
+  -- to it leaves the double-blind rule resting on RLS alone with nothing
+  -- structural underneath. Buyers are meant to transact against a LISTING.
+  --
+  -- `listings` does not exist yet, so this is nullable and unconstrained — the
+  -- same shape as the consignment_ref plug points in migrations 40 and 42. While
+  -- there are no listings, inventory_batch_id stays authoritative and this is
+  -- NULL. When listings lands, new reservations set both, listing_id becomes the
+  -- buyer-facing reference, and the change is a BACKFILL of a column that already
+  -- exists rather than a migration of live reservations. That is the entire
+  -- reason to add it now, while it costs nothing.
+  listing_id             uuid,
+
   buyer_organisation_id  uuid NOT NULL REFERENCES public.organisations(id) ON DELETE RESTRICT,
 
   -- Upper bound is not decoration: PostgreSQL sorts numeric NaN ABOVE every real

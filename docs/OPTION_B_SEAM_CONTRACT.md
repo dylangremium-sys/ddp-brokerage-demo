@@ -129,8 +129,13 @@ names for things that already exist on `main`.
 
 **Carried across from the superseded proposal, because it was right:** approval must be a gate,
 not a flag, and suspension must remove access immediately without touching a grant row.
-`organisations.verification_state` currently admits only `unverified | verified | rejected`.
-**Add `suspended`**, and make every buyer-side read predicate return true only for `verified`. A
+`organisations.verification_state` **already admits five values** —
+`unverified | in_review | verified | rejected | suspended` — as merged in migration 39
+(`39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql`). An earlier draft of this seam, and §1.3/§2.1 of
+the target architecture, both record it as admitting only three and needing `suspended` added.
+That is wrong and no migration is required; the correction is kept here because "needs one" reads
+as outstanding work. What remains outstanding is the *predicate* half: make every buyer-side read
+predicate return true only for `verified`. A
 buyer whose organisation is suspended loses catalogue and reservation read access at once, with no
 row deleted and no grant revoked.
 
