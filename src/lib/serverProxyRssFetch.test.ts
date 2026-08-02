@@ -48,7 +48,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: async () => body,
+    json: () => Promise.resolve(body),
   } as unknown as Response
 }
 
@@ -66,7 +66,7 @@ describe('createServerProxyRssFetch — the request it sends', () => {
   it('POSTs the SOURCE ID and never the URL', async () => {
     const { impl, calls } = stubFetch(jsonResponse(successPayload()))
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
-      getAccessToken: async () => 'token-abc',
+      getAccessToken: () => Promise.resolve('token-abc'),
       fetchImpl: impl,
     })
     await proxy(URL_, init)
@@ -84,7 +84,7 @@ describe('createServerProxyRssFetch — the request it sends', () => {
   it('sends the caller bearer token', async () => {
     const { impl, calls } = stubFetch(jsonResponse(successPayload()))
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
-      getAccessToken: async () => 'token-abc',
+      getAccessToken: () => Promise.resolve('token-abc'),
       fetchImpl: impl,
     })
     await proxy(URL_, init)
@@ -96,7 +96,7 @@ describe('createServerProxyRssFetch — the request it sends', () => {
   it('fails closed when there is no session, without calling the endpoint', async () => {
     const { impl, calls } = stubFetch(jsonResponse(successPayload()))
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
-      getAccessToken: async () => null,
+      getAccessToken: () => Promise.resolve(null),
       fetchImpl: impl,
     })
     await expect(proxy(URL_, init)).rejects.toThrow(/no active session/)
@@ -107,7 +107,7 @@ describe('createServerProxyRssFetch — the request it sends', () => {
     const { impl, calls } = stubFetch(jsonResponse(successPayload()))
     const controller = new AbortController()
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
-      getAccessToken: async () => 'token-abc',
+      getAccessToken: () => Promise.resolve('token-abc'),
       fetchImpl: impl,
     })
     await proxy(URL_, { ...init, signal: controller.signal })
@@ -119,7 +119,7 @@ describe('createServerProxyRssFetch — the response it presents', () => {
   async function respond(overrides: Record<string, unknown> = {}) {
     const { impl } = stubFetch(jsonResponse(successPayload(overrides)))
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
-      getAccessToken: async () => 'token-abc',
+      getAccessToken: () => Promise.resolve('token-abc'),
       fetchImpl: impl,
     })
     return await proxy(URL_, init)
@@ -168,7 +168,7 @@ describe('createServerProxyRssFetch — failure handling', () => {
   async function failing(body: unknown, status: number) {
     const { impl } = stubFetch(jsonResponse(body, status))
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
-      getAccessToken: async () => 'token-abc',
+      getAccessToken: () => Promise.resolve('token-abc'),
       fetchImpl: impl,
     })
     return proxy(URL_, init)
@@ -191,7 +191,7 @@ describe('createServerProxyRssFetch — failure handling', () => {
       },
     } as unknown as Response)
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
-      getAccessToken: async () => 'token-abc',
+      getAccessToken: () => Promise.resolve('token-abc'),
       fetchImpl: impl,
     })
     await expect(proxy(URL_, init)).rejects.toThrow(/502/)
@@ -207,7 +207,7 @@ describe('createServerProxyRssFetch — failure handling', () => {
     // parsing would attribute items to the wrong source.
     const { impl } = stubFetch(jsonResponse(successPayload({ requestedUrl: 'https://elsewhere.example/feed' })))
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
-      getAccessToken: async () => 'token-abc',
+      getAccessToken: () => Promise.resolve('token-abc'),
       fetchImpl: impl,
     })
     await expect(proxy(URL_, init)).rejects.toThrow(/different URL/)

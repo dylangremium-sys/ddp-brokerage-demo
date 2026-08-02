@@ -102,7 +102,9 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         now: () => new Date().toISOString(),
       })
 
-      return async (s: RegulatorySource) =>
+      // Not `async`: both branches already return a promise, so awaiting here
+      // would only add a tick and an extra rejection hop.
+      return (s: RegulatorySource) =>
         connectorKindForSource(s) === 'html'
           ? executeHtmlWatchConnector(s, allowedHosts, fetchImpl, { userAgent: USER_AGENT })
           : executeRssConnector(s, allowedHosts, fetchImpl, { userAgent: USER_AGENT })

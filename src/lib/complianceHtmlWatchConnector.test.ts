@@ -13,7 +13,7 @@ import {
   HTML_WATCH_WINDOW_CHARS,
   HTML_WATCH_TERMS,
 } from './complianceHtmlWatchConnector'
-import type { RssFetchImpl } from './complianceRssConnector'
+import type { RssFetchImpl, RssConnectorResult } from './complianceRssConnector'
 import { buildMonitoringDecision, type SourceContentSnapshot } from './complianceSourceMonitoring'
 import type { RegulatorySource } from '../types'
 
@@ -32,15 +32,27 @@ const SOURCE: RegulatorySource = {
 
 const OPTS = { userAgent: 'test-agent', now: () => '2026-08-02T12:00:00.000Z' }
 
+/** Returns the single watched item, failing the test if the connector did not
+ *  produce one. Replaces `watchedItem(result)`: a non-null assertion would
+ *  turn "the connector returned a failure" into an unreadable TypeError
+ *  several lines away from the cause. */
+function watchedItem(result: RssConnectorResult) {
+  expect(result.ok, `connector failed: ${result.reason}`).toBe(true)
+  const items = result.feed?.items ?? []
+  expect(items).toHaveLength(1)
+  return items[0]
+}
+
+
 function htmlFetch(body: string, opts: { status?: number; contentType?: string; contentLength?: string } = {}): RssFetchImpl {
   const { status = 200, contentType = 'text/html; charset=utf-8' } = opts
   const map = new Map<string, string>([['content-type', contentType]])
   if (opts.contentLength) map.set('content-length', opts.contentLength)
-  return async () => ({
+  return () => Promise.resolve({
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: (n: string) => map.get(n.toLowerCase()) ?? null },
-    text: async () => body,
+    headers: { get: (name: string) => map.get(name.toLowerCase()) ?? null },
+    text: () => Promise.resolve(body),
   })
 }
 
@@ -91,7 +103,7 @@ describe('executeHtmlWatchConnector — change detection', () => {
     expect(result.decisions[0].kind).toBe('unchanged')
   })
 
-  it('uses a stable item id, so the previous snapshot is found across runs', async () => {
+  it('uses a stable item id, so the previous snapshot is found across runs', () => {
     expect(htmlWatchItemId(SOURCE)).toBe('src-thai-fda::page')
     // Two independent runs must agree, or every run looks like a first sighting.
     expect(htmlWatchItemId({ ...SOURCE })).toBe(htmlWatchItemId(SOURCE))
@@ -120,14 +132,14 @@ describe('executeHtmlWatchConnector — noise suppression on long pages', () => 
       ...OPTS,
       previousSnapshots: await snapshotFor(
         // What the previous run would have stored: the selected window, not the page.
-        (await executeHtmlWatchConnector(SOURCE, [HOST], htmlFetch(ministryPage(1)), OPTS)).feed!.items[0].rawText,
+        watchedItem(await executeHtmlWatchConnector(SOURCE, [HOST], htmlFetch(ministryPage(1)), OPTS)).rawText,
       ),
     })
     expect(result.decisions[0].kind).toBe('unchanged')
   })
 
   it('still fires when the watched text itself changes', async () => {
-    const before = (await executeHtmlWatchConnector(SOURCE, [HOST], htmlFetch(ministryPage(1)), OPTS)).feed!.items[0].rawText
+    const before = watchedItem(await executeHtmlWatchConnector(SOURCE, [HOST], htmlFetch(ministryPage(1)), OPTS)).rawText
     const changedPage = ministryPage(1).replace('cannabis export licence requirements', 'cannabis export licence SUSPENSION')
     const result = await executeHtmlWatchConnector(SOURCE, [HOST], htmlFetch(changedPage), {
       ...OPTS,
@@ -142,13 +154,13 @@ describe('executeHtmlWatchConnector — noise suppression on long pages', () => 
     // fail with oversized_evidence — the same enabled-dead-end shape PR #104
     // had to remove from the source-URL path.
     const result = await executeHtmlWatchConnector(SOURCE, [HOST], htmlFetch(ministryPage(1)), OPTS)
-    expect(result.feed!.items[0].rawText.length).toBeLessThanOrEqual(HTML_WATCH_WINDOW_CHARS)
+    expect(watchedItem(result).rawText.length).toBeLessThanOrEqual(HTML_WATCH_WINDOW_CHARS)
   })
 
   it('carries verbatim source text, never fabricated text', async () => {
     const page = ministryPage(1)
     const result = await executeHtmlWatchConnector(SOURCE, [HOST], htmlFetch(page), OPTS)
-    for (const line of result.feed!.items[0].rawText.split('\n')) {
+    for (const line of watchedItem(result).rawText.split('\n')) {
       expect(page).toContain(line)
     }
   })
@@ -242,14 +254,14 @@ describe('executeHtmlWatchConnector — how it describes itself', () => {
     // This title is the first thing a reviewer reads in the Review Queue. It
     // must not assert that a law changed — only that a page did.
     const result = await executeHtmlWatchConnector(SOURCE, [HOST], htmlFetch('Cannabis rules.'), OPTS)
-    const title = result.feed!.items[0].title ?? ''
+    const title = watchedItem(result).title ?? ''
     expect(title).toContain('watched page content changed')
     expect(title).not.toMatch(/law|regulation changed|new rule/i)
   })
 
   it('links the candidate back to the source page', async () => {
     const result = await executeHtmlWatchConnector(SOURCE, [HOST], htmlFetch('Cannabis rules.'), OPTS)
-    expect(result.feed!.items[0].link).toBe(SOURCE.url)
+    expect(watchedItem(result).link).toBe(SOURCE.url)
   })
 
   it('marks the feed kind as html', async () => {

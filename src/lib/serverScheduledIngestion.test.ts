@@ -51,12 +51,12 @@ function okConnectorResult(sourceId: string): RssConnectorResult {
 function makeRepository(overrides: Partial<ServerIngestionRepository> = {}): ServerIngestionRepository {
   let runSeq = 0
   return {
-    fetchActiveSources: async () => [SOURCE],
-    fetchKnownIdentity: async () => ({ contentHashes: [], sourceExternalIds: [] }),
-    openRun: async () => ({ id: `run-${++runSeq}` }),
-    closeRun: async () => ({}),
+    fetchActiveSources: () => Promise.resolve([SOURCE]),
+    fetchKnownIdentity: () => Promise.resolve(({ contentHashes: [], sourceExternalIds: [] })),
+    openRun: () => Promise.resolve(({ id: `run-${++runSeq}` })),
+    closeRun: () => Promise.resolve(({})),
     insertItem: async () => {},
-    insertCandidate: async () => ({ ok: true, legalUpdate: { id: 'lu-1' } as never }),
+    insertCandidate: () => Promise.resolve(({ ok: true, legalUpdate: { id: 'lu-1' } as never })),
     ...overrides,
   }
 }
@@ -65,7 +65,7 @@ function makeDeps(overrides: Partial<ScheduledIngestionDeps> = {}): ScheduledIng
   return {
     cronSecret: SECRET,
     repository: makeRepository(),
-    buildRunConnector: () => async (source: RegulatorySource) => okConnectorResult(source.id),
+    buildRunConnector: () => (source: RegulatorySource) => Promise.resolve(okConnectorResult(source.id)),
     now: () => NOW,
     ...overrides,
   }
@@ -252,7 +252,7 @@ describe('runScheduledIngestion — the run itself', () => {
   it('summarises the batch outcome', async () => {
     const deps = makeDeps({
       repository: makeRepository({
-        fetchActiveSources: async () => [SOURCE, { ...SOURCE, id: 'src-2', url: 'https://eur-lex.europa.eu/x.rss' }],
+        fetchActiveSources: () => Promise.resolve([SOURCE, { ...SOURCE, id: 'src-2', url: 'https://eur-lex.europa.eu/x.rss' }]),
       }),
     })
     const result = await runScheduledIngestion(authHeaders, 'GET', deps)

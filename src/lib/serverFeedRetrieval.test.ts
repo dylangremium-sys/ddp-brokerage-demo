@@ -56,11 +56,11 @@ function retrieved(overrides: Partial<SourceRetrievalRecord> = {}): SourceRetrie
 
 function makeDeps(overrides: Partial<ServerFeedRetrievalDeps> = {}): ServerFeedRetrievalDeps {
   return {
-    authenticate: async () => ({ userId: 'user-1' }),
-    getProfileRole: async () => 'ddp_admin',
-    getRegulatorySource: async () => STORED_SOURCE,
-    reserveFeedRetrievalSlot: async () => ({ allowed: true }),
-    retrieve: async () => retrieved(),
+    authenticate: () => Promise.resolve(({ userId: 'user-1' })),
+    getProfileRole: () => Promise.resolve('ddp_admin'),
+    getRegulatorySource: () => Promise.resolve(STORED_SOURCE),
+    reserveFeedRetrievalSlot: () => Promise.resolve(({ allowed: true })),
+    retrieve: () => Promise.resolve(retrieved()),
     now: () => NOW,
     ...overrides,
   }
@@ -229,7 +229,7 @@ describe('handleFeedRetrieveRequest — the target is always the stored URL', ()
     const result = await handleFeedRetrieveRequest(
       request(validBody),
       makeDeps({
-        getRegulatorySource: async () => ({ ...STORED_SOURCE, isActive: false }),
+        getRegulatorySource: () => Promise.resolve(({ ...STORED_SOURCE, isActive: false })),
         retrieve,
       }),
     )
@@ -243,7 +243,7 @@ describe('handleFeedRetrieveRequest — the target is always the stored URL', ()
     const result = await handleFeedRetrieveRequest(
       request(validBody),
       makeDeps({
-        getRegulatorySource: async () => ({ ...STORED_SOURCE, url: 'not a url' }),
+        getRegulatorySource: () => Promise.resolve(({ ...STORED_SOURCE, url: 'not a url' })),
         retrieve,
       }),
     )
