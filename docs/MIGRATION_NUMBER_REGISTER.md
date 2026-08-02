@@ -67,6 +67,18 @@ those migrations create are present. See `docs/runbooks/EXPORT_HUB_FOUNDATION_AP
 | 32 | `32_COA_REVIEW_INTEGRITY_*` | PR **#95** `feature/coa-source-bound-watchtower-review` | open, **draft** |
 | 33 | `33_COA_REVIEW_ATOMICITY_*` | PR **#95** `feature/coa-source-bound-watchtower-review` | open, **draft** |
 | ~~45~~ | ~~`45_COMMERCIAL_AUDIT_LOG_*`~~ | ~~local branch `fix/commercial-audit-log`~~ | **claim released — see below** |
+| 45 | `45_SEAM7_ORGANISATION_EVENT_SPLIT_*` | branch `feature/seam7-audit-log-split` | pushed, **re-claimed 2026-08-02** |
+
+**45 was re-claimed the same day it was released.** The released claim was for the *reservation* half
+of Seam 7, which #115 delivered by amending 44 in place. The re-claim is for the half #115 left
+behind: moving `organisation_created` / `organisation_updated` /
+`organisation_membership_granted` / `organisation_membership_revoked` out of `compliance_audit_log`
+and **narrowing** its vocabulary from 30 values to 26. `organisation_verification_changed` stays.
+
+**Why a new number rather than another in-place amendment of 39/42.** The licence #115 relied on —
+"nothing is applied to any database, so there is no history to preserve" — **expired on 2026-08-02**,
+when migrations 39–44 were applied to staging `szqo…`. `docs/OPTION_B_SEAM_CONTRACT.md` states that
+expiry explicitly. An applied migration is history, not a draft.
 
 **27 and 28 are no longer reserved — both landed on `main`** (rows struck 2026-08-02). The earlier
 note that "28 is on PR #73, not PR #44" was correct at the time and is now history; both numbers are
@@ -124,10 +136,11 @@ into `main`**. Check there before rebuilding.
 
 ## Free
 
-**45 and upward.** (Briefly 46 on 2026-08-02, while 45 was claimed; the claim was released the same
-day — see "45 — claimed, then released" above.)
+**46 and upward.** 45 was released on 2026-08-02 and then **re-claimed the same day** by
+`feature/seam7-audit-log-split` for the organisation event split — the work the release note below
+says was still outstanding. See the Reserved table above.
 
-The floor moved from 37 to 45, briefly to 46, and back to 45 during 2026-08-02: 37 and 38 (storage
+The floor moved from 37 to 45, briefly to 46, back to 45, and then to 46 during 2026-08-02: 37 and 38 (storage
 privacy) landed, 39–43 were allocated by the export-hub foundation and 44 by the marketplace
 reservation ledger — all of which have since merged to `main` — and the Seam 7 correction claimed 45
 and then released it by amending 44 instead. Quoting a free floor of 35 would have invited an author to take a number this very document reserves, recreating
