@@ -41,15 +41,39 @@ BEGIN
       'is missing. Apply 24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql first.';
   END IF;
 
-  IF NOT pg_has_role(current_user, 'supabase_storage_admin', 'MEMBER')
-     AND current_user <> (SELECT tableowner FROM pg_tables
-                          WHERE schemaname = 'storage' AND tablename = 'objects') THEN
+  -- TEST THE CAPABILITY, NOT A PROXY FOR IT.
+  --
+  -- This check previously asserted that a caller not holding membership of
+  -- `supabase_storage_admin` could not create a policy on storage.objects, and
+  -- refused to run. **That assertion is false on hosted Supabase**, measured
+  -- against production on 2026-08-02: `postgres` is NOT a member of that role
+  -- (pg_has_role returns false) and CREATE POLICY on storage.objects SUCCEEDS
+  -- anyway — proven with a rolled-back probe before the migration was applied.
+  --
+  -- The cost of getting this wrong was not theoretical. The false guard blocked
+  -- the whole storage half, and because it named the Supabase dashboard SQL
+  -- editor as the remedy, it sent the owner to a console that ALSO runs as
+  -- `postgres` and fails the same check. It made a working step look like an
+  -- unclearable permissions wall, and that claim was carried into
+  -- docs/runbooks/PRODUCTION_BACKLOG_APPLY_2026-08-02.md as fact.
+  --
+  -- So: attempt the actual operation on a throwaway policy and catch the actual
+  -- error. A capability probe cannot be wrong about the capability. It runs
+  -- inside this migration's own transaction and drops what it creates
+  -- immediately; if the whole migration later rolls back, so does the probe.
+  BEGIN
+    EXECUTE 'DROP POLICY IF EXISTS "zz_mig24_capability_probe" ON storage.objects';
+    EXECUTE 'CREATE POLICY "zz_mig24_capability_probe" ON storage.objects FOR SELECT USING (false)';
+    EXECUTE 'DROP POLICY "zz_mig24_capability_probe" ON storage.objects';
+  EXCEPTION WHEN insufficient_privilege THEN
     RAISE EXCEPTION
-      'migration 24 storage precondition failed: current_user "%" is not a member of '
-      '"supabase_storage_admin", which owns storage.objects. CREATE POLICY would fail. '
-      'Re-run as a role holding that membership (e.g. the Supabase dashboard SQL editor).',
-      current_user;
-  END IF;
+      'migration 24 storage precondition failed: role "%" may not CREATE POLICY on '
+      'storage.objects, which is owned by "%". Re-run as a role that can — note that '
+      'the Supabase dashboard SQL editor also runs as postgres, so it is NOT a remedy '
+      'if postgres is the role that just failed.',
+      current_user,
+      (SELECT tableowner FROM pg_tables WHERE schemaname = 'storage' AND tablename = 'objects');
+  END;
 END
 $precondition$;
 
