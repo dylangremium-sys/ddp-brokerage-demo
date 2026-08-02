@@ -93,7 +93,7 @@ describe('DDPComplianceWatchtower — manual AI draft-summary integration (stati
 
   it('calls no vendor AI SDK and no direct fetch/network for AI in the component', () => {
     expect(SRC).not.toMatch(/from ['"]openai['"]|from ['"]@anthropic/i)
-    // The only fetch wiring in this page is the RSS browser adapter (createBrowserRssFetch);
+    // The only fetch wiring in this page is the RSS server-proxy adapter (createServerProxyRssFetch);
     // the AI path must never introduce a raw fetch/XHR/WebSocket.
     expect(SRC).not.toMatch(/new WebSocket|new XMLHttpRequest/)
   })

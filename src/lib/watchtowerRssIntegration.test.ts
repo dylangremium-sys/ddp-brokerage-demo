@@ -39,10 +39,19 @@ describe('DDPComplianceWatchtower — manual RSS integration (static)', () => {
     expect(SRC.length).toBeGreaterThan(1000)
   })
 
-  it('wires the manual feed check through the orchestration + browser adapter', () => {
+  it('wires the manual feed check through the orchestration + SERVER adapter', () => {
     expect(SRC).toMatch(/handleCheckSourceFeed/)
     expect(SRC).toMatch(/runManualRssMonitoring/)
-    expect(SRC).toMatch(/createBrowserRssFetch/)
+    expect(SRC).toMatch(/createServerProxyRssFetch/)
+  })
+
+  it('no longer reaches a regulator directly from the browser', () => {
+    // The decisive half of the assertion above. Matching only the new name
+    // would still pass if both adapters were wired and one branch quietly kept
+    // using the browser transport — which cannot work: the deployed CSP
+    // restricts connect-src to 'self' and Supabase, so a direct fetch to a
+    // regulator is refused before CORS is consulted.
+    expect(SRC).not.toMatch(/createBrowserRssFetch/)
   })
 
   it('invokes the check only from a click handler, never on mount/effect', () => {
