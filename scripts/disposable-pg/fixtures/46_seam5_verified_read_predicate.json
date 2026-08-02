@@ -1,0 +1,84 @@
+{
+  "id": "46_seam5_verified_read_predicate",
+  "title": "Migration 46 — Seam 5, suspension removes READ access rather than setting a flag",
+  "description": "Applies migrations 39, 44 then 46, runs 46's VERIFY A-G, then rolls back 46 on a disposable PostgreSQL 18 cluster. This fixture exists because migration 46 was merged WITHOUT one, for the same reason 45 was: the harness enumerates fixtures rather than migrations, so an uncovered migration is skipped in silence and its green check proves nothing about it. Migration 46 closes Seam 5's outstanding half. has_organisation_membership() tests membership and nothing else, so migration 44's two buyer SELECT policies admitted a member of an organisation in ANY verification state -- suspending a buyer changed a column and changed no access, which is the flag-not-a-gate the seam contract forbids. Measured on staging before the fix was written: a suspended buyer still read their own reservation. The write path was already correct, because 44's availability trigger refuses a reservation unless the buyer is verified, so suspension blocked new holds and nothing else. 46 adds has_verified_organisation_membership() -- membership AND verification_state = 'verified' -- and re-points reservations_select and reservation_releases_select at it.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-39",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-44",
+      "file": "44_RESERVATION_LEDGER_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-46",
+      "file": "46_SEAM5_VERIFIED_BUYER_READ_PREDICATE_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "46_SEAM5_VERIFIED_BUYER_READ_PREDICATE_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G"
+    ],
+    "expectedPassCount": 7,
+    "note": "A asserts the predicate is STABLE and not IMMUTABLE, which is not pedantry: an immutable predicate can be folded into a cached plan and keep a suspended buyer reading, which is the defect itself. It also asserts has_organisation_membership SURVIVES, because migrations 39 and 40 still depend on it -- 46 adds a predicate, it does not replace one. B requires both buyer SELECT policies to use the verified predicate AND to no longer mention the membership-only one, because `a OR b` is true whenever the looser arm is, so leaving the old arm in place would make the new predicate decorative. C-G are behavioural under SET ROLE authenticated. D is the section that matters: after suspension the buyer reads NEITHER their reservation nor its release, AND the reservation row and the membership grant both still exist -- suspension must gate, not delete and not revoke. E proves re-verifying restores access, so it is a live gate rather than a one-way door. F proves a suspended member can still see their OWN organisation row: verification_state DEFAULTS to unverified, so gating identity would make onboarding and appeal impossible, and F is what stops a future author 'tidying up' by gating organisations_select too. G proves DDP admin is unaffected, without which suspension would be unadministrable. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "46_SEAM5_VERIFIED_BUYER_READ_PREDICATE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.farms",
+      "public.inventory_batches",
+      "public.is_ddp_admin"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "functions": [
+        "public.has_verified_organisation_membership"
+      ]
+    },
+    "intact": {
+      "tables": [
+        "public.organisations",
+        "public.organisation_memberships",
+        "public.reservations",
+        "public.reservation_releases"
+      ],
+      "functions": [
+        "public.has_organisation_membership",
+        "public.is_ddp_admin"
+      ],
+      "authUsersMinRows": 2
+    }
+  }
+}

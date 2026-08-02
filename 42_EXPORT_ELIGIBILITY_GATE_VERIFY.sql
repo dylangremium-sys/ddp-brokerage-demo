@@ -82,7 +82,7 @@ DECLARE
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_admin, 'admin42@verify.test') ON CONFLICT DO NOTHING;
   INSERT INTO public.profiles (id, email, role) VALUES (v_admin, 'admin42@verify.test', 'ddp_admin')
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
   PERFORM set_config('request.jwt.claim.sub', v_admin::text, true);
 
   -- An unverified buyer and an unlicensed exporter, nothing else on file.
@@ -478,7 +478,7 @@ DECLARE
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_admin2, 'admin42b@verify.test') ON CONFLICT DO NOTHING;
   INSERT INTO public.profiles (id, email, role) VALUES (v_admin2, 'admin42b@verify.test', 'ddp_admin')
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
 
   SELECT id INTO v_eval FROM public.export_eligibility_evaluations
    WHERE consignment_ref = 'CONS-F-NOW' LIMIT 1;
@@ -651,7 +651,7 @@ DECLARE
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_farmer, 'farmer42@verify.test') ON CONFLICT DO NOTHING;
   INSERT INTO public.profiles (id, email, role) VALUES (v_farmer, 'farmer42@verify.test', 'farmer')
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
 
   PERFORM set_config('request.jwt.claim.sub', v_farmer::text, true);
   BEGIN
