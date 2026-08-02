@@ -366,6 +366,42 @@ async function main() {
   }
 
   process.stdout.write(`Disposable-Postgres migration harness — fixtures: ${ids.join(', ')}\n`);
+
+  // ---- COVERAGE, PRINTED BECAUSE ITS ABSENCE HAS ALREADY MISLED SOMEONE ----
+  //
+  // This harness enumerates FIXTURES, not migrations. A migration with no
+  // fixture is therefore skipped in complete silence, and a green run says
+  // nothing whatever about it — while looking exactly like a run that covered
+  // everything.
+  //
+  // Migrations 45 and 46 were merged that way on 2026-08-02, and the passing
+  // check was reported twice as evidence that they had been exercised on a real
+  // PostgreSQL. It was not. Printing the gap does not close it, but it makes the
+  // assumption checkable instead of invisible, which is the difference between a
+  // known limit and a false negative.
+  //
+  // Deliberately NOT a failure: roughly twenty pre-2026 migrations have no
+  // fixture, and turning that into a red build would say "this is broken" about
+  // a backlog rather than "this run did not cover these", which is the true and
+  // more useful statement.
+  if (opts.all) {
+    const { readdirSync } = await import('node:fs');
+    const covered = new Set(ids.map((id) => (id.match(/^(\d+)_/) || [])[1]).filter(Boolean));
+    const onDisk = [...new Set(
+      readdirSync(REPO_ROOT)
+        .map((f) => (f.match(/^(\d+)_.*_HARDENING\.sql$/) || [])[1])
+        .filter(Boolean),
+    )].sort((a, b) => Number(a) - Number(b));
+    const uncovered = onDisk.filter((n) => !covered.has(n));
+    process.stdout.write(
+      `Fixture coverage: ${onDisk.length - uncovered.length}/${onDisk.length} numbered migrations have a fixture.\n`,
+    );
+    if (uncovered.length) {
+      process.stdout.write(
+        `  NO FIXTURE — this run proves nothing about: ${uncovered.join(', ')}\n`,
+      );
+    }
+  }
   let worst = EXIT.OK;
   for (const id of ids) {
     const { code, ev } = runFixture(id, { verbose: true, keep: opts.keep });

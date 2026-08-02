@@ -178,9 +178,27 @@ Worth knowing before you do it, because two of these are visible behaviour:
   organisations already exist in any state other than verified, their members stop seeing
   reservation data. They keep seeing their own organisation record, and can still cancel holds.
 - **45** — `compliance_audit_log` stops accepting four administrative organisation actions.
-  Migration 45 **aborts** rather than running if any such row already exists; measured
-  2026-08-02, production's vocabulary is still the original 15 values so no such row *can*
-  exist, and this is a tripwire rather than an obstacle.
+  Migration 45 **aborts** rather than running if any such row already exists.
+
+  **⚠ Read this before assuming the abort cannot fire.** An earlier draft of this runbook
+  justified it with "production's vocabulary is still the original 15 values, so no such row
+  can exist". That is true of production *today* and **false by the time you reach step 45**:
+  applying 39, 40 and 42 widens the vocabulary to 30, and migration 39's own trigger writes
+  `organisation_created` on **every** organisation insert. So there is a window, between step
+  39 and step 45, in which such a row can be created.
+
+  In practice, following this runbook straight through, nothing creates one — every VERIFY is
+  wrapped in `BEGIN … ROLLBACK`, so their fixture organisations never persist. The hazard is
+  real only if something *else* creates an organisation in that window: an admin using the
+  app, a script, or a VERIFY someone edits to commit.
+
+  **So: do not create organisations between steps 39 and 45.** If migration 45 aborts, it is
+  telling you exactly this happened, and the right response is an owner decision about those
+  rows — not a workaround.
+
+  What *is* safe regardless: migration 45's narrowing cannot fail on production's pre-existing
+  audit rows. Proven, not assumed — production admits 15 values, 45 keeps 26, and all 15 are
+  inside the 26.
 - **44** — reservations become possible at all, and overselling becomes impossible.
 - 24, 28, 35, 39–43 add tables and functions nothing in the UI calls yet.
 
@@ -207,13 +225,41 @@ Five VERIFY scripts could not pass on a **real Supabase database** and were repa
 same change as this runbook. All five passed on the disposable PostgreSQL harness, which is
 exactly the class of false PASS that harness produces — it has no Supabase auth trigger.
 
+**CORRECTED 2026-08-02 after a self-audit.** An earlier version of this table listed migrations
+**40 and 43 among the failures. They never failed** — measured on the pre-repair sweep, both
+returned 0 errors (40: 8 sections, 43: 7 sections). Their fixtures were changed defensively to
+`DO UPDATE` in the same pass, which is more correct but fixed nothing. **Four** VERIFY scripts
+were genuinely broken, not six.
+
 | # | Was | Cause |
 |---|---|---|
 | 35 | `duplicate key … profiles_pkey` | fixture INSERT with no `ON CONFLICT` |
 | 35 | `history says Submitted to DDP -> Approved` | the migration-19/20 field guard rewrote the fixture's farm status because the fixture had not yet claimed to be an admin |
 | 39 | `violates foreign key constraint profiles_id_fkey` | profile inserted for a user never created in `auth.users` |
 | 39 | `expected exactly 1 organisation_created audit row, found 0` | migration **45** moved that event to the commercial log; section F now detects which regime it is in |
-| 40, 42, 43, 44 | `ddp_admin role required` / `visible to DDP only` | `ON CONFLICT DO NOTHING` silently kept role `pending` |
+| 42, 44 | `ddp_admin role required` / `visible to DDP only` | `ON CONFLICT DO NOTHING` silently kept role `pending` |
+| 40, 43 | *(nothing — these passed)* | changed to `DO UPDATE` defensively only |
+
+**A second correction from the same audit.** "101 assertions" elsewhere in this document means
+**101 VERIFY sections**, each of which contains several checks. The count is right; the noun
+was wrong.
+
+**And the coverage gap that audit found:** the disposable-PostgreSQL harness enumerates
+*fixtures*, not migrations, so migrations **45 and 46 had no fixture and were skipped in
+silence** — while their green check was twice reported as evidence they had run on a real
+PostgreSQL. Fixtures now exist for both, and every `--all` run prints which numbered
+migrations remain uncovered (currently **14 of 27**; 11, 12, 14, 15, 19, 21, 22, 25, 26, 27,
+29, 30 and 34 have none).
+
+**Writing that fixture immediately caught a second defect, which is the point.** Migration
+46's VERIFY passed on staging and **failed on the harness**: it created its fixture farm with
+`farm_name` and `province`, columns that exist on Supabase and not in the harness's minimal
+substrate (`farms` is `id, created_by, status, reviewed_by, updated_at`). It is now written
+against the portable column set and passes on both — 7/7 on staging, 7/7 on the harness.
+
+The general rule for any future VERIFY: **a fixture may only name columns the harness
+substrate actually has**, or it will pass against staging and fail — or worse, never run — on
+the harness. `scripts/disposable-pg/bootstrap/00_supabase_substrate.sql` is the authority.
 
 The root cause behind most of them: **`auth.users` carries `on_auth_user_created` →
 `handle_new_user()`, which creates every profile as `pending` before your fixture runs.** A

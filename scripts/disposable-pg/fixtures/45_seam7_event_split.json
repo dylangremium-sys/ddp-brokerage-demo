@@ -1,0 +1,79 @@
+{
+  "id": "45_seam7_event_split",
+  "title": "Migration 45 — Seam 7, administrative organisation events leave the regulatory log",
+  "description": "Applies migrations 39, 44 then 45, runs 45's VERIFY A-F, then rolls back 45 on a disposable PostgreSQL 18 cluster. This fixture exists because migration 45 was merged WITHOUT one: the harness enumerates fixtures rather than migrations, so a migration with no fixture is silently skipped and its green check says nothing about it. Migration 45 finishes the split PR #115 started -- organisation_created and organisation_updated are re-pointed to commercial_audit_log by replacing fn_audit_organisation_change, the two membership actions move by vocabulary only because nothing writes them anywhere in the repository, and organisation_verification_changed STAYS because whether a counterparty is verified is a compliance fact. The load-bearing change is that compliance_audit_log's vocabulary is NARROWED from 30 values to 26: every earlier migration that touched that constraint widened it, and while a value remains admissible any future code path can put it back with nothing to stop it. Migration 45 refuses to run if the compliance log already holds one of the four moving actions, rather than copying rows across and deleting the originals, because that would mean mutating an append-only evidentiary log.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-39",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-44",
+      "file": "44_RESERVATION_LEDGER_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-45",
+      "file": "45_SEAM7_ORGANISATION_EVENT_SPLIT_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "45_SEAM7_ORGANISATION_EVENT_SPLIT_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F"
+    ],
+    "expectedPassCount": 6,
+    "note": "A counts both vocabularies and asserts the stayer in BOTH directions -- organisation_verification_changed must be present in the compliance list and absent from the commercial one -- because getting that backwards is the most likely way to implement Seam 7 wrongly and a one-directional check would not notice. B is the section that proves the narrowing is ENFORCED rather than merely declared: it offers each of the four moved actions to the compliance log and requires a refusal, then offers a genuine regulatory action and requires acceptance. Without that last control the section would also pass against a table that rejected every insert for an unrelated reason. C, D and E are behavioural: creating an organisation and amending one must land in the COMMERCIAL log and write nothing to the compliance log, while a verification transition must land in the COMPLIANCE log and appear in one log only. F asserts the intersection of the two actor_type vocabularies -- the two logs admit different sets, and fn_audit_organisation_change now routes across them, so it is only safe inside the intersection; narrowing either one later would break the trigger at runtime rather than at deploy time. NOT read-only; wrapped in BEGIN..ROLLBACK. LIMITATION OF postRollback BELOW: migration 45 creates no object, so there is nothing for the removed-object check to assert. The property that actually matters after rollback -- that the compliance vocabulary is 30 values again -- is not expressible in this fixture schema and is covered by the staging rehearsal recorded in docs/runbooks/PRODUCTION_BACKLOG_APPLY_2026-08-02.md.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "45_SEAM7_ORGANISATION_EVENT_SPLIT_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.farms",
+      "public.inventory_batches",
+      "public.compliance_audit_log",
+      "public.is_ddp_admin"
+    ]
+  },
+  "postRollback": {
+    "removed": {},
+    "intact": {
+      "tables": [
+        "public.organisations",
+        "public.compliance_audit_log",
+        "public.commercial_audit_log"
+      ],
+      "functions": [
+        "public.fn_audit_organisation_change",
+        "public.is_ddp_admin",
+        "public.has_organisation_membership"
+      ]
+    }
+  }
+}
