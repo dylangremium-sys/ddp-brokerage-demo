@@ -14,6 +14,14 @@ happens on this path.
 
 ## REQUIRED before this does anything
 
+> **STATUS 2026-08-02: `CRON_SECRET` IS SET** in Vercel Production, marked `Sensitive`,
+> and the endpoint has been verified live. Nothing below needs doing again unless the
+> variable is removed or rotated.
+>
+> Rotating it needs a REDEPLOY to take effect — values bind at build time — so a rotation
+> is two steps: `vercel env rm` + `vercel env add`, then `vercel redeploy <prod-url>`.
+> Until the redeploy completes the old value is still the live one.
+
 `CRON_SECRET` **must be set in Vercel Production.** Until it is, the route returns `503
 server_misconfigured` and the sweep never runs.
 
@@ -50,18 +58,46 @@ source produces a run row either way, which is the durable evidence.
 
 ## Expected steady state — read this before raising an incident
 
-**Failed runs are normal here and do not mean the job is broken.** Measured 2026-07-28:
-`moph.go.th`, `doa.go.th` and `ratchakitcha.soc.go.th` all answered **403** to a plain GET.
-Those three are expected to record `source_unavailable` runs indefinitely until someone
-negotiates access or finds a different entry point. A recorded failure is the correct outcome —
-the wrong outcome would be reporting success and silently monitoring nothing.
+**Measured against production on 2026-08-02 18:37Z**, by rotating `CRON_SECRET`
+to a known value, running one real authenticated sweep, and rotating it back.
+These are observed results, not predictions:
 
-| Source | Method | Expectation |
+```
+HTTP 200 in 48s
+sources 9 · allowedHosts 8
+succeeded 7 · partial 0 · failed 2 · skipped 0
+newCandidates 114 · duplicates 10
+```
+
+**Two failed runs are the expected steady state.** Re-probed with the
+retriever's own User-Agent and Accept headers on 2026-08-02:
+
+| Source | Method | Observed |
 |---|---|---|
-| SÚKL Czech Republic | `rss` | Should succeed (`application/rss+xml`) |
-| EUR-Lex | `rss` | Should succeed (`application/xml`) |
-| Thai FDA, Thai Customs, ONCB | `html` | Page-change watch; may succeed |
-| MOPH, DOA, Royal Gazette | `html` | Expected 403 → failed run |
+| SÚKL Czech Republic | `rss` | 200 `application/rss+xml` |
+| EUR-Lex | `rss` | 200 `application/xml` |
+| Thai FDA | `html` | 200 |
+| ONCB | `html` | 200 |
+| Thai Customs | `html` | 200 |
+| Department of Agriculture | `html` | 200 |
+| **Ministry of Public Health** | `html` | **403 — expected failed run** |
+| **Royal Thai Government Gazette** | `html` | **403 — expected failed run** |
+
+Those two will keep recording `source_unavailable` until someone negotiates
+access or finds a different entry point. A recorded failure is the correct
+outcome; the wrong outcome would be reporting success while monitoring nothing.
+
+**CORRECTION to an earlier version of this runbook**, which predicted THREE 403s
+(MOPH, DOA and the Gazette). That came from probing with a bare `curl`. The
+retriever sends an identifying User-Agent and a real Accept header, and the
+Department of Agriculture accepts it where the bare probe was refused. **Do not
+size expectations from a plain curl** — probe with the same headers the
+retriever uses, or just read the Ingestion Runs tab.
+
+Per-source detail is **not readable from the CLI**: `ddp_ro` gets
+`permission denied for function is_ddp_admin` on `watchtower_ingestion_runs`,
+the same way it does on `legal_updates`, because the RLS policy calls that
+function. Read the **Ingestion Runs** tab in the Compliance Watchtower.
 
 ## Tuning the schedule
 
