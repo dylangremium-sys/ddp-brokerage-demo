@@ -190,9 +190,9 @@ describe('handleFeedRetrieveRequest — the target is always the stored URL', ()
 
   it('allowlists ONLY the stored host, so a redirect cannot land elsewhere', async () => {
     const seen: string[][] = []
-    const retrieve: ServerFeedRetrievalDeps['retrieve'] = async input => {
+    const retrieve: ServerFeedRetrievalDeps['retrieve'] = input => {
       seen.push(input.allowedHosts)
-      return retrieved()
+      return Promise.resolve(retrieved())
     }
     await handleFeedRetrieveRequest(request(validBody), makeDeps({ retrieve }))
     expect(seen).toHaveLength(1)
@@ -214,9 +214,7 @@ describe('handleFeedRetrieveRequest — the target is always the stored URL', ()
     const result = await handleFeedRetrieveRequest(
       request(validBody),
       makeDeps({
-        getRegulatorySource: async () => {
-          throw new Error('db down')
-        },
+        getRegulatorySource: () => Promise.reject(new Error('db down')),
         retrieve,
       }),
     )
@@ -278,9 +276,7 @@ describe('handleFeedRetrieveRequest — throttle', () => {
     const result = await handleFeedRetrieveRequest(
       request(validBody),
       makeDeps({
-        reserveFeedRetrievalSlot: async () => {
-          throw new Error('ledger unreachable')
-        },
+        reserveFeedRetrievalSlot: () => Promise.reject(new Error('ledger unreachable')),
         retrieve,
       }),
     )
@@ -342,9 +338,7 @@ describe('handleFeedRetrieveRequest — outcome mapping', () => {
     const result = await handleFeedRetrieveRequest(
       request(validBody),
       makeDeps({
-        retrieve: async () => {
-          throw new Error('socket exploded with secret-token-in-message')
-        },
+        retrieve: () => Promise.reject(new Error('socket exploded with secret-token-in-message')),
       }),
     )
     expect(result.status).toBe(502)

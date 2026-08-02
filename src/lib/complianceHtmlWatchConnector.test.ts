@@ -165,7 +165,7 @@ describe('executeHtmlWatchConnector — noise suppression on long pages', () => 
     }
   })
 
-  it('includes Thai terms, since the six html sources publish in Thai', async () => {
+  it('includes Thai terms, since the six html sources publish in Thai', () => {
     expect(HTML_WATCH_TERMS).toContain('กัญชา')
     expect(HTML_WATCH_TERMS).toContain('ประกาศ')
   })
@@ -199,7 +199,7 @@ describe('executeHtmlWatchConnector — safety gates', () => {
     // A gate that guards only the RSS path is not a gate. Adding a second
     // transport without re-applying it is exactly how such a gate stops holding.
     let fetched = false
-    const spy: RssFetchImpl = async (...args) => {
+    const spy: RssFetchImpl = (...args) => {
       fetched = true
       return htmlFetch('x')(...args)
     }

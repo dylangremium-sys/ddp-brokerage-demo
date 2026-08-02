@@ -228,9 +228,9 @@ describe('retrieveOfficialSource — redirect handling', () => {
 
   it('stops after the redirect limit', async () => {
     let n = 0
-    const loop: SourceFetchImpl = async () => {
+    const loop: SourceFetchImpl = () => {
       n += 1
-      return makeResponse({ status: 302, headers: { location: `${BASE_URL}/${n}` }, contentType: null })
+      return Promise.resolve(makeResponse({ status: 302, headers: { location: `${BASE_URL}/${n}` }, contentType: null }))
     }
     const result = await retrieveOfficialSource({
       url: BASE_URL, policy: { ...policy, maxRedirects: 2 }, retrievedAt: RETRIEVED_AT, fetchImpl: loop,
@@ -303,9 +303,8 @@ describe('retrieveOfficialSource — transport limits and failures', () => {
   })
 
   it('reports a transport failure without leaking the underlying error', async () => {
-    const boom: SourceFetchImpl = async () => {
-      throw new Error('ECONNREFUSED 10.1.2.3:443 secret-internal-host')
-    }
+    const boom: SourceFetchImpl = () =>
+      Promise.reject(new Error('ECONNREFUSED 10.1.2.3:443 secret-internal-host'))
     const result = await retrieveOfficialSource({
       url: BASE_URL, policy, retrievedAt: RETRIEVED_AT, fetchImpl: boom,
     })

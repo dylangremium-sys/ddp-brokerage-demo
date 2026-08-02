@@ -165,7 +165,7 @@ describe('createServerProxyRssFetch — the response it presents', () => {
 })
 
 describe('createServerProxyRssFetch — failure handling', () => {
-  async function failing(body: unknown, status: number) {
+  function failing(body: unknown, status: number) {
     const { impl } = stubFetch(jsonResponse(body, status))
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
       getAccessToken: () => Promise.resolve('token-abc'),
@@ -186,9 +186,7 @@ describe('createServerProxyRssFetch — failure handling', () => {
     const { impl } = stubFetch({
       ok: false,
       status: 502,
-      json: async () => {
-        throw new Error('not json')
-      },
+      json: () => Promise.reject(new Error('not json')),
     } as unknown as Response)
     const proxy = createServerProxyRssFetch(SOURCE_ID, {
       getAccessToken: () => Promise.resolve('token-abc'),

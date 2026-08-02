@@ -55,7 +55,7 @@ function makeRepository(overrides: Partial<ServerIngestionRepository> = {}): Ser
     fetchKnownIdentity: () => Promise.resolve(({ contentHashes: [], sourceExternalIds: [] })),
     openRun: () => Promise.resolve(({ id: `run-${++runSeq}` })),
     closeRun: () => Promise.resolve(({})),
-    insertItem: async () => {},
+    insertItem: () => Promise.resolve(),
     insertCandidate: () => Promise.resolve(({ ok: true, legalUpdate: { id: 'lu-1' } as never })),
     ...overrides,
   }
@@ -136,9 +136,9 @@ describe('runScheduledIngestion — authorisation', () => {
     let fetched = false
     const deps = makeDeps({
       cronSecret: null,
-      buildRunConnector: () => async (s: RegulatorySource) => {
+      buildRunConnector: () => (s: RegulatorySource) => {
         fetched = true
-        return okConnectorResult(s.id)
+        return Promise.resolve(okConnectorResult(s.id))
       },
     })
     const result = await runScheduledIngestion({ authorization: null, cronSecretHeader: null }, 'GET', deps)
@@ -190,9 +190,9 @@ describe('runScheduledIngestion — authorisation', () => {
     let read = false
     const deps = makeDeps({
       repository: makeRepository({
-        fetchActiveSources: async () => {
+        fetchActiveSources: () => {
           read = true
-          return [SOURCE]
+          return Promise.resolve([SOURCE])
         },
       }),
     })
@@ -224,9 +224,9 @@ describe('runScheduledIngestion — the run itself', () => {
     const seen: Array<{ trigger: string; actorType: string; actorId: string | null }> = []
     const deps = makeDeps({
       repository: makeRepository({
-        openRun: async (input) => {
+        openRun: (input) => {
           seen.push({ trigger: input.triggerType, actorType: input.actorType, actorId: input.actorId })
-          return { id: 'run-1' }
+          return Promise.resolve({ id: 'run-1' })
         },
       }),
     })
@@ -239,9 +239,7 @@ describe('runScheduledIngestion — the run itself', () => {
     // outcome: the dashboard says "0 failed" and monitoring has silently stopped.
     const deps = makeDeps({
       repository: makeRepository({
-        fetchActiveSources: async () => {
-          throw new Error('db down')
-        },
+        fetchActiveSources: () => Promise.reject(new Error('db down')),
       }),
     })
     const result = await runScheduledIngestion(authHeaders, 'GET', deps)
@@ -262,9 +260,7 @@ describe('runScheduledIngestion — the run itself', () => {
   it('turns an unexpected batch failure into a 500, never an unhandled rejection', async () => {
     const deps = makeDeps({
       repository: makeRepository({
-        fetchKnownIdentity: async () => {
-          throw new Error('boom')
-        },
+        fetchKnownIdentity: () => Promise.reject(new Error('boom')),
       }),
     })
     const result = await runScheduledIngestion(authHeaders, 'GET', deps)
