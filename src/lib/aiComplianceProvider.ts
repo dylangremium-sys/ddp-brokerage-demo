@@ -1,10 +1,10 @@
-import type { ComplianceSeverity, LegalUpdateAffectedArea, LegalUpdateStatus } from '../types'
+import type { ComplianceSeverity, LegalUpdateAffectedArea, LegalUpdateStatus } from '../types.js'
 import type {
   AICompliancePromptVersion,
   AIComplianceModelInfo,
   AIComplianceOutput,
   AIComplianceAnalysisResult,
-} from './aiComplianceTypes'
+} from './aiComplianceTypes.js'
 
 // ─── AI Compliance Agent — provider abstraction (Phase 0A) ──────────────────
 //

@@ -1,9 +1,9 @@
-import type { RegulatorySource } from '../types'
+import type { RegulatorySource } from '../types.js'
 import {
   inferConnectorKind,
   selectConnectorForSource,
   type ConnectorKind,
-} from './complianceSourceConnectors'
+} from './complianceSourceConnectors.js'
 
 // The transport-safety rules live in their own dependency-free module so the
 // server-side retriever can reuse them without dragging this file's connector
@@ -12,23 +12,23 @@ import {
 import {
   validateConnectorAllowlist,
   validateConnectorUrlSafety,
-} from './complianceSourceUrlSafety'
+} from './complianceSourceUrlSafety.js'
 import type {
   ConnectorUrlSafetyStatus,
   ConnectorAllowlistDecision,
   ConnectorUrlSafetyDecision,
-} from './complianceSourceUrlSafety'
+} from './complianceSourceUrlSafety.js'
 export {
   normalizeConnectorHost,
   isHttpsRegulatoryUrl,
   validateConnectorAllowlist,
   validateConnectorUrlSafety,
-} from './complianceSourceUrlSafety'
+} from './complianceSourceUrlSafety.js'
 export type {
   ConnectorUrlSafetyStatus,
   ConnectorAllowlistDecision,
   ConnectorUrlSafetyDecision,
-} from './complianceSourceUrlSafety'
+} from './complianceSourceUrlSafety.js'
 
 
 // ─── Compliance Source Connector Runtime — skeleton (Phase 2B) ──────────────

@@ -6,7 +6,7 @@ import type {
   ExportReadinessStatus,
   LegalUpdateAffectedArea,
   LegalUpdateStatus,
-} from '../types'
+} from '../types.js'
 
 export const AFFECTED_AREA_OPTIONS: LegalUpdateAffectedArea[] = [
   'Thai cultivation',

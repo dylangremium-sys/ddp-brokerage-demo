@@ -4,7 +4,7 @@ import type {
   RegulatorySourceCategory,
   RegulatorySourceMonitoringMethod,
   RegulatorySourceTier,
-} from '../types'
+} from '../types.js'
 
 // ─── Compliance Source Governance & Tiering — service layer (Phase B) ────────
 //

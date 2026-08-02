@@ -1,5 +1,5 @@
-import { supabase, isSupabaseConfigured } from './supabase'
-import { isEnforcedRuleStatus } from './complianceRules'
+import { supabase, isSupabaseConfigured } from './supabase.js'
+import { isEnforcedRuleStatus } from './complianceRules.js'
 import type {
   ComplianceAlert,
   ComplianceAuditLog,
@@ -10,7 +10,7 @@ import type {
   RegulatorySource,
   WatchtowerIngestionItem,
   WatchtowerIngestionRun,
-} from '../types'
+} from '../types.js'
 
 /** Postgres unique-violation SQLSTATE. Surfaced so the ingestion service can
  *  treat a lost dedup race as a duplicate outcome rather than a hard failure. */
