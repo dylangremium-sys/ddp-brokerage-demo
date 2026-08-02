@@ -85,9 +85,31 @@ DECLARE
   v_buyer_accepted  boolean := false;
   v_unknown_rejected boolean := false;
 BEGIN
+  -- THE auth.users ROWS MUST EXIST FIRST, AND THE UPSERT MUST BE `DO UPDATE`.
+  --
+  -- profiles.id is FK -> auth.users(id), so inserting a profile for an invented
+  -- id raises foreign_key_violation, NOT check_violation — the handlers below do
+  -- not catch it and the whole VERIFY dies before reaching any assertion. That is
+  -- what happened on staging (2026-08-02): "insert or update on table profiles
+  -- violates foreign key constraint profiles_id_fkey".
+  --
+  -- And on hosted Supabase, inserting the user FIRES `on_auth_user_created` ->
+  -- handle_new_user(), which creates the profile row as 'pending' before this
+  -- statement runs — so a plain INSERT would then raise unique_violation, and
+  -- `ON CONFLICT DO NOTHING` would silently leave the role as 'pending' and
+  -- assert nothing at all. `DO UPDATE` is correct in both environments: it sets
+  -- the role whether the trigger pre-created the row or not, and still raises
+  -- check_violation when the role is not in the vocabulary, which is the whole
+  -- point of the test.
+  INSERT INTO auth.users (id, email) VALUES
+    ('00390000-0000-4000-a000-0000000000b1', 'b1@verify.test'),
+    ('00390000-0000-4000-a000-0000000000b2', 'b2@verify.test')
+  ON CONFLICT (id) DO NOTHING;
+
   BEGIN
     INSERT INTO public.profiles (id, email, role)
-    VALUES ('00390000-0000-4000-a000-0000000000b1', 'b1@verify.test', 'buyer');
+    VALUES ('00390000-0000-4000-a000-0000000000b1', 'b1@verify.test', 'buyer')
+    ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
     v_buyer_accepted := true;
   EXCEPTION WHEN check_violation THEN
     v_buyer_accepted := false;
@@ -97,7 +119,8 @@ BEGIN
   -- has no policy for is a role that would silently fall through every gate.
   BEGIN
     INSERT INTO public.profiles (id, email, role)
-    VALUES ('00390000-0000-4000-a000-0000000000b2', 'b2@verify.test', 'auditor');
+    VALUES ('00390000-0000-4000-a000-0000000000b2', 'b2@verify.test', 'auditor')
+    ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
     v_unknown_rejected := false;
   EXCEPTION WHEN check_violation THEN
     v_unknown_rejected := true;
@@ -268,7 +291,7 @@ BEGIN
     (v_farm_user,  'farm@verify.test',  'farmer'),
     (v_buyer_user, 'buyer@verify.test', 'buyer'),
     (v_admin_user, 'admin@verify.test', 'ddp_admin')
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
 
   INSERT INTO public.farms (id) VALUES (v_farm_id) ON CONFLICT DO NOTHING;
 
@@ -382,25 +405,57 @@ DECLARE
   v_created    bigint;
   v_verif      bigint;
   v_plain      bigint;
+  v_split      boolean;
 BEGIN
+  -- WHICH LOG THE ADMINISTRATIVE EVENTS LAND IN DEPENDS ON MIGRATION 45.
+  --
+  -- Seam 7 (migration 45) moves organisation_created and organisation_updated
+  -- out of compliance_audit_log and into commercial_audit_log, leaving only
+  -- organisation_verification_changed behind. So this section must ask which
+  -- regime the database is in rather than assume the pre-45 one — otherwise it
+  -- reports "expected exactly 1 organisation_created audit row, found 0" on any
+  -- database where 45 has been applied, which reads as a defect in migration 39.
+  -- Measured on staging 2026-08-02, immediately after 45 was applied.
+  --
+  -- Detected from the vocabulary itself, not from a version number: if the
+  -- compliance CHECK no longer admits 'organisation_created', 45 is applied. If
+  -- 45 is applied then 44 is too, so commercial_audit_log necessarily exists.
+  v_split := NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    WHERE c.conname = 'compliance_audit_log_action_check'
+      AND position('''organisation_created''' IN pg_get_constraintdef(c.oid)) > 0
+  );
+
   PERFORM set_config('request.jwt.claim.sub', v_admin_user::text, true);
 
   INSERT INTO public.organisations (org_type, legal_name, country_code)
   VALUES ('laboratory', 'Bangkok Analytical Services', 'TH')
   RETURNING id INTO v_org;
 
-  SELECT count(*) INTO v_created FROM public.compliance_audit_log
-   WHERE entity_type = 'organisation' AND entity_id = v_org::text AND action = 'organisation_created';
+  IF v_split THEN
+    SELECT count(*) INTO v_created FROM public.commercial_audit_log
+     WHERE entity_type = 'organisation' AND entity_id = v_org::text AND action = 'organisation_created';
+  ELSE
+    SELECT count(*) INTO v_created FROM public.compliance_audit_log
+     WHERE entity_type = 'organisation' AND entity_id = v_org::text AND action = 'organisation_created';
+  END IF;
   IF v_created <> 1 THEN
-    RAISE EXCEPTION 'VERIFY F FAILED: expected exactly 1 organisation_created audit row, found %.', v_created;
+    RAISE EXCEPTION 'VERIFY F FAILED: expected exactly 1 organisation_created audit row in the % log, found %.',
+      CASE WHEN v_split THEN 'commercial' ELSE 'compliance' END, v_created;
   END IF;
 
   -- A non-verification edit.
   UPDATE public.organisations SET display_name = 'BAS' WHERE id = v_org;
-  SELECT count(*) INTO v_plain FROM public.compliance_audit_log
-   WHERE entity_type = 'organisation' AND entity_id = v_org::text AND action = 'organisation_updated';
+  IF v_split THEN
+    SELECT count(*) INTO v_plain FROM public.commercial_audit_log
+     WHERE entity_type = 'organisation' AND entity_id = v_org::text AND action = 'organisation_updated';
+  ELSE
+    SELECT count(*) INTO v_plain FROM public.compliance_audit_log
+     WHERE entity_type = 'organisation' AND entity_id = v_org::text AND action = 'organisation_updated';
+  END IF;
   IF v_plain <> 1 THEN
-    RAISE EXCEPTION 'VERIFY F FAILED: expected exactly 1 organisation_updated audit row, found %.', v_plain;
+    RAISE EXCEPTION 'VERIFY F FAILED: expected exactly 1 organisation_updated audit row in the % log, found %.',
+      CASE WHEN v_split THEN 'commercial' ELSE 'compliance' END, v_plain;
   END IF;
 
   -- A verification change must be recorded as its own action, not folded into

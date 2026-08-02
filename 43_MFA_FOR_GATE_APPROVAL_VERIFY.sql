@@ -147,7 +147,7 @@ BEGIN
 
   INSERT INTO auth.users (id, email) VALUES (v_admin, 'admin43@verify.test') ON CONFLICT DO NOTHING;
   INSERT INTO public.profiles (id, email, role) VALUES (v_admin, 'admin43@verify.test', 'ddp_admin')
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
 
   INSERT INTO public.organisations (org_type, legal_name, country_code)
   VALUES ('buyer', 'MFA Test Buyer', 'DE') RETURNING id INTO v_buyer;

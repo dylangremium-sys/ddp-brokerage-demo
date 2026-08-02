@@ -139,9 +139,40 @@ INSERT INTO auth.users (id, email) VALUES
   ('00350000-0000-4000-a000-000000000001', 'admin35@disposable.test'),
   ('00350000-0000-4000-a000-000000000002', 'farmer35@disposable.test');
 
+-- ON CONFLICT … DO UPDATE, and it is not optional on hosted Supabase.
+--
+-- The INSERT INTO auth.users above fires `on_auth_user_created` ->
+-- handle_new_user(), which has ALREADY created both profile rows with role
+-- 'pending'. A plain INSERT therefore raises
+--   duplicate key value violates unique constraint "profiles_pkey"
+-- and the whole VERIFY dies at this line — measured against staging 2026-08-02.
+-- It passes on the disposable PostgreSQL harness only because that cluster has
+-- no such trigger, which is precisely the class of false PASS the harness gives.
+--
+-- DO NOTHING would not fix it either: it would leave both roles as 'pending',
+-- is_ddp_admin() would return false, and the assertions below would fail with
+-- messages blaming the migration rather than the fixture.
 INSERT INTO public.profiles (id, email, role) VALUES
   ('00350000-0000-4000-a000-000000000001', 'admin35@disposable.test',  'ddp_admin'),
-  ('00350000-0000-4000-a000-000000000002', 'farmer35@disposable.test', 'farmer');
+  ('00350000-0000-4000-a000-000000000002', 'farmer35@disposable.test', 'farmer')
+ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, email = EXCLUDED.email;
+
+-- ACT AS THE ADMIN BEFORE CREATING THE FIXTURES, OR THE FIELD GUARD REWRITES THEM.
+--
+-- `trg_protect_farm_admin_fields` (migrations 19/20) forces, on any INSERT by a
+-- caller that is not a DDP admin:
+--     new.status := 'Submitted to DDP'
+-- So without this line the farm below is created as 'Submitted to DDP' rather
+-- than 'Pending Review', and section C then fails with
+--   "history says Submitted to DDP -> Approved, expected Pending Review -> Approved"
+-- which reads as a defect in record_status_transition() when the migration is
+-- perfectly correct and the FIXTURE was silently rewritten. Measured on staging
+-- 2026-08-02.
+--
+-- Setting the claim is legitimate rather than a workaround: 'Pending Review' is
+-- an admin-assigned status in this schema, so an admin is the only actor who
+-- could have produced the state this section is written to test.
+SELECT set_config('request.jwt.claim.sub', '00350000-0000-4000-a000-000000000001', true);
 
 INSERT INTO public.farms (id, created_by, status)
   VALUES ('00350000-0000-4000-b000-000000000001', '00350000-0000-4000-a000-000000000002', 'Pending Review');
