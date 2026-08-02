@@ -4,8 +4,8 @@
 which are *genuinely free* — so the next author picks a number without creating a collision.
 
 **Why this file exists.** `npm run verify:migration-numbers` detects **collisions**, not **gaps**.
-Reading `main` alone, numbers 27, 28 and 31–33 look free; every one of them is claimed on a branch
-that has not merged. A reader of `main` cannot tell a reserved number from an unused one, and the
+Reading `main` alone, numbers 31–33 look free; all three are claimed on a branch that has not merged
+(27 and 28 were in this sentence until they landed on 2026-08-02). A reader of `main` cannot tell a reserved number from an unused one, and the
 guard only fires once both sides land — by which point one of them has to be renumbered. This is not
 hypothetical: PR #48 landed `25_WATCHTOWER_INGESTION_PROVENANCE_*` on `main` while PR #44 carried
 `25_COMPLIANCE_AUDIT_LOG_ACTOR_AUTHORITATIVE_*`; both branches were individually green
@@ -16,8 +16,8 @@ been applied to any database. For deployment state see
 `docs/PRODUCTION_CHANGE_FREEZE_2026-07-25.md` §4 and the runbooks under `docs/runbooks/`.
 
 **Last reconciled:** 2026-08-02, against `main` = `48230f0` and every local and remote ref in this
-clone — including worktrees belonging to concurrent sessions, which is how the claim on **45** below
-was found.
+clone — including worktrees belonging to concurrent sessions, which is how the short-lived claim on
+**45** below was found, and then seen released.
 
 ---
 
@@ -66,7 +66,7 @@ those migrations create are present. See `docs/runbooks/EXPORT_HUB_FOUNDATION_AP
 | 31 | `31_COA_SOURCE_BOUND_REVIEW_*` | PR **#95** `feature/coa-source-bound-watchtower-review` | open, **draft** |
 | 32 | `32_COA_REVIEW_INTEGRITY_*` | PR **#95** `feature/coa-source-bound-watchtower-review` | open, **draft** |
 | 33 | `33_COA_REVIEW_ATOMICITY_*` | PR **#95** `feature/coa-source-bound-watchtower-review` | open, **draft** |
-| 45 | `45_COMMERCIAL_AUDIT_LOG_*` | local branch `fix/commercial-audit-log`, **another session's worktree** | **no commits, unpushed** |
+| ~~45~~ | ~~`45_COMMERCIAL_AUDIT_LOG_*`~~ | ~~local branch `fix/commercial-audit-log`~~ | **claim released — see below** |
 
 **27 and 28 are no longer reserved — both landed on `main`** (rows struck 2026-08-02). The earlier
 note that "28 is on PR #73, not PR #44" was correct at the time and is now history; both numbers are
@@ -78,19 +78,29 @@ happened: `origin/feature/coa-source-bound-watchtower-review` exists and PR #95 
 now durable and reviewable. It is still a *draft* PR, so it will not appear in a casual scan of
 mergeable work — check drafts before assuming 31–33 are free.
 
-### 45 — claimed, and the reason this reconciliation happened
+### 45 — claimed, then released within the hour. Both halves are worth recording.
 
-Migration 45 is reserved for the **Seam 7 correction**: create `commercial_audit_log`, move the
-commercial actions out of `compliance_audit_log`'s vocabulary, and re-point the trigger bodies in 39
-and 44 that write them. Specified in `docs/OPTION_B_SEAM_CONTRACT.md` (Seam 7).
+**The claim.** `git worktree list` showed a concurrent session holding `fix/commercial-audit-log` in
+a sibling worktree of this clone, with no commits and nothing pushed — about to become the **Seam 7
+correction** (create `commercial_audit_log`, move the commercial actions out of
+`compliance_audit_log`'s vocabulary, re-point the trigger bodies in 39 and 44). **CI could not see
+that, GitHub could not see it, and this file's own `git log --all` query could not see it** — that
+query finds numbers which already have a file. Only `git worktree list` did.
 
-The claim was found by `git worktree list`, not by any query in this file: a concurrent session has
-`fix/commercial-audit-log` checked out in a separate worktree of this same clone, with no commits and
-nothing pushed. **CI cannot see that, and neither can GitHub.** `git log --all` can, because
-worktrees of one clone share an object store — which is the single argument for sibling worktrees
-over separate clones.
+**The release.** That session then committed `bfcdf4f`, and it did **not** take 45. It amended
+`44_RESERVATION_LEDGER_*` in place instead — the migration is already on `main`, but applied to no
+database, so editing it yields a clean final schema with no add-then-move churn. **45 is therefore
+free again**, and the floor returns to 45.
 
-Anyone about to write 45: coordinate with that branch first rather than taking the number.
+**The open question this leaves.** `docs/OPTION_B_SEAM_CONTRACT.md` (Seam 7, PR #114, unmerged)
+specifies the opposite: correct forward in 45, and do *not* edit merged files, because rewriting
+them silently invalidates the fixture runs that justified them. Both positions are defensible while
+nothing is applied. **They are not both landable** — one branch amends 44, the other says not to.
+Owner decision, and it should be made before either lands rather than by whichever merges first.
+
+**The lesson survives the release.** A claim held for an hour by a branch with no commits was
+invisible to every automated check in this repository. Rules 6 and 7 below exist because of it, not
+because of the number.
 
 ### The check does not catch this class
 
@@ -107,21 +117,22 @@ into `main`**. Check there before rebuilding.
 
 ## Free
 
-**46 and upward.** (Was 45 until 2026-08-02; 45 is now claimed — see above.)
+**45 and upward.** (Briefly 46 on 2026-08-02, while 45 was claimed; the claim was released the same
+day — see "45 — claimed, then released" above.)
 
-The floor moved from 37 to 45 and then to 46 during 2026-08-02: 37 and 38 (storage privacy) landed,
-39–43 were allocated by the export-hub foundation and 44 by the marketplace reservation ledger — all
-of which have since merged to `main` — and 45 is reserved for the Seam 7 correction. Quoting a free
-floor of 35 would have invited an author to take a number this very document reserves, recreating
+The floor moved from 37 to 45, briefly to 46, and back to 45 during 2026-08-02: 37 and 38 (storage
+privacy) landed, 39–43 were allocated by the export-hub foundation and 44 by the marketplace
+reservation ledger — all of which have since merged to `main` — and the Seam 7 correction claimed 45
+and then released it by amending 44 instead. Quoting a free floor of 35 would have invited an author to take a number this very document reserves, recreating
 exactly the collision the register exists to prevent.
 
-**The floor moved three times in one day.** Re-run the derivation query rather than trusting the
+**The floor moved four times in one day.** Re-run the derivation query rather than trusting the
 number written here; a register is only as fresh as its last reconciliation, and this one has been
 stale before.
 
 The check must therefore exclude the allocated numbers rather than merely look for files on disk: an
-allocation is a *claim*, and a claim is made before the file exists. Numbers 27, 28 and 31–33 are
-claimed by branches too (see above), so the honest query is "no file exists **and** no row in the
+allocation is a *claim*, and a claim is made before the file exists. Numbers 31–33 are claimed by a
+branch too (see above), so the honest query is "no file exists **and** no row in the
 allocations table claims it":
 
 ```
@@ -130,12 +141,12 @@ $ git log --all --diff-filter=A --name-only --pretty=format: -- '*.sql' | grep -
 ```
 
 **Take the next number above the highest CLAIMED one — not the highest number on disk.** As of this
-reconciliation the highest number *on disk anywhere* is 44, but the highest **claim** is 45
-(`fix/commercial-audit-log`, no commits yet), so the next migration is **46**.
+reconciliation the highest number on disk anywhere is 44 and there is no live claim above it, so the
+next migration is **45**.
 
-That gap between "highest file" and "highest claim" is the whole point of this file. The query above
-returns no output for 45 — because no file exists yet — and would tell an author 45 is free. It is
-not.
+That gap between "highest file" and "highest claim" is the whole point of this file, and it was real
+for about an hour today: 45 was claimed by a branch with no commits, which the query above cannot
+see, because the query finds numbers that already have a *file*. Re-derive both before claiming.
 
 **1, 2, 5, 6, 7 are NOT free.** They were never used by a numbered file, but the pre-numbering
 migrations (`AUTH_RLS_SCHEMA.sql`, `SUPABASE_SCHEMA.sql`, `FARMER_MVP_MIGRATION.sql`,
