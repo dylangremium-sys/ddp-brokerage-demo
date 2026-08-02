@@ -1,0 +1,111 @@
+{
+  "id": "42_export_eligibility_gate",
+  "title": "Migration 42 — the export eligibility gate",
+  "description": "Applies migrations 39, 40, 41 then 42, runs 42's VERIFY A-I, then rolls back 42 on a disposable PostgreSQL 18 cluster. This is the regulatory heart of the platform: DDP's existing gate asks whether the SUPPLIER is documented; this asks whether the BUYER may lawfully receive, which is the different question that keeps product out of a market that never authorised it. Seven conditions, all fail-closed -- destination ruleset resolved, buyer verified, import permit valid for holder AND type AND regime AND destination, permit headroom sufficient, exporter export licence in force for the regime, batch carries an accepted COA with no failed contaminant result, and denied-party screening clear and not stale. Every condition starts false and can only be made true by affirmative evidence, because the three likeliest early production states -- no ruleset researched, screening never run, permit not captured -- are all absence, and absence must never read as permission. Evaluations are append-only whether they pass or block, because a gate that only records refusals cannot later show that a shipment which did leave was checked at all.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-39",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-40",
+      "file": "40_LICENCES_AND_PERMITS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-41",
+      "file": "41_EFFECTIVE_DATED_RULESETS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-42",
+      "file": "42_EXPORT_ELIGIBILITY_GATE_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "42_EXPORT_ELIGIBILITY_GATE_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I"
+    ],
+    "expectedPassCount": 9,
+    "note": "B and C are a matched pair and neither is meaningful alone: B proves every condition fails against an empty world, C proves a fully-satisfied consignment still PASSES. A gate that blocks everything unconditionally would satisfy B on its own. D then breaks one thing at a time from the passing scenario -- wrong destination, wrong regime, suspended buyer, a failed contaminant result, stale screening, a confirmed denied-party match, no batch -- and asserts the correct condition flips, ending by restoring the scenario and re-asserting it passes, so the individual results cannot be artefacts of cumulative fixture damage. E covers the headroom boundary at 10.000 / 10.001 kg and refuses a NaN quantity outright. F is the point-in-time proof: the same consignment blocks today and passes as at a date inside the permit's term. G and H cover override discipline -- a two-character reason and a blanket waiver naming no conditions are both refused, the approver cannot review their own override, and a completed review stamp cannot be rewritten. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "42_EXPORT_ELIGIBILITY_GATE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.farms",
+      "public.inventory_batches",
+      "public.farmer_documents",
+      "public.compliance_rules",
+      "public.compliance_audit_log",
+      "public.is_ddp_admin"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.screening_checks",
+        "public.export_eligibility_evaluations",
+        "public.export_gate_overrides"
+      ],
+      "functions": [
+        "public.evaluate_export_eligibility",
+        "public.screening_is_clear",
+        "public.fn_guard_override_mutation",
+        "public.prevent_evaluation_mutation",
+        "public.fn_validate_override"
+      ],
+      "policies": [
+        "evaluations_admin_select",
+        "overrides_admin",
+        "screening_checks_admin"
+      ]
+    },
+    "intact": {
+      "tables": [
+        "public.organisations",
+        "public.licences",
+        "public.permits",
+        "public.permit_drawdowns",
+        "public.destination_rulesets",
+        "public.compliance_audit_log"
+      ],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.permit_headroom_kg",
+        "public.destination_ruleset_in_force",
+        "auth.uid"
+      ],
+      "authUsersMinRows": 2
+    }
+  }
+}

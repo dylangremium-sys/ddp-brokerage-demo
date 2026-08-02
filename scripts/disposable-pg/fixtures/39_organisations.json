@@ -1,0 +1,56 @@
+{
+  "id": "39_organisations",
+  "title": "Migration 39 — counterparty organisations and the buyer role",
+  "description": "Applies migration 39, runs VERIFY A-G, then rolls back on a disposable PostgreSQL 18 cluster. Migration 39 introduces the first non-farm counterparty identity in the schema: organisations (farm | buyer | laboratory | carrier | broker | internal), organisation_memberships, and the 'buyer' value on profiles.role. VERIFY section E is the first in this corpus to SET ROLE authenticated and re-query, because every other VERIFY runs as the table owner and therefore BYPASSES row level security -- a reversed policy would verify green. E observes the double-blind rule from both sides plus an identity-less caller. The rollback refuses to drop non-empty tables without an explicit SET LOCAL organisations.rollback_destructive opt-in, and deliberately does NOT narrow compliance_audit_log's action CHECK back: that log is append-only and TRUNCATE-hardened, so narrowing it would invalidate history the platform guarantees is immutable. On a disposable cluster the tables are empty at rollback time, so the default non-destructive path drops them and postRollback asserts their removal.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "39_COUNTERPARTY_ORGANISATIONS_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F", "G"],
+    "expectedPassCount": 7,
+    "note": "All seven sections assert. A structure, B the widened role vocabulary (including that it still rejects an unknown role -- widening must not become 'anything goes'), C the RLS posture, D seven invalid organisation states each of which must be rejected (including NaN ownership, which a lower-bound-only CHECK would admit because PostgreSQL sorts NaN above every real number), E the behavioural double-blind proof as role authenticated, F audit emission with verification changes as a distinct action, G that anon holds nothing. NOT read-only: E and F insert fixtures, so the whole file is wrapped in BEGIN..ROLLBACK and must not be run against Production under the change freeze."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "39_COUNTERPARTY_ORGANISATIONS_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.farms",
+      "public.compliance_audit_log",
+      "public.is_ddp_admin"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": ["public.organisations", "public.organisation_memberships"],
+      "functions": [
+        "public.has_organisation_membership",
+        "public.fn_audit_organisation_change",
+        "public.fn_organisations_touch_updated_at"
+      ],
+      "policies": ["organisations_select", "organisation_memberships_select"]
+    },
+    "intact": {
+      "tables": ["public.profiles", "public.farms", "public.compliance_audit_log"],
+      "functions": ["public.is_ddp_admin", "auth.uid"],
+      "authUsersMinRows": 2
+    }
+  }
+}
