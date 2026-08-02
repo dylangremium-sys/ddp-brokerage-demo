@@ -105,12 +105,22 @@ CREATE TABLE IF NOT EXISTS public.farm_profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE
 );
+-- quantity_kg / client_visible / stock_status come from SUPABASE_SCHEMA.sql and
+-- FARMER_MVP_MIGRATION.sql (both pre-numbering) and are substrate for every
+-- numbered migration. Migration 44's reservation ledger reads all three:
+-- quantity_kg is the ceiling availability is computed against, client_visible
+-- is what makes a batch reservable at all, and stock_status is present only so
+-- a VERIFY can assert the ledger does NOT write to it. It does NOT reproduce
+-- the farmer-facing status vocabulary's own guardrails.
 CREATE TABLE IF NOT EXISTS public.inventory_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
   created_by uuid,
   status text,
   reviewed_by uuid,
+  quantity_kg numeric,
+  client_visible boolean NOT NULL DEFAULT false,
+  stock_status text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 -- public.status_history — the compliance artefact recording how an entity
@@ -253,6 +263,21 @@ BEGIN RETURN NEW; END $$;
 -- The migration under test owns its own policy set; here we only reproduce the
 -- platform's baseline grants.
 -- -----------------------------------------------------------------------------
+-- public.inventory_batches RLS — represents INVENTORY_BATCHES_RLS_PATCH.sql /
+-- migration 22's operational-access overlay. Needed because migration 44's
+-- VERIFY section H switches to `authenticated` and asserts that a BUYER holding
+-- a reservation cannot reach the batch row behind it; without RLS here the
+-- shim would report a double-blind breach that production does not have, or
+-- worse, pass a test that proves nothing. It approximates the real predicate
+-- (admin, or a member of the owning farm) and does NOT reproduce the full
+-- policy set, the farmer write guardrails, or migration 22's RESTRICTIVE overlay.
+ALTER TABLE public.inventory_batches ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS inventory_batches_substrate_select ON public.inventory_batches;
+CREATE POLICY inventory_batches_substrate_select ON public.inventory_batches
+  FOR SELECT TO authenticated
+  USING (public.is_ddp_admin() OR public.has_farm_membership(farm_id));
+GRANT SELECT ON public.inventory_batches TO authenticated;
+
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 GRANT USAGE ON SCHEMA storage, public, auth TO anon, authenticated, service_role;
 GRANT SELECT ON storage.objects TO anon, authenticated, service_role;
