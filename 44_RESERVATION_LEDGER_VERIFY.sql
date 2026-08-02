@@ -61,7 +61,9 @@ BEGIN
 
   FOREACH t IN ARRAY ARRAY['reservations_no_update_delete', 'reservation_releases_no_update_delete',
                            'reservations_enforce_availability', 'reservations_audit',
-                           'commercial_audit_log_no_update_delete'] LOOP
+                           'commercial_audit_log_no_update_delete',
+                           'reservations_no_truncate', 'reservation_releases_no_truncate',
+                           'commercial_audit_log_no_truncate'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = t AND NOT tgisinternal) THEN
       v_missing := array_append(v_missing, 'trigger ' || t);
     END IF;
@@ -719,9 +721,28 @@ BEGIN
   END;
 
   -- 6. No client role may write the audit trail directly.
+  --
+  -- NOTE ON WHAT THIS CANNOT SEE. On hosted Supabase, ALTER DEFAULT PRIVILEGES
+  -- grants `authenticated` direct CRUD on newly created public tables; the
+  -- disposable cluster has no such defaults, so these checks pass here whether
+  -- or not the migration revoked them. The migration therefore revokes from
+  -- authenticated EXPLICITLY rather than relying on this assertion — which is
+  -- why the REVOKE lines name three roles, not two.
   IF has_table_privilege('authenticated', 'public.commercial_audit_log', 'INSERT') THEN
     v_problems := array_append(v_problems, 'authenticated holds INSERT on commercial_audit_log');
   END IF;
+  IF has_table_privilege('authenticated', 'public.commercial_audit_log', 'TRUNCATE') THEN
+    v_problems := array_append(v_problems, 'authenticated holds TRUNCATE on commercial_audit_log');
+  END IF;
+
+  -- 7. TRUNCATE is blocked behaviourally, not merely by privilege — a row-level
+  -- trigger does not fire on it, and service_role inherits TRUNCATE on hosted
+  -- Supabase.
+  BEGIN
+    TRUNCATE public.commercial_audit_log;
+    v_problems := array_append(v_problems, 'TRUNCATE on commercial_audit_log was ADMITTED — the log is not append-only');
+  EXCEPTION WHEN others THEN NULL;
+  END;
   IF has_table_privilege('anon', 'public.commercial_audit_log', 'SELECT') THEN
     v_problems := array_append(v_problems, 'anon can read commercial_audit_log');
   END IF;
@@ -730,7 +751,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY J FAILED: %', array_to_string(v_problems, '; ');
   END IF;
 
-  RAISE NOTICE 'VERIFY J PASSED: commercial events go to commercial_audit_log and never to the compliance log, whose closed regulatory vocabulary admits neither reservation action; the commercial log names the real actor, is append-only, has its own closed vocabulary, and is writable by no client role.';
+  RAISE NOTICE 'VERIFY J PASSED: commercial events go to commercial_audit_log and never to the compliance log, whose closed regulatory vocabulary admits neither reservation action; the commercial log names the real actor, is append-only against UPDATE, DELETE and TRUNCATE alike, has its own closed vocabulary, and is writable by no client role.';
 END
 $verify_j$;
 

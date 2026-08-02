@@ -162,10 +162,30 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.prevent_reservation_mutation() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.prevent_reservation_mutation() TO service_role;
 
+-- A row-level trigger does not fire on TRUNCATE, and on hosted Supabase
+-- service_role inherits TRUNCATE on new public tables — so without this a
+-- single statement empties an "append-only" log. Statement-level guard,
+-- modelled on migration 11. The reused function raises on TG_OP alone (no
+-- NEW, no OLD), which is what makes it safe at statement level.
+DROP TRIGGER IF EXISTS reservations_no_truncate ON public.reservations;
+CREATE TRIGGER reservations_no_truncate
+  BEFORE TRUNCATE ON public.reservations
+  FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_reservation_mutation();
+
 DROP TRIGGER IF EXISTS reservations_no_update_delete ON public.reservations;
 CREATE TRIGGER reservations_no_update_delete
   BEFORE UPDATE OR DELETE ON public.reservations
   FOR EACH ROW EXECUTE FUNCTION public.prevent_reservation_mutation();
+
+-- A row-level trigger does not fire on TRUNCATE, and on hosted Supabase
+-- service_role inherits TRUNCATE on new public tables — so without this a
+-- single statement empties an "append-only" log. Statement-level guard,
+-- modelled on migration 11. The reused function raises on TG_OP alone (no
+-- NEW, no OLD), which is what makes it safe at statement level.
+DROP TRIGGER IF EXISTS reservation_releases_no_truncate ON public.reservation_releases;
+CREATE TRIGGER reservation_releases_no_truncate
+  BEFORE TRUNCATE ON public.reservation_releases
+  FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_reservation_mutation();
 
 DROP TRIGGER IF EXISTS reservation_releases_no_update_delete ON public.reservation_releases;
 CREATE TRIGGER reservation_releases_no_update_delete
@@ -478,6 +498,16 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.prevent_commercial_audit_log_mutation() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.prevent_commercial_audit_log_mutation() TO service_role;
 
+-- A row-level trigger does not fire on TRUNCATE, and on hosted Supabase
+-- service_role inherits TRUNCATE on new public tables — so without this a
+-- single statement empties an "append-only" log. Statement-level guard,
+-- modelled on migration 11. The reused function raises on TG_OP alone (no
+-- NEW, no OLD), which is what makes it safe at statement level.
+DROP TRIGGER IF EXISTS commercial_audit_log_no_truncate ON public.commercial_audit_log;
+CREATE TRIGGER commercial_audit_log_no_truncate
+  BEFORE TRUNCATE ON public.commercial_audit_log
+  FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_commercial_audit_log_mutation();
+
 DROP TRIGGER IF EXISTS commercial_audit_log_no_update_delete ON public.commercial_audit_log;
 CREATE TRIGGER commercial_audit_log_no_update_delete
   BEFORE UPDATE OR DELETE ON public.commercial_audit_log
@@ -492,7 +522,7 @@ CREATE POLICY commercial_audit_log_admin_select ON public.commercial_audit_log
   FOR SELECT TO authenticated
   USING (public.is_ddp_admin());
 
-REVOKE ALL ON public.commercial_audit_log FROM PUBLIC, anon;
+REVOKE ALL ON public.commercial_audit_log FROM PUBLIC, anon, authenticated;
 -- SELECT only. Rows arrive via the SECURITY DEFINER trigger below; no client
 -- role may write the audit trail directly, and none may amend it.
 GRANT SELECT ON public.commercial_audit_log TO authenticated, service_role;
@@ -622,8 +652,8 @@ CREATE POLICY reservation_releases_insert ON public.reservation_releases
 -- triggers are the behavioural guarantee; withholding the privilege means they
 -- are the second line of defence rather than the only one.
 -- -----------------------------------------------------------------------------
-REVOKE ALL ON public.reservations         FROM PUBLIC, anon;
-REVOKE ALL ON public.reservation_releases FROM PUBLIC, anon;
+REVOKE ALL ON public.reservations         FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.reservation_releases FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT, INSERT ON public.reservations         TO authenticated, service_role;
 GRANT SELECT, INSERT ON public.reservation_releases TO authenticated, service_role;

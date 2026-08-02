@@ -69,10 +69,13 @@ DROP POLICY  IF EXISTS reservation_releases_insert      ON public.reservation_re
 DROP TRIGGER IF EXISTS reservations_audit               ON public.reservations;
 DROP TRIGGER IF EXISTS reservation_releases_audit       ON public.reservation_releases;
 DROP TRIGGER IF EXISTS reservations_enforce_availability ON public.reservations;
+DROP TRIGGER IF EXISTS reservations_no_truncate ON public.reservations;
 DROP TRIGGER IF EXISTS reservations_no_update_delete    ON public.reservations;
+DROP TRIGGER IF EXISTS reservation_releases_no_truncate ON public.reservation_releases;
 DROP TRIGGER IF EXISTS reservation_releases_no_update_delete ON public.reservation_releases;
 
 -- Releases first (FK to reservations).
+DROP TRIGGER IF EXISTS commercial_audit_log_no_truncate ON public.commercial_audit_log;
 DROP TRIGGER IF EXISTS commercial_audit_log_no_update_delete ON public.commercial_audit_log;
 DROP POLICY  IF EXISTS commercial_audit_log_admin_select     ON public.commercial_audit_log;
 
