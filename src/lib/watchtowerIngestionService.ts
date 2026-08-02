@@ -4,6 +4,8 @@ import {
 } from './complianceSourceConnectors'
 import { executeRssConnector, type RssConnectorResult, type RssConnectorErrorCode } from './complianceRssConnector'
 import { createServerProxyRssFetch } from './serverProxyRssFetch'
+import { executeHtmlWatchConnector } from './complianceHtmlWatchConnector'
+import type { SourceContentSnapshot } from './complianceSourceMonitoring'
 import { compareSourcesForMonitoring } from './complianceSourceGovernance'
 import {
   classifyIngestionItem,
@@ -393,6 +395,15 @@ export interface DefaultIngestionDepsConfig {
    * missing argument.
    */
   getAccessToken: () => Promise<string | null>
+  /**
+   * Previously-seen page snapshots, keyed by htmlWatchItemId(source).
+   *
+   * Only html-monitored sources use this. Absent means every watched page reads
+   * as first-seen, which produces one candidate per page on the first run and
+   * then settles — the correct behaviour for a cold start, and the reason this
+   * is optional rather than required.
+   */
+  previousSnapshots?: Map<string, SourceContentSnapshot>
 }
 
 /**
@@ -415,14 +426,29 @@ export interface DefaultIngestionDepsConfig {
  */
 export function createDefaultIngestionDeps(config: DefaultIngestionDepsConfig): IngestionDeps {
   return {
-    runConnector: (source) =>
-      executeRssConnector(source, config.allowedHosts, createServerProxyRssFetch(source.id, {
-        getAccessToken: config.getAccessToken,
-      }), {
+    runConnector: (source) => {
+      const fetchImpl = createServerProxyRssFetch(source.id, { getAccessToken: config.getAccessToken })
+
+      // Dispatch by modality. Until now this always called executeRssConnector,
+      // which hard-rejects any kind that is not rss/atom — so all six
+      // html-monitored Thai sources (FDA, MOPH, ONCB, Customs, DOA, the Royal
+      // Gazette) recorded `unsupported_connector` on every run, and DDP
+      // monitored the Czech and EU regulators only.
+      if (connectorKindForSource(source) === 'html') {
+        return executeHtmlWatchConnector(source, config.allowedHosts, fetchImpl, {
+          userAgent: config.userAgent,
+          timeoutMs: config.timeoutMs,
+          maxResponseBytes: config.maxResponseBytes,
+          previousSnapshots: config.previousSnapshots,
+        })
+      }
+
+      return executeRssConnector(source, config.allowedHosts, fetchImpl, {
         userAgent: config.userAgent,
         timeoutMs: config.timeoutMs,
         maxResponseBytes: config.maxResponseBytes,
-      }),
+      })
+    },
     fetchKnownIdentity: () => repo.fetchKnownLegalUpdateIdentity(),
     openRun: (input) => repo.openIngestionRun(input),
     closeRun: (id, input) => repo.closeIngestionRun(id, input),
