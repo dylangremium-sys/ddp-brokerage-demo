@@ -35,17 +35,19 @@ BEGIN
   END IF;
 
   FOREACH f IN ARRAY ARRAY['current_auth_assurance_level', 'has_mfa_assurance',
-                           'mfa_required_for_gate_approval', 'fn_require_mfa_for_override'] LOOP
+                           'mfa_required_for_gate_approval', 'fn_require_mfa_for_override',
+                           'fn_guard_security_setting_weakening'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
                    WHERE n.nspname='public' AND p.proname=f) THEN
       v_missing := array_append(v_missing, 'function ' || f);
     END IF;
   END LOOP;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger
-                 WHERE tgname='export_gate_overrides_require_mfa' AND NOT tgisinternal) THEN
-    v_missing := array_append(v_missing, 'trigger export_gate_overrides_require_mfa');
-  END IF;
+  FOREACH f IN ARRAY ARRAY['export_gate_overrides_require_mfa', 'security_settings_guard_weakening'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = f AND NOT tgisinternal) THEN
+      v_missing := array_append(v_missing, 'trigger ' || f);
+    END IF;
+  END LOOP;
 
   IF NOT EXISTS (SELECT 1 FROM public.security_settings WHERE key='mfa_required_for_gate_approval') THEN
     v_missing := array_append(v_missing, 'the mfa_required_for_gate_approval setting row');
@@ -152,11 +154,19 @@ BEGIN
   INSERT INTO public.organisations (org_type, legal_name, country_code)
   VALUES ('broker', 'MFA Test Exporter', 'TH') RETURNING id INTO v_export;
 
+  -- The conditions blob must be realistic: migration 42 refuses an override that
+  -- waives a condition the evaluation never had, or one that passed.
   INSERT INTO public.export_eligibility_evaluations
     (consignment_ref, buyer_organisation_id, exporter_organisation_id, regime,
      destination_country, quantity_kg, evaluated_as_of, outcome, conditions, blocking_reasons)
   VALUES ('CONS-MFA', v_buyer, v_export, 'controlled_herb', 'DE', 1.000, current_date,
-          'blocked', '{}'::jsonb, ARRAY['no permit on file'])
+          'blocked',
+          jsonb_build_object(
+            'buyer_import_permit_valid',  jsonb_build_object('pass', false, 'detail', 'no permit on file'),
+            'permit_headroom_sufficient', jsonb_build_object('pass', false, 'detail', 'no permit to draw against'),
+            'buyer_verified',             jsonb_build_object('pass', false, 'detail', 'unverified'),
+            'screening_clear',            jsonb_build_object('pass', false, 'detail', 'never screened')),
+          ARRAY['no permit on file'])
   RETURNING id INTO v_eval;
 
   -- A signed-in admin with password-only assurance.
@@ -224,9 +234,37 @@ DECLARE
 BEGIN
   SELECT id INTO v_eval FROM public.export_eligibility_evaluations WHERE consignment_ref='CONS-MFA';
 
-  -- Delete the setting row as the table owner (no client role holds DELETE —
-  -- section A asserts that — but an attacker with database access, or a bad
-  -- migration, could still remove it).
+  -- FIRST: weakening the control requires the assurance it is about to remove.
+  -- Without this, MFA enforcement is a bypass with one extra step — disable,
+  -- approve, re-enable — and the control stops being a control.
+  PERFORM set_config('request.jwt.claim.sub', v_admin::text, true);
+  PERFORM set_config('request.jwt.claim.aal', 'aal1', true);
+  BEGIN
+    UPDATE public.security_settings SET enabled = false, note = 'switched off without a second factor'
+     WHERE key = 'mfa_required_for_gate_approval';
+    v_refused := false;
+  EXCEPTION WHEN others THEN
+    v_refused := true;
+  END;
+  IF NOT v_refused THEN
+    RAISE EXCEPTION 'VERIFY E FAILED: a password-only admin DISABLED MFA enforcement. The control can be switched off by exactly the session it exists to stop.';
+  END IF;
+
+  BEGIN
+    DELETE FROM public.security_settings WHERE key = 'mfa_required_for_gate_approval';
+    v_refused := false;
+  EXCEPTION WHEN others THEN
+    v_refused := true;
+  END;
+  IF NOT v_refused THEN
+    RAISE EXCEPTION 'VERIFY E FAILED: a password-only admin DELETED the enforcement row.';
+  END IF;
+
+  -- Strengthening must never be harder than leaving it off.
+  UPDATE public.security_settings SET enabled = true, note = 'still on' WHERE key = 'mfa_required_for_gate_approval';
+
+  -- Now delete it with a second factor present, to reach the missing-row case.
+  PERFORM set_config('request.jwt.claim.aal', 'aal2', true);
   DELETE FROM public.security_settings WHERE key = 'mfa_required_for_gate_approval';
 
   IF NOT public.mfa_required_for_gate_approval() THEN
@@ -248,7 +286,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY E FAILED: with the settings row deleted, a password-only override succeeded.';
   END IF;
 
-  RAISE NOTICE 'VERIFY E PASSED: with the settings row deleted, enforcement defaults to REQUIRED and a password-only override is still refused.';
+  RAISE NOTICE 'VERIFY E PASSED: a password-only session can neither disable nor delete the enforcement row, strengthening it is unrestricted, and with the row deleted enforcement defaults to REQUIRED so a password-only override is still refused.';
 END
 $verify_e$;
 

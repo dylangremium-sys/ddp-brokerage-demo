@@ -41,7 +41,8 @@ BEGIN
     v_missing := array_append(v_missing, 'table public.destination_rulesets');
   END IF;
 
-  FOREACH f IN ARRAY ARRAY['compliance_rules_in_force', 'destination_ruleset_in_force',
+  FOREACH f IN ARRAY ARRAY['compliance_rules_in_force', 'compliance_rules_currently_enforced',
+                           'destination_ruleset_in_force',
                            'fn_reject_overlapping_destination_ruleset'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
                    WHERE n.nspname='public' AND p.proname=f) THEN
@@ -129,6 +130,7 @@ DO $verify_c$
 DECLARE
   v_future uuid;
   v_past   uuid;
+  v_draft  uuid;
   v_problems text[] := ARRAY[]::text[];
 BEGIN
   -- A rule that takes effect next month.
@@ -172,17 +174,54 @@ BEGIN
     v_problems := array_append(v_problems, 'effective_to is not exclusive on its own day');
   END IF;
 
-  -- Status still gates: a paused rule is not in force even inside its window.
+  -- ── Lifecycle status must NOT rewrite history ────────────────────────────
+  -- Pausing a rule today cannot change what applied last March. If the
+  -- historical resolver filtered on present-tense status, retiring a rule would
+  -- silently erase it from every past evaluation — which defeats the whole
+  -- migration. This is the regression guard for that.
   UPDATE public.compliance_rules SET status = 'paused' WHERE id = v_past;
-  IF EXISTS (SELECT 1 FROM public.compliance_rules_in_force(current_date - 200) WHERE id = v_past) THEN
-    v_problems := array_append(v_problems, 'a PAUSED rule is in force inside its date window');
+  IF NOT EXISTS (SELECT 1 FROM public.compliance_rules_in_force(current_date - 200) WHERE id = v_past) THEN
+    v_problems := array_append(v_problems,
+      'pausing a rule TODAY removed it from a HISTORICAL query — present-tense status is rewriting the past');
+  END IF;
+
+  UPDATE public.compliance_rules SET status = 'retired' WHERE id = v_past;
+  IF NOT EXISTS (SELECT 1 FROM public.compliance_rules_in_force(current_date - 200) WHERE id = v_past) THEN
+    v_problems := array_append(v_problems, 'retiring a rule removed it from a historical query');
+  END IF;
+
+  -- But a rule that NEVER reached force must never be applied to history.
+  INSERT INTO public.compliance_rules
+    (rule_code, title, description, entity_type, severity, status, effective_from)
+  VALUES ('VERIFY-41-DRAFT', 'Never adopted', 'A proposal that was rejected', 'shipment', 'high',
+          'rejected', current_date - 400)
+  RETURNING id INTO v_draft;
+
+  IF EXISTS (SELECT 1 FROM public.compliance_rules_in_force(current_date - 200) WHERE id = v_draft) THEN
+    v_problems := array_append(v_problems,
+      'a REJECTED rule that never reached force was applied to a historical date');
+  END IF;
+
+  -- ── The present-tense question is answered separately ────────────────────
+  -- Re-open the paused rule's window so only status can be responsible.
+  UPDATE public.compliance_rules
+     SET status = 'paused', effective_to = NULL WHERE id = v_past;
+  IF EXISTS (SELECT 1 FROM public.compliance_rules_currently_enforced() WHERE id = v_past) THEN
+    v_problems := array_append(v_problems,
+      'a PAUSED rule with an open window is still CURRENTLY ENFORCED');
+  END IF;
+
+  UPDATE public.compliance_rules SET status = 'active' WHERE id = v_past;
+  IF NOT EXISTS (SELECT 1 FROM public.compliance_rules_currently_enforced() WHERE id = v_past) THEN
+    v_problems := array_append(v_problems,
+      'an ACTIVE rule with an open window is not currently enforced');
   END IF;
 
   IF array_length(v_problems, 1) > 0 THEN
     RAISE EXCEPTION 'VERIFY C FAILED: %', array_to_string(v_problems, '; ');
   END IF;
 
-  RAISE NOTICE 'VERIFY C PASSED: rules resolve by date in both directions, effective_from is inclusive and effective_to exclusive, and status still gates inside the window.';
+  RAISE NOTICE 'VERIFY C PASSED: rules resolve by date in both directions with effective_from inclusive and effective_to exclusive; pausing or retiring a rule does NOT remove it from historical queries; a rule that never reached force is never applied to history; and the separate present-tense resolver excludes a paused rule while admitting an active one.';
 END
 $verify_c$;
 

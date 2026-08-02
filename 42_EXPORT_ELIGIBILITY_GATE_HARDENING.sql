@@ -25,6 +25,9 @@
 --                                       force for this regime
 --   6. batch_releasable               — the batch has an ACCEPTED COA with no
 --                                       FAILED contaminant result
+--  6b. ruleset_requirements_met       — every analyte the destination ruleset
+--                                       requires is evidenced as passed, and the
+--                                       market's THC ceiling is respected
 --   7. screening_clear                — denied-party screening is clear AND not
 --                                       stale
 --
@@ -198,9 +201,12 @@ CREATE TABLE IF NOT EXISTS public.export_gate_overrides (
   id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   evaluation_id          uuid NOT NULL REFERENCES public.export_eligibility_evaluations(id) ON DELETE RESTRICT,
 
-  -- The named human. NOT NULL, no default, no "system" path: nothing may
-  -- override the export gate without a person's identity attached.
-  approved_by            uuid NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+  -- The named human. NOT NULL and defaulted from the SESSION, not from the
+  -- caller: a client-supplied approver is an attribution the approver never
+  -- made, and the whole value of this row is that it names who is accountable.
+  -- fn_validate_override() below refuses any INSERT where a signed-in caller
+  -- names somebody other than themselves. Mirrors migration 30's decided_by.
+  approved_by            uuid NOT NULL DEFAULT auth.uid() REFERENCES public.profiles(id) ON DELETE RESTRICT,
 
   -- A reason short enough to be meaningless is not a reason. Twenty characters
   -- will not stop a determined shrug, but it does stop "ok" and "approved".
@@ -280,6 +286,82 @@ CREATE TRIGGER export_gate_overrides_guard
   BEFORE UPDATE OR DELETE ON public.export_gate_overrides
   FOR EACH ROW EXECUTE FUNCTION public.fn_guard_override_mutation();
 
+-- Two things a CHECK constraint cannot express, both enforced at INSERT.
+--
+-- 1. THE APPROVER IS THE SESSION, NOT A PARAMETER.
+--    Without this, a signed-in admin can write any profile id into approved_by
+--    and the audit trail records a bypass that somebody else appears to have
+--    authorised. A back-office connection with no JWT (auth.uid() IS NULL) may
+--    still name an approver, because it has no session to derive one from — but
+--    it cannot pretend to be a signed-in user, because there is no branch where
+--    a non-NULL auth.uid() is ignored.
+--
+-- 2. A WAIVED CONDITION MUST BE ONE THAT ACTUALLY FAILED.
+--    conditions_overridden is free text. Naming a condition that does not exist
+--    on the evaluation, or one that PASSED, produces an override that appears to
+--    justify a bypass while waiving nothing — the exceptions report then reads as
+--    though the real blocker was reviewed when it never was. Both are refused.
+CREATE OR REPLACE FUNCTION public.fn_validate_override()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  v_actor      uuid := auth.uid();
+  v_conditions jsonb;
+  v_outcome    text;
+  v_named      text;
+BEGIN
+  IF v_actor IS NOT NULL AND NEW.approved_by IS DISTINCT FROM v_actor THEN
+    RAISE EXCEPTION
+      'export gate override refused: approved_by must be the authenticated caller (%), not %. '
+      'An override records who is accountable for a bypass; it may not be attributed to anyone else.',
+      v_actor, NEW.approved_by;
+  END IF;
+
+  SELECT e.conditions, e.outcome INTO v_conditions, v_outcome
+  FROM public.export_eligibility_evaluations e
+  WHERE e.id = NEW.evaluation_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'export gate override refused: evaluation % does not exist', NEW.evaluation_id;
+  END IF;
+
+  -- Overriding an evaluation that passed is meaningless and would put a
+  -- fictitious exception on the review report.
+  IF v_outcome <> 'blocked' THEN
+    RAISE EXCEPTION
+      'export gate override refused: evaluation % has outcome "%" — there is nothing to override.',
+      NEW.evaluation_id, v_outcome;
+  END IF;
+
+  FOREACH v_named IN ARRAY NEW.conditions_overridden LOOP
+    IF NOT (v_conditions ? v_named) THEN
+      RAISE EXCEPTION
+        'export gate override refused: "%" is not a condition of evaluation %. The waived conditions '
+        'must name conditions the gate actually evaluated.', v_named, NEW.evaluation_id;
+    END IF;
+    IF coalesce((v_conditions -> v_named ->> 'pass')::boolean, false) THEN
+      RAISE EXCEPTION
+        'export gate override refused: condition "%" PASSED on evaluation % — waiving a condition that '
+        'was already satisfied makes the exceptions report describe a review that never needed to happen.',
+        v_named, NEW.evaluation_id;
+    END IF;
+  END LOOP;
+
+  RETURN NEW;
+END
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.fn_validate_override() FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.fn_validate_override() TO service_role;
+
+DROP TRIGGER IF EXISTS export_gate_overrides_validate ON public.export_gate_overrides;
+CREATE TRIGGER export_gate_overrides_validate
+  BEFORE INSERT ON public.export_gate_overrides
+  FOR EACH ROW EXECUTE FUNCTION public.fn_validate_override();
+
 -- The standing exceptions report.
 CREATE OR REPLACE VIEW public.export_gate_overrides_pending_review AS
   SELECT o.id, o.evaluation_id, o.approved_by, o.approved_at, o.reason,
@@ -356,6 +438,10 @@ DECLARE
   v_licence_ok   boolean := false;
   v_headroom     numeric := 0;
   v_batch_ok     boolean := false;
+  v_unmet        text[] := ARRAY[]::text[];
+  v_analyte      text;
+  v_covered      boolean := false;
+  v_thc          numeric;
   v_outcome      text;
   v_eval_id      uuid;
   v_detail       text;
@@ -529,6 +615,72 @@ BEGIN
       v_conditions := v_conditions || jsonb_build_object('batch_releasable',
         jsonb_build_object('pass', false, 'detail', v_detail));
     END IF;
+  END IF;
+
+  -- ── 6b. The ruleset's own product requirements ───────────────────────────
+  -- Resolving a ruleset and then ignoring what it says is worse than not
+  -- resolving one, because the evaluation record shows a ruleset was consulted.
+  -- required_analytes and max_thc_pct are the two requirements the ruleset
+  -- carries, and both are enforced here against the accepted COA.
+  --
+  -- An analyte name the mapping does not recognise resolves to NULL, never
+  -- matches 'pass', and therefore counts as UNMET — an unrecognised requirement
+  -- must block rather than be quietly skipped.
+  v_unmet := ARRAY[]::text[];
+
+  IF v_ruleset.id IS NULL THEN
+    v_unmet := array_append(v_unmet, 'no ruleset resolved, so its requirements cannot be checked');
+  ELSIF p_inventory_batch_id IS NULL THEN
+    IF coalesce(array_length(v_ruleset.required_analytes, 1), 0) > 0
+       OR v_ruleset.max_thc_pct IS NOT NULL THEN
+      v_unmet := array_append(v_unmet, 'no batch named, so COA requirements cannot be checked');
+    END IF;
+  ELSE
+    FOREACH v_analyte IN ARRAY v_ruleset.required_analytes LOOP
+      SELECT EXISTS (
+        SELECT 1 FROM public.farmer_documents d
+        WHERE d.inventory_batch_id = p_inventory_batch_id
+          AND d.document_type = 'coa'
+          AND d.review_status = 'accepted'
+          AND CASE v_analyte
+                WHEN 'heavy_metals' THEN d.heavy_metals_status
+                WHEN 'pesticides'   THEN d.pesticides_status
+                WHEN 'microbial'    THEN d.microbial_status
+                WHEN 'mycotoxins'   THEN d.mycotoxins_status
+                ELSE NULL
+              END = 'pass'
+      ) INTO v_covered;
+
+      IF NOT v_covered THEN
+        v_unmet := array_append(v_unmet, format('%s not evidenced as passed', v_analyte));
+      END IF;
+    END LOOP;
+
+    IF v_ruleset.max_thc_pct IS NOT NULL THEN
+      SELECT max(d.total_thc) INTO v_thc
+      FROM public.farmer_documents d
+      WHERE d.inventory_batch_id = p_inventory_batch_id
+        AND d.document_type = 'coa'
+        AND d.review_status = 'accepted';
+
+      IF v_thc IS NULL THEN
+        -- Not measured is not "under the limit".
+        v_unmet := array_append(v_unmet, 'total THC not measured on any accepted COA');
+      ELSIF v_thc > v_ruleset.max_thc_pct THEN
+        v_unmet := array_append(v_unmet,
+          format('total THC %s%% exceeds the market limit of %s%%', v_thc, v_ruleset.max_thc_pct));
+      END IF;
+    END IF;
+  END IF;
+
+  IF coalesce(array_length(v_unmet, 1), 0) = 0 THEN
+    v_conditions := v_conditions || jsonb_build_object('ruleset_requirements_met',
+      jsonb_build_object('pass', true, 'detail', 'every analyte and limit the destination ruleset requires is evidenced'));
+  ELSE
+    v_reasons := array_append(v_reasons,
+      'Destination ruleset requirements unmet: ' || array_to_string(v_unmet, '; '));
+    v_conditions := v_conditions || jsonb_build_object('ruleset_requirements_met',
+      jsonb_build_object('pass', false, 'detail', array_to_string(v_unmet, '; ')));
   END IF;
 
   -- ── 7. Screening ─────────────────────────────────────────────────────────

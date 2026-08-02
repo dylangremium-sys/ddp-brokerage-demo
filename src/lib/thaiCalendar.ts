@@ -140,12 +140,12 @@ export type DualDateResult =
  * calling the parser and hoping the year happens to be unambiguous.
  */
 export function dualDateFrom(iso: string, era: Era): DualDateResult {
-  const m = ISO_DATE_RE.exec(iso)
-  if (!m) return { ok: false, reason: 'malformed' }
+  const parts = ISO_DATE_RE.exec(iso)
+  if (!parts) return { ok: false, reason: 'malformed' }
 
-  const rawYear = Number(m[1])
-  const month = Number(m[2])
-  const day = Number(m[3])
+  const rawYear = Number(parts[1])
+  const month = Number(parts[2])
+  const day = Number(parts[3])
 
   const ceYear = era === 'be' ? beYearToCe(rawYear) : rawYear
   if (ceYear < EARLIEST_CONVERTIBLE_CE_YEAR || ceYear > LATEST_CONVERTIBLE_CE_YEAR) {
@@ -154,7 +154,7 @@ export function dualDateFrom(iso: string, era: Era): DualDateResult {
   if (month < 1 || month > 12) return { ok: false, reason: 'impossible-date' }
   if (day < 1 || day > daysInMonth(ceYear, month)) return { ok: false, reason: 'impossible-date' }
 
-  const ce = `${String(ceYear).padStart(4, '0')}-${m[2]}-${m[3]}`
+  const ce = `${String(ceYear).padStart(4, '0')}-${parts[2]}-${parts[3]}`
   return { ok: true, value: { ce, beYear: ceYearToBe(ceYear) } }
 }
 
@@ -166,10 +166,10 @@ export function dualDateFrom(iso: string, era: Era): DualDateResult {
  * data-quality exception for a human — never pick a default.
  */
 export function parseDualDate(iso: string): DualDateResult {
-  const m = ISO_DATE_RE.exec(iso)
-  if (!m) return { ok: false, reason: 'malformed' }
+  const parts = ISO_DATE_RE.exec(iso)
+  if (!parts) return { ok: false, reason: 'malformed' }
 
-  const classification = classifyEra(Number(m[1]))
+  const classification = classifyEra(Number(parts[1]))
   if (!classification.certain) {
     return { ok: false, reason: classification.reason === 'ambiguous' ? 'era-ambiguous' : 'era-out-of-range' }
   }
@@ -227,9 +227,9 @@ export function reconcileDualYear(ceYear: number, beYear: number): DualYearMisma
  * them apart from the exception alone.
  */
 export function reconcileDualDate(value: DualDate): DualYearMismatch {
-  const m = ISO_DATE_RE.exec(value.ce)
-  if (!m) return { ok: false, reason: 'malformed-ce' }
-  return reconcileDualYear(Number(m[1]), value.beYear)
+  const parts = ISO_DATE_RE.exec(value.ce)
+  if (!parts) return { ok: false, reason: 'malformed-ce' }
+  return reconcileDualYear(Number(parts[1]), value.beYear)
 }
 
 // ─── Rendering ──────────────────────────────────────────────────────────────
@@ -252,23 +252,23 @@ const EN_MONTHS = [
  * look like a plausible year.
  */
 export function formatDualDate(value: DualDate, lang: Lang): string {
-  const m = ISO_DATE_RE.exec(value.ce)
-  if (!m) return value.ce
+  const parts = ISO_DATE_RE.exec(value.ce)
+  if (!parts) return value.ce
 
-  const monthIndex = Number(m[2]) - 1
-  const day = Number(m[3])
+  const monthIndex = Number(parts[2]) - 1
+  const day = Number(parts[3])
   if (monthIndex < 0 || monthIndex > 11) return value.ce
 
   if (lang === 'th') {
     return `${day} ${THAI_MONTHS[monthIndex]} พ.ศ. ${value.beYear}`
   }
-  return `${day} ${EN_MONTHS[monthIndex]} ${m[1]} CE`
+  return `${day} ${EN_MONTHS[monthIndex]} ${parts[1]} CE`
 }
 
 /** Compact both-calendars rendering for documents that must satisfy either reader. */
 export function formatDualDateBoth(value: DualDate): string {
-  const m = ISO_DATE_RE.exec(value.ce)
-  if (!m) return value.ce
+  const parts = ISO_DATE_RE.exec(value.ce)
+  if (!parts) return value.ce
   return `${value.ce} CE (พ.ศ. ${value.beYear})`
 }
 

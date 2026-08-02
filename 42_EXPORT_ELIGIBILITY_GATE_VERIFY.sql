@@ -77,7 +77,8 @@ DECLARE
   v_failed_all boolean := true;
   v_conditions text[] := ARRAY['destination_ruleset_resolved', 'buyer_verified',
                                'buyer_import_permit_valid', 'permit_headroom_sufficient',
-                               'exporter_licence_valid', 'batch_releasable', 'screening_clear'];
+                               'exporter_licence_valid', 'batch_releasable', 'ruleset_requirements_met',
+                               'screening_clear'];
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_admin, 'admin42@verify.test') ON CONFLICT DO NOTHING;
   INSERT INTO public.profiles (id, email, role) VALUES (v_admin, 'admin42@verify.test', 'ddp_admin')
@@ -110,8 +111,8 @@ BEGIN
     RAISE EXCEPTION 'VERIFY B FAILED: at least one condition did not fail closed against an empty world. See the notices above.';
   END IF;
 
-  IF jsonb_array_length(v_result->'blocking_reasons') < 7 THEN
-    RAISE EXCEPTION 'VERIFY B FAILED: expected at least 7 blocking reasons, got %.',
+  IF jsonb_array_length(v_result->'blocking_reasons') < 8 THEN
+    RAISE EXCEPTION 'VERIFY B FAILED: expected at least 8 blocking reasons, got %.',
       jsonb_array_length(v_result->'blocking_reasons');
   END IF;
 
@@ -121,7 +122,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY B FAILED: the blocked evaluation was not recorded.';
   END IF;
 
-  RAISE NOTICE 'VERIFY B PASSED: against an empty world all seven conditions fail, the gate blocks with seven or more reasons, and the refusal is recorded.';
+  RAISE NOTICE 'VERIFY B PASSED: against an empty world all eight conditions fail, the gate blocks with eight or more reasons, and the refusal is recorded.';
 END
 $verify_b$;
 
@@ -191,7 +192,8 @@ BEGIN
 
   FOREACH v_cond IN ARRAY ARRAY['destination_ruleset_resolved', 'buyer_verified',
                                 'buyer_import_permit_valid', 'permit_headroom_sufficient',
-                                'exporter_licence_valid', 'batch_releasable', 'screening_clear'] LOOP
+                                'exporter_licence_valid', 'batch_releasable', 'ruleset_requirements_met',
+                                'screening_clear'] LOOP
     IF (v_result->'conditions'->v_cond->>'pass')::boolean IS DISTINCT FROM true THEN
       RAISE EXCEPTION 'VERIFY C FAILED: condition % did not pass in the fully-satisfied scenario: %',
         v_cond, v_result->'conditions'->v_cond;
@@ -290,6 +292,57 @@ BEGIN
     v_problems := array_append(v_problems, 'a consignment with NO batch was judged releasable');
   END IF;
 
+  -- (h) The destination ruleset demands an analyte the COA does not evidence.
+  -- Resolving a ruleset and then ignoring what it requires is worse than not
+  -- resolving one, because the evaluation record shows a ruleset was consulted.
+  UPDATE public.destination_rulesets
+     SET required_analytes = ARRAY['heavy_metals', 'pesticides', 'aflatoxin_b1']
+   WHERE country_code = 'DE' AND regime = 'controlled_herb' AND effective_to IS NULL;
+
+  v_result := public.evaluate_export_eligibility(
+    'CONS-D-H', v_buyer, v_export, 'controlled_herb', 'DE', 25.000, v_batch, current_date);
+  IF (v_result->'conditions'->'ruleset_requirements_met'->>'pass')::boolean THEN
+    v_problems := array_append(v_problems,
+      'the gate ignored an analyte the destination ruleset requires (aflatoxin_b1 is not evidenced)');
+  END IF;
+  IF v_result->>'outcome' <> 'blocked' THEN
+    v_problems := array_append(v_problems, 'an unmet ruleset analyte requirement did not block the consignment');
+  END IF;
+
+  -- Only the analytes the COA actually evidences: now it must pass.
+  UPDATE public.destination_rulesets
+     SET required_analytes = ARRAY['heavy_metals', 'pesticides']
+   WHERE country_code = 'DE' AND regime = 'controlled_herb' AND effective_to IS NULL;
+  v_result := public.evaluate_export_eligibility(
+    'CONS-D-H2', v_buyer, v_export, 'controlled_herb', 'DE', 25.000, v_batch, current_date);
+  IF NOT (v_result->'conditions'->'ruleset_requirements_met'->>'pass')::boolean THEN
+    v_problems := array_append(v_problems,
+      'analytes the COA DOES evidence as passed were still reported unmet');
+  END IF;
+
+  -- (i) The market's THC ceiling. "Not measured" must not read as "under it".
+  UPDATE public.destination_rulesets
+     SET max_thc_pct = 0.200
+   WHERE country_code = 'DE' AND regime = 'controlled_herb' AND effective_to IS NULL;
+
+  v_result := public.evaluate_export_eligibility(
+    'CONS-D-I', v_buyer, v_export, 'controlled_herb', 'DE', 25.000, v_batch, current_date);
+  IF (v_result->'conditions'->'ruleset_requirements_met'->>'pass')::boolean THEN
+    v_problems := array_append(v_problems,
+      'an unmeasured total THC satisfied a market THC ceiling');
+  END IF;
+
+  UPDATE public.farmer_documents SET total_thc = 18.500
+   WHERE inventory_batch_id = v_batch AND document_type = 'coa';
+  v_result := public.evaluate_export_eligibility(
+    'CONS-D-I2', v_buyer, v_export, 'controlled_herb', 'DE', 25.000, v_batch, current_date);
+  IF (v_result->'conditions'->'ruleset_requirements_met'->>'pass')::boolean THEN
+    v_problems := array_append(v_problems, '18.5% THC passed a 0.2% market ceiling');
+  END IF;
+
+  UPDATE public.destination_rulesets SET max_thc_pct = NULL, required_analytes = ARRAY[]::text[]
+   WHERE country_code = 'DE' AND regime = 'controlled_herb' AND effective_to IS NULL;
+
   -- Sanity: after all repairs the scenario passes again, so the failures above
   -- were caused by what was broken and not by cumulative fixture damage.
   v_result := public.evaluate_export_eligibility(
@@ -304,7 +357,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY D FAILED: %', array_to_string(v_problems, '; ');
   END IF;
 
-  RAISE NOTICE 'VERIFY D PASSED: wrong destination, wrong regime, suspended buyer, failed contaminant result, stale screening, confirmed denied-party match and a missing batch each block the correct condition — and the scenario passes again once repaired.';
+  RAISE NOTICE 'VERIFY D PASSED: wrong destination, wrong regime, suspended buyer, failed contaminant result, stale screening, confirmed denied-party match, a missing batch, an unevidenced required analyte, an unmeasured THC and an over-limit THC each block the correct condition — and the scenario passes again once repaired.';
 END
 $verify_d$;
 
@@ -458,6 +511,35 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 
+  -- An override attributed to somebody else. The approver is the accountable
+  -- party; a caller-supplied one records an authorisation that person never gave.
+  BEGIN
+    INSERT INTO public.export_gate_overrides (evaluation_id, approved_by, reason, conditions_overridden)
+    VALUES (v_eval, v_admin2, 'Attributing this bypass to a different administrator entirely.',
+            ARRAY['buyer_import_permit_valid']);
+    v_problems := array_append(v_problems, 'an override was attributed to a DIFFERENT admin than the caller');
+  EXCEPTION WHEN others THEN NULL;
+  END;
+
+  -- Waiving a condition that is not on the evaluation at all.
+  BEGIN
+    INSERT INTO public.export_gate_overrides (evaluation_id, approved_by, reason, conditions_overridden)
+    VALUES (v_eval, v_admin, 'Waiving something that was never evaluated in the first place.',
+            ARRAY['no_such_condition']);
+    v_problems := array_append(v_problems, 'an override waived a condition that does not exist on the evaluation');
+  EXCEPTION WHEN others THEN NULL;
+  END;
+
+  -- Waiving a condition that PASSED. This is the subtle one: the exceptions
+  -- report would show a reviewed bypass while the real blocker went untouched.
+  BEGIN
+    INSERT INTO public.export_gate_overrides (evaluation_id, approved_by, reason, conditions_overridden)
+    VALUES (v_eval, v_admin, 'Waiving a condition that was already satisfied, which waives nothing.',
+            ARRAY['ruleset_requirements_met']);
+    v_problems := array_append(v_problems, 'an override waived a condition that had PASSED');
+  EXCEPTION WHEN others THEN NULL;
+  END;
+
   -- A proper override.
   INSERT INTO public.export_gate_overrides (evaluation_id, approved_by, reason, conditions_overridden)
   VALUES (v_eval, v_admin,
@@ -508,7 +590,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY G FAILED: %', array_to_string(v_problems, '; ');
   END IF;
 
-  RAISE NOTICE 'VERIFY G PASSED: evaluations cannot be updated or deleted; overrides reject a trivial reason and a blanket waiver, are immutable in approver/reason/conditions, cannot be self-reviewed, and their review stamp cannot be rewritten.';
+  RAISE NOTICE 'VERIFY G PASSED: evaluations cannot be updated or deleted; overrides reject a trivial reason, a blanket waiver, attribution to another admin, a condition the evaluation never had and a condition that PASSED; they are immutable in approver/reason/conditions, cannot be self-reviewed, and their review stamp cannot be rewritten.';
 END
 $verify_g$;
 

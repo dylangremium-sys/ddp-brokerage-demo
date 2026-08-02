@@ -5,27 +5,61 @@
   "pgMajor": 18,
   "migrationDir": ".",
   "applyStages": [
-    { "label": "HARDENING-39", "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql" },
-    { "label": "HARDENING-40", "file": "40_LICENCES_AND_PERMITS_HARDENING.sql" },
-    { "label": "HARDENING-41", "file": "41_EFFECTIVE_DATED_RULESETS_HARDENING.sql" },
-    { "label": "HARDENING-42", "file": "42_EXPORT_ELIGIBILITY_GATE_HARDENING.sql" },
-    { "label": "HARDENING-43", "file": "43_MFA_FOR_GATE_APPROVAL_HARDENING.sql" }
+    {
+      "label": "HARDENING-39",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-40",
+      "file": "40_LICENCES_AND_PERMITS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-41",
+      "file": "41_EFFECTIVE_DATED_RULESETS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-42",
+      "file": "42_EXPORT_ELIGIBILITY_GATE_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-43",
+      "file": "43_MFA_FOR_GATE_APPROVAL_HARDENING.sql"
+    }
   ],
   "verify": {
     "file": "43_MFA_FOR_GATE_APPROVAL_VERIFY.sql",
-    "expectedSections": ["A", "B", "C", "D", "E", "F", "G"],
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G"
+    ],
     "expectedPassCount": 7,
     "note": "C and D are a matched pair: C proves the migration ships disabled so applying it cannot lock anyone out, D proves enforcement actually bites once switched on. Either alone would be misleading -- C on its own describes a control that does nothing, D on its own describes one that causes an outage on install. E is the section most likely to be got backwards elsewhere: it deletes the settings row and asserts enforcement defaults to REQUIRED, because the failure mode of the opposite default is silent (nobody notices a gate that stopped checking) while this one is loud and recoverable. B checks both JWT transports Supabase has used, since reading only one would make aal2 permanently unsatisfiable and the gate unusable once enabled. NOT read-only; wrapped in BEGIN..ROLLBACK.",
     "readOnly": false
   },
   "rollback": {
     "stages": [
-      { "label": "main-rollback", "source": "file", "file": "43_MFA_FOR_GATE_APPROVAL_ROLLBACK.sql" }
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "43_MFA_FOR_GATE_APPROVAL_ROLLBACK.sql"
+      }
     ]
   },
   "declaredSubstrate": {
-    "roles": ["anon", "authenticated", "service_role"],
-    "schemas": ["auth", "public"],
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
     "symbols": [
       "auth.uid",
       "auth.users",
@@ -37,18 +71,32 @@
   },
   "postRollback": {
     "removed": {
-      "tables": ["public.security_settings"],
+      "tables": [
+        "public.security_settings"
+      ],
       "functions": [
         "public.current_auth_assurance_level",
         "public.has_mfa_assurance",
         "public.mfa_required_for_gate_approval",
-        "public.fn_require_mfa_for_override"
+        "public.fn_require_mfa_for_override",
+        "public.fn_guard_security_setting_weakening"
       ],
-      "policies": ["security_settings_select", "security_settings_write"]
+      "policies": [
+        "security_settings_select",
+        "security_settings_write"
+      ]
     },
     "intact": {
-      "tables": ["public.export_gate_overrides", "public.export_eligibility_evaluations", "public.organisations"],
-      "functions": ["public.evaluate_export_eligibility", "public.is_ddp_admin", "auth.uid"],
+      "tables": [
+        "public.export_gate_overrides",
+        "public.export_eligibility_evaluations",
+        "public.organisations"
+      ],
+      "functions": [
+        "public.evaluate_export_eligibility",
+        "public.is_ddp_admin",
+        "auth.uid"
+      ],
       "authUsersMinRows": 2
     }
   }

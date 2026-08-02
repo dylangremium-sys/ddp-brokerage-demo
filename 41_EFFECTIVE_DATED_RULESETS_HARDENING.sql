@@ -203,6 +203,26 @@ CREATE TRIGGER destination_rulesets_no_overlap
 -- the tables directly and filtering by status alone reintroduces exactly the
 -- present-tense bug this migration exists to remove.
 -- -----------------------------------------------------------------------------
+-- WHICH QUESTION IS THIS? "What applied on <date>?" — a HISTORICAL question.
+--
+-- `status` is present-tense state; the effective window is the historical fact.
+-- Mixing them silently rewrites the past: filtering on `status = 'active'` means
+-- that the moment a rule is paused or retired it vanishes from every historical
+-- query too, and a shipment that left in March would be re-judged as though
+-- March's rule had never existed. That defeats the entire point of this
+-- migration, so the two are separated here.
+--
+-- Statuses that mean the rule NEVER reached force ('draft', 'suggested',
+-- 'approved' — approved but never activated — and 'rejected') are excluded, and
+-- must be, or a rule that was only ever a proposal would be applied to history.
+-- The three that mean it DID reach force ('active', 'paused', 'retired') are
+-- all admitted, because a rule that was in force in March was in force in March
+-- whatever has happened to it since.
+--
+-- CONSEQUENCE FOR OPERATORS: to stop a rule applying from a given date, set
+-- `effective_to`. Changing `status` alone stops it being enforced TODAY (see
+-- compliance_rules_currently_enforced below) but does not, and must not, edit
+-- what was true in the past.
 CREATE OR REPLACE FUNCTION public.compliance_rules_in_force(p_as_of date DEFAULT current_date)
 RETURNS SETOF public.compliance_rules
 LANGUAGE sql
@@ -212,9 +232,30 @@ SET search_path = public, pg_temp
 AS $$
   SELECT *
   FROM public.compliance_rules r
-  WHERE r.status = 'active'
+  WHERE r.status IN ('active', 'paused', 'retired')
     AND r.effective_from <= p_as_of
     AND (r.effective_to IS NULL OR r.effective_to > p_as_of)
+$$;
+
+-- WHICH QUESTION IS THIS? "What must be enforced right now?" — the PRESENT-tense
+-- question, and a different one. Here `status` is exactly the right filter: a
+-- paused rule is paused, and should not block a shipment today even though its
+-- effective window is still open.
+--
+-- Two functions rather than one flag, because a single function serving both
+-- questions is a function whose callers cannot tell which one they asked.
+CREATE OR REPLACE FUNCTION public.compliance_rules_currently_enforced()
+RETURNS SETOF public.compliance_rules
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT *
+  FROM public.compliance_rules r
+  WHERE r.status = 'active'
+    AND r.effective_from <= current_date
+    AND (r.effective_to IS NULL OR r.effective_to > current_date)
 $$;
 
 -- Returns the single ruleset in force, or no row at all.
@@ -246,6 +287,8 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.compliance_rules_in_force(date) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.compliance_rules_in_force(date) TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.compliance_rules_currently_enforced() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.compliance_rules_currently_enforced() TO authenticated, service_role;
 REVOKE EXECUTE ON FUNCTION public.destination_ruleset_in_force(char, text, date) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.destination_ruleset_in_force(char, text, date) TO authenticated, service_role;
 

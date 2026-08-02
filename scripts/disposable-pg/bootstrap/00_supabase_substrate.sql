@@ -146,6 +146,8 @@ CREATE TABLE IF NOT EXISTS public.farmer_documents (
   document_type text NOT NULL DEFAULT 'coa',
   file_name text,
   test_date date,
+  total_thc numeric,
+  total_cbd numeric,
   heavy_metals_status text CHECK (heavy_metals_status IN ('pass','fail','not_tested') OR heavy_metals_status IS NULL),
   pesticides_status   text CHECK (pesticides_status   IN ('pass','fail','not_tested') OR pesticides_status   IS NULL),
   microbial_status    text CHECK (microbial_status    IN ('pass','fail','not_tested') OR microbial_status    IS NULL),

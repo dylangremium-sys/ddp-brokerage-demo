@@ -57,10 +57,12 @@ END
 $guard$;
 
 DROP TRIGGER  IF EXISTS export_gate_overrides_require_mfa ON public.export_gate_overrides;
+DROP TRIGGER  IF EXISTS security_settings_guard_weakening ON public.security_settings;
 
 DROP POLICY   IF EXISTS security_settings_select ON public.security_settings;
 DROP POLICY   IF EXISTS security_settings_write  ON public.security_settings;
 
+DROP FUNCTION IF EXISTS public.fn_guard_security_setting_weakening();
 DROP FUNCTION IF EXISTS public.fn_require_mfa_for_override();
 DROP FUNCTION IF EXISTS public.mfa_required_for_gate_approval();
 DROP FUNCTION IF EXISTS public.has_mfa_assurance();

@@ -75,6 +75,7 @@ DROP FUNCTION IF EXISTS public.fn_reject_overlapping_destination_ruleset();
 -- is load-bearing, not cosmetic.
 -- -----------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.compliance_rules_in_force(date);
+DROP FUNCTION IF EXISTS public.compliance_rules_currently_enforced();
 
 -- -----------------------------------------------------------------------------
 -- 3. compliance_rules columns

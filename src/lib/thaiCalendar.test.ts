@@ -28,8 +28,8 @@ describe('era classification', () => {
     expect(LATEST_CONVERTIBLE_CE_YEAR).toBeLessThan(EARLIEST_CONVERTIBLE_CE_YEAR + BE_CE_OFFSET)
 
     for (let year = 1000; year <= 3500; year++) {
-      const c = classifyEra(year)
-      if (!c.certain) expect(c.reason).toBe('out-of-range')
+      const classified = classifyEra(year)
+      if (!classified.certain) expect(classified.reason).toBe('out-of-range')
     }
   })
 
@@ -84,9 +84,9 @@ describe('dualDateFrom', () => {
     // The whole module is string arithmetic precisely so that this holds
     // regardless of the host offset. `new Date('2026-01-01')` would be UTC
     // midnight and render as 2025-12-31 anywhere west of Greenwich.
-    const r = dualDateFrom('2026-01-01', 'ce')
-    expect(r.ok && r.value.ce).toBe('2026-01-01')
-    expect(r.ok && r.value.beYear).toBe(2569)
+    const parsed = dualDateFrom('2026-01-01', 'ce')
+    expect(parsed.ok && parsed.value.ce).toBe('2026-01-01')
+    expect(parsed.ok && parsed.value.beYear).toBe(2569)
   })
 
   it('rejects impossible dates, including a non-leap 29 February', () => {
@@ -141,9 +141,9 @@ describe('reconciliation', () => {
   })
 
   it('names the drift when the CE side was converted a second time', () => {
-    const r = reconcileDualYear(2569, 2569)
-    expect(r.ok).toBe(false)
-    expect(r.ok === false && r.reason === 'offset-mismatch' && r.drift).toBe(-543)
+    const drifted = reconcileDualYear(2569, 2569)
+    expect(drifted.ok).toBe(false)
+    expect(drifted.ok === false && drifted.reason === 'offset-mismatch' && drifted.drift).toBe(-543)
   })
 
   it('reports a broken CE side distinctly from a 543-year error', () => {

@@ -66,7 +66,8 @@ DROP POLICY IF EXISTS evaluations_admin_insert     ON public.export_eligibility_
 DROP POLICY IF EXISTS overrides_admin              ON public.export_gate_overrides;
 
 -- 3. Triggers
-DROP TRIGGER IF EXISTS export_gate_overrides_guard ON public.export_gate_overrides;
+DROP TRIGGER IF EXISTS export_gate_overrides_validate ON public.export_gate_overrides;
+DROP TRIGGER IF EXISTS export_gate_overrides_guard    ON public.export_gate_overrides;
 DROP TRIGGER IF EXISTS export_eligibility_evaluations_no_update_delete ON public.export_eligibility_evaluations;
 
 -- 4. The gate function, before the tables it writes to.
@@ -78,6 +79,7 @@ DROP TABLE IF EXISTS public.export_eligibility_evaluations;
 DROP TABLE IF EXISTS public.screening_checks;
 
 -- 6. Remaining functions
+DROP FUNCTION IF EXISTS public.fn_validate_override();
 DROP FUNCTION IF EXISTS public.fn_guard_override_mutation();
 DROP FUNCTION IF EXISTS public.prevent_evaluation_mutation();
 DROP FUNCTION IF EXISTS public.screening_is_clear(uuid, date);

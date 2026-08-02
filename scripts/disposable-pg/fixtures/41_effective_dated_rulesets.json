@@ -20,7 +20,15 @@
   ],
   "verify": {
     "file": "41_EFFECTIVE_DATED_RULESETS_VERIFY.sql",
-    "expectedSections": ["A", "B", "C", "D", "E", "F", "G"],
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G"
+    ],
     "expectedPassCount": 7,
     "note": "C is the section that matters and it asserts BOTH directions: a rule effective in 30 days is not in force today, AND a rule closed 30 days ago IS still in force at a date inside its own window -- the second is what makes judging a March shipment by March's rules possible, and a naive 'status = active' filter passes the first test while failing the second. C also pins the boundary semantics (effective_from inclusive, effective_to exclusive) and proves status still gates inside the window. F asserts that an unresearched market returns NO ROW; the export gate must read that as unresolved and refuse, because an empty result is not permission. Migration 41's one-current-ruleset guarantee is an INDEX (race-free); the closed-range overlap check is a TRIGGER and is NOT race-free -- that limitation is stated in the migration header rather than hidden, and closing it needs btree_gist.",
     "readOnly": false
@@ -35,8 +43,15 @@
     ]
   },
   "declaredSubstrate": {
-    "roles": ["anon", "authenticated", "service_role"],
-    "schemas": ["auth", "public"],
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
     "symbols": [
       "auth.uid",
       "auth.users",
@@ -48,17 +63,32 @@
   },
   "postRollback": {
     "removed": {
-      "tables": ["public.destination_rulesets"],
+      "tables": [
+        "public.destination_rulesets"
+      ],
       "functions": [
         "public.compliance_rules_in_force",
         "public.destination_ruleset_in_force",
-        "public.fn_reject_overlapping_destination_ruleset"
+        "public.fn_reject_overlapping_destination_ruleset",
+        "public.compliance_rules_currently_enforced"
       ],
-      "policies": ["destination_rulesets_select", "destination_rulesets_write"]
+      "policies": [
+        "destination_rulesets_select",
+        "destination_rulesets_write"
+      ]
     },
     "intact": {
-      "tables": ["public.compliance_rules", "public.organisations", "public.licences", "public.permits"],
-      "functions": ["public.is_ddp_admin", "public.licence_is_valid", "auth.uid"],
+      "tables": [
+        "public.compliance_rules",
+        "public.organisations",
+        "public.licences",
+        "public.permits"
+      ],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.licence_is_valid",
+        "auth.uid"
+      ],
       "authUsersMinRows": 2
     }
   }

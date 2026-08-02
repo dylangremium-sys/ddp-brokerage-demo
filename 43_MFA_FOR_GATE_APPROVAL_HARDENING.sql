@@ -209,6 +209,69 @@ CREATE TRIGGER export_gate_overrides_require_mfa
   FOR EACH ROW EXECUTE FUNCTION public.fn_require_mfa_for_override();
 
 -- -----------------------------------------------------------------------------
+-- 3b. A control that can be switched off without the control is not a control
+--
+-- Enforcing MFA on the override while leaving the SETTING writable by any
+-- password-only ddp_admin is a bypass with one extra step: flip enabled to
+-- false, approve the override, flip it back. The row would even record who did
+-- it — which makes it auditable, but it does not make it prevented.
+--
+-- So WEAKENING enforcement requires the assurance it is about to remove.
+-- Strengthening it does not: turning a control ON must never be harder than
+-- leaving it off, or the safe action becomes the inconvenient one.
+--
+-- The lockout question is answered by the same service_role exemption used
+-- above: a back-office connection with no JWT can always restore the row. That
+-- is the break-glass path, and it requires the service key.
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_guard_security_setting_weakening()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  v_weakening boolean;
+  v_key       text;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_weakening := OLD.enabled;
+    v_key       := OLD.key;
+  ELSE
+    v_weakening := OLD.enabled AND NOT NEW.enabled;
+    v_key       := NEW.key;
+  END IF;
+
+  IF NOT v_weakening THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  -- No session: service_role / back-office. Break-glass, holds the service key.
+  IF auth.uid() IS NULL THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  IF NOT public.has_mfa_assurance() THEN
+    RAISE EXCEPTION
+      'refused: disabling security setting "%" requires multi-factor assurance (aal2), and this '
+      'session presents %. Otherwise the control could be switched off by exactly the session it '
+      'exists to stop.',
+      v_key, coalesce(public.current_auth_assurance_level(), 'no assurance claim');
+  END IF;
+
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.fn_guard_security_setting_weakening() FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.fn_guard_security_setting_weakening() TO service_role;
+
+DROP TRIGGER IF EXISTS security_settings_guard_weakening ON public.security_settings;
+CREATE TRIGGER security_settings_guard_weakening
+  BEFORE UPDATE OR DELETE ON public.security_settings
+  FOR EACH ROW EXECUTE FUNCTION public.fn_guard_security_setting_weakening();
+
+-- -----------------------------------------------------------------------------
 -- 4. Row level security
 --
 -- Everyone signed in may READ the security posture — a control whose state is

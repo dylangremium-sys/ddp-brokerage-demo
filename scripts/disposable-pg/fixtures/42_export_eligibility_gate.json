@@ -5,26 +5,59 @@
   "pgMajor": 18,
   "migrationDir": ".",
   "applyStages": [
-    { "label": "HARDENING-39", "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql" },
-    { "label": "HARDENING-40", "file": "40_LICENCES_AND_PERMITS_HARDENING.sql" },
-    { "label": "HARDENING-41", "file": "41_EFFECTIVE_DATED_RULESETS_HARDENING.sql" },
-    { "label": "HARDENING-42", "file": "42_EXPORT_ELIGIBILITY_GATE_HARDENING.sql" }
+    {
+      "label": "HARDENING-39",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-40",
+      "file": "40_LICENCES_AND_PERMITS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-41",
+      "file": "41_EFFECTIVE_DATED_RULESETS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-42",
+      "file": "42_EXPORT_ELIGIBILITY_GATE_HARDENING.sql"
+    }
   ],
   "verify": {
     "file": "42_EXPORT_ELIGIBILITY_GATE_VERIFY.sql",
-    "expectedSections": ["A", "B", "C", "D", "E", "F", "G", "H", "I"],
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I"
+    ],
     "expectedPassCount": 9,
     "note": "B and C are a matched pair and neither is meaningful alone: B proves every condition fails against an empty world, C proves a fully-satisfied consignment still PASSES. A gate that blocks everything unconditionally would satisfy B on its own. D then breaks one thing at a time from the passing scenario -- wrong destination, wrong regime, suspended buyer, a failed contaminant result, stale screening, a confirmed denied-party match, no batch -- and asserts the correct condition flips, ending by restoring the scenario and re-asserting it passes, so the individual results cannot be artefacts of cumulative fixture damage. E covers the headroom boundary at 10.000 / 10.001 kg and refuses a NaN quantity outright. F is the point-in-time proof: the same consignment blocks today and passes as at a date inside the permit's term. G and H cover override discipline -- a two-character reason and a blanket waiver naming no conditions are both refused, the approver cannot review their own override, and a completed review stamp cannot be rewritten. NOT read-only; wrapped in BEGIN..ROLLBACK.",
     "readOnly": false
   },
   "rollback": {
     "stages": [
-      { "label": "main-rollback", "source": "file", "file": "42_EXPORT_ELIGIBILITY_GATE_ROLLBACK.sql" }
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "42_EXPORT_ELIGIBILITY_GATE_ROLLBACK.sql"
+      }
     ]
   },
   "declaredSubstrate": {
-    "roles": ["anon", "authenticated", "service_role"],
-    "schemas": ["auth", "public"],
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
     "symbols": [
       "auth.uid",
       "auth.users",
@@ -48,9 +81,14 @@
         "public.evaluate_export_eligibility",
         "public.screening_is_clear",
         "public.fn_guard_override_mutation",
-        "public.prevent_evaluation_mutation"
+        "public.prevent_evaluation_mutation",
+        "public.fn_validate_override"
       ],
-      "policies": ["evaluations_admin_select", "overrides_admin", "screening_checks_admin"]
+      "policies": [
+        "evaluations_admin_select",
+        "overrides_admin",
+        "screening_checks_admin"
+      ]
     },
     "intact": {
       "tables": [
@@ -61,7 +99,12 @@
         "public.destination_rulesets",
         "public.compliance_audit_log"
       ],
-      "functions": ["public.is_ddp_admin", "public.permit_headroom_kg", "public.destination_ruleset_in_force", "auth.uid"],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.permit_headroom_kg",
+        "public.destination_ruleset_in_force",
+        "auth.uid"
+      ],
       "authUsersMinRows": 2
     }
   }
