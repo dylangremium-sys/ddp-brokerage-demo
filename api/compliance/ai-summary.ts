@@ -1,5 +1,11 @@
+import { createHash } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { LegalUpdate } from '../../src/types.js'
+import {
+  AI_SUMMARY_GLOBAL_BUCKET_KEY,
+  AI_SUMMARY_THROTTLE_RULES,
+  aiSummaryClientBucketKey,
+} from '../../src/lib/serverAiSummaryThrottle.js'
 import type { NormalizedRequest, ServerAiSummaryDeps } from '../../src/lib/serverAiSummary.js'
 import { AI_SUMMARY_ROUTE, runAiSummaryEndpoint } from '../../src/lib/serverAiSummaryEndpoint.js'
 import { logServerError, newRequestId } from '../../src/lib/observability.js'
@@ -34,10 +40,54 @@ function headerValue(v: string | string[] | undefined): string | null {
   return v ?? null
 }
 
+/**
+ * The per-admin bucket key.
+ *
+ * The user id is hashed rather than stored: `public_intake_attempts` is a
+ * throttle ledger, not an audit trail, and it should not become a second record
+ * of which administrator did what and when. The salt reuses the intake's, since
+ * both are the same class of value; falling back to the project URL keeps the
+ * hash salted rather than raw if the dedicated variable was never set — a
+ * forgotten env var should degrade the property, not remove it.
+ *
+ * The prefix is what guarantees this cannot collide with an intake bucket. See
+ * serverAiSummaryThrottle.ts.
+ */
+function aiBucketKeyFor(userId: string, salt: string): string {
+  return aiSummaryClientBucketKey(createHash('sha256').update(`${userId}:${salt}`).digest('hex'))
+}
+
 function buildDeps(): ServerAiSummaryDeps | null {
   const supabaseUrl = process.env.SUPABASE_URL
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY
   if (!supabaseUrl || !supabaseAnonKey) return null
+
+  // THE THROTTLE NEEDS A PRIVILEGE THE CALLER MUST NOT HAVE.
+  //
+  // This file previously stated, accurately, that "no service-role key is ever
+  // used". That property is weakened here, and only here, on purpose: a spend
+  // ceiling the caller can bypass is not a ceiling, and migration 36 revokes
+  // EXECUTE on reserve_public_intake_slot from `anon` and `authenticated`
+  // precisely so a client cannot reserve, inspect or exhaust slots itself.
+  //
+  // The narrowing that keeps the original property meaningful: the service-role
+  // client below is used for the throttle reservation and NOTHING else. Every
+  // read of actual data — the caller's identity, their profile role, and the
+  // legal update itself — still goes through the caller-bound client under the
+  // caller's own RLS. Widening this client's use would silently turn an
+  // RLS-enforced endpoint into an RLS-bypassing one.
+  //
+  // Absent key => buildDeps returns null => 503 server_misconfigured. That is
+  // fail-closed by design: an endpoint that cannot enforce its spend ceiling
+  // must not serve. It also means SUPABASE_SERVICE_ROLE_KEY is now REQUIRED in
+  // any environment where this endpoint is expected to answer.
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) return null
+
+  const throttleClient: SupabaseClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  const throttleSalt = process.env.PUBLIC_INTAKE_IP_SALT || supabaseUrl
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY
   const model = process.env.AI_SUMMARY_MODEL || 'claude-opus-5'
@@ -111,6 +161,25 @@ function buildDeps(): ServerAiSummaryDeps | null {
         createdAt: '',
         updatedAt: '',
       }
+    },
+    // One round trip; the reservation and the limit check happen inside a single
+    // SQL function under an advisory transaction lock, so concurrent invocations
+    // on separate serverless instances cannot all pass the check before any of
+    // them writes. The rules are passed in because the application owns the
+    // policy and the function owns only the atomicity.
+    reserveAiSummarySlot: async (userId) => {
+      const { data, error } = await throttleClient.rpc('reserve_public_intake_slot', {
+        p_client_key: aiBucketKeyFor(userId, throttleSalt),
+        p_global_key: AI_SUMMARY_GLOBAL_BUCKET_KEY,
+        p_rules: AI_SUMMARY_THROTTLE_RULES,
+      })
+      // THROW, never return allowed:true. The core turns a throw into a
+      // fail-closed 503; returning "allowed" here would make an unreachable
+      // ledger indistinguishable from an empty one, which is the single failure
+      // mode that would restore unbounded spending.
+      if (error || !data) throw new Error('throttle_unavailable')
+      const result = data as { allowed: boolean; windowSeconds?: number }
+      return { allowed: result.allowed, windowSeconds: result.windowSeconds }
     },
     provider,
   }
