@@ -189,6 +189,16 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.prevent_evaluation_mutation() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.prevent_evaluation_mutation() TO service_role;
 
+-- A row-level trigger does not fire on TRUNCATE, and on hosted Supabase
+-- service_role inherits TRUNCATE on new public tables — so without this a
+-- single statement empties an "append-only" log. Statement-level guard,
+-- modelled on migration 11. The reused function raises on TG_OP alone (no
+-- NEW, no OLD), which is what makes it safe at statement level.
+DROP TRIGGER IF EXISTS export_eligibility_evaluations_no_truncate ON public.export_eligibility_evaluations;
+CREATE TRIGGER export_eligibility_evaluations_no_truncate
+  BEFORE TRUNCATE ON public.export_eligibility_evaluations
+  FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_evaluation_mutation();
+
 DROP TRIGGER IF EXISTS export_eligibility_evaluations_no_update_delete ON public.export_eligibility_evaluations;
 CREATE TRIGGER export_eligibility_evaluations_no_update_delete
   BEFORE UPDATE OR DELETE ON public.export_eligibility_evaluations
@@ -280,6 +290,16 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.fn_guard_override_mutation() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.fn_guard_override_mutation() TO service_role;
+
+-- A row-level trigger does not fire on TRUNCATE, and on hosted Supabase
+-- service_role inherits TRUNCATE on new public tables — so without this a
+-- single statement empties an "append-only" log. Statement-level guard,
+-- modelled on migration 11. The reused function raises on TG_OP alone (no
+-- NEW, no OLD), which is what makes it safe at statement level.
+DROP TRIGGER IF EXISTS export_gate_overrides_no_truncate ON public.export_gate_overrides;
+CREATE TRIGGER export_gate_overrides_no_truncate
+  BEFORE TRUNCATE ON public.export_gate_overrides
+  FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_evaluation_mutation();
 
 DROP TRIGGER IF EXISTS export_gate_overrides_guard ON public.export_gate_overrides;
 CREATE TRIGGER export_gate_overrides_guard
@@ -783,10 +803,10 @@ CREATE POLICY overrides_admin ON public.export_gate_overrides
 -- -----------------------------------------------------------------------------
 -- 8. Grants
 -- -----------------------------------------------------------------------------
-REVOKE ALL ON public.screening_checks               FROM PUBLIC, anon;
-REVOKE ALL ON public.export_eligibility_evaluations FROM PUBLIC, anon;
-REVOKE ALL ON public.export_gate_overrides          FROM PUBLIC, anon;
-REVOKE ALL ON public.export_gate_overrides_pending_review FROM PUBLIC, anon;
+REVOKE ALL ON public.screening_checks               FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.export_eligibility_evaluations FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.export_gate_overrides          FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.export_gate_overrides_pending_review FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.screening_checks TO authenticated, service_role;
 -- Insert-only on the evaluation log; the trigger blocks the rest, and the
