@@ -141,12 +141,26 @@ BEGIN
     (v_buyer_user, 'buyer46@verify.test', 'buyer')
   ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, email = EXCLUDED.email;
 
-  INSERT INTO public.farms (farm_name, province, status)
-  VALUES ('Verify46 Farm', 'Chiang Mai', 'active') RETURNING id INTO v_farm;
+  -- PORTABLE COLUMN SETS ONLY.
+  --
+  -- The disposable PostgreSQL harness bootstraps a MINIMAL substrate:
+  -- public.farms is (id, created_by, status, reviewed_by, updated_at) and
+  -- inventory_batches adds (farm_id, quantity_kg, client_visible, stock_status).
+  -- farm_name, province, product_name and batch_number exist on Supabase and
+  -- NOT there, so naming them fails the harness with
+  --   column "farm_name" of relation "farms" does not exist
+  -- while passing perfectly against staging. Measured 2026-08-02: this VERIFY
+  -- was merged passing on Supabase and failing on the harness, and nobody saw it
+  -- because migration 46 had no harness fixture at all.
+  --
+  -- Nothing here depends on those columns; the farm exists only to hang a batch
+  -- off, and the batch only needs a quantity and to be published.
+  INSERT INTO public.farms (status)
+  VALUES ('active') RETURNING id INTO v_farm;
 
   INSERT INTO public.inventory_batches
-    (farm_id, product_name, batch_number, quantity_kg, client_visible, status)
-  VALUES (v_farm, 'Verify46 longan', 'V46-1', 1000, true, 'approved')
+    (farm_id, quantity_kg, client_visible, status)
+  VALUES (v_farm, 1000, true, 'approved')
   RETURNING id INTO v_batch;
 
   INSERT INTO public.organisations
