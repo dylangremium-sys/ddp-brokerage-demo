@@ -3,6 +3,12 @@
 **Companion to:** `DDP_MARKETPLACE_GROUND_TRUTH.md` (audited at `feature/ai-summary-hardening` @ `55c2808`; re-verified unchanged on `main` @ `0e65608`)
 **Status:** proposal. Nothing here is implemented.
 
+> **Amended 2026-08-02.** Sections 1.1, 1.2, 2.1, 2.6 and 4 were written before migrations 39–44
+> existed, and are superseded where they conflict with what was built. Those migrations are now
+> merged to `main` (`42833ac`, `48230f0`) and `docs/OPTION_B_SEAM_CONTRACT.md` is **binding**;
+> this document defers to it. Evidence for each resolution:
+> `~/Desktop/DDP_PLAN_RECONCILIATION_2026-08-02.md`.
+
 ---
 
 ## 0. Design position
@@ -32,6 +38,8 @@ pending          unchanged — authenticated but non-operational
 
 `buyer` is a **fourth peer role**, not a farmer variant. Three `CHECK (role IN (...))` constraints must be widened together (`AUTH_RLS_SCHEMA.sql:21`, `21_…:44`, `27_…:473`); a migration that widens one and not the others will pass tests and fail in production. This is a single atomic work package (WP-0.2).
 
+**Partly done, and the technique is the one to copy.** Migration 39 adds `'buyer'` to `profiles.role` by dropping and re-adding `profiles_role_check` **by constraint name**, so it covers whichever definition is live rather than assuming which file defined it. It does not cover `24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql:473`, a separate `CHECK (actor_role IN ('ddp_admin','farmer'))` on a different table. Migration 24 is unapplied, so nothing is broken today; the seam contract records why it is applied as written rather than edited retroactively.
+
 **Sub-roles within an organisation** follow the existing `farm_memberships` precedent, which already uses `CHECK (role IN ('owner','operator'))`. Buyer memberships use the same two values plus `viewer` (read-only; a procurement analyst who may read a pack but may not commit to a quantity).
 
 ### 1.2 Tenant model
@@ -43,13 +51,19 @@ farms              (exists)  ←── farm_memberships   (exists) ──→ pro
 buyer_organisations (NEW)    ←── buyer_memberships  (NEW)    ──→ profiles
 ```
 
-**Do not** create a generic `organisations` supertype. It would require migrating `farms`, `farm_memberships` and every policy that references them — a high-risk change to the one subsystem that is currently proven. Two parallel structures with two parallel predicates cost a little duplication and risk nothing already working.
+**SUPERSEDED by Seam 5 of the seam contract.** This section originally read *"**Do not** create a generic `organisations` supertype. It would require migrating `farms`, `farm_memberships` and every policy that references them."*
+
+That objection does not apply to what migration 39 actually built. It migrates nothing: it adds `public.organisations` alongside `farms`, with a nullable `farm_id` FK and `CHECK (farm_id IS NULL OR org_type = 'farm')`. The `farms` subsystem is untouched, so the risk this paragraph was avoiding was never taken.
+
+`public.organisations` is therefore the single counterparty identity table, with `org_type IN ('farm','buyer','laboratory','carrier','broker','internal')`. Membership is `public.organisation_memberships`. **Do not build `buyer_organisations` or `buyer_memberships`** — they are superseded names for tables that now exist on `main`.
 
 **Tenancy invariant:** every row in every new table is reachable by exactly one of three predicates — `is_ddp_admin()`, `has_operational_farmer_access(farm_id)`, `is_approved_buyer_member(buyer_org_id)` — or by an explicit participant grant (deal rooms, §5). No new table may be readable by `authenticated` at large.
 
 ### 1.3 Buyer approval is a gate, not a flag
 
-`buyer_organisations.status` ∈ `draft | submitted | under_review | approved | suspended | rejected`. **`is_approved_buyer_member()` returns true only for `approved`.** Suspension therefore removes catalogue and deal-room read access immediately, without touching any grant row — the same fail-closed shape as the existing farmer predicate.
+**The principle here survives; only the column name changes.** Approval must be a gate rather than a flag, and suspension must remove catalogue and deal-room read access immediately without touching any grant row — the same fail-closed shape as the existing farmer predicate.
+
+As built, the gate is `organisations.verification_state`, which admits only `unverified | verified | rejected`. **It has no `suspended` value, and needs one** — that is the single change Seam 5 carries across from this section. Every buyer-side read predicate must return true only for `verified`.
 
 ---
 
@@ -59,13 +73,14 @@ Proposed names follow the brief; deviations are justified inline. `→` denotes 
 
 ### 2.1 Buyer identity
 
-| Table | Purpose | Key columns |
-| --- | --- | --- |
-| `buyer_organisations` | The buyer company. Mirrors `farms`. | `id`, `legal_name`, `trading_name`, `country_code`, `destination_countries text[]`, `status`, `status_changed_at`, `status_changed_by → profiles`, `rejection_reason`, `created_by → profiles` |
-| `buyer_memberships` | Person↔org. Mirrors `farm_memberships`. | `buyer_org_id`, `profile_id`, `role CHECK IN ('owner','operator','viewer')`, unique `(buyer_org_id, profile_id)` |
-| `buyer_documents` | Import authorisations, incorporation certs, licences. Mirrors `farmer_documents` **exactly**, including its storage-policy shape. | `buyer_org_id`, `doc_type`, `storage_path`, `sha256`, `issuer`, `issued_on`, `expires_on`, `evidence_status` |
+**SUPERSEDED by Seam 5.** Buyer identity is `public.organisations` (`org_type = 'buyer'`) and `public.organisation_memberships`, both merged to `main` in migration 39. The `buyer_organisations` / `buyer_memberships` tables proposed here must not be built.
 
-**`expires_on` is mandatory on any document type that can expire** — the audit found no expiry tracking anywhere, and expiring-evidence is a named Release 2 requirement. Adding the column in Release 0 costs nothing; retrofitting it later means backfilling unknown dates.
+Two requirements from the superseded proposal survive and are carried into Seam 5:
+
+- **A `suspended` state on the approval gate** (see §1.3).
+- **`expires_on` is mandatory on any document type that can expire** — the audit found no expiry tracking anywhere, and expiring-evidence is a named Release 2 requirement. Adding the column when the table is first created costs nothing; retrofitting it later means backfilling dates nobody has.
+
+Buyer documents remain to be designed. When they are, mirror `farmer_documents` **exactly**, including its storage-policy shape, and scope them by `organisation_id` rather than a buyer-specific key.
 
 ### 2.2 Supply presentation
 
@@ -109,7 +124,7 @@ Proposed names follow the brief; deviations are justified inline. `→` denotes 
 
 | Table | Purpose |
 | --- | --- |
-| `commercial_audit_log` | **New table, not an extension of `compliance_audit_log`.** Identical shape (`actor_type`, `actor_id`, `action`, `entity_type`, `entity_id`, `before_state`, `after_state`, `reason`, `created_at`) with its own closed `action` vocabulary and its own `prevent_commercial_audit_log_mutation()` trigger modelled on `prevent_compliance_audit_log_mutation()`. Separated because the compliance log's 15-value CHECK is a deliberate regulatory boundary; mixing commercial events into it would dilute an evidentiary record and force that constraint open. |
+| `commercial_audit_log` | **New table, not an extension of `compliance_audit_log`.** Identical shape (`actor_type`, `actor_id`, `action`, `entity_type`, `entity_id`, `before_state`, `after_state`, `reason`, `created_at`) with its own closed `action` vocabulary and its own `prevent_commercial_audit_log_mutation()` trigger modelled on `prevent_compliance_audit_log_mutation()`. Separated because the compliance log's 15-value CHECK is a deliberate regulatory boundary; mixing commercial events into it would dilute an evidentiary record and force that constraint open. **This is now a correction, not a proposal:** migrations 39–44 grew that CHECK from 15 values to 32, including `reservation_created` and `reservation_released`. Seam 7 fixes which events belong where. |
 | `document_access_events` | Every read of a controlled document or pack. `subject_type`, `subject_id`, `actor_id`, `actor_org`, `action CHECK IN ('view','download','link_issued','link_expired','revoked')`, `ip_address`, `user_agent`, `created_at`. Supersedes `buyer_pack_download_log` for new work; that table is retained unchanged (it is append-only and live) and backfilled by view, never migrated. |
 | `notifications` | `recipient_profile_id`, `kind`, `subject_type`, `subject_id`, `title`, `body`, `read_at`, `emailed_at`. **Body must never contain counterparty identity, price or document content** — see §8. |
 
@@ -168,8 +183,10 @@ Every new table: `ENABLE ROW LEVEL SECURITY` **and** `FORCE ROW LEVEL SECURITY`,
 New predicate functions, `SECURITY DEFINER`, `search_path = ''`, `EXECUTE` granted only to `authenticated` — matching the hardening already applied by migrations 12/13:
 
 ```sql
-public.is_approved_buyer_member(p_org uuid) returns boolean
-public.buyer_org_of(p_profile uuid) returns uuid
+-- SUPERSEDED by Seam 5: is_approved_buyer_member() and buyer_org_of() are not to be
+-- written. public.has_organisation_membership(p_org uuid) already exists (migration 39).
+-- A buyer-scoped wrapper that additionally requires verification_state = 'verified' is
+-- still needed; name it when it is written.
 public.is_deal_room_participant(p_room uuid) returns boolean
 public.can_see_listing(p_listing uuid) returns boolean
 ```
