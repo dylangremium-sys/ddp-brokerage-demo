@@ -275,7 +275,7 @@ treated as intact when only part of it is.
 | **Event** | Apply §2 of `36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING.sql` (lines 166–181) to production |
 | **Proposed date** | 2026-08-02 |
 | **Operator** | Repository owner, via the Supabase SQL editor |
-| **Authorisation** | *PENDING — to be granted by the release owner by approving PR __PRNUM__, before execution, per §3.* |
+| **Authorisation** | *PENDING — to be granted by the release owner by approving PR #110, before execution, per §3.* |
 | **Closes** | Audit finding **R5** |
 
 **The migration's own ordering precondition — all four now satisfied**
