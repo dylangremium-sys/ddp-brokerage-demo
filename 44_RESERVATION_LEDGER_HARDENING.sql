@@ -44,6 +44,12 @@
 -- CHECK constraint cannot express a cross-row SUM; this is the correct
 -- mechanism and it is the one already proven in migration 40.
 --
+-- COMMERCIAL EVENTS GO IN THEIR OWN LOG
+-- Reservations are commercial, not regulatory, so this migration creates
+-- public.commercial_audit_log rather than widening compliance_audit_log's closed
+-- 15-value regulatory vocabulary. Target architecture §2.6, gap item MC-18. The
+-- compliance log's constraint is NOT touched here.
+--
 --   • Rollback: 44_RESERVATION_LEDGER_ROLLBACK.sql
 --   • Verify:   44_RESERVATION_LEDGER_VERIFY.sql
 -- =============================================================================
@@ -321,7 +327,29 @@ DECLARE
   v_reserved  numeric;
   v_org_type  text;
   v_org_state text;
+  v_now       timestamptz := now();
 BEGIN
+  -- created_at IS SERVER-AUTHORITATIVE, AND THIS IS A SECURITY CONTROL.
+  --
+  -- It is a plain column with a default, so a client holding INSERT — which a
+  -- buyer does, for their own organisation — could otherwise supply one. A
+  -- FUTURE created_at makes the availability check below measure the batch at a
+  -- moment when earlier holds have already lapsed, so the ceiling is computed
+  -- against a batch that looks emptier than it is, and the reservation lands
+  -- anyway. The result is a batch reserved beyond its own quantity, right now.
+  -- Overwriting the value costs nothing and closes it completely.
+  NEW.created_at := v_now;
+
+  -- Likewise the hold length. Without a ceiling a buyer could set expires_at
+  -- years out and hold stock indefinitely, which is the same denial-of-supply
+  -- with a different shape. 7 days is the owner's policy (2026-07-30);
+  -- lengthening it is a policy change and belongs in a migration, not a payload.
+  IF NEW.expires_at > v_now + interval '7 days' THEN
+    RAISE EXCEPTION
+      'reservation hold may not exceed 7 days (requested expiry %, limit %)',
+      NEW.expires_at, v_now + interval '7 days';
+  END IF;
+
   SELECT b.quantity_kg, b.client_visible
     INTO v_qty, v_visible
   FROM public.inventory_batches b
@@ -364,7 +392,9 @@ BEGIN
       NEW.buyer_organisation_id, v_org_state;
   END IF;
 
-  v_reserved := public.batch_reserved_kg_unchecked(NEW.inventory_batch_id, NEW.created_at);
+  -- Evaluated at NOW, never at a caller-supplied instant. See the created_at
+  -- note above: measuring at any other moment is precisely the bypass.
+  v_reserved := public.batch_reserved_kg_unchecked(NEW.inventory_batch_id, v_now);
 
   IF v_reserved + NEW.quantity_kg > v_qty THEN
     RAISE EXCEPTION
@@ -385,25 +415,87 @@ CREATE TRIGGER reservations_enforce_availability
   FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_reservation_availability();
 
 -- -----------------------------------------------------------------------------
--- 6. Audit vocabulary — cumulative
+-- 6. Commercial audit — a SEPARATE log, and deliberately not the compliance one
+--
+-- A reservation is a COMMERCIAL event. compliance_audit_log's `action` CHECK is a
+-- closed regulatory vocabulary, and forcing it open to admit commercial traffic
+-- dilutes an evidentiary record whose whole value is that it was never opened:
+-- an auditor reading it should find regulatory decisions and nothing else.
+--
+-- So this migration does NOT touch compliance_audit_log's constraint. It creates
+-- commercial_audit_log with the identical shape, its own closed vocabulary and
+-- its own anti-mutation trigger, per the marketplace target architecture §2.6
+-- and gap item MC-18.
+--
+-- Note the asymmetry with migrations 39–42, which DID widen the compliance
+-- vocabulary. That is correct and stays: an organisation verification, a licence
+-- state change, a permit draw-down and an export-gate decision are all
+-- regulatory facts. A stock reservation is not.
 -- -----------------------------------------------------------------------------
-ALTER TABLE public.compliance_audit_log
-  DROP CONSTRAINT IF EXISTS compliance_audit_log_action_check;
-ALTER TABLE public.compliance_audit_log
-  ADD CONSTRAINT compliance_audit_log_action_check
-  CHECK (action IN (
-    'legal_update_created', 'legal_update_reviewed', 'rule_suggested', 'rule_approved',
-    'rule_paused', 'rule_retired', 'alert_created', 'alert_resolved',
-    'readiness_status_changed', 'document_status_changed', 'sent_to_legal_review',
-    'reviewer_note_added', 'rule_rejected', 'legal_update_archived', 'alert_dismissed',
-    'organisation_created', 'organisation_updated', 'organisation_verification_changed',
-    'organisation_membership_granted', 'organisation_membership_revoked',
-    'licence_recorded', 'licence_state_changed', 'permit_recorded', 'permit_state_changed',
-    'permit_drawn_down', 'permit_drawdown_reversed',
-    'export_eligibility_evaluated', 'export_gate_overridden', 'export_gate_override_reviewed',
-    'screening_recorded',
-    'reservation_created', 'reservation_released'
-  ));
+CREATE TABLE IF NOT EXISTS public.commercial_audit_log (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  actor_type   text NOT NULL CHECK (actor_type IN ('admin', 'buyer', 'farmer', 'system')),
+  actor_id     uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+
+  -- Closed, and intended to stay that way. A commercial migration that adds an
+  -- event type widens THIS list, never the compliance one.
+  action       text NOT NULL CHECK (action IN (
+                 'reservation_created', 'reservation_released')),
+
+  entity_type  text NOT NULL,
+  entity_id    text,
+  before_state jsonb,
+  after_state  jsonb,
+  reason       text,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_commercial_audit_log_entity
+  ON public.commercial_audit_log (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_commercial_audit_log_created_at
+  ON public.commercial_audit_log (created_at DESC);
+
+COMMENT ON TABLE public.commercial_audit_log IS
+  'Append-only commercial event trail. Separate from compliance_audit_log by '
+  'design (target architecture §2.6 / MC-18): mixing commercial events into the '
+  'regulatory log would force its closed vocabulary open and dilute an '
+  'evidentiary record.';
+
+-- Modelled on prevent_compliance_audit_log_mutation() from migration 9.
+CREATE OR REPLACE FUNCTION public.prevent_commercial_audit_log_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION
+    'commercial_audit_log is append-only; attempted % is not allowed.', TG_OP;
+END
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.prevent_commercial_audit_log_mutation() FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.prevent_commercial_audit_log_mutation() TO service_role;
+
+DROP TRIGGER IF EXISTS commercial_audit_log_no_update_delete ON public.commercial_audit_log;
+CREATE TRIGGER commercial_audit_log_no_update_delete
+  BEFORE UPDATE OR DELETE ON public.commercial_audit_log
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_commercial_audit_log_mutation();
+
+ALTER TABLE public.commercial_audit_log ENABLE ROW LEVEL SECURITY;
+
+-- Readable by DDP only: a commercial event names a buyer and a batch in the same
+-- row, so it is a double-blind surface exactly like a reservation.
+DROP POLICY IF EXISTS commercial_audit_log_admin_select ON public.commercial_audit_log;
+CREATE POLICY commercial_audit_log_admin_select ON public.commercial_audit_log
+  FOR SELECT TO authenticated
+  USING (public.is_ddp_admin());
+
+REVOKE ALL ON public.commercial_audit_log FROM PUBLIC, anon;
+-- SELECT only. Rows arrive via the SECURITY DEFINER trigger below; no client
+-- role may write the audit trail directly, and none may amend it.
+GRANT SELECT ON public.commercial_audit_log TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.fn_audit_reservation()
 RETURNS trigger
@@ -422,6 +514,7 @@ DECLARE
   v_action text;
   v_entity text;
   v_reason text;
+  v_actor_type text;
 BEGIN
   IF TG_TABLE_NAME = 'reservations' THEN
     v_action := 'reservation_created';
@@ -433,12 +526,25 @@ BEGIN
     v_reason := v_row ->> 'reason';
   END IF;
 
-  INSERT INTO public.compliance_audit_log
+  -- A buyer can create their own reservation, so the actor is genuinely not
+  -- always an admin. Recording every commercial event as 'admin' would make the
+  -- trail describe a broker acting where a customer acted.
+  IF v_actor IS NULL THEN
+    v_actor_type := 'system';
+  ELSE
+    SELECT CASE p.role WHEN 'ddp_admin' THEN 'admin'
+                       WHEN 'buyer'     THEN 'buyer'
+                       WHEN 'farmer'    THEN 'farmer'
+                       ELSE 'system' END
+      INTO v_actor_type
+    FROM public.profiles p WHERE p.id = v_actor;
+    v_actor_type := coalesce(v_actor_type, 'system');
+  END IF;
+
+  INSERT INTO public.commercial_audit_log
     (actor_type, actor_id, action, entity_type, entity_id, before_state, after_state, reason)
-  VALUES (
-    CASE WHEN v_actor IS NULL THEN 'system' ELSE 'admin' END,
-    v_actor, v_action, 'reservation', v_entity, NULL, v_row, v_reason
-  );
+  VALUES (v_actor_type, v_actor, v_action, 'reservation', v_entity, NULL, v_row, v_reason);
+
   RETURN NEW;
 END
 $$;
