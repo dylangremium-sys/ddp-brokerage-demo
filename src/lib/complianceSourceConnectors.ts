@@ -1,5 +1,5 @@
-import type { RegulatorySource } from '../types'
-import { SUPPORTED_SOURCE_TYPES, type RegulatorySourceType } from './complianceSourceRegistry'
+import type { RegulatorySource } from '../types.js'
+import { SUPPORTED_SOURCE_TYPES, type RegulatorySourceType } from './complianceSourceTypes.js'
 
 // ─── Compliance Source Connectors — contract layer (Phase 2A.5) ─────────────
 //

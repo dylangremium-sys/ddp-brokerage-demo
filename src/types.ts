@@ -1,6 +1,6 @@
 export type Lang = 'en' | 'th'
 
-export type { UserRole, UserProfile } from './services/auth'
+export type { UserRole, UserProfile } from './services/auth.js'
 
 export type InventoryStatus = 'Pending Review' | 'Approved' | 'Missing Document' | 'Rejected'
 

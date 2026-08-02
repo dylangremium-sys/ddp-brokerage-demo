@@ -1,18 +1,18 @@
-import type { RegulatorySource } from '../types'
+import type { RegulatorySource } from '../types.js'
 import {
   buildConnectorRunPlan,
   validateConnectorAllowlist,
   validateConnectorUrlSafety,
   type ConnectorRuntimeStatus,
-} from './complianceSourceConnectorRuntime'
+} from './complianceSourceConnectorRuntime.js'
 import {
   buildMonitoringDecision,
   normalizeSourceContent,
   computeSourceChecksum,
   type MonitoringDecision,
   type SourceContentSnapshot,
-} from './complianceSourceMonitoring'
-import { evaluateCannamonitorPolicy } from './complianceCannamonitorPolicy'
+} from './complianceSourceMonitoring.js'
+import { evaluateCannamonitorPolicy } from './complianceCannamonitorPolicy.js'
 
 // ─── Read-only RSS / Atom compliance connector (Phase 2C) ───────────────────
 //

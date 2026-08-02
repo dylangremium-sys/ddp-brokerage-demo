@@ -5,8 +5,10 @@ import type {
   RegulatorySourceMonitoringMethod,
   RegulatorySourceTier,
 } from '../types'
-import * as repo from './complianceRepository'
-import { validateSourceGovernance } from './complianceSourceGovernance'
+import * as repo from './complianceRepository.js'
+import { SUPPORTED_SOURCE_TYPES } from './complianceSourceTypes.js'
+import type { RegulatorySourceType } from './complianceSourceTypes.js'
+import { validateSourceGovernance } from './complianceSourceGovernance.js'
 
 // ─── Compliance Source Registry — service layer ─────────────────────────────
 //
@@ -20,20 +22,11 @@ import { validateSourceGovernance } from './complianceSourceGovernance'
 // No polling, no fetch, no scheduling, no external network call of any kind
 // happens here or is triggered by anything in this file.
 
-export type RegulatorySourceType =
-  | 'government_regulator'
-  | 'legal_database'
-  | 'industry_association'
-  | 'news_press_release'
-  | 'other'
-
-export const SUPPORTED_SOURCE_TYPES: RegulatorySourceType[] = [
-  'government_regulator',
-  'legal_database',
-  'industry_association',
-  'news_press_release',
-  'other',
-]
+// Re-exported so this module's public API is unchanged. The definitions moved
+// to a dependency-free leaf so the connectors can reach them without dragging
+// this file's Supabase repository into a serverless function.
+export { SUPPORTED_SOURCE_TYPES } from './complianceSourceTypes.js'
+export type { RegulatorySourceType } from './complianceSourceTypes.js'
 
 // ─── Application-level status model ──────────────────────────────────────────
 //

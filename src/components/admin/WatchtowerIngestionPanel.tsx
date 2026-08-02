@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { RegulatorySource, WatchtowerIngestionRun } from '../../types'
 import * as repo from '../../lib/complianceRepository'
-import {
-  createDefaultIngestionDeps,
-  runIngestionBatch,
-  type BatchIngestionReport,
-} from '../../lib/watchtowerIngestionService'
+import { runIngestionBatch, type BatchIngestionReport } from '../../lib/watchtowerIngestionService'
+import { createDefaultIngestionDeps } from '../../lib/watchtowerIngestionBrowserDeps'
 import { detectStaleSources } from '../../lib/watchtowerIngestionRun'
 import { getSession } from '../../services/auth'
 

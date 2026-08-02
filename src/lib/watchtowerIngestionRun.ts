@@ -1,6 +1,6 @@
-import type { RegulatorySource } from '../types'
-import type { MonitoringDecision } from './complianceSourceMonitoring'
-import type { ParsedFeedItem, RssConnectorErrorCode } from './complianceRssConnector'
+import type { RegulatorySource } from '../types.js'
+import type { MonitoringDecision } from './complianceSourceMonitoring.js'
+import type { ParsedFeedItem, RssConnectorErrorCode } from './complianceRssConnector.js'
 
 // ─── Watchtower ingestion run — pure orchestration core (Phase C) ────────────
 //

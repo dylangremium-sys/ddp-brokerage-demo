@@ -1,5 +1,5 @@
-import type { RegulatorySource } from '../types'
-import type { FeedItemFields, FeedItemFieldPolicy } from './complianceRssConnector'
+import type { RegulatorySource } from '../types.js'
+import type { FeedItemFields, FeedItemFieldPolicy } from './complianceRssConnector.js'
 
 // ─── Cannamonitor source policy — fail-closed, source-specific ───────────────
 //

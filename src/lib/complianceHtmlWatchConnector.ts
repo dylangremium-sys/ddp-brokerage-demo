@@ -1,9 +1,9 @@
-import type { RegulatorySource } from '../types'
-import type { RssFetchImpl, RssFetchResponse, ParsedFeed, ParsedFeedItem, RssConnectorResult, RssConnectorErrorCode } from './complianceRssConnector'
-import { buildMonitoringDecision, type MonitoringDecision, type SourceContentSnapshot } from './complianceSourceMonitoring'
-import { evaluateCannamonitorPolicy } from './complianceCannamonitorPolicy'
-import { buildConnectorRunPlan, type ConnectorRuntimeStatus } from './complianceSourceConnectorRuntime'
-import { selectRelevantSection } from './serverSourceRetrieval'
+import type { RegulatorySource } from '../types.js'
+import type { RssFetchImpl, RssFetchResponse, ParsedFeed, ParsedFeedItem, RssConnectorResult, RssConnectorErrorCode } from './complianceRssConnector.js'
+import { buildMonitoringDecision, type MonitoringDecision, type SourceContentSnapshot } from './complianceSourceMonitoring.js'
+import { evaluateCannamonitorPolicy } from './complianceCannamonitorPolicy.js'
+import { buildConnectorRunPlan, type ConnectorRuntimeStatus } from './complianceSourceConnectorRuntime.js'
+import { selectRelevantSection } from './serverSourceRetrieval.js'
 
 // ─── HTML page-change watcher ────────────────────────────────────────────────
 //

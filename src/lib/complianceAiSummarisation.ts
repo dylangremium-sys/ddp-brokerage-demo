@@ -1,4 +1,4 @@
-import type { LegalUpdate } from '../types'
+import type { LegalUpdate } from '../types.js'
 import { guardAiDraftedFields } from './aiComplianceGuard.js'
 import { verifySourceReferences } from './aiSourceReferenceGuard.js'
 import { evaluateCannamonitorAiGate } from './complianceCannamonitorPolicy.js'
@@ -6,7 +6,7 @@ import type {
   AiDraftSummarySections,
   AiSummaryProviderInput,
   ComplianceAiSummaryProvider,
-} from './aiComplianceProvider'
+} from './aiComplianceProvider.js'
 
 // ─── Guarded AI draft summarisation — orchestration (Phase 2G) ──────────────
 //

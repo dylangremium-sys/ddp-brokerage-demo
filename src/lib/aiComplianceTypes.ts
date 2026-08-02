@@ -1,4 +1,4 @@
-import type { ComplianceSeverity, LegalUpdateAffectedArea } from '../types'
+import type { ComplianceSeverity, LegalUpdateAffectedArea } from '../types.js'
 
 // ─── AI Compliance Agent — foundation types (Phase 0A) ──────────────────────
 //
