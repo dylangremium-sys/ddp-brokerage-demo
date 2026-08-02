@@ -59,6 +59,6 @@ export function rssResponseFromRetrieval(requestedUrl: string, retrieval: Retrie
     url: requestedUrl,
     redirected: false,
     headers: { get: (name: string) => map.get(name.toLowerCase()) ?? null },
-    text: async () => retrieval.content ?? '',
+    text: () => Promise.resolve(retrieval.content ?? ''),
   }
 }

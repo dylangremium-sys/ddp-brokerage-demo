@@ -139,7 +139,7 @@ describe('handleFeedRetrieveRequest — gate sequence', () => {
     const retrieve = vi.fn(async () => retrieved())
     const result = await handleFeedRetrieveRequest(
       request(validBody),
-      makeDeps({ authenticate: async () => null, retrieve }),
+      makeDeps({ authenticate: () => Promise.resolve(null), retrieve }),
     )
     expect(result.status).toBe(401)
     expect(retrieve).not.toHaveBeenCalled()
@@ -149,7 +149,7 @@ describe('handleFeedRetrieveRequest — gate sequence', () => {
     const retrieve = vi.fn(async () => retrieved())
     const result = await handleFeedRetrieveRequest(
       request(validBody),
-      makeDeps({ getProfileRole: async () => 'farmer', retrieve }),
+      makeDeps({ getProfileRole: () => Promise.resolve('farmer'), retrieve }),
     )
     expect(result.status).toBe(403)
     expect(retrieve).not.toHaveBeenCalled()
@@ -161,7 +161,7 @@ describe('handleFeedRetrieveRequest — gate sequence', () => {
     const reserve = vi.fn(async () => ({ allowed: true }))
     await handleFeedRetrieveRequest(
       request(validBody),
-      makeDeps({ authenticate: async () => null, reserveFeedRetrievalSlot: reserve }),
+      makeDeps({ authenticate: () => Promise.resolve(null), reserveFeedRetrievalSlot: reserve }),
     )
     expect(reserve).not.toHaveBeenCalled()
   })
@@ -203,7 +203,7 @@ describe('handleFeedRetrieveRequest — the target is always the stored URL', ()
     const retrieve = vi.fn(async () => retrieved())
     const result = await handleFeedRetrieveRequest(
       request(validBody),
-      makeDeps({ getRegulatorySource: async () => null, retrieve }),
+      makeDeps({ getRegulatorySource: () => Promise.resolve(null), retrieve }),
     )
     expect(result.status).toBe(404)
     expect(retrieve).not.toHaveBeenCalled()
