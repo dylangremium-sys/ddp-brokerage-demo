@@ -1,0 +1,55 @@
+{
+  "id": "43_mfa_gate_approval",
+  "title": "Migration 43 — MFA for gate approval",
+  "description": "Applies migrations 39-43, runs 43's VERIFY A-G, then rolls back 43 on a disposable PostgreSQL 18 cluster. Plan section 10 requires multi-factor authentication for any role able to approve a compliance gate; DDP has none today, so a single password is all that stands between an attacker and the ability to override the export gate -- the one action that lets product move against a failed check. Enforcement is real and wired in as a BEFORE INSERT trigger on export_gate_overrides (a trigger, not a check inside an RPC, so it holds no matter which code path writes the row, including the SQL editor). It ships DISABLED because enabling it before any administrator has enrolled a second factor would lock every approver out at once, turning a security improvement into an outage. A MISSING settings row means REQUIRED, not disabled: deleting a row must never be a way to switch off a control, since that is the edit an attacker reaches for and the one an operator makes by accident.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "HARDENING-39", "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql" },
+    { "label": "HARDENING-40", "file": "40_LICENCES_AND_PERMITS_HARDENING.sql" },
+    { "label": "HARDENING-41", "file": "41_EFFECTIVE_DATED_RULESETS_HARDENING.sql" },
+    { "label": "HARDENING-42", "file": "42_EXPORT_ELIGIBILITY_GATE_HARDENING.sql" },
+    { "label": "HARDENING-43", "file": "43_MFA_FOR_GATE_APPROVAL_HARDENING.sql" }
+  ],
+  "verify": {
+    "file": "43_MFA_FOR_GATE_APPROVAL_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F", "G"],
+    "expectedPassCount": 7,
+    "note": "C and D are a matched pair: C proves the migration ships disabled so applying it cannot lock anyone out, D proves enforcement actually bites once switched on. Either alone would be misleading -- C on its own describes a control that does nothing, D on its own describes one that causes an outage on install. E is the section most likely to be got backwards elsewhere: it deletes the settings row and asserts enforcement defaults to REQUIRED, because the failure mode of the opposite default is silent (nobody notices a gate that stopped checking) while this one is loud and recoverable. B checks both JWT transports Supabase has used, since reading only one would make aal2 permanently unsatisfiable and the gate unusable once enabled. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      { "label": "main-rollback", "source": "file", "file": "43_MFA_FOR_GATE_APPROVAL_ROLLBACK.sql" }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.compliance_rules",
+      "public.compliance_audit_log",
+      "public.is_ddp_admin"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": ["public.security_settings"],
+      "functions": [
+        "public.current_auth_assurance_level",
+        "public.has_mfa_assurance",
+        "public.mfa_required_for_gate_approval",
+        "public.fn_require_mfa_for_override"
+      ],
+      "policies": ["security_settings_select", "security_settings_write"]
+    },
+    "intact": {
+      "tables": ["public.export_gate_overrides", "public.export_eligibility_evaluations", "public.organisations"],
+      "functions": ["public.evaluate_export_eligibility", "public.is_ddp_admin", "auth.uid"],
+      "authUsersMinRows": 2
+    }
+  }
+}

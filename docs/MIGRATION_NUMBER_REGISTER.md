@@ -80,11 +80,12 @@ explicitly by deleting the branch and striking these rows.
 
 ## Free
 
-**37 and upward.**
+**44 and upward.**
 
-The floor is 37, not 35, because **35 and 36 are already allocated by this remediation** — see the
-allocations table below. Quoting a free floor of 35 would have invited an author to take a number
-this very document reserves, recreating exactly the collision the register exists to prevent.
+The floor moved from 37 to 44 on 2026-08-02: 37 and 38 (storage privacy) landed, and 39–43 are
+allocated by the export-hub foundation — see the allocations tables below. Quoting a free floor of 35
+would have invited an author to take a number this very document reserves, recreating exactly the
+collision the register exists to prevent.
 
 The check must therefore exclude the allocated numbers rather than merely look for files on disk: an
 allocation is a *claim*, and a claim is made before the file exists. Numbers 27, 28 and 31–33 are
@@ -92,12 +93,12 @@ claimed by branches too (see above), so the honest query is "no file exists **an
 allocations table claims it":
 
 ```
-$ git log --all --diff-filter=A --name-only --pretty=format: -- '*.sql' | grep -E '^(3[7-9]|[4-9][0-9])_'
+$ git log --all --diff-filter=A --name-only --pretty=format: -- '*.sql' | grep -E '^(4[4-9]|[5-9][0-9])_'
 (no output)
 ```
 
 **Take the next number above the highest CLAIMED one — not the highest number on disk.** As of
-2026-07-28 the highest claim is 36, so the next migration is 37.
+2026-08-02 the highest claim is 43, so the next migration is 44.
 
 **1, 2, 5, 6, 7 are NOT free.** They were never used by a numbered file, but the pre-numbering
 migrations (`AUTH_RLS_SCHEMA.sql`, `SUPABASE_SCHEMA.sql`, `FARMER_MVP_MIGRATION.sql`,
@@ -114,6 +115,25 @@ above the highest claimed one.**
 |---|---|---|---|
 | 35 | `35_STATUS_TRANSITION_ATOMIC_*` | atomic status transition | `SECURITY DEFINER` RPC performing the entity `UPDATE` and the `status_history` `INSERT` in one transaction (audit R7) |
 | 36 | `36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING_*` | public intake throttle | revokes `INSERT` on `farmer_access_requests` from `anon`, narrowing the write path to the rate-limited server function (audit R5) |
+
+---
+
+## Allocations made by the export-hub foundation (2026-08-02)
+
+Branch `feature/export-hub-foundation`. These five are a dependency chain and must be applied in
+order — each one's HARDENING refuses to run if its predecessor is absent.
+
+| # | Migration stem | What it does | Depends on |
+|---|---|---|---|
+| 39 | `39_COUNTERPARTY_ORGANISATIONS_*` | `organisations` (farm/buyer/laboratory/carrier/broker/internal) + `organisation_memberships`; widens `profiles.role` to admit `buyer`; widens the `compliance_audit_log` action vocabulary | migration 9, 21 |
+| 40 | `40_LICENCES_AND_PERMITS_*` | `licences`, `permits`, append-only `permit_drawdowns` with headroom enforced under a row lock; regime as a first-class column (D1); expiry **computed**, never stored (D4); dual-calendar BE/CE asserted in the database (§2) | 39 |
+| 41 | `41_EFFECTIVE_DATED_RULESETS_*` | `effective_from`/`effective_to` on `compliance_rules` (backfilled and flagged as estimated), `destination_rulesets`, and the two point-in-time resolvers (D6) | 9, 39, 40 |
+| 42 | `42_EXPORT_ELIGIBILITY_GATE_*` | the seven-condition fail-closed export gate, append-only `export_eligibility_evaluations`, `screening_checks`, immutable `export_gate_overrides` and the standing exceptions view (§7.1) | 39, 40, 41 |
+| 43 | `43_MFA_FOR_GATE_APPROVAL_*` | `security_settings`, JWT assurance-level readers, and MFA enforcement on gate override — shipped **disabled**, with a missing settings row meaning *required* (§10) | 42 |
+
+**None of these has been applied to any database.** All five are verified only on the disposable
+PostgreSQL 18 harness (`npm run ci:runtime`), which is a real Postgres but not staging and not
+production. See `docs/runbooks/EXPORT_HUB_FOUNDATION_APPLY.md` before applying any of them.
 
 ---
 

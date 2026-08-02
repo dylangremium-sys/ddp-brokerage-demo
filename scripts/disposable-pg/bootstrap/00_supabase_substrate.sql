@@ -133,12 +133,25 @@ CREATE TABLE IF NOT EXISTS public.farm_memberships (
   user_id uuid,
   PRIMARY KEY (farm_id, user_id)
 );
+-- public.farmer_documents — created by FARMER_MVP_MIGRATION.sql (pre-numbering),
+-- so it is substrate for every numbered migration. The review_status and the four
+-- contaminant columns are copied from FARMER_MVP_MIGRATION.sql:162-185 because the
+-- export gate reads them: a batch whose COA records a FAILED contaminant test, or
+-- whose COA has not been accepted by a reviewer, must not clear the gate. It does
+-- NOT reproduce migration 28's document_field_extractions provenance layer.
 CREATE TABLE IF NOT EXISTS public.farmer_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
   inventory_batch_id uuid REFERENCES public.inventory_batches(id) ON DELETE SET NULL,
   document_type text NOT NULL DEFAULT 'coa',
-  file_name text
+  file_name text,
+  test_date date,
+  heavy_metals_status text CHECK (heavy_metals_status IN ('pass','fail','not_tested') OR heavy_metals_status IS NULL),
+  pesticides_status   text CHECK (pesticides_status   IN ('pass','fail','not_tested') OR pesticides_status   IS NULL),
+  microbial_status    text CHECK (microbial_status    IN ('pass','fail','not_tested') OR microbial_status    IS NULL),
+  mycotoxins_status   text CHECK (mycotoxins_status   IN ('pass','fail','not_tested') OR mycotoxins_status   IS NULL),
+  review_status text NOT NULL DEFAULT 'pending' CHECK (review_status IN ('pending','accepted','rejected')),
+  uploaded_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS public.documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -146,6 +159,54 @@ CREATE TABLE IF NOT EXISTS public.documents (
   inventory_batch_id uuid REFERENCES public.inventory_batches(id) ON DELETE SET NULL,
   document_type text,
   file_name text
+);
+-- public.compliance_rules — created by migration 9 (COMPLIANCE_WATCHTOWER_MVP), so
+-- it is substrate for anything numbered above it. Shape copied from
+-- 9_COMPLIANCE_WATCHTOWER_MVP.sql:56-71. It does NOT reproduce the watchtower's
+-- ingestion pipeline, its AI-suggestion flow, or migrations 25/26's provenance
+-- and source-governance columns; a migration depending on any of those must
+-- declare it and verify against live staging instead.
+CREATE TABLE IF NOT EXISTS public.compliance_rules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  rule_code text NOT NULL UNIQUE,
+  title text NOT NULL,
+  description text NOT NULL,
+  jurisdiction text,
+  entity_type text NOT NULL CHECK (entity_type IN (
+    'farm', 'batch', 'coa', 'buyer', 'document', 'shipment', 'platform_claim', 'data_protection')),
+  severity text NOT NULL CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical')),
+  is_blocking boolean NOT NULL DEFAULT false,
+  status text NOT NULL DEFAULT 'draft' CHECK (status IN (
+    'draft', 'suggested', 'approved', 'active', 'paused', 'retired', 'rejected')),
+  approved_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  approved_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- public.compliance_audit_log — created by migration 9 (COMPLIANCE_WATCHTOWER_MVP),
+-- so it is substrate for anything numbered above it. Shape copied from
+-- 9_COMPLIANCE_WATCHTOWER_MVP.sql:102-129, including the inline `action` CHECK,
+-- because migrations that widen the action vocabulary must be able to find the
+-- auto-named constraint `compliance_audit_log_action_check` and fail loudly here
+-- if its name ever drifts. It does NOT reproduce migration 11's TRUNCATE
+-- hardening or migration 27's authoritative-actor rewrite; a migration whose
+-- behaviour depends on either must declare that explicitly and verify it live.
+CREATE TABLE IF NOT EXISTS public.compliance_audit_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_type text NOT NULL CHECK (actor_type IN ('admin', 'ai_assistant', 'system', 'legal_reviewer')),
+  actor_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  action text NOT NULL CHECK (action IN (
+    'legal_update_created', 'legal_update_reviewed', 'rule_suggested', 'rule_approved',
+    'rule_paused', 'rule_retired', 'alert_created', 'alert_resolved',
+    'readiness_status_changed', 'document_status_changed', 'sent_to_legal_review',
+    'reviewer_note_added', 'rule_rejected', 'legal_update_archived', 'alert_dismissed'
+  )),
+  entity_type text NOT NULL,
+  entity_id text,
+  before_state jsonb,
+  after_state jsonb,
+  reason text,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 -- -----------------------------------------------------------------------------

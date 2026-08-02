@@ -153,9 +153,45 @@ does **not** reproduce.
 | `public.profiles/farms/farm_profiles/inventory_batches/farm_memberships/farmer_documents/documents` | FK targets and scope checks the migration/VERIFY touch | earlier-migration tables | the subset of columns actually referenced | full column sets, their own RLS, and unrelated constraints |
 | `public.status_history` | migration 35's RPC writes the audit half of a status transition into it | the pre-numbering compliance artefact (`SUPABASE_SCHEMA.sql`) | `id/entity_type/entity_id/old_status/new_status/note/created_at`, all nullable except `id`/`created_at`, with **no** FK on `entity_id` (it addresses two different tables) — shapes copied from production, measured read-only 2026-07-28 | its RLS policy set, and therefore the fact that in production only `is_ddp_admin()` satisfies a permissive INSERT policy |
 | `farms.status` / `inventory_batches.status` / `.reviewed_by` / `.updated_at` | the columns an admin review action writes and migration 35's RPC transitions | earlier-migration columns | `status text NULL`, `reviewed_by uuid NULL`, `updated_at timestamptz NOT NULL DEFAULT now()` | nothing further — production carries **no** CHECK constraint on `status` (the vocabulary is enforced in TypeScript), which the shim reproduces exactly |
+| `public.compliance_audit_log` | migrations 39/40/42 write audit rows and **widen its `action` CHECK**, so they must find the auto-named constraint `compliance_audit_log_action_check` and fail loudly if that name drifts | migration 9's audit trail | the full column set plus migration 9's inline `action` and `actor_type` CHECKs, verbatim | migration 11's TRUNCATE hardening and migration 27's authoritative-actor rewrite — a migration depending on either must declare it and verify against live staging |
+| `public.compliance_rules` | migration 41 adds effective dating to it and reads it back through `compliance_rules_in_force()` | migration 9's rule table | the columns 41 touches, with 9's `entity_type`/`severity`/`status` CHECKs | the watchtower ingestion pipeline, the AI-suggestion flow, and migrations 25/26's provenance and source-governance columns |
+| `farmer_documents.review_status` + the four `*_status` contaminant columns | migration 42's export gate reads them: a batch whose COA is unreviewed, or records a **failed** contaminant test, must not clear the gate | `FARMER_MVP_MIGRATION.sql:162-185` | the review and contaminant columns with their original CHECKs | migration 28's `document_field_extractions` provenance layer, and the storage-object side of a document |
 
 Anything the shim cannot faithfully model stays a documented limitation and is
 covered by the live-staging harness instead.
+
+### The RLS limitation is now partly lifted (2026-08-02)
+
+The statement below — that VERIFY runs as the owner and therefore cannot observe
+row level security — held for every fixture up to 38. It **no longer holds for
+migrations 39, 40 and 42**, whose VERIFY scripts switch role mid-section:
+
+```sql
+PERFORM set_config('request.jwt.claim.sub', v_buyer_user::text, true);
+PERFORM set_config('role', 'authenticated', true);
+SELECT count(*) INTO v_seen FROM public.organisations;   -- RLS now applies
+PERFORM set_config('role', 'none', true);
+```
+
+`authenticated` is neither the table owner nor a superuser, so policies are
+enforced against it exactly as in production. This is what lets migration 39
+section E and migration 40 section G prove the double-blind rule *behaviourally*
+— a farmer identity observes zero buyer organisations, a buyer identity observes
+zero farm licences, and an authenticated caller with no JWT subject observes
+nothing at all — rather than by reading the policy text back to itself. It was
+confirmed non-vacuous by replacing the SELECT policy's `USING` clause with
+`true` and re-running: section E fails, naming the breach.
+
+Two caveats. The role switch proves *policy* enforcement, not the hosted
+platform's JWT→role mapping, which remains outside the shim. And a
+`SECURITY DEFINER` routine still bypasses RLS here exactly as it does in
+production, so a migration whose access control lives inside such a routine is
+still verified by exercising the routine's own checks, not by switching role.
+
+New VERIFY scripts that install policies should follow the 39/40/42 pattern.
+Asserting a policy exists in `pg_policies` is not evidence that it does anything.
+
+---
 
 **The RLS limitation matters for migration 35.** VERIFY runs as the cluster owner,
 who bypasses RLS, so sections C–J prove the RPC's *own* authorisation checks —
