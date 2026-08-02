@@ -312,7 +312,7 @@ CREATE POLICY destination_rulesets_write ON public.destination_rulesets
   USING (public.is_ddp_admin())
   WITH CHECK (public.is_ddp_admin());
 
-REVOKE ALL ON public.destination_rulesets FROM PUBLIC, anon;
+REVOKE ALL ON public.destination_rulesets FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.destination_rulesets TO authenticated, service_role;
 
 COMMIT;

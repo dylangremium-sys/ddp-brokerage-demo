@@ -67,7 +67,9 @@ DROP POLICY IF EXISTS overrides_admin              ON public.export_gate_overrid
 
 -- 3. Triggers
 DROP TRIGGER IF EXISTS export_gate_overrides_validate ON public.export_gate_overrides;
+DROP TRIGGER IF EXISTS export_gate_overrides_no_truncate ON public.export_gate_overrides;
 DROP TRIGGER IF EXISTS export_gate_overrides_guard    ON public.export_gate_overrides;
+DROP TRIGGER IF EXISTS export_eligibility_evaluations_no_truncate ON public.export_eligibility_evaluations;
 DROP TRIGGER IF EXISTS export_eligibility_evaluations_no_update_delete ON public.export_eligibility_evaluations;
 
 -- 4. The gate function, before the tables it writes to.

@@ -74,6 +74,7 @@ DROP POLICY IF EXISTS permit_drawdowns_insert  ON public.permit_drawdowns;
 -- -----------------------------------------------------------------------------
 DROP TRIGGER IF EXISTS permit_drawdowns_audit             ON public.permit_drawdowns;
 DROP TRIGGER IF EXISTS permit_drawdowns_enforce_headroom  ON public.permit_drawdowns;
+DROP TRIGGER IF EXISTS permit_drawdowns_no_truncate ON public.permit_drawdowns;
 DROP TRIGGER IF EXISTS permit_drawdowns_no_update_delete  ON public.permit_drawdowns;
 DROP TRIGGER IF EXISTS licences_touch_updated_at          ON public.licences;
 DROP TRIGGER IF EXISTS permits_touch_updated_at           ON public.permits;
