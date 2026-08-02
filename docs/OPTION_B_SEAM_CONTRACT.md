@@ -134,10 +134,28 @@ not a flag, and suspension must remove access immediately without touching a gra
 (`39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql`). An earlier draft of this seam, and §1.3/§2.1 of
 the target architecture, both record it as admitting only three and needing `suspended` added.
 That is wrong and no migration is required; the correction is kept here because "needs one" reads
-as outstanding work. What remains outstanding is the *predicate* half: make every buyer-side read
-predicate return true only for `verified`. A
-buyer whose organisation is suspended loses catalogue and reservation read access at once, with no
-row deleted and no grant revoked.
+as outstanding work.
+
+**The predicate half is CLOSED by migration 46** (`46_SEAM5_VERIFIED_BUYER_READ_PREDICATE_*`,
+branch `feature/seam5-verified-read-predicate`). It adds
+`public.has_verified_organisation_membership(uuid)` — membership **and**
+`verification_state = 'verified'` — and re-points migration 44's two buyer SELECT policies at it.
+A buyer whose organisation is suspended loses reservation read access on the next statement, with
+no row deleted and no grant revoked. **This is the predicate the buyer catalogue must use** when
+MC-02 is built; `has_organisation_membership()` is not.
+
+The defect was real, not theoretical: measured on staging 2026-08-02, a suspended buyer still read
+their own reservation, because `has_organisation_membership()` tests membership and nothing else.
+The write path was already correct — migration 44's availability trigger refuses a reservation
+unless the buyer is `verified` — so suspension stopped new holds but not reading, which is exactly
+the "flag, not a gate" this seam forbids.
+
+**Three surfaces deliberately keep the membership-only predicate**, and migration 46's header
+states why in full: `organisations_select` (gating it would make onboarding impossible, since
+`verification_state` DEFAULTS to `unverified`), licence and permit reads (compliance records an
+organisation must see *while* under review, and `org_type` covers farms too), and the
+release/cancel path (cancelling frees stock; blocking it would strand held quantity and penalise
+the farm for the buyer's suspension).
 
 **Corollary — laboratories, carriers and brokers are identities, not features.** `org_type` admits
 four classes the gap analysis does not model at all. Recording them is free and correct; building

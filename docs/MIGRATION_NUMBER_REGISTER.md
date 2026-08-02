@@ -67,7 +67,14 @@ those migrations create are present. See `docs/runbooks/EXPORT_HUB_FOUNDATION_AP
 | 32 | `32_COA_REVIEW_INTEGRITY_*` | PR **#95** `feature/coa-source-bound-watchtower-review` | open, **draft** |
 | 33 | `33_COA_REVIEW_ATOMICITY_*` | PR **#95** `feature/coa-source-bound-watchtower-review` | open, **draft** |
 | ~~45~~ | ~~`45_COMMERCIAL_AUDIT_LOG_*`~~ | ~~local branch `fix/commercial-audit-log`~~ | **claim released — see below** |
-| 45 | `45_SEAM7_ORGANISATION_EVENT_SPLIT_*` | branch `feature/seam7-audit-log-split` | pushed, **re-claimed 2026-08-02** |
+| ~~45~~ | `45_SEAM7_ORGANISATION_EVENT_SPLIT_*` | PR **#120** | **MERGED to `main` 2026-08-02** — now in the taken list |
+| 46 | `46_SEAM5_VERIFIED_BUYER_READ_PREDICATE_*` | branch `feature/seam5-verified-read-predicate` | pushed, claimed 2026-08-02 |
+
+**46 closes Seam 5's outstanding half.** `has_organisation_membership()` tests membership and
+nothing else, so migration 44's buyer SELECT policies admitted a member of an organisation in any
+verification state — suspension changed a column and changed no access. 46 adds
+`has_verified_organisation_membership()` and re-points those two policies at it. Measured on
+staging before writing it: a suspended buyer really did still read their own reservation.
 
 **45 was re-claimed the same day it was released.** The released claim was for the *reservation* half
 of Seam 7, which #115 delivered by amending 44 in place. The re-claim is for the half #115 left
@@ -136,9 +143,8 @@ into `main`**. Check there before rebuilding.
 
 ## Free
 
-**46 and upward.** 45 was released on 2026-08-02 and then **re-claimed the same day** by
-`feature/seam7-audit-log-split` for the organisation event split — the work the release note below
-says was still outstanding. See the Reserved table above.
+**47 and upward.** 45 merged as PR #120 and 46 is claimed by
+`feature/seam5-verified-read-predicate` — both on 2026-08-02. See the Reserved table above.
 
 The floor moved from 37 to 45, briefly to 46, back to 45, and then to 46 during 2026-08-02: 37 and 38 (storage
 privacy) landed, 39–43 were allocated by the export-hub foundation and 44 by the marketplace
