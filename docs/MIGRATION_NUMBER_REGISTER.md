@@ -80,10 +80,10 @@ explicitly by deleting the branch and striking these rows.
 
 ## Free
 
-**44 and upward.**
+**45 and upward.**
 
-The floor moved from 37 to 44 on 2026-08-02: 37 and 38 (storage privacy) landed, and 39–43 are
-allocated by the export-hub foundation — see the allocations tables below. Quoting a free floor of 35
+The floor moved from 37 to 45 on 2026-08-02: 37 and 38 (storage privacy) landed, 39–43 are
+allocated by the export-hub foundation and 44 by the marketplace reservation ledger — see the allocations tables below. Quoting a free floor of 35
 would have invited an author to take a number this very document reserves, recreating exactly the
 collision the register exists to prevent.
 
@@ -93,12 +93,12 @@ claimed by branches too (see above), so the honest query is "no file exists **an
 allocations table claims it":
 
 ```
-$ git log --all --diff-filter=A --name-only --pretty=format: -- '*.sql' | grep -E '^(4[4-9]|[5-9][0-9])_'
+$ git log --all --diff-filter=A --name-only --pretty=format: -- '*.sql' | grep -E '^(4[5-9]|[5-9][0-9])_'
 (no output)
 ```
 
 **Take the next number above the highest CLAIMED one — not the highest number on disk.** As of
-2026-08-02 the highest claim is 43, so the next migration is 44.
+2026-08-02 the highest claim is 44, so the next migration is 45.
 
 **1, 2, 5, 6, 7 are NOT free.** They were never used by a numbered file, but the pre-numbering
 migrations (`AUTH_RLS_SCHEMA.sql`, `SUPABASE_SCHEMA.sql`, `FARMER_MVP_MIGRATION.sql`,
@@ -130,6 +130,18 @@ order — each one's HARDENING refuses to run if its predecessor is absent.
 | 41 | `41_EFFECTIVE_DATED_RULESETS_*` | `effective_from`/`effective_to` on `compliance_rules` (backfilled and flagged as estimated), `destination_rulesets`, and the two point-in-time resolvers (D6) | 9, 39, 40 |
 | 42 | `42_EXPORT_ELIGIBILITY_GATE_*` | the seven-condition fail-closed export gate, append-only `export_eligibility_evaluations`, `screening_checks`, immutable `export_gate_overrides` and the standing exceptions view (§7.1) | 39, 40, 41 |
 | 43 | `43_MFA_FOR_GATE_APPROVAL_*` | `security_settings`, JWT assurance-level readers, and MFA enforcement on gate override — shipped **disabled**, with a missing settings row meaning *required* (§10) | 42 |
+
+---
+
+## Allocation made by the Option B marketplace (2026-08-02)
+
+Branch `feature/marketplace-reservations`, stacked on `feature/export-hub-foundation`.
+
+| # | Migration stem | What it does | Depends on |
+|---|---|---|---|
+| 44 | `44_RESERVATION_LEDGER_*` | append-only marketplace reservations + releases; availability as a computed `SUM` under a row lock; expiry derived, never stored; double-blind RLS both ways | 39, and the pre-numbering `inventory_batches.quantity_kg` / `client_visible` |
+
+Written to `docs/OPTION_B_SEAM_CONTRACT.md`, which is binding on all marketplace work.
 
 **None of these has been applied to any database.** All five are verified only on the disposable
 PostgreSQL 18 harness (`npm run ci:runtime`), which is a real Postgres but not staging and not
