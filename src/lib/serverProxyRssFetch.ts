@@ -1,5 +1,6 @@
 import type { RssFetchImpl, RssFetchResponse } from './complianceRssConnector'
 import { SUPPORTED_CAPABILITY } from './serverFeedRetrieval'
+import { rssResponseFromRetrieval } from './retrievalRssResponse'
 
 // ─── Server-proxy adapter for the RSS/Atom connector ────────────────────────
 //
@@ -58,43 +59,11 @@ function isProxySuccess(v: unknown): v is ProxySuccessBody {
   return typeof r === 'object' && r !== null && typeof (r as { content?: unknown }).content === 'string'
 }
 
-/** Builds the header bag the connector reads, plus diagnostics it ignores. */
-function headersFor(retrieval: ProxySuccessBody['retrieval']): { get(name: string): string | null } {
-  const map = new Map<string, string>([
-    ['content-type', retrieval.contentType ?? ''],
-    // The connector checks a declared Content-Length before reading the body.
-    // Supplying the measured byte length keeps that check meaningful instead of
-    // silently skipped — `Number(null)` is 0, which passes any size limit.
-    ['content-length', String(retrieval.byteLength)],
-    // Diagnostics. The connector does not read these; they exist so a redirect
-    // that DID happen is still visible to a human reading a failed run, rather
-    // than being erased by the reporting decision documented below.
-    ['x-ddp-final-url', retrieval.finalUrl ?? ''],
-    ['x-ddp-redirect-chain', retrieval.redirectChain.join(' -> ')],
-    ['x-ddp-content-fingerprint', retrieval.contentFingerprint ?? ''],
-  ])
-  return { get: (name: string) => map.get(name.toLowerCase()) ?? null }
-}
-
 /**
  * Creates an `RssFetchImpl` that retrieves `sourceId` through the server.
  *
- * REPORTING REDIRECTS, AND WHY THIS IS NOT A BYPASS
- * The connector's own redirect guard (step 3 of `executeRssConnector`) rejects
- * any response whose final URL differs from the requested one, because a
- * browser using `redirect: 'error'` cannot re-validate where it was sent. This
- * adapter reports `redirected: false` and echoes the REQUESTED url, which would
- * be a bypass if the server were merely following redirects blindly. It is not:
- *
- *   `retrieveOfficialSource` follows redirects MANUALLY and re-runs the full
- *   validation on every hop against an allowlist containing exactly one host —
- *   the stored source's own. A redirect chain that reaches this code has
- *   therefore already been proven to have stayed on that single host, which is
- *   a strictly stronger guarantee than the check being skipped here.
- *
- * Reporting the redirect instead would fail every source that answers on a
- * canonical host, for no security gain. The chain is still surfaced in
- * `x-ddp-redirect-chain`.
+ * See rssResponseFromRetrieval for why the shaped response reports no
+ * redirect, and why that is not a bypass.
  */
 export function createServerProxyRssFetch(
   sourceId: string,
@@ -152,13 +121,6 @@ export function createServerProxyRssFetch(
       throw new Error('feed-retrieve returned a different URL than requested')
     }
 
-    return {
-      ok: true,
-      status: retrieval.httpStatus ?? 200,
-      url,
-      redirected: false,
-      headers: headersFor(retrieval),
-      text: async () => retrieval.content ?? '',
-    }
+    return rssResponseFromRetrieval(url, retrieval)
   }
 }

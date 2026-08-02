@@ -130,9 +130,9 @@ describe('handleFeedRetrieveRequest — gate sequence', () => {
     [null, 'no header'],
     ['token-abc', 'no Bearer prefix'],
     ['Bearer   ', 'empty token'],
-  ] as const)('rejects %s (%s) as 401', async (authorization, _why) => {
+  ] as const)('rejects %s (%s) as 401', async (authorization, why) => {
     const result = await handleFeedRetrieveRequest(request(validBody, { authorization }), makeDeps())
-    expect(result.status).toBe(401)
+    expect(result.status, `expected 401 for ${why}`).toBe(401)
   })
 
   it('rejects an invalid token as 401 and never reaches the fetch', async () => {
