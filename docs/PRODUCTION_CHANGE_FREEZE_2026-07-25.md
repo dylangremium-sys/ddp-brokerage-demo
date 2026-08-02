@@ -157,7 +157,7 @@ that mitigation is unreachable as designed. Tracked separately.
 | **Event** | Apply the **additive half** of `36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING.sql` to production |
 | **Proposed date** | 2026-08-02 |
 | **Operator** | Repository owner, via the Supabase SQL editor |
-| **Authorisation** | Release owner, by approving and merging PR #108 — recorded **before** execution, per §3. No statement from this entry had been run at the time of merge. |
+| **Authorisation** | **GRANTED** by the release owner on 2026-08-02, explicitly and in advance, authorising PR #108. The merge was executed by the assistant on that instruction; the authorising decision is the owner's, the mechanical act is not. Recorded **before** execution per §3 — no statement from this entry had been run at the time of merge. |
 | **Why now** | Audit finding **R5** is live and unmitigated: the public supplier form writes browser → Supabase directly, `anon` holds table-level INSERT, and the publishable key is in the public JS bundle. Any party can insert unlimited rows. This step installs the throttle machinery that closes it. |
 
 **(a) Exact statements to run**
