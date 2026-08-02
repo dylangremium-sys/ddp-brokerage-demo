@@ -7,8 +7,9 @@ in a shape that lets **Option A** (DDP as principal, with custody) plug in later
 **Amended 2026-08-02 with Seams 5–7**, which resolve four contradictions found between this
 document and the MC-01..MC-20 gap analysis. Where the two disagree, **this document wins and the
 architecture document is amended to match**; evidence for each resolution is in
-`~/Desktop/DDP_PLAN_RECONCILIATION_2026-08-02.md`. Seams 5 and 6 are settled. **Seam 7 describes a
-correction that has not yet been made** — read it before writing migration 45.
+`~/Desktop/DDP_PLAN_RECONCILIATION_2026-08-02.md`. Seams 5 and 6 are settled. **Seam 7 is
+mostly done** — `commercial_audit_log` landed in PR #115 (`ae057bb`); five organisation events have
+not moved yet.
 
 This document exists because the expensive part of adding custody later is not the warehouse code.
 It is the schema decisions made now that quietly assume custody will never exist. Three of those
@@ -164,7 +165,8 @@ listing-scoped successor.
 
 ## Seam 7 — commercial events do not go in `compliance_audit_log`
 
-**This seam describes a correction that has not been made yet.**
+**Mostly done. `commercial_audit_log` exists on `main` (PR #115, `ae057bb`); five events have not
+moved yet — see "What is left" below.**
 
 `compliance_audit_log.action` was a closed 15-value regulatory vocabulary, and its closedness was
 the point: it is an evidentiary record, and an evidentiary record that absorbs operational noise is
@@ -196,14 +198,35 @@ Creation and membership events are administrative, and move.
 own closed vocabulary, and its own `prevent_commercial_audit_log_mutation()` trigger modelled on
 `prevent_compliance_audit_log_mutation()`.
 
-**How to make the correction, now that 39–44 are merged.** Do **not** edit those files: they are
-merged history on a protected branch, and rewriting them would silently invalidate the fixture runs
-that justified them. Correct forward, in **migration 45**, which is safe to do because nothing is
-applied anywhere — measured 2026-08-02, 0 of 17 tables from migrations 24/28/39–44 exist in
-production, so 45 always runs immediately after 44 and no row of the moved kind can pre-exist.
-Migration 45 therefore: creates `commercial_audit_log`; re-points the trigger bodies in 39 and 44
-that currently write the moved actions; and drops and re-adds the compliance `action` CHECK by
-constraint name, narrowed to the left-hand column above.
+### How it was actually corrected
+
+PR **#115** (`ae057bb`) made the split by **amending migrations 39–44 in place**, rather than
+correcting forward in a new migration 45. `public.commercial_audit_log` is created inside migration
+44 and currently carries `reservation_created` and `reservation_released`, with actor types
+`admin | buyer | farmer | system`.
+
+This document previously specified the opposite — correct forward in 45, do not edit merged files,
+because rewriting them invalidates the fixture runs that justified them. **The in-place amendment is
+the approach that landed, and on these facts it was the better one:** nothing is applied to any
+database, so there is no history to preserve and no data to migrate, and editing 44 avoids an
+add-then-move sequence that would have left the final schema carrying a scar for no benefit. The
+fixture run was re-executed as part of #115 rather than inherited.
+
+**That licence expires the moment anything is applied.** Once these migrations exist in a database,
+in-place amendment stops being safe and forward correction becomes the only option — because an
+applied migration is history, not a draft. Do not read #115 as a precedent for editing applied SQL.
+
+### What is left
+
+Five events specified above as moving are **still in `compliance_audit_log` on `main`**:
+
+`organisation_created`, `organisation_updated`, `organisation_verification_changed`,
+`organisation_membership_granted`, `organisation_membership_revoked`
+
+Under the rule stated above, four of those five move to `commercial_audit_log` and
+`organisation_verification_changed` stays — whether a counterparty is verified is a compliance fact.
+Completing that is the remaining Seam 7 work. It is smaller than the reservation split and carries
+the same deadline: it is cheap while nothing is applied and expensive afterwards.
 
 **The window matters.** Once these rows exist in a database, "the regulatory log contains only
 regulatory events" stops being true, and no later migration makes it true again.
