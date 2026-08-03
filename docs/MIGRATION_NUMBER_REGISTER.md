@@ -69,6 +69,11 @@ those migrations create are present. See `docs/runbooks/EXPORT_HUB_FOUNDATION_AP
 | ~~45~~ | ~~`45_COMMERCIAL_AUDIT_LOG_*`~~ | ~~local branch `fix/commercial-audit-log`~~ | **claim released — see below** |
 | ~~45~~ | `45_SEAM7_ORGANISATION_EVENT_SPLIT_*` | PR **#120** | **MERGED to `main` 2026-08-02** — now in the taken list |
 | 46 | `46_SEAM5_VERIFIED_BUYER_READ_PREDICATE_*` | branch `feature/seam5-verified-read-predicate` | pushed, claimed 2026-08-02 |
+| 47 | `47_AI_JOB_QUEUE_FOUNDATION_*` | AI scaffolding rewrite | **in-flight**, all triplets written, removed line 10, ready for staging |
+| 48 | `48_AI_COST_TRACKING_*` | AI scaffolding rewrite | **in-flight**, all triplets written, ready for staging |
+| 49 | `49_AI_AUDIT_LOGGING_*` | AI scaffolding rewrite | **in-flight**, all triplets written, ready for staging |
+| 50 | `50_AI_PROMPT_REGISTRY_*` | AI scaffolding rewrite | **in-flight**, all triplets written, ready for staging |
+| 51 | `51_AI_RLS_POLICIES_*` | AI scaffolding rewrite | **in-flight**, all triplets written, ready for staging |
 
 **46 closes Seam 5's outstanding half.** `has_organisation_membership()` tests membership and
 nothing else, so migration 44's buyer SELECT policies admitted a member of an organisation in any
@@ -238,6 +243,12 @@ they create exist. See `docs/runbooks/EXPORT_HUB_FOUNDATION_APPLY.md` before app
 4. If you abandon a branch, delete its row here so the number returns to the free pool.
 5. A number is a set: `NN_STEM_HARDENING.sql` + `NN_STEM_VERIFY.sql` + `NN_STEM_ROLLBACK.sql`. Two
    different stems at one number is a collision even if the files do not overlap.
+   **Enforced from number 24 up** by `npm run verify:migration-numbers`. Until 2026-08-03 this
+   rule was written here and checked nowhere: the gate only ever asked whether two stems shared a
+   number, so five HARDENING-only migrations (47–51, written 2026-08-02) passed CI green with no
+   VERIFY to show they did what they claim and no ROLLBACK to undo them. Numbers below 24 predate
+   the convention and are grandfathered — renaming an applied migration would break the runbooks
+   and freeze record that cite it by name.
 6. **Run `git worktree list` before claiming.** More than one session works in this clone. A
    sibling worktree can hold a branch that claims a number with no commit, no push and no PR —
    invisible to CI, to GitHub, and to the `git log --all` query, which only sees numbers that

@@ -7,7 +7,6 @@
 BEGIN;
 
 -- Ensure RLS is enabled on all new tables
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO authenticated;
 
 -- ============================================================================
 -- ai_jobs: Job registry (one row per job submitted to queue)
