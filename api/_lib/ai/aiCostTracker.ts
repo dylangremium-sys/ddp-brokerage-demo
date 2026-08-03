@@ -23,9 +23,9 @@ export interface UsageMetric {
  */
 export class AICostTracker {
   private supabaseClient: SupabaseClient | null = null;
-  private readonly ALERT_THRESHOLD = 0.80; // 80% = alert
-  private readonly SOFT_STOP_THRESHOLD = 0.90; // 90% = soft stop
-  private readonly HARD_STOP_THRESHOLD = 1.0; // 100% = hard stop
+  private readonly _ALERT_THRESHOLD = 0.80; // 80% = alert
+  private readonly _SOFT_STOP_THRESHOLD = 0.90; // 90% = soft stop
+  private readonly _HARD_STOP_THRESHOLD = 1.0; // 100% = hard stop
   private isTestMode = false;
 
   constructor(supabaseUrl?: string, serviceRoleKey?: string) {
@@ -52,7 +52,7 @@ export class AICostTracker {
   async recordUsage(
     farmId: string,
     featureCode: string,
-    totalTokens: number,
+    _totalTokens: number,
     costUsd: number
   ): Promise<void> {
     if (this.isTestMode || !this.supabaseClient) {

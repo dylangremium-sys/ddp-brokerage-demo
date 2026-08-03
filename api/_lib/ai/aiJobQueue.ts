@@ -121,10 +121,10 @@ export class AIJobQueue {
    */
   async processJob(
     jobId: string,
-    provider: string,
-    model: string,
-    systemPrompt: string,
-    userPrompt: string
+    _provider: string,
+    _model: string,
+    _systemPrompt: string,
+    _userPrompt: string
   ): Promise<void> {
     if (this.isTestMode) {
       return; // No-op in test mode
@@ -140,7 +140,7 @@ export class AIJobQueue {
       .update({ status: 'processing', updated_at: new Date().toISOString() })
       .eq('id', jobId);
 
-    // TODO: Call AI provider, store result
+    // TODO: Call AI &provider, store result
   }
 
   /**
