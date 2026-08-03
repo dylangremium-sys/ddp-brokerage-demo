@@ -26,11 +26,42 @@ import {
 
 export interface CoaDocument {
   id: string
+  /**
+   * Which document surface this row came from.
+   *
+   * Migration 28's document_field_extractions carries a surface discriminator
+   * and two mutually exclusive foreign keys, so a persisted row is meaningless
+   * without it. It is carried on the document rather than assumed at the write
+   * site because both surfaces are real: farmer uploads land in
+   * `public.farmer_documents`, and the inventory-batch attachments in
+   * `public.documents`.
+   */
+  surface: 'farmer_document' | 'inventory_document'
   fileName: string
   /** Storage path, NOT the bytes. The server fetches them itself. */
   storagePath: string
   /** Set when this document has already been extracted — see the dedup note. */
   sha256Hex: string | null
+}
+
+/**
+ * One row to persist, tagged with the report it was read from.
+ *
+ * `reportOrdinal` is 1-based and is the GROUPING KEY: rows sharing a document
+ * and an ordinal are one laboratory report. `reportLabel` is the identifier
+ * printed on that report, kept for display only — a pack can print the same
+ * number on two reports, or none at all, so it cannot be the key.
+ *
+ * Before migration 52 there was nowhere to put either. A five-report pack wrote
+ * five `sample_name` rows and five `total_thc` rows against one document with
+ * nothing connecting a strain to its own figures, and migration 28's rule that
+ * the current value of a field is its most recent row collapsed the pack to one
+ * arbitrary report. See 52_COA_REPORT_GROUPING_HARDENING.sql.
+ */
+export interface CoaExtractionRowToPersist {
+  reportOrdinal: number
+  reportLabel: string | null
+  row: ExtractionRow
 }
 
 export interface CoaExtractionDeps {
@@ -52,11 +83,25 @@ export interface CoaExtractionDeps {
   extract: (pdf: Uint8Array) => Promise<RawExtractedReport[]>
   /** Atomically reserves one extraction against the spend ceiling. */
   reserveExtractionSlot: (userId: string) => Promise<{ allowed: boolean; windowSeconds?: number }>
-  /** Writes the rows. Throws on failure. */
+  /**
+   * Writes the rows. Throws on failure.
+   *
+   * NO `recordedByUserId` PARAMETER, AND THAT IS DELIBERATE. The only sanctioned
+   * write path is migration 28's `record_document_field_extraction`, which stamps
+   * `recorded_by_user_id` from `auth.uid()` inside the function. There is no
+   * argument through which a caller can nominate somebody else, so accepting one
+   * here would be an instruction the database ignores — a parameter that looks
+   * load-bearing, reads as an attribution decision in review, and does nothing.
+   *
+   * The practical consequence is that the implementation must call the RPC with
+   * the CALLER'S access token. A service-role connection has no `auth.uid()`, so
+   * `is_ddp_admin()` inside the function returns false and the write is refused
+   * outright. Attribution is therefore a fact about a person, never about a
+   * server.
+   */
   persistExtractions: (
-    documentId: string,
-    rows: { reportNumber: string | null; row: ExtractionRow }[],
-    recordedByUserId: string,
+    document: CoaDocument,
+    rows: CoaExtractionRowToPersist[],
   ) => Promise<void>
   /** Already-extracted documents are not re-extracted. */
   countExistingExtractions: (documentId: string) => Promise<number>
@@ -211,10 +256,20 @@ export async function handleCoaExtractRequest(
     threshold: deps.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
   })
 
-  const flat = extractions.flatMap((e) => e.rows.map((row) => ({ reportNumber: e.reportNumber, row })))
+  // The ordinal is the report's POSITION in the returned pack, 1-based, and is
+  // assigned here rather than taken from the document.
+  //
+  // It cannot be derived from the printed report number: two reports in a pack
+  // may print the same one, and a report may print none, in which case
+  // reportNumber is null. Position is the only property guaranteed to be present
+  // and distinct for every report in the pack, which is exactly what a grouping
+  // key has to be. The printed number travels alongside as a label.
+  const flat: CoaExtractionRowToPersist[] = extractions.flatMap((e, index) =>
+    e.rows.map((row) => ({ reportOrdinal: index + 1, reportLabel: e.reportNumber, row })),
+  )
 
   try {
-    await deps.persistExtractions(doc.id, flat, auth.userId)
+    await deps.persistExtractions(doc, flat)
   } catch {
     return err(503, 'internal_error', 'The extraction could not be saved. Nothing has been recorded.')
   }

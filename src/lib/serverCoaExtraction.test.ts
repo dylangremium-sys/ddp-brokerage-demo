@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   handleCoaExtractRequest,
   validateCoaExtractBody,
+  type CoaDocument,
   type CoaExtractionDeps,
+  type CoaExtractionRowToPersist,
   type CoaExtractRequest,
 } from './serverCoaExtraction'
 import type { RawExtractedReport } from './coaExtraction'
@@ -16,6 +18,7 @@ import type { RawExtractedReport } from './coaExtraction'
 
 const DOC = {
   id: '11111111-1111-4111-8111-111111111111',
+  surface: 'farmer_document' as const,
   fileName: '602918346421698884_RP-E2602-0197_EX26-0191_Calli Krush Co.,LTD.pdf',
   storagePath: 'farm/batch/coa.pdf',
   sha256Hex: null,
@@ -35,12 +38,14 @@ const ONE_REPORT: RawExtractedReport[] = [
 
 interface Spy {
   extractCalls: number
-  persisted: { reportNumber: string | null; row: { field_name: string } }[]
+  persisted: CoaExtractionRowToPersist[]
   reservations: number
+  /** The document handed to persistExtractions, to prove the surface is carried. */
+  persistedTo: CoaDocument | null
 }
 
 function makeDeps(overrides: Partial<CoaExtractionDeps> = {}): CoaExtractionDeps & { spy: Spy } {
-  const spy: Spy = { extractCalls: 0, persisted: [], reservations: 0 }
+  const spy: Spy = { extractCalls: 0, persisted: [], reservations: 0, persistedTo: null }
   const deps: CoaExtractionDeps = {
     authenticate: () => Promise.resolve({ userId: 'admin-1' }),
     getProfileRole: () => Promise.resolve('ddp_admin'),
@@ -54,7 +59,8 @@ function makeDeps(overrides: Partial<CoaExtractionDeps> = {}): CoaExtractionDeps
       spy.reservations += 1
       return Promise.resolve({ allowed: true })
     },
-    persistExtractions: (_id, rows) => {
+    persistExtractions: (document, rows) => {
+      spy.persistedTo = document
       spy.persisted.push(...rows)
       return Promise.resolve()
     },
@@ -208,9 +214,57 @@ describe('the happy path', () => {
 
     expect(r.status).toBe(200)
     expect(r.body.reportsFound).toBe(2)
-    // Each row keeps the report it came from, so one sample's numbers can never
-    // be attributed to another's batch.
-    expect(deps.spy.persisted.map((p) => p.reportNumber)).toEqual(['RP-E2602-0196', 'RP-E2602-0197'])
+
+    // Each row carries the ORDINAL of the report it came from, which is the
+    // grouping key migration 52 added. Until then this assertion was made
+    // against `reportNumber`, which the write path had nowhere to put: the
+    // property the comment claimed — one sample's numbers can never be
+    // attributed to another's batch — was not held by anything, and the test
+    // passed anyway because it only inspected what the core handed downstream.
+    expect(deps.spy.persisted.map((p) => p.reportOrdinal)).toEqual([1, 2])
+    expect(deps.spy.persisted.map((p) => p.reportLabel)).toEqual([
+      'RP-E2602-0196',
+      'RP-E2602-0197',
+    ])
+
+    // The surface must travel with the rows: migration 28's table has two
+    // mutually exclusive foreign keys and a discriminator that names which one
+    // is set, so a row written against the wrong surface violates a CHECK.
+    expect(deps.spy.persistedTo?.surface).toBe('farmer_document')
+    expect(deps.spy.persistedTo?.id).toBe(DOC.id)
+  })
+
+  it('separates two reports that print the SAME report number', async () => {
+    // The case that decides ordinal-vs-label. A pack can repeat a number — a
+    // re-issued certificate, a lab that numbers per batch rather than per
+    // sample — and it can omit one entirely. Grouping on the printed number
+    // would merge these two reports back into one, which is the defect
+    // migration 52 exists to close, reintroduced one layer up.
+    const collision: RawExtractedReport[] = [
+      { report_number: 'RP-DUPLICATE', fields: [{ field_name: 'sample_name', value: 'Gelato', confidence: 0.97 }] },
+      { report_number: 'RP-DUPLICATE', fields: [{ field_name: 'sample_name', value: 'Jell Breath', confidence: 0.95 }] },
+    ]
+    const deps = makeDeps({ extract: () => Promise.resolve(collision) })
+    const r = await handleCoaExtractRequest(req(), deps)
+
+    expect(r.status).toBe(200)
+    expect(deps.spy.persisted.map((p) => p.reportOrdinal)).toEqual([1, 2])
+    expect(deps.spy.persisted.map((p) => p.row.field_value_text)).toEqual(['Gelato', 'Jell Breath'])
+  })
+
+  it('still assigns an ordinal when a report prints no number at all', async () => {
+    // reportLabel is nullable; the ordinal is not. A report with no printed
+    // identifier must still be groupable, or its fields become unattributable
+    // the moment a second report shares the document.
+    const unnumbered: RawExtractedReport[] = [
+      { report_number: null, fields: [{ field_name: 'total_thc', value: '18.2', confidence: 0.9 }] },
+      { report_number: null, fields: [{ field_name: 'total_thc', value: '22.7', confidence: 0.9 }] },
+    ]
+    const deps = makeDeps({ extract: () => Promise.resolve(unnumbered) })
+    await handleCoaExtractRequest(req(), deps)
+
+    expect(deps.spy.persisted.map((p) => p.reportOrdinal)).toEqual([1, 2])
+    expect(deps.spy.persisted.map((p) => p.reportLabel)).toEqual([null, null])
   })
 
   it('surfaces a filename disagreement without refusing the extraction', async () => {

@@ -1,0 +1,72 @@
+{
+  "id": "52_premigration_defect",
+  "title": "Migration 52 — pre-migration defect characterisation",
+  "description": "The counterfactual for migration 52. Applies migrations 24 and 28 and deliberately NOT 52, then writes a two-report COA pack through migration 28's own record_document_field_extraction and asserts that the two reports are indistinguishable afterwards: no grouping column exists, and extracted_at ties because now() is the transaction timestamp, so 'the most recent row by extracted_at' identifies no row. This proves migration 52 closes a real defect rather than a hypothesised one. It fails if the defect is absent, which would mean 52's premise is wrong.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "24-PREREQ", "file": "24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql" },
+    { "label": "28-PREREQ", "file": "28_EVIDENCE_DIGEST_DEDUP_HARDENING.sql" }
+  ],
+  "verify": {
+    "file": "scripts/disposable-pg/fixtures/sql/52_premigration_merge_characterisation.sql",
+    "expectedSections": ["A"],
+    "expectedPassCount": 1,
+    "note": "Section A reproduces the pre-52 merge on a real cluster. It raises if migration 52 turns out to be applied, so the fixture cannot pass by accidentally testing the fixed schema."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "28-rollback",
+        "source": "file",
+        "file": "28_EVIDENCE_DIGEST_DEDUP_ROLLBACK.sql"
+      },
+      {
+        "label": "24-rollback",
+        "source": "file",
+        "file": "24_EVIDENCE_REQUEST_RESOLUTION_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role", "supabase_storage_admin"],
+    "schemas": ["auth", "storage", "extensions", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "storage.objects",
+      "storage.buckets",
+      "public.is_ddp_admin",
+      "public.has_operational_farmer_access",
+      "public.has_farm_membership",
+      "public.handle_new_user",
+      "public.profiles",
+      "public.farms",
+      "public.farm_profiles",
+      "public.inventory_batches",
+      "public.farm_memberships",
+      "public.farmer_documents",
+      "public.documents"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": ["public.document_field_extractions"],
+      "functions": [
+        "public.record_document_field_extraction",
+        "public.fn_dfe_append_only"
+      ]
+    },
+    "intact": {
+      "tables": [
+        "public.farmer_documents",
+        "public.documents",
+        "public.profiles",
+        "public.farms",
+        "auth.users"
+      ],
+      "functions": ["public.is_ddp_admin", "auth.uid"],
+      "authUsersMinRows": 2
+    }
+  }
+}
