@@ -14,6 +14,6 @@ export default defineConfig({
     // tests that actually RENDER a component — until these existed, nothing in
     // this repo executed a single line of JSX, so a screen could break while the
     // suite stayed green.
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.mjs'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.mjs', 'api/**/*.test.ts'],
   },
 })
