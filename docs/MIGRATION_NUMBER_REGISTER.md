@@ -69,6 +69,11 @@ those migrations create are present. See `docs/runbooks/EXPORT_HUB_FOUNDATION_AP
 | ~~45~~ | ~~`45_COMMERCIAL_AUDIT_LOG_*`~~ | ~~local branch `fix/commercial-audit-log`~~ | **claim released — see below** |
 | ~~45~~ | `45_SEAM7_ORGANISATION_EVENT_SPLIT_*` | PR **#120** | **MERGED to `main` 2026-08-02** — now in the taken list |
 | 46 | `46_SEAM5_VERIFIED_BUYER_READ_PREDICATE_*` | branch `feature/seam5-verified-read-predicate` | pushed, claimed 2026-08-02 |
+| 47 | `47_AI_JOB_QUEUE_FOUNDATION_*` | AI scaffolding rewrite | **in-flight**, all triplets written, removed line 10, ready for staging |
+| 48 | `48_AI_COST_TRACKING_*` | AI scaffolding rewrite | **in-flight**, all triplets written, ready for staging |
+| 49 | `49_AI_AUDIT_LOGGING_*` | AI scaffolding rewrite | **in-flight**, all triplets written, ready for staging |
+| 50 | `50_AI_PROMPT_REGISTRY_*` | AI scaffolding rewrite | **in-flight**, all triplets written, ready for staging |
+| 51 | `51_AI_RLS_POLICIES_*` | AI scaffolding rewrite | **in-flight**, all triplets written, ready for staging |
 
 **46 closes Seam 5's outstanding half.** `has_organisation_membership()` tests membership and
 nothing else, so migration 44's buyer SELECT policies admitted a member of an organisation in any
