@@ -1,4 +1,4 @@
-import { farmTotalScore } from '../../data'
+import { farmTotalScore, isFarmScored } from '../../data'
 import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus } from '../../types'
 
 interface Props {
@@ -41,7 +41,13 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
   const riskAlertFarms = farms.filter(f => f.status === 'More Information Required' || f.status === 'Watchlist')
   const riskAlertInventory = inventory.filter(i => i.status === 'Missing Document')
   const topInventory = [...inventory].sort((a, b) => b.quantityKg - a.quantityKg).slice(0, 5)
-  const topFarms = [...farms].sort((a, b) => farmTotalScore(b) - farmTotalScore(a)).slice(0, 3)
+  // ONLY FARMS THAT HAVE ACTUALLY BEEN SCORED. Nothing computes these values for
+  // a real farm (see isFarmScored in data.ts), so every Supabase-backed farm has
+  // a total of 0 — and without this filter the panel lists them as "Top-Scored"
+  // and prints "0 / 900" beside each one. That is a ranking of things that were
+  // never ranked, and it contradicted the review page once that page started
+  // saying "Not yet scored" for the same farm.
+  const topFarms = [...farms].filter(isFarmScored).sort((a, b) => farmTotalScore(b) - farmTotalScore(a)).slice(0, 3)
 
   return (
     <div className="eo-page">

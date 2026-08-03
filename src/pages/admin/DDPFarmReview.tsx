@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { farmTotalScore, deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass } from '../../data'
+import { farmTotalScore, isFarmScored, deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass } from '../../data'
 import type { FarmProfile, CarbonProgrammeStatus, InventoryItem } from '../../types'
 
 const CARBON_ADMIN_LABELS: Record<CarbonProgrammeStatus, string> = {
@@ -79,6 +79,7 @@ function Section({ title, children, open = true }: { title: string; children: Re
 
 export default function DDPFarmReview({ farm, inventory = [], onBack, onAction, onCarbonAction, carbonPersistenceAvailable = true }: Props) {
   const totalScore = farmTotalScore(farm)
+  const scored = isFarmScored(farm)
   const [carbonStatus, setCarbonStatus] = useState<CarbonProgrammeStatus>(
     farm.carbonProgrammeStatus ?? 'not_reviewed'
   )
@@ -271,23 +272,39 @@ export default function DDPFarmReview({ farm, inventory = [], onBack, onAction, 
           <div className="card ledger-card">
             <div className="ledger-scroll">
               <div className="decision-title">Compliance Score</div>
-              <div className="score-total-row">
-                <span className="score-total-num">{totalScore}</span>
-                <span className="score-total-denom">/ 900</span>
-                <span className={`farm-tier-badge ${complianceTierClass(tier)}`} style={{ marginLeft: 8 }}>{COMPLIANCE_TIER_LABEL[tier]}</span>
-              </div>
 
-              <div className="score-bars-list">
-                <ScoreBar label="Compliance" score={farm.scoreCompliance} />
-                <ScoreBar label="Documentation" score={farm.scoreDocumentation} />
-                <ScoreBar label="Facility Quality" score={farm.scoreFacilityQuality} />
-                <ScoreBar label="Product Quality" score={farm.scoreProductQuality} />
-                <ScoreBar label="Export Readiness" score={farm.scoreExportReadiness} />
-                <ScoreBar label="Reliability" score={farm.scoreReliability} />
-                <ScoreBar label="Communication" score={farm.scoreCommunication} />
-                <ScoreBar label="Scalability" score={farm.scoreScalability} />
-                <ScoreBar label="GMP Readiness" score={farm.scoreGMPReadiness} />
-              </div>
+              {/* NOT-YET-SCORED IS NOT THE SAME AS SCORED ZERO.
+                  Nothing computes these nine values for a real farm — see
+                  isFarmScored() in data.ts. Rendering 0/900 with nine empty bars
+                  made a complete profile look like it had failed every category,
+                  which is the screen asserting a judgement nobody made. The risk
+                  flags and positive signals below are real and stay. */}
+              {scored ? (
+                <>
+                  <div className="score-total-row">
+                    <span className="score-total-num">{totalScore}</span>
+                    <span className="score-total-denom">/ 900</span>
+                    <span className={`farm-tier-badge ${complianceTierClass(tier)}`} style={{ marginLeft: 8 }}>{COMPLIANCE_TIER_LABEL[tier]}</span>
+                  </div>
+
+                  <div className="score-bars-list">
+                    <ScoreBar label="Compliance" score={farm.scoreCompliance} />
+                    <ScoreBar label="Documentation" score={farm.scoreDocumentation} />
+                    <ScoreBar label="Facility Quality" score={farm.scoreFacilityQuality} />
+                    <ScoreBar label="Product Quality" score={farm.scoreProductQuality} />
+                    <ScoreBar label="Export Readiness" score={farm.scoreExportReadiness} />
+                    <ScoreBar label="Reliability" score={farm.scoreReliability} />
+                    <ScoreBar label="Communication" score={farm.scoreCommunication} />
+                    <ScoreBar label="Scalability" score={farm.scoreScalability} />
+                    <ScoreBar label="GMP Readiness" score={farm.scoreGMPReadiness} />
+                  </div>
+                </>
+              ) : (
+                <div className="score-total-row">
+                  <span className="score-not-assessed">Not yet scored</span>
+                  <span className={`farm-tier-badge ${complianceTierClass(tier)}`} style={{ marginLeft: 8 }}>{COMPLIANCE_TIER_LABEL[tier]}</span>
+                </div>
+              )}
 
               {(negativeFlags.length > 0 || positiveFlags.length > 0) && (
                 <div className="risk-flags-section">

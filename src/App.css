@@ -1891,6 +1891,16 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   color: var(--text-muted);
 }
 
+/* Shown instead of a numeric total when nothing has scored this farm. Muted and
+   non-numeric on purpose: "0 / 900" in the same heavy 30px as a real score reads
+   as a failed assessment rather than an absent one. */
+.score-not-assessed {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .score-bars-list {
   display: flex;
   flex-direction: column;

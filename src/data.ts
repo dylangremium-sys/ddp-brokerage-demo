@@ -51,6 +51,32 @@ export function farmTotalScore(f: FarmProfile): number {
   )
 }
 
+/**
+ * Whether this farm has actually BEEN scored.
+ *
+ * NOTHING COMPUTES THESE SCORES FOR A REAL FARM. The nine values are hardcoded
+ * into the demo fixtures in this file (78, 80, 55, 92 …), and `db.ts` sets every
+ * one of them to 0 when a profile is read back from Supabase — there are no score
+ * columns in the database to read them from, and no function anywhere derives one
+ * from profile data.
+ *
+ * So a real farm renders 0/900 with nine empty bars, which an admin reads as
+ * "this farm scored zero on everything" when it means "we have not scored it".
+ * On a farm with a complete profile that is not a cosmetic difference: it is the
+ * screen asserting a commercial judgement nobody made.
+ *
+ * The risk flags and positive signals on the same panel ARE real — they are
+ * derived from actual profile data, which is why a farm can show
+ * "Strong production capacity" while every score reads 0. Those stay.
+ *
+ * This predicate exists so the UI can say "not yet scored" instead. When scoring
+ * is genuinely built, this keeps working unchanged: a scored farm has at least
+ * one non-zero component.
+ */
+export function isFarmScored(f: FarmProfile): boolean {
+  return farmTotalScore(f) > 0
+}
+
 // Derives the 3-tier compliance status from audited, reliably-populated signals
 // (status, licence/COA presence, completion %, and — critically — whether a real
 // COA file has actually been received for one of the farm's batches) rather than
