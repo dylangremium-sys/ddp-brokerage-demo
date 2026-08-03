@@ -3,6 +3,8 @@
 --          ai_prompt_experiments tables with correct schema
 -- Date: 2026-08-03
 
+\set ON_ERROR_STOP on
+
 BEGIN;
 
 -- Verify ai_prompts table exists

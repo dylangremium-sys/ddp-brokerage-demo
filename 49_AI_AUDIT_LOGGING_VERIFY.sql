@@ -3,6 +3,8 @@
 --          tables with correct schema and append-only enforcement
 -- Date: 2026-08-03
 
+\set ON_ERROR_STOP on
+
 BEGIN;
 
 -- Verify ai_audit_events table exists (append-only)

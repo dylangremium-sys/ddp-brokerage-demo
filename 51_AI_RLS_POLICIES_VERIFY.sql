@@ -3,6 +3,8 @@
 --          defined and enabled
 -- Date: 2026-08-03
 
+\set ON_ERROR_STOP on
+
 BEGIN;
 
 -- Verify RLS enabled on all AI tables

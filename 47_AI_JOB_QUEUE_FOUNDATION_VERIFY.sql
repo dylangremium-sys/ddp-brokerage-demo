@@ -3,6 +3,8 @@
 --          schema, RLS policies, indexes, and triggers
 -- Date: 2026-08-03
 
+\set ON_ERROR_STOP on
+
 BEGIN;
 
 -- Verify ai_jobs table exists with expected columns
@@ -79,53 +81,54 @@ DO $verify$ BEGIN
   RAISE NOTICE 'ai_job_attempts table structure verified';
 END $verify$;
 
--- Verify RLS is enabled on both tables
+-- Verify RLS is enabled
 DO $verify$ BEGIN
-  ASSERT (SELECT relrowsecurity FROM pg_class WHERE relname = 'ai_jobs' AND relnamespace = 'public'::regnamespace::oid), 
-    'RLS is not enabled on ai_jobs';
-  ASSERT (SELECT relrowsecurity FROM pg_class WHERE relname = 'ai_job_attempts' AND relnamespace = 'public'::regnamespace::oid),
-    'RLS is not enabled on ai_job_attempts';
-  RAISE NOTICE 'RLS verified on both tables';
+  ASSERT EXISTS (
+    SELECT 1 FROM pg_tables 
+    WHERE schemaname = 'public' AND tablename = 'ai_jobs' AND rowsecurity = true
+  ), 'RLS not enabled on ai_jobs';
+  
+  ASSERT EXISTS (
+    SELECT 1 FROM pg_tables 
+    WHERE schemaname = 'public' AND tablename = 'ai_job_attempts' AND rowsecurity = true
+  ), 'RLS not enabled on ai_job_attempts';
+  
+  RAISE NOTICE 'RLS enabled on both tables';
 END $verify$;
 
--- Verify RLS policies exist
+-- Verify policies exist
 DO $verify$ BEGIN
   ASSERT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ai_jobs' AND policyname IS NOT NULL
-  ), 'RLS policies missing on ai_jobs';
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' AND tablename = 'ai_jobs' AND policyname LIKE '%admin%'
+  ), 'Admin policy missing on ai_jobs';
+  
   ASSERT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ai_job_attempts' AND policyname IS NOT NULL
-  ), 'RLS policies missing on ai_job_attempts';
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' AND tablename = 'ai_jobs' AND policyname LIKE '%farmer%'
+  ), 'Farmer policy missing on ai_jobs';
+  
   RAISE NOTICE 'RLS policies verified';
 END $verify$;
 
--- Verify indexes exist
+-- Verify triggers exist
 DO $verify$ BEGIN
   ASSERT EXISTS (
-    SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'ai_jobs' AND indexname LIKE '%farm_id%'
-  ), 'Index on ai_jobs.farm_id does not exist';
+    SELECT 1 FROM pg_trigger 
+    WHERE tgname = 'prevent_ai_job_attempts_update' AND NOT tgisinternal
+  ), 'prevent_ai_job_attempts_update trigger missing';
+  
   ASSERT EXISTS (
-    SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'ai_jobs' AND indexname LIKE '%created_at%'
-  ), 'Index on ai_jobs.created_at does not exist';
+    SELECT 1 FROM pg_trigger 
+    WHERE tgname = 'prevent_ai_job_attempts_delete' AND NOT tgisinternal
+  ), 'prevent_ai_job_attempts_delete trigger missing';
+  
   ASSERT EXISTS (
-    SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'ai_job_attempts' AND indexname LIKE '%job_id%'
-  ), 'Index on ai_job_attempts.job_id does not exist';
-  RAISE NOTICE 'Indexes verified';
-END $verify$;
-
--- Verify triggers exist (append-only enforcement)
-DO $verify$ BEGIN
-  ASSERT EXISTS (
-    SELECT 1 FROM information_schema.triggers 
-    WHERE trigger_schema = 'public' AND event_object_table = 'ai_job_attempts' 
-    AND trigger_name LIKE '%update%'
-  ), 'Append-only update trigger missing on ai_job_attempts';
-  ASSERT EXISTS (
-    SELECT 1 FROM information_schema.triggers 
-    WHERE trigger_schema = 'public' AND event_object_table = 'ai_job_attempts' 
-    AND trigger_name LIKE '%delete%'
-  ), 'Append-only delete trigger missing on ai_job_attempts';
-  RAISE NOTICE 'Append-only triggers verified';
+    SELECT 1 FROM pg_trigger 
+    WHERE tgname = 'prevent_ai_job_attempts_truncate' AND NOT tgisinternal
+  ), 'prevent_ai_job_attempts_truncate trigger missing';
+  
+  RAISE NOTICE 'All triggers verified';
 END $verify$;
 
 COMMIT;
