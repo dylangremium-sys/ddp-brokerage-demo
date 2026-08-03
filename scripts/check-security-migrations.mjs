@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path'
 import { findUnexpectedGuardRedefinitions, findUnguardedHandleNewUserDowngrades } from './security-migrations/guardRedefinition.mjs'
 import { findMutableSearchPathDefiners } from './security-migrations/definerSearchPath.mjs'
 import { hasExecutablePendingGuard, findAnonAuditLogWriteGrants, hasRlsFullRollbackOptIn, findUnguardedTargetedRlsDisables, findUnguardedDestructiveRollbacks } from './security-migrations/rollbackSafety.mjs'
+import { findClientDefaultPrivilegeGrants, formatDefaultPrivilegeReport } from './security-migrations/defaultPrivileges.mjs'
 import { findHardeningProblems as mig27Hardening, findVerifyProblems as mig27Verify, findRollbackProblems as mig27Rollback } from './security-migrations/auditLogActorMigration.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -673,6 +674,24 @@ for (const [n, m] of Object.entries(MIGRATIONS)) {
     'Rollback safety: every audit-critical DROP rollback refuses without an explicit destructive opt-in',
     unguardedDestructive.length === 0,
     `rollback(s) that destroy append-only records with no opt-in guard: ${unguardedDestructive.join(', ')}`,
+  )
+}
+
+// Check 22 — no forward migration widens client default privileges (corpus-wide).
+// `ALTER DEFAULT PRIVILEGES … GRANT … TO authenticated` is unbounded in time: it
+// applies to every table created in `public` afterwards, including tables no one
+// has written yet. Migrations 24, 36 and 44 each REVOKE Supabase's baseline CRUD
+// grant per table and let RLS gate the rows; one schema-wide re-grant undoes that
+// discipline for everything that follows it, and the diff looks like one line.
+// REVOKE is allowed (that is the direction migration 14 moves in), and so is any
+// statement in a *_ROLLBACK.sql, whose job is to restore the prior state.
+{
+  const files = rootSql.map((f) => ({ name: f, body: read(f) }))
+  const widening = findClientDefaultPrivilegeGrants(files, { exemptionToken: EXEMPTION_TOKEN })
+  check(
+    'No forward migration widens default privileges for anon/authenticated/PUBLIC (corpus-wide)',
+    widening.length === 0,
+    `\n${formatDefaultPrivilegeReport(widening)}`,
   )
 }
 
