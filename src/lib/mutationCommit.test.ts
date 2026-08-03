@@ -80,3 +80,38 @@ describe('commitMutation — DB-first mutation ordering', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 })
+
+describe('commitMutation — onBegin handler', () => {
+  it('calls onBegin before persisting, and onCommitted after', async () => {
+    const order: string[] = []
+    const d = deferred<void>()
+    const onBegin = vi.fn(() => { order.push('begin') })
+    const onCommitted = vi.fn(() => { order.push('committed') })
+    const onError = vi.fn()
+    const p = commitMutation(() => { order.push('persist'); return d.promise }, { onBegin, onCommitted, onError })
+    await Promise.resolve()
+    expect(onBegin).toHaveBeenCalledOnce()
+    expect(order).toEqual(['begin', 'persist'])
+    d.resolve()
+    await p
+    expect(order).toEqual(['begin', 'persist', 'committed'])
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('calls onBegin before persisting even when the action fails', async () => {
+    const order: string[] = []
+    const onBegin = vi.fn(() => { order.push('begin') })
+    const onCommitted = vi.fn()
+    const onError = vi.fn(() => { order.push('error') })
+    await commitMutation(() => { throw new Error('fail') }, { onBegin, onCommitted, onError })
+    expect(order).toEqual(['begin', 'error'])
+    expect(onCommitted).not.toHaveBeenCalled()
+  })
+
+  it('works identically when onBegin is omitted (backward compat)', async () => {
+    const onCommitted = vi.fn(); const onError = vi.fn()
+    const ok = await commitMutation(async () => 'ok', { onCommitted, onError })
+    expect(ok).toBe(true)
+    expect(onCommitted).toHaveBeenCalledWith('ok')
+  })
+})
