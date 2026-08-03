@@ -51,7 +51,7 @@ export function DDPCoaReview({
             extractions.map((f) => [f.field_name, f.field_value_text]),
           ),
         }))
-      } catch (err) {
+      } catch {
         setState((s) => ({
           ...s,
           error: 'Failed to load extracted values.',
@@ -69,7 +69,7 @@ export function DDPCoaReview({
       await onAccept(state.selectedValues)
       setState((s) => ({ ...s, saved: true, error: null }))
       setTimeout(() => onBack(), 1000)
-    } catch (err) {
+    } catch {
       setState((s) => ({
         ...s,
         error: 'Failed to save. Please try again.',
