@@ -75,6 +75,13 @@ jobs:
       - name: Migration-number collision guard
         run: npm run verify:migration-numbers
 
+      # A ROLLBACK naming an object the HARDENING never created exits 0 having
+      # removed nothing, so a broken undo is indistinguishable from a working
+      # one at apply time. This is the no-database half; the catalog snapshot in
+      # the disposable-PG harness catches the wrong-signature case it cannot.
+      - name: Rollback create/drop symmetry guard
+        run: npm run verify:rollback-symmetry
+
       - name: Security migration static checks
         run: npm run security:sql
 
