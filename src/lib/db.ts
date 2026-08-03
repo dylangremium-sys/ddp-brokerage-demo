@@ -237,9 +237,50 @@ export async function createFarmProfile(farm: FarmProfile, userId?: string): Pro
   })
 
   console.log('Created farm id:', farm.id)
+
+  // 2. farm_memberships — link the creating user as farm owner.
+  //
+  // THIS MUST COME BEFORE THE farm_profiles WRITE, AND THE ORDER IS THE WHOLE BUG.
+  //
+  // farm_profiles is written with an UPSERT (`ON CONFLICT`). Under row level
+  // security PostgreSQL evaluates the UPDATE policy for a statement carrying an
+  // ON CONFLICT clause — not just the INSERT policy — and
+  // `farm_profiles: farmer update own` requires a row in farm_memberships:
+  //
+  //     EXISTS (SELECT 1 FROM farm_memberships fm
+  //              WHERE fm.farm_id = farm_profiles.farm_id AND fm.user_id = auth.uid())
+  //
+  // With the membership created afterwards, that row never exists at the moment
+  // it is needed, so the upsert fails with 42501 "new row violates row-level
+  // security policy", createFarmProfile throws, and the membership write below
+  // is never reached. The farmer is then permanently stuck: every retry fails
+  // identically, because the thing that would unblock it only runs after the
+  // step that always fails.
+  //
+  // Measured against production 2026-08-02, impersonating a real farmer:
+  //   plain INSERT into farm_profiles            -> succeeds
+  //   INSERT ... ON CONFLICT (what this code does) -> 42501
+  //   same upsert with the membership created first -> succeeds
+  //
+  // The visible damage was not an error message. The farms row (step 1) lands,
+  // so a farm APPEARS in the admin queue with its flat fields populated, while
+  // every JSONB section — ownership, licences, facility, cultivation, strains,
+  // lab testing — stays empty forever. The compliance score reads 0/900 off
+  // those empty sections and the farm looks non-compliant rather than unsaved.
+  //
+  // Reordering needs no migration: the policies are correct, the sequence was not.
+  if (userId && isValidUUID(userId)) {
+    console.log('Creating farm_membership for farm id:', farm.id, 'user id:', userId)
+    await sbUpsertIgnore('farm_memberships', {
+      farm_id: farm.id,
+      user_id: userId,
+      role: 'owner',
+    }, 'farm_id,user_id')
+  }
+
   console.log('Creating farm_profile for farm id:', farm.id)
 
-  // 2. farm_profiles row (full profile data split into JSONB sections)
+  // 3. farm_profiles row (full profile data split into JSONB sections)
   await sbUpsertOn('farm_profiles', {
     farm_id: farm.id,
     business_info: {
@@ -394,15 +435,8 @@ export async function createFarmProfile(farm: FarmProfile, userId?: string): Pro
     updated_at: new Date().toISOString(),
   }, 'farm_id')
 
-  // 3. farm_memberships — link the creating user as farm owner
-  if (userId && isValidUUID(userId)) {
-    console.log('Creating farm_membership for farm id:', farm.id, 'user id:', userId)
-    await sbUpsertIgnore('farm_memberships', {
-      farm_id: farm.id,
-      user_id: userId,
-      role: 'owner',
-    }, 'farm_id,user_id')
-  }
+  // The farm_memberships write used to sit HERE, after farm_profiles. See the
+  // comment at step 2 for why that ordering could never work.
 }
 
 export async function updateFarmProfileStatus(

@@ -647,6 +647,19 @@ export default function App() {
     // The decision itself is pure and lives in lib/navigationGuard.ts; this
     // function keeps only the side effects.
     const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole })
+    // CLEAR THE ERROR BANNER ON NAVIGATION.
+    //
+    // setDbError(null) previously appeared in exactly one place: the banner's own
+    // ✕ button. So a single failed write pinned an error to the top of every
+    // screen until the user happened to dismiss it — it survived navigation and
+    // it survived switching between the farmer and admin areas. An admin who had
+    // triggered nothing would sit there reading a permission error raised by
+    // somebody else's failed save, with a correlation id that belonged to it.
+    //
+    // That also made one error look like many: the same reference appeared on
+    // screen after screen, which reads as a hardcoded constant rather than a
+    // stale banner. The reference was always unique; the banner was not.
+    setDbError(null)
     setPage(target)
     window.scrollTo(0, 0)
   }
