@@ -1,0 +1,76 @@
+{
+  "id": "53_coa_batch_write",
+  "title": "Migration 53 — batch COA extraction write",
+  "description": "Applies migrations 24, 28 and 52 as prerequisites, then 53. VERIFY A checks the catalogue shape and that migration 52's single-row writer survives alongside the new batch one; B writes a four-row two-report pack in ONE call and proves the grouping and auth.uid() attribution hold; C is the reason the migration exists — a pack whose LAST element is refused by the table writes ZERO rows, where the per-row loop it replaces would have committed the first three; D-F prove the empty-array, unknown-key and per-call-ceiling refusals; G re-proves the admin gate including the session-less case a service-role connection presents; H re-proves migrations 28 and 52's constraints through the new door. Rollback drops both functions and asserts migration 52's writer is left intact.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "24-PREREQ", "file": "24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql" },
+    { "label": "28-PREREQ", "file": "28_EVIDENCE_DIGEST_DEDUP_HARDENING.sql" },
+    { "label": "52-PREREQ", "file": "52_COA_REPORT_GROUPING_HARDENING.sql" },
+    { "label": "HARDENING", "file": "53_COA_BATCH_EXTRACTION_WRITE_HARDENING.sql" }
+  ],
+  "verify": {
+    "file": "53_COA_BATCH_EXTRACTION_WRITE_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F", "G", "H"],
+    "expectedPassCount": 8,
+    "note": "C is the headline: the failing element is admissible to the shape validator and refused by the table, so the failure occurs during the INSERT and proves the write is all-or-nothing rather than merely validated-first."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "53-rollback",
+        "source": "file",
+        "file": "53_COA_BATCH_EXTRACTION_WRITE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role", "supabase_storage_admin"],
+    "schemas": ["auth", "storage", "extensions", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "storage.objects",
+      "storage.buckets",
+      "public.is_ddp_admin",
+      "public.has_operational_farmer_access",
+      "public.has_farm_membership",
+      "public.handle_new_user",
+      "public.profiles",
+      "public.farms",
+      "public.farm_profiles",
+      "public.inventory_batches",
+      "public.farm_memberships",
+      "public.farmer_documents",
+      "public.documents"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "functions": [
+        "public.record_document_field_extractions_batch",
+        "public.document_extraction_batch_row_keys"
+      ]
+    },
+    "intact": {
+      "tables": [
+        "public.document_field_extractions",
+        "public.farmer_documents",
+        "public.documents",
+        "public.profiles",
+        "public.farms",
+        "auth.users"
+      ],
+      "functions": [
+        "public.record_document_field_extraction",
+        "public.document_extraction_field_names",
+        "public.document_extraction_provenances",
+        "public.fn_dfe_append_only",
+        "public.is_ddp_admin",
+        "auth.uid"
+      ],
+      "authUsersMinRows": 2
+    }
+  }
+}

@@ -208,47 +208,63 @@ function buildDeps(accessToken: string | null): CoaExtractionDeps | null {
 
     // ── The write ────────────────────────────────────────────────────────────
     //
-    // Through migration 28's RPC, on the caller's own connection, one row per
-    // call. Direct DML is not a shortcut being declined — it is unavailable:
+    // ONE call, on the caller's own connection, through migration 53's batch
+    // RPC. Direct DML is not a shortcut being declined — it is unavailable:
     // migration 28 §3.8 does `REVOKE ALL ON public.document_field_extractions
     // FROM PUBLIC, anon, authenticated, service_role` and grants only SELECT, so
     // an `.insert()` fails for every role this endpoint could use.
     //
-    // NOT ONE TRANSACTION, AND THAT IS A REAL LIMITATION. PostgREST gives each
-    // `rpc()` call its own transaction, so a pack that fails on its fourteenth
-    // row leaves thirteen rows written, while the endpoint answers 503 and says
-    // nothing was recorded — which would then be untrue.
+    // WHY NOT THE SINGLE-ROW FUNCTION IN A LOOP, WHICH IS WHAT THIS WAS.
+    // PostgREST gives every `rpc()` call its own transaction. A per-row loop
+    // therefore had two faults with one cause:
     //
-    // It is survivable rather than ignored, for two specific reasons: the table
-    // is append-only, so a partial write is a partial reading of a document and
-    // never a corrupted one; and `countExistingExtractions` refuses a second
-    // attempt on any document that already has rows, so a retry surfaces as
-    // `already_extracted` rather than as a silent duplicate pack. An
-    // administrator sees a document stuck part-read, which is visible and
-    // fixable. A set-returning batch RPC would close this properly and is the
-    // right next migration; it is not this one.
+    //   • A pack failing on its fourteenth row left thirteen rows committed
+    //     while this endpoint answered 503 and told the caller nothing had been
+    //     recorded — false, and false in the direction that matters.
+    //   • A five-report pack is up to ~95 rows and so was up to ~95 sequential
+    //     round trips. Extraction alone has been measured at 70-95 seconds
+    //     against a 90-second function limit, so the write was pushing an
+    //     already-intermittent timeout over the edge — and a timeout mid-pack
+    //     produced exactly the partial write above.
+    //
+    // One call fixes both. The function validates every element before
+    // inserting any, so a malformed pack is refused whole, and the insert is a
+    // single statement, so PostgreSQL's own transaction boundary guarantees
+    // all-or-nothing. Proven by 53_COA_BATCH_EXTRACTION_WRITE_VERIFY section C,
+    // which fails a pack on its LAST element and asserts zero rows survive.
     persistExtractions: async (document, rows) => {
-      for (const { reportOrdinal, reportLabel, row } of rows) {
-        const { error } = await session.rpc('record_document_field_extraction', {
-          p_document_surface: document.surface,
-          p_document_id: document.id,
-          p_field_name: row.field_name,
-          p_field_value_text: row.field_value_text,
-          p_provenance: row.provenance,
-          p_confidence: row.confidence,
-          p_extraction_warning: row.extraction_warning,
-          p_report_ordinal: reportOrdinal,
-          p_report_label: reportLabel,
-        })
-        if (error) {
-          // Not returned to the caller — the core catches this and answers with
-          // a fixed string. It names the document and field so a server log
-          // identifies where a pack stopped.
-          throw new Error(
-            `coa_extract_persist_failed: document=${document.id} ` +
-              `report=${reportOrdinal} field=${row.field_name}: ${error.message}`,
-          )
-        }
+      const { data, error } = await session.rpc('record_document_field_extractions_batch', {
+        p_document_surface: document.surface,
+        p_document_id: document.id,
+        p_rows: rows.map(({ reportOrdinal, reportLabel, row }) => ({
+          field_name: row.field_name,
+          field_value_text: row.field_value_text,
+          provenance: row.provenance,
+          confidence: row.confidence,
+          extraction_warning: row.extraction_warning,
+          report_ordinal: reportOrdinal,
+          report_label: reportLabel,
+        })),
+      })
+
+      if (error) {
+        // Not returned to the caller — the core catches this and answers with a
+        // fixed string. It names the document so a server log can find the pack.
+        throw new Error(
+          `coa_extract_persist_failed: document=${document.id} rows=${rows.length}: ${error.message}`,
+        )
+      }
+
+      // The function returns the number of rows it wrote and raises rather than
+      // reporting a partial write, so a mismatch here should be unreachable.
+      // Checked anyway: this is the last point at which "the endpoint said it
+      // saved the extraction" can still be made false, and an unreachable branch
+      // costs nothing next to repeating the PR #97 failure in a new place.
+      if (typeof data !== 'number' || data !== rows.length) {
+        throw new Error(
+          `coa_extract_persist_count_mismatch: document=${document.id} ` +
+            `wrote=${String(data)} expected=${rows.length}`,
+        )
       }
     },
 
