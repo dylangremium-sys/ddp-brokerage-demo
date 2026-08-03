@@ -270,7 +270,6 @@ export async function createFarmProfile(farm: FarmProfile, userId?: string): Pro
   //
   // Reordering needs no migration: the policies are correct, the sequence was not.
   if (userId && isValidUUID(userId)) {
-    console.log('Creating farm_membership for farm id:', farm.id, 'user id:', userId)
     await sbUpsertIgnore('farm_memberships', {
       farm_id: farm.id,
       user_id: userId,

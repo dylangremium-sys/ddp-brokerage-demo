@@ -87,7 +87,7 @@ describe('createFarmProfile — membership must be written before the profile', 
     // Reordering must not turn a missing user id into a skipped profile — that
     // would trade one silent data loss for another.
     const db = await import('./db')
-    await db.createFarmProfile(FARM, undefined)
+    await db.createFarmProfile(FARM)
     expect(calls).toContain('farms')
     expect(calls).toContain('farm_profiles')
     expect(calls).not.toContain('farm_memberships')
