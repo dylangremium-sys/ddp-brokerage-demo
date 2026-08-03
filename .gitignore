@@ -39,3 +39,6 @@ backups/
 *.sw?
 .vercel
 .env*
+
+# Real-schema replay working dir — holds a production SCHEMA dump; never committed
+scripts/real-schema/.work/
