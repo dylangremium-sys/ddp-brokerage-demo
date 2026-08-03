@@ -266,7 +266,7 @@ REVOKE INSERT, UPDATE, DELETE ON ai_prompt_experiments FROM authenticated, anon;
 -- ============================================================================
 
 -- Get the current active prompt for a feature
-CREATE OR REPLACE FUNCTION get_active_prompt(p_feature_code TEXT)
+CREATE FUNCTION IF NOT EXISTS get_active_prompt(p_feature_code TEXT)
 RETURNS TABLE(
   prompt_id TEXT,
   prompt_key TEXT,
@@ -284,7 +284,7 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- Get model config for a feature
-CREATE OR REPLACE FUNCTION get_model_config(p_feature_code TEXT)
+CREATE FUNCTION IF NOT EXISTS get_model_config(p_feature_code TEXT)
 RETURNS TABLE(
   primary_provider TEXT,
   primary_model TEXT,
