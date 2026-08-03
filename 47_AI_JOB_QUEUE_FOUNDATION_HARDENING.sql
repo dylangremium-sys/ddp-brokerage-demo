@@ -170,18 +170,21 @@ CREATE TRIGGER prevent_ai_job_attempts_delete
   BEFORE DELETE ON ai_job_attempts
   FOR EACH ROW EXECUTE FUNCTION prevent_ai_job_attempts_delete();
 
--- Prevent TRUNCATE on ai_job_attempts
-CREATE OR REPLACE FUNCTION prevent_ai_job_attempts_truncate()
-RETURNS EVENT TRIGGER AS $$
-BEGIN
-  RAISE EXCEPTION 'ai_job_attempts is append-only; TRUNCATE not allowed';
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE EVENT TRIGGER prevent_ai_job_attempts_truncate
-  ON ddl_command_start
-  WHEN tag IN ('TRUNCATE')
-  EXECUTE FUNCTION prevent_ai_job_attempts_truncate();
+-- Prevent TRUNCATE on ai_job_attempts (placeholder - requires careful event trigger setup)
+-- TODO: Implement event trigger with careful handling of PostgreSQL event trigger constraints
+-- DROP FUNCTION IF EXISTS prevent_ai_job_attempts_truncate();
+-- CREATE FUNCTION prevent_ai_job_attempts_truncate()
+-- RETURNS EVENT TRIGGER AS $$
+-- BEGIN
+--   RAISE EXCEPTION 'ai_job_attempts is append-only; TRUNCATE not allowed';
+-- END;
+-- $$ LANGUAGE plpgsql;
+-- 
+-- DROP EVENT TRIGGER IF EXISTS prevent_ai_job_attempts_truncate;
+-- CREATE EVENT TRIGGER prevent_ai_job_attempts_truncate
+--   ON ddl_command_start
+--   WHEN tag IN ('TRUNCATE')
+--   EXECUTE FUNCTION prevent_ai_job_attempts_truncate();
 
 -- ============================================================================
 -- ACL for functions
@@ -195,8 +198,9 @@ REVOKE EXECUTE ON FUNCTION prevent_ai_job_attempts_delete() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION prevent_ai_job_attempts_delete() FROM anon;
 -- acl-no-grant: prevent_ai_job_attempts_delete
 
-REVOKE EXECUTE ON FUNCTION prevent_ai_job_attempts_truncate() FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION prevent_ai_job_attempts_truncate() FROM anon;
+-- TRUNCATE protection via event trigger (commented out - needs separate setup)
+-- REVOKE EXECUTE ON FUNCTION prevent_ai_job_attempts_truncate() FROM PUBLIC;
+-- REVOKE EXECUTE ON FUNCTION prevent_ai_job_attempts_truncate() FROM anon;
 -- acl-no-grant: prevent_ai_job_attempts_truncate
 
 -- ============================================================================

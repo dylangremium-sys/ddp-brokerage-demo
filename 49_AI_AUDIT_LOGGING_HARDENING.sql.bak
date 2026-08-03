@@ -180,6 +180,9 @@ REVOKE EXECUTE ON FUNCTION prevent_ai_audit_events_delete() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION prevent_ai_audit_events_delete() FROM anon;
 -- acl-no-grant: prevent_ai_audit_events_delete
 
+REVOKE EXECUTE ON FUNCTION ai_create_audit_event(UUID, TEXT, UUID, JSONB, BOOLEAN) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION ai_create_audit_event(UUID, TEXT, UUID, JSONB, BOOLEAN) FROM anon;
+-- acl-no-grant: ai_create_audit_event
 
 -- ============================================================================
 -- Grant restrictions
@@ -235,11 +238,6 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
-
--- Restrict access to ai_create_audit_event
-REVOKE EXECUTE ON FUNCTION ai_create_audit_event(TEXT, TEXT, UUID, TEXT, JSONB, UUID, TEXT) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION ai_create_audit_event(TEXT, TEXT, UUID, TEXT, JSONB, UUID, TEXT) FROM anon;
--- acl-no-grant: ai_create_audit_event
 -- Comments
 -- ============================================================================
 
