@@ -6,7 +6,12 @@
 BEGIN;
 
 -- Drop dependent functions if they exist
-DROP FUNCTION IF EXISTS ai_create_audit_event(UUID, TEXT, TEXT, JSONB, UUID) CASCADE;
+-- Signature must match 49_AI_AUDIT_LOGGING_HARDENING.sql exactly. `DROP FUNCTION IF
+-- EXISTS` with a signature that matches no function SUCCEEDS and drops nothing, so a
+-- wrong argument list here leaves the function behind while the rollback reports rc=0.
+-- The previous list — (UUID, TEXT, TEXT, JSONB, UUID) — had five arguments in the wrong
+-- order; the function takes seven.
+DROP FUNCTION IF EXISTS ai_create_audit_event(TEXT, TEXT, UUID, TEXT, JSONB, UUID, TEXT) CASCADE;
 DROP FUNCTION IF EXISTS prevent_ai_audit_events_update() CASCADE;
 DROP FUNCTION IF EXISTS prevent_ai_audit_events_delete() CASCADE;
 
