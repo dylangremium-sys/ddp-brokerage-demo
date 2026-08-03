@@ -145,9 +145,9 @@ export function formatIncompleteReport(incomplete) {
     for (const stage of i.missing) lines.push(`      - ${i.number}_${i.stem}_${stage}.sql`);
   }
   lines.push(
-    `  FIX: a migration number is a SET of three files (register rule 5). Write the ` +
-      `missing companions — a migration with no VERIFY cannot be shown to have done ` +
-      `what it claims, and one with no ROLLBACK cannot be undone.`,
+    '  FIX: a migration number is a SET of three files (register rule 5). Write the ' +
+      'missing companions — a migration with no VERIFY cannot be shown to have done ' +
+      'what it claims, and one with no ROLLBACK cannot be undone.',
   );
   return lines.join('\n');
 }

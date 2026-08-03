@@ -155,7 +155,7 @@ describe('findIncompleteMigrationSets (register rule 5)', () => {
   });
 
   it('names the missing stage precisely when only one is absent', () => {
-    const files = [`47_A_THING_HARDENING.sql`, `47_A_THING_VERIFY.sql`];
+    const files = ['47_A_THING_HARDENING.sql', '47_A_THING_VERIFY.sql'];
     expect(findIncompleteMigrationSets(files)).toEqual([
       { number: 47, stem: 'A_THING', missing: ['ROLLBACK'] },
     ]);
