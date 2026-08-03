@@ -526,6 +526,12 @@ export interface InventoryItem {
   farmerNotes?: string
   ownerNotes?: string
   coaStoragePath?: string
+  // Gate 2 (Three-gate system): COA confirmation fields
+  coaExtractedJson?: Record<string, string | null> // Full AI extraction result from Gate 1
+  coaFarmerEntryJson?: Record<string, string | null> // Farmer's form values at confirmation time
+  coaMismatchFlags?: string[] // Array of field names that differed (e.g. ["sample_name", "batch_reference"])
+  coaConfirmationStatus?: 'pending_confirmation' | 'confirmed' | 'flagged_for_review'
+  coaConfirmedAt?: string // ISO timestamp when farmer confirmed Gate 2
 }
 
 /** Photo types accepted by `public.farmer_photos.photo_type` (FARMER_MVP_MIGRATION). */
