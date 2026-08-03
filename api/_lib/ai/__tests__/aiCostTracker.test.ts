@@ -5,8 +5,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AICostTracker, UsageMetric } from '../aiCostTracker';
-import { testContext } from './setup';
+import { AICostTracker, UsageMetric } from '../aiCostTracker.js';
+import { testContext } from './setup.js';
 
 describe('AICostTracker', () => {
   let costTracker: AICostTracker;

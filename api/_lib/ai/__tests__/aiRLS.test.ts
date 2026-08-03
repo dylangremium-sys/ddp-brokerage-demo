@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createMockSupabaseClient } from './setup';
+import { createMockSupabaseClient } from './setup.js';
 
 describe('AI RLS Policies', () => {
   let mockClient: ReturnType<typeof createMockSupabaseClient>;

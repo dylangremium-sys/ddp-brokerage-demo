@@ -112,6 +112,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+REVOKE EXECUTE ON FUNCTION prevent_ai_prompt_versions_delete() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION prevent_ai_prompt_versions_delete() FROM anon;
+-- acl-no-grant: prevent_ai_prompt_versions_delete
+
 CREATE TRIGGER prevent_ai_prompt_versions_delete
   BEFORE DELETE ON ai_prompt_versions
   FOR EACH ROW EXECUTE FUNCTION prevent_ai_prompt_versions_delete();
@@ -305,6 +309,8 @@ $$ LANGUAGE plpgsql STABLE;
 REVOKE EXECUTE ON FUNCTION get_active_prompt(TEXT) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION get_active_prompt(TEXT) FROM anon;
 REVOKE EXECUTE ON FUNCTION get_model_config(TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION get_model_config(TEXT) FROM anon;
+-- acl-no-grant: get_model_config
 
 COMMENT ON TABLE ai_prompts IS 'Prompt template registry. Versioned; admin controls updates.';
 COMMENT ON TABLE ai_prompt_versions IS 'Append-only version history for prompts. Enables rollback and reproducibility.';

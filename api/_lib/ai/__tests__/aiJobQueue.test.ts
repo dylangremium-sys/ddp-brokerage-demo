@@ -5,8 +5,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AIJobQueue, AIJob } from '../aiJobQueue';
-import { createMockSupabaseClient, testContext } from './setup';
+import { AIJobQueue, AIJob } from '../aiJobQueue.js';
+import { createMockSupabaseClient, testContext } from './setup.js';
 
 describe('AIJobQueue', () => {
   let jobQueue: AIJobQueue;
