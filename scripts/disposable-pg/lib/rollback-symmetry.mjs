@@ -16,10 +16,23 @@
  * This catches both wrong names and wrong signatures.
  */
 export function snapshotCatalog(cluster) {
+  // Objects owned by an extension (pgcrypto lands ~37 functions in public via
+  // `CREATE EXTENSION IF NOT EXISTS`) are excluded. A ROLLBACK must NOT drop
+  // them — the extension is shared, and other migrations depend on it — so
+  // counting them makes a correct rollback look asymmetric.
+  const notExtensionOwned = `
+    NOT EXISTS (SELECT 1 FROM pg_depend d
+                WHERE d.objid = %OID% AND d.classid = '%CATALOG%'::regclass AND d.deptype = 'e')`;
+
   const query = `
     SELECT 'function' kind, p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' obj
-      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public'
-    UNION ALL SELECT 'table', tablename FROM pg_tables WHERE schemaname = 'public'
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public'
+        AND ${notExtensionOwned.replace('%OID%', 'p.oid').replace('%CATALOG%', 'pg_proc')}
+    UNION ALL SELECT 'table', c.relname FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+        AND ${notExtensionOwned.replace('%OID%', 'c.oid').replace('%CATALOG%', 'pg_class')}
     UNION ALL SELECT 'policy', policyname FROM pg_policies WHERE schemaname = 'public'
     UNION ALL SELECT 'trigger', t.tgname FROM pg_trigger t
       JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -54,28 +67,30 @@ export function assertCatalogSymmetry(before, after) {
     return { ok: false, diff: 'invalid snapshot format' };
   }
 
-  // Check length first
-  if (before.length !== after.length) {
-    return {
-      ok: false,
-      diff: `length mismatch: before ${before.length}, after ${after.length}`,
-    };
+  // Compare as sets, not by position. A positional walk reports only "length
+  // mismatch" the moment one object is added or removed, which names nothing an
+  // operator can act on — and the whole point of this check is to say WHICH
+  // object the rollback left behind or destroyed.
+  const key = (e) => `${e.kind}|${e.obj}`;
+  const beforeKeys = new Set(before.map(key));
+  const afterKeys = new Set(after.map(key));
+
+  // Present after rollback but not before it ran: the rollback failed to remove these.
+  const leaked = [...afterKeys].filter((k) => !beforeKeys.has(k)).sort();
+  // Present before but gone after: the rollback destroyed something it never created.
+  const destroyed = [...beforeKeys].filter((k) => !afterKeys.has(k)).sort();
+
+  if (leaked.length === 0 && destroyed.length === 0) return { ok: true };
+
+  const lines = [];
+  if (leaked.length > 0) {
+    lines.push(`${leaked.length} object(s) the ROLLBACK failed to remove:`);
+    for (const k of leaked) lines.push(`  + ${k.replace('|', ' ')}`);
+  }
+  if (destroyed.length > 0) {
+    lines.push(`${destroyed.length} pre-existing object(s) the ROLLBACK destroyed (over-reach):`);
+    for (const k of destroyed) lines.push(`  - ${k.replace('|', ' ')}`);
   }
 
-  // Check each entry
-  const diffs = [];
-  for (let i = 0; i < before.length; i++) {
-    const b = before[i];
-    const a = after[i];
-    if (b.kind !== a.kind || b.obj !== a.obj) {
-      diffs.push(`[${i}] before: ${b.kind} | ${b.obj}`);
-      diffs.push(`    after:  ${a.kind} | ${a.obj}`);
-    }
-  }
-
-  if (diffs.length > 0) {
-    return { ok: false, diff: diffs.join('\n') };
-  }
-
-  return { ok: true };
+  return { ok: false, diff: lines.join('\n'), leaked, destroyed };
 }

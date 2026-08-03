@@ -174,8 +174,37 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
     }
     phaseLine(true, 'minimal Supabase substrate bootstrapped');
 
+    // ---- Rollback symmetry baseline ----
+    // The comparison must be pre-apply vs post-rollback. Snapshotting after
+    // apply instead asserts that rollback changes nothing, which passes a
+    // rollback that drops nothing and fails a correct one.
+    //
+    // A fixture applies prerequisites it does NOT undo, so the baseline is the
+    // state immediately before the first apply stage that the rollback actually
+    // reverses. The rollback stages name their own files, so that set is
+    // declared, not guessed: fixture 44 applies 39 then 44 and rolls back only
+    // 44 (baseline = after 39), while fixture 36 applies 34 then 36 and rolls
+    // back both (baseline = before 34).
+    const migrationNumberOf = (file) => Number(/^(\d+)_/.exec(file)?.[1]);
+    const rolledBackNumbers = new Set(
+      fixture.rollbackStages.map((s) => migrationNumberOf(s.file)).filter(Number.isFinite),
+    );
+    let baselineIndex = fixture.applyStages.findIndex((s) =>
+      rolledBackNumbers.has(migrationNumberOf(s.file)),
+    );
+    if (baselineIndex < 0) baselineIndex = 0;
+
+    let catalogBaseline = null;
+
     // ---- Apply forward stages ----
-    for (const st of fixture.applyStages) {
+    for (const [stageIndex, st] of fixture.applyStages.entries()) {
+      if (stageIndex === baselineIndex) {
+        try {
+          catalogBaseline = snapshotCatalog(cluster);
+        } catch (err) {
+          throw new PhaseError(EXIT.ENV, `baseline catalog snapshot failed: ${err.message}`);
+        }
+      }
       const res = cluster.runSqlFile(st.path);
       rawLogs[`apply-${st.label}.log`] = res.combined;
       const ok = res.status === 0;
@@ -222,12 +251,24 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
       phaseLine(true, `VERIFY ${parsed.passed.length}/${fixture.verify.expectedPassCount}`, parsed.passed.join(''));
     }
 
-    // ---- Catalog snapshot BEFORE rollback (for symmetry check) ----
-    let catalogBefore = null;
+    // ---- Catalog AFTER apply: proves the fixture actually built something ----
+    let catalogApplied = null;
     try {
-      catalogBefore = snapshotCatalog(cluster);
+      catalogApplied = snapshotCatalog(cluster);
     } catch (err) {
-      throw new PhaseError(EXIT.ROLLBACK, `catalog snapshot failed: ${err.message}`);
+      throw new PhaseError(EXIT.APPLY, `post-apply catalog snapshot failed: ${err.message}`);
+    }
+    // Only fixtures that DECLARE they create public-schema objects can be
+    // vacuous. 37/38 change storage buckets and storage.objects policies and
+    // legitimately add nothing to the public catalog; their postRollback
+    // declares no removed tables or functions.
+    const declaresRemovedObjects =
+      (fixture.postRollback?.removed?.tables?.length ?? 0) > 0 ||
+      (fixture.postRollback?.removed?.functions?.length ?? 0) > 0;
+    if (declaresRemovedObjects && assertCatalogSymmetry(catalogBaseline, catalogApplied).ok) {
+      throw new PhaseError(EXIT.APPLY,
+        `fixture ${fixture.id} declares objects to remove at rollback but created no public ` +
+          `catalog objects, so the rollback symmetry check would pass vacuously`);
     }
 
     // ---- Destructive guard + rollback ----
@@ -279,21 +320,39 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
       if (fixture.rollbackStages.length) phaseLine(true, 'clean rollback complete');
     }
 
-    // ---- Catalog snapshot AFTER rollback (for symmetry check) ----
-    let catalogAfter = null;
-    let symmetryOk = false;
+    // ---- Catalog AFTER rollback: must equal the pre-apply BASELINE ----
+    let catalogFinal = null;
     try {
-      catalogAfter = snapshotCatalog(cluster);
-      const symmetry = assertCatalogSymmetry(catalogBefore, catalogAfter);
-      if (!symmetry.ok) {
-        throw new PhaseError(EXIT.ROLLBACK, `rollback is NOT symmetric:\n${symmetry.diff}`);
-      }
-      symmetryOk = true;
-      phaseLine(true, 'rollback is symmetric (catalog identical after undo)');
+      catalogFinal = snapshotCatalog(cluster);
     } catch (err) {
-      if (err instanceof PhaseError) throw err;
-      throw new PhaseError(EXIT.ROLLBACK, `symmetry check failed: ${err.message}`);
+      throw new PhaseError(EXIT.ROLLBACK, `post-rollback catalog snapshot failed: ${err.message}`);
     }
+    const symmetry = assertCatalogSymmetry(catalogBaseline, catalogFinal);
+    ev.set('rollbackSymmetry', {
+      baselineObjects: catalogBaseline.length,
+      appliedObjects: catalogApplied.length,
+      finalObjects: catalogFinal.length,
+      ok: symmetry.ok,
+      diff: symmetry.ok ? null : symmetry.diff,
+    });
+    if (!symmetry.ok) {
+      // A fixture may be registered to PROVE this check still bites. Without
+      // that, a symmetry check that quietly stopped detecting anything would
+      // look exactly like a corpus of correct rollbacks.
+      if (expectFailure && expectFailure.phase === 'rollback') {
+        phaseLine(true, `rollback asymmetry detected AS EXPECTED (negative scenario)`, symmetry.diff);
+        return { code: EXIT.OK, outcome: 'expected-failure' };
+      }
+      throw new PhaseError(EXIT.ROLLBACK,
+        `rollback is NOT symmetric — the database did not return to its pre-apply state:\n${symmetry.diff}`);
+    }
+    if (expectFailure && expectFailure.phase === 'rollback') {
+      throw new PhaseError(EXIT.UNEXPECTED_PASS,
+        `negative fixture ${fixture.id} was expected to fail the rollback symmetry check but passed — ` +
+          `the check no longer detects a rollback that removes nothing`);
+    }
+    phaseLine(true,
+      `rollback is symmetric (${catalogBaseline.length} → ${catalogApplied.length} → ${catalogFinal.length} objects)`);
 
     // ---- Post-rollback: objects removed, substrate intact ----
     if (fixture.postRollback) {
