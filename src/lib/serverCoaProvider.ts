@@ -8,8 +8,8 @@ import { COA_FIELD_NAMES, MEASUREMENT_ONLY_FIELDS, type RawExtractedReport } fro
 // server-only environment variable by the caller.
 //
 // NO OCR LIBRARY. The model reads PDFs natively, which is why nothing was added
-// to package.json. Verified against two real TNR Bioscience reports on
-// 2026-08-03 — 14 of 19 fields came back cleanly on the first attempt.
+// to package.json. NOT verified against the live API — that comment was false and
+// has been removed. Run the throwaway script against real PDFs before merging.
 
 export interface CoaProviderConfig {
   apiKey: string
