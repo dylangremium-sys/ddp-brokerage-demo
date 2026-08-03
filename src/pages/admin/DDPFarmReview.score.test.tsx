@@ -28,7 +28,8 @@ import { isFarmScored, farmTotalScore } from '../../data'
 // version of this file "failed": test 2 found test 1's "Not yet scored" span.
 afterEach(cleanup)
 
-const noop = () => {}
+/** Required callback props this suite never exercises. */
+const noop = () => undefined
 
 describe('isFarmScored', () => {
   it('is false when every component is zero', () => {
@@ -78,5 +79,44 @@ describe('DDPFarmReview — the score panel tells the truth', () => {
     // assessment on this panel. Suppressing the score must not suppress them.
     render(<DDPFarmReview farm={makeFarm()} onBack={noop} onAction={noop} />)
     expect(screen.getByText(/missing export licence/i)).toBeTruthy()
+  })
+})
+
+// ─── The same honesty must hold on the OVERVIEW ─────────────────────────────
+//
+// Flagged by review on the first version of this change: making the review page
+// say "Not yet scored" while DDPOverview still ranked the same farm under
+// "Top-Scored Farm Profiles" at 0 / 900 would have left the two screens
+// contradicting each other — and presented unranked farms as ranked.
+//
+// The assertions target the SCORE TEXT, not the farm name: a farm legitimately
+// appears elsewhere on this page (the profiles table), so asserting its absence
+// outright fails for the wrong reason. The first draft of this suite did exactly
+// that and reported a <td> from an unrelated table.
+describe('DDPOverview — unscored farms are not "top-scored"', () => {
+  it('never prints a 0 / 900 ranking', async () => {
+    const { default: DDPOverview } = await import('./DDPOverview')
+    render(
+      <DDPOverview
+        farms={[makeFarm({ id: 'f1', tradingName: 'Unscored Farm' })]}
+        inventory={[]}
+        onReviewFarm={noop}
+        onReviewItem={noop}
+      />,
+    )
+    expect(screen.queryByText('0 / 900')).toBeNull()
+  })
+
+  it('still ranks a farm that HAS been scored', async () => {
+    const { default: DDPOverview } = await import('./DDPOverview')
+    render(
+      <DDPOverview
+        farms={[makeFarm({ id: 'f2', tradingName: 'Scored Farm', scoreCompliance: 90 })]}
+        inventory={[]}
+        onReviewFarm={noop}
+        onReviewItem={noop}
+      />,
+    )
+    expect(screen.getByText('90 / 900')).toBeTruthy()
   })
 })
