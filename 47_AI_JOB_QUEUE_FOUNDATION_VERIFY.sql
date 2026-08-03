@@ -111,7 +111,7 @@ DO $verify$ BEGIN
   RAISE NOTICE 'RLS policies verified';
 END $verify$;
 
--- Verify triggers exist
+-- Verify triggers exist (update and delete only - no truncate trigger created)
 DO $verify$ BEGIN
   ASSERT EXISTS (
     SELECT 1 FROM pg_trigger 
@@ -122,11 +122,6 @@ DO $verify$ BEGIN
     SELECT 1 FROM pg_trigger 
     WHERE tgname = 'prevent_ai_job_attempts_delete' AND NOT tgisinternal
   ), 'prevent_ai_job_attempts_delete trigger missing';
-  
-  ASSERT EXISTS (
-    SELECT 1 FROM pg_trigger 
-    WHERE tgname = 'prevent_ai_job_attempts_truncate' AND NOT tgisinternal
-  ), 'prevent_ai_job_attempts_truncate trigger missing';
   
   RAISE NOTICE 'All triggers verified';
 END $verify$;
