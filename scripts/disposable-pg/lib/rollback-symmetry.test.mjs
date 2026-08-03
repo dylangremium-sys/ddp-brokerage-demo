@@ -88,6 +88,42 @@ describe('rollback-symmetry: baseline vs post-rollback catalog', () => {
     expect(assertCatalogSymmetry(baseline, final).ok).toBe(false);
   });
 
+  it('DEFECT C — object restored under the same signature but with the WRONG body', () => {
+    // Migration 45 replaces fn_audit_organisation_change() in place and its
+    // rollback is meant to restore the previous body. Name and arguments never
+    // change, so counts and signatures match and every earlier check is blind.
+    const baseline = [{ kind: 'function', obj: 'fn_audit_organisation_change()', detail: '3589c5fd71b0' }];
+    const final = [{ kind: 'function', obj: 'fn_audit_organisation_change()', detail: '9b165933a891' }];
+
+    expect(baseline.length).toBe(final.length);
+    expect(baseline[0].obj).toBe(final[0].obj);
+
+    const result = assertCatalogSymmetry(baseline, final);
+    expect(result.ok).toBe(false);
+    expect(result.diff).toContain('NOT restored to their prior definition');
+    expect(result.redefined).toEqual(['function|fn_audit_organisation_change()']);
+    expect(result.leaked).toEqual([]);
+    expect(result.destroyed).toEqual([]);
+  });
+
+  it('an identical definition is symmetric', () => {
+    const snap = [{ kind: 'function', obj: 'f()', detail: 'aaaaaaaaaaaa' }];
+    expect(assertCatalogSymmetry(snap, snap).ok).toBe(true);
+  });
+
+  it('a storage-schema policy left behind is detected', () => {
+    // Migration 38 creates its policies on storage.objects. Scoped to public,
+    // the snapshot saw nothing and a rollback removing none of them passed.
+    const baseline = [{ kind: 'table', obj: 'profiles', detail: '' }];
+    const final = [
+      { kind: 'policy', obj: 'storage.objects: farmer-photos: farmer read own', detail: 'true |  | authenticated' },
+      { kind: 'table', obj: 'profiles', detail: '' },
+    ];
+    const result = assertCatalogSymmetry(baseline, final);
+    expect(result.ok).toBe(false);
+    expect(result.leaked).toEqual(['policy|storage.objects: farmer-photos: farmer read own']);
+  });
+
   it('invalid input returns error', () => {
     const result1 = assertCatalogSymmetry(null, []);
     expect(result1.ok).toBe(false);

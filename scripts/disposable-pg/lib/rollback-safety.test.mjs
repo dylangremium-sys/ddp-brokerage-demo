@@ -10,11 +10,11 @@ import { formatRollbackSafetyReport, checkMigrationSymmetry } from './rollback-s
 function withMigration(hardeningSql, rollbackSql, fn) {
   const dir = mkdtempSync(join(tmpdir(), 'rollback-safety-'));
   try {
-    const h = join(dir, '99_FIXTURE_HARDENING.sql');
-    const r = join(dir, '99_FIXTURE_ROLLBACK.sql');
-    writeFileSync(h, hardeningSql);
-    writeFileSync(r, rollbackSql);
-    return fn(h, r);
+    const hardeningPath = join(dir, '99_FIXTURE_HARDENING.sql');
+    const rollbackPath = join(dir, '99_FIXTURE_ROLLBACK.sql');
+    writeFileSync(hardeningPath, hardeningSql);
+    writeFileSync(rollbackPath, rollbackSql);
+    return fn(hardeningPath, rollbackPath);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -27,7 +27,7 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
        CREATE OR REPLACE FUNCTION ai_create_audit_event(p_type TEXT) RETURNS UUID AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;`,
       `DROP FUNCTION IF EXISTS ai_create_audit_event(TEXT) CASCADE;
        DROP TABLE IF EXISTS ai_audit_events CASCADE;`,
-      (h, r) => checkMigrationSymmetry(99, h, r),
+      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });
@@ -38,7 +38,7 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
        CREATE FUNCTION ai_create_audit_event(p_type TEXT) RETURNS UUID AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;`,
       `DROP FUNCTION IF EXISTS log_audit_event(TEXT);
        DROP TABLE IF EXISTS ai_audit_events;`,
-      (h, r) => checkMigrationSymmetry(99, h, r),
+      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
     );
     expect(result.ok).toBe(false);
     expect(result.reason).toContain('ai_create_audit_event');
@@ -48,7 +48,7 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
     const result = withMigration(
       'CREATE TABLE IF NOT EXISTS ai_jobs (id UUID PRIMARY KEY);',
       'DROP TABLE IF EXISTS ai_jobs CASCADE;',
-      (h, r) => checkMigrationSymmetry(99, h, r),
+      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });
@@ -58,27 +58,27 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
       `CREATE OR REPLACE FUNCTION ai_create_audit_event(a TEXT, b TEXT, c UUID, d JSONB)
          RETURNS UUID AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;`,
       'DROP FUNCTION IF EXISTS ai_create_audit_event(TEXT, TEXT, UUID, JSONB) CASCADE;',
-      (h, r) => checkMigrationSymmetry(99, h, r),
+      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });
 
   it('a comment mentioning DROP FUNCTION does not swallow the real statement', () => {
     const result = withMigration(
-      `CREATE OR REPLACE FUNCTION ai_create_audit_event(a TEXT) RETURNS UUID AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;`,
+      'CREATE OR REPLACE FUNCTION ai_create_audit_event(a TEXT) RETURNS UUID AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;',
       `-- Signature must match the HARDENING file exactly. \`DROP FUNCTION IF
        -- EXISTS\` with a signature matching nothing exits 0 and removes nothing.
        DROP FUNCTION IF EXISTS ai_create_audit_event(TEXT) CASCADE;`,
-      (h, r) => checkMigrationSymmetry(99, h, r),
+      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });
 
   it('a function RESTORED by the rollback counts as reversed, not leaked', () => {
     const result = withMigration(
-      `CREATE OR REPLACE FUNCTION handle_new_user() RETURNS TRIGGER AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;`,
-      `CREATE OR REPLACE FUNCTION handle_new_user() RETURNS TRIGGER AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;`,
-      (h, r) => checkMigrationSymmetry(99, h, r),
+      'CREATE OR REPLACE FUNCTION handle_new_user() RETURNS TRIGGER AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
+      'CREATE OR REPLACE FUNCTION handle_new_user() RETURNS TRIGGER AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
+      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });

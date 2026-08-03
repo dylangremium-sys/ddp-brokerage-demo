@@ -38,7 +38,7 @@ function extractCreatedObjects(sqlText) {
   ];
   
   for (const pattern of patterns) {
-    let match;
+    let match = null;
     while ((match = pattern.exec(sqlText)) !== null) {
       objects.add(match[1].toLowerCase());
     }
@@ -61,7 +61,7 @@ function extractDroppedObjects(sqlText) {
   ];
 
   for (const pattern of patterns) {
-    let match;
+    let match = null;
     while ((match = pattern.exec(sqlText)) !== null) {
       // Strip argument lists BEFORE splitting on commas — otherwise the commas
       // inside `ai_create_audit_event(TEXT, TEXT, UUID, ...)` split one function

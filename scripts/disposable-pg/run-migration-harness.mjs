@@ -268,7 +268,7 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
     if (declaresRemovedObjects && assertCatalogSymmetry(catalogBaseline, catalogApplied).ok) {
       throw new PhaseError(EXIT.APPLY,
         `fixture ${fixture.id} declares objects to remove at rollback but created no public ` +
-          `catalog objects, so the rollback symmetry check would pass vacuously`);
+          'catalog objects, so the rollback symmetry check would pass vacuously');
     }
 
     // ---- Destructive guard + rollback ----
@@ -340,7 +340,7 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
       // that, a symmetry check that quietly stopped detecting anything would
       // look exactly like a corpus of correct rollbacks.
       if (expectFailure && expectFailure.phase === 'rollback') {
-        phaseLine(true, `rollback asymmetry detected AS EXPECTED (negative scenario)`, symmetry.diff);
+        phaseLine(true, 'rollback asymmetry detected AS EXPECTED (negative scenario)', symmetry.diff);
         return { code: EXIT.OK, outcome: 'expected-failure' };
       }
       throw new PhaseError(EXIT.ROLLBACK,
@@ -349,7 +349,7 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
     if (expectFailure && expectFailure.phase === 'rollback') {
       throw new PhaseError(EXIT.UNEXPECTED_PASS,
         `negative fixture ${fixture.id} was expected to fail the rollback symmetry check but passed — ` +
-          `the check no longer detects a rollback that removes nothing`);
+          'the check no longer detects a rollback that removes nothing');
     }
     phaseLine(true,
       `rollback is symmetric (${catalogBaseline.length} → ${catalogApplied.length} → ${catalogFinal.length} objects)`);
