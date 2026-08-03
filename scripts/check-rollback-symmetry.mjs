@@ -42,7 +42,7 @@ const results = [];
 for (const set of [...sets.values()].sort((a, b) => a.number - b.number || a.stem.localeCompare(b.stem))) {
   const { HARDENING, ROLLBACK } = set.files;
   if (!HARDENING || !ROLLBACK) continue; // triplet completeness is check-migration-numbers' job
-  const check = checkMigrationSymmetry(set.number, HARDENING, ROLLBACK);
+  const check = checkMigrationSymmetry(HARDENING, ROLLBACK);
   results.push({ ...set, ...check });
 }
 

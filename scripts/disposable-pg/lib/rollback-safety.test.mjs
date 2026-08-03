@@ -27,7 +27,7 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
        CREATE OR REPLACE FUNCTION ai_create_audit_event(p_type TEXT) RETURNS UUID AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;`,
       `DROP FUNCTION IF EXISTS ai_create_audit_event(TEXT) CASCADE;
        DROP TABLE IF EXISTS ai_audit_events CASCADE;`,
-      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
+      (hardening, rollback) => checkMigrationSymmetry(hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });
@@ -38,7 +38,7 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
        CREATE FUNCTION ai_create_audit_event(p_type TEXT) RETURNS UUID AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;`,
       `DROP FUNCTION IF EXISTS log_audit_event(TEXT);
        DROP TABLE IF EXISTS ai_audit_events;`,
-      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
+      (hardening, rollback) => checkMigrationSymmetry(hardening, rollback),
     );
     expect(result.ok).toBe(false);
     expect(result.reason).toContain('ai_create_audit_event');
@@ -48,7 +48,7 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
     const result = withMigration(
       'CREATE TABLE IF NOT EXISTS ai_jobs (id UUID PRIMARY KEY);',
       'DROP TABLE IF EXISTS ai_jobs CASCADE;',
-      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
+      (hardening, rollback) => checkMigrationSymmetry(hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });
@@ -58,7 +58,7 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
       `CREATE OR REPLACE FUNCTION ai_create_audit_event(a TEXT, b TEXT, c UUID, d JSONB)
          RETURNS UUID AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;`,
       'DROP FUNCTION IF EXISTS ai_create_audit_event(TEXT, TEXT, UUID, JSONB) CASCADE;',
-      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
+      (hardening, rollback) => checkMigrationSymmetry(hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });
@@ -69,7 +69,7 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
       `-- Signature must match the HARDENING file exactly. \`DROP FUNCTION IF
        -- EXISTS\` with a signature matching nothing exits 0 and removes nothing.
        DROP FUNCTION IF EXISTS ai_create_audit_event(TEXT) CASCADE;`,
-      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
+      (hardening, rollback) => checkMigrationSymmetry(hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });
@@ -78,13 +78,13 @@ describe('rollback-safety: checkMigrationSymmetry against real SQL', () => {
     const result = withMigration(
       'CREATE OR REPLACE FUNCTION handle_new_user() RETURNS TRIGGER AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
       'CREATE OR REPLACE FUNCTION handle_new_user() RETURNS TRIGGER AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
-      (hardening, rollback) => checkMigrationSymmetry(99, hardening, rollback),
+      (hardening, rollback) => checkMigrationSymmetry(hardening, rollback),
     );
     expect(result.ok).toBe(true);
   });
 
   it('an unreadable file is a failure, never a silent pass', () => {
-    const result = checkMigrationSymmetry(99, '/nonexistent/H.sql', '/nonexistent/R.sql');
+    const result = checkMigrationSymmetry('/nonexistent/H.sql', '/nonexistent/R.sql');
     expect(result.ok).toBe(false);
     expect(result.reason).toContain('error reading files');
   });

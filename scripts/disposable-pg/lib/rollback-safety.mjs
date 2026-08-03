@@ -101,10 +101,11 @@ function checkSymmetryByName(created, dropped) {
 }
 
 /**
- * For a migration number, read HARDENING and ROLLBACK files and check symmetry.
+ * Read a HARDENING/ROLLBACK pair and check create/drop symmetry by name.
+ * The caller owns the migration number and labels the result with it.
  * Returns { ok: true } or { ok: false, reason: string }
  */
-export function checkMigrationSymmetry(migrationNumber, hardeningPath, rollbackPath) {
+export function checkMigrationSymmetry(hardeningPath, rollbackPath) {
   try {
     const hardening = readFileSync(hardeningPath, 'utf8');
     const rollback = readFileSync(rollbackPath, 'utf8');
