@@ -647,6 +647,24 @@ export default function App() {
     // The decision itself is pure and lives in lib/navigationGuard.ts; this
     // function keeps only the side effects.
     const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole })
+    // DO NOT CLEAR dbError HERE. An earlier revision of this fix did, and it was
+    // wrong in a way worth recording.
+    //
+    // The banner is genuinely too sticky — setDbError(null) appears only on the
+    // ✕ button, so one failed write pins an error to every screen until somebody
+    // dismisses it. But clearing on NAVIGATION breaks a worse case:
+    // handleInventorySubmit commits a batch, then uploads the COA as a SEPARATE
+    // commitMutation. If that upload fails it raises the error and still returns
+    // true, so the caller navigates — and a clear here would wipe the error on
+    // the way out. The farmer would leave believing the COA was attached when the
+    // batch has none. That is the exact silent-failure this codebase exists to
+    // avoid, traded for a cosmetic improvement.
+    //
+    // The right fix is to clear when an ACTION BEGINS, not when a page changes,
+    // so an error raised by the action survives the navigation that action causes.
+    // commitMutation is a pure lib function with no access to this state, so that
+    // means threading a new handler through every call site — a design change,
+    // and its own PR. Deliberately not bundled here with an urgent data-loss fix.
     setPage(target)
     window.scrollTo(0, 0)
   }
