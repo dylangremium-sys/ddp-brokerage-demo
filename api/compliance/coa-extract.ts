@@ -86,12 +86,20 @@ function buildDeps(): CoaExtractionDeps | null {
 
     extract: provider,
 
+    // NOT IMPLEMENTED — both of these fail closed on purpose.
+    //
+    // A stub that returns success is worse than no stub at all. `allowed: true`
+    // silently disables the spend ceiling that serverCoaExtraction.ts's 17 tests
+    // cover, and a persist that returns without writing makes the endpoint
+    // report success while saving nothing — the same defect that discarded
+    // farmer photos until PR #97. Neither is safe the moment a key is
+    // configured, so neither may pretend to work.
     reserveExtractionSlot: async () => {
-      return { allowed: true }
+      throw new Error('coa_extract_not_implemented_spend_ceiling')
     },
 
-    persistExtractions: async (_, rows) => {
-      if (!rows || rows.length === 0) throw new Error('No rows to persist')
+    persistExtractions: async () => {
+      throw new Error('coa_extract_not_implemented_persistence')
     },
 
     countExistingExtractions: async (documentId) => {
