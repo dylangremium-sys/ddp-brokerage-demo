@@ -21,8 +21,8 @@ DO $verify$ BEGIN
   ASSERT EXISTS (
     SELECT 1 FROM information_schema.columns 
     WHERE table_schema = 'public' AND table_name = 'ai_prompts' 
-    AND column_name = 'name'
-  ), 'Column ai_prompts.name does not exist';
+    AND column_name = 'prompt_key'
+  ), 'Column ai_prompts.prompt_key does not exist';
   
   RAISE NOTICE 'ai_prompts table verified';
 END $verify$;
@@ -49,8 +49,8 @@ DO $verify$ BEGIN
   ASSERT EXISTS (
     SELECT 1 FROM information_schema.columns 
     WHERE table_schema = 'public' AND table_name = 'ai_prompt_versions' 
-    AND column_name = 'version'
-  ), 'Column ai_prompt_versions.version does not exist';
+    AND column_name = 'version_number'
+  ), 'Column ai_prompt_versions.version_number does not exist';
   
   RAISE NOTICE 'ai_prompt_versions table verified';
 END $verify$;
@@ -87,8 +87,8 @@ DO $verify$ BEGIN
   ASSERT EXISTS (
     SELECT 1 FROM information_schema.columns 
     WHERE table_schema = 'public' AND table_name = 'ai_prompt_experiments' 
-    AND column_name = 'farm_id'
-  ), 'Column ai_prompt_experiments.farm_id does not exist';
+    AND column_name = 'prompt_id'
+  ), 'Column ai_prompt_experiments.prompt_id does not exist';
   
   RAISE NOTICE 'ai_prompt_experiments table verified';
 END $verify$;

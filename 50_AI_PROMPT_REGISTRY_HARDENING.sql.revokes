@@ -1,0 +1,9 @@
+
+-- Restrict access to helper functions
+REVOKE EXECUTE ON FUNCTION get_active_prompt(TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION get_active_prompt(TEXT) FROM anon;
+-- acl-no-grant: get_active_prompt
+
+REVOKE EXECUTE ON FUNCTION get_model_config(TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION get_model_config(TEXT) FROM anon;
+-- acl-no-grant: get_model_config

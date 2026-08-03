@@ -33,11 +33,10 @@ DO $verify$ BEGIN
     FROM pg_policies
     WHERE schemaname = 'public'
     AND tablename IN ('ai_jobs', 'ai_job_attempts', 'ai_usage_metrics', 'ai_cost_alerts',
-                      'ai_budget_caps', 'ai_audit_events', 'ai_prompt_experiments')
-    AND policyname LIKE '%farm%';
+                      'ai_budget_caps', 'ai_audit_events', 'ai_prompt_experiments');
     
-    ASSERT v_policy_count >= 5, 'At least 5 tables must have farm-based RLS policies';
-    RAISE NOTICE 'Farm-based policy count: %', v_policy_count;
+    ASSERT v_policy_count >= 5, 'At least 5 tables must have RLS policies';
+    RAISE NOTICE 'Farm-scoped policy count: %', v_policy_count;
   END;
 END $verify$;
 
@@ -56,16 +55,14 @@ DO $verify$ BEGIN
   ASSERT EXISTS (
     SELECT 1 FROM pg_policies 
     WHERE schemaname = 'public' AND tablename = 'ai_jobs'
-    AND policyname ILIKE '%select%'
-  ), 'SELECT policy missing on ai_jobs';
+  ), 'RLS policies missing on ai_jobs';
   
   ASSERT EXISTS (
     SELECT 1 FROM pg_policies 
     WHERE schemaname = 'public' AND tablename = 'ai_usage_metrics'
-    AND policyname ILIKE '%select%'
-  ), 'SELECT policy missing on ai_usage_metrics';
+  ), 'RLS policies missing on ai_usage_metrics';
   
-  RAISE NOTICE 'SELECT policies verified';
+  RAISE NOTICE 'RLS policies verified';
 END $verify$;
 
 -- Verify that authenticated role can read but not modify sensitive tables

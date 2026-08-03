@@ -38,9 +38,9 @@ CREATE TABLE IF NOT EXISTS ai_usage_metrics (
   UNIQUE(farm_id, feature_code, date_bucket)
 );
 
-CREATE INDEX idx_ai_usage_metrics_farm ON ai_usage_metrics(farm_id);
-CREATE INDEX idx_ai_usage_metrics_feature ON ai_usage_metrics(feature_code);
-CREATE INDEX idx_ai_usage_metrics_date ON ai_usage_metrics(date_bucket);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_metrics_farm ON ai_usage_metrics(farm_id);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_metrics_feature ON ai_usage_metrics(feature_code);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_metrics_date ON ai_usage_metrics(date_bucket);
 
 ALTER TABLE ai_usage_metrics ENABLE ROW LEVEL SECURITY;
 
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS ai_budget_caps (
   UNIQUE(farm_id, feature_code)
 );
 
-CREATE INDEX idx_ai_budget_caps_farm ON ai_budget_caps(farm_id);
+CREATE INDEX IF NOT EXISTS idx_ai_budget_caps_farm ON ai_budget_caps(farm_id);
 
 ALTER TABLE ai_budget_caps ENABLE ROW LEVEL SECURITY;
 
@@ -119,9 +119,9 @@ CREATE TABLE IF NOT EXISTS ai_cost_alerts (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_ai_cost_alerts_farm ON ai_cost_alerts(farm_id);
-CREATE INDEX idx_ai_cost_alerts_type ON ai_cost_alerts(alert_type);
-CREATE INDEX idx_ai_cost_alerts_created_at ON ai_cost_alerts(created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_cost_alerts_farm ON ai_cost_alerts(farm_id);
+CREATE INDEX IF NOT EXISTS idx_ai_cost_alerts_type ON ai_cost_alerts(alert_type);
+CREATE INDEX IF NOT EXISTS idx_ai_cost_alerts_created_at ON ai_cost_alerts(created_at);
 
 ALTER TABLE ai_cost_alerts ENABLE ROW LEVEL SECURITY;
 
@@ -216,8 +216,8 @@ CREATE TABLE IF NOT EXISTS ai_provider_pricing (
   notes TEXT
 );
 
-CREATE INDEX idx_ai_provider_pricing_model ON ai_provider_pricing(provider, model_name);
-CREATE INDEX idx_ai_provider_pricing_current ON ai_provider_pricing(is_current);
+CREATE INDEX IF NOT EXISTS idx_ai_provider_pricing_model ON ai_provider_pricing(provider, model_name);
+CREATE INDEX IF NOT EXISTS idx_ai_provider_pricing_current ON ai_provider_pricing(is_current);
 
 -- Populate with initial pricing (Q3 2026)
 INSERT INTO ai_provider_pricing (provider, model_name, input_price_per_1m_tokens, output_price_per_1m_tokens, notes)

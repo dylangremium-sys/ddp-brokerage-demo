@@ -28,14 +28,19 @@ DROP TABLE IF EXISTS ai_jobs CASCADE;
 DROP TABLE IF EXISTS ai_budget_caps CASCADE;
 DROP TABLE IF EXISTS ai_cost_alerts CASCADE;
 DROP TABLE IF EXISTS ai_usage_metrics CASCADE;
-DROP TABLE IF EXISTS prompt_experiments CASCADE;
-DROP TABLE IF EXISTS prompt_versions CASCADE;
-DROP TABLE IF EXISTS prompt_templates CASCADE;
+DROP TABLE IF EXISTS ai_prompt_experiments CASCADE;
+DROP TABLE IF EXISTS ai_prompt_versions CASCADE;
+DROP TABLE IF EXISTS ai_model_configs CASCADE;
+DROP TABLE IF EXISTS ai_prompts CASCADE;
+DROP FUNCTION IF EXISTS get_active_prompt CASCADE;
+DROP FUNCTION IF EXISTS get_model_config CASCADE;
 DROP FUNCTION IF EXISTS ai_create_audit_event CASCADE;
 DROP FUNCTION IF EXISTS prevent_ai_audit_events_delete CASCADE;
 DROP FUNCTION IF EXISTS prevent_ai_audit_events_update CASCADE;
 DROP FUNCTION IF EXISTS prevent_ai_job_attempts_delete CASCADE;
 DROP FUNCTION IF EXISTS prevent_ai_job_attempts_update CASCADE;
+DROP FUNCTION IF EXISTS prevent_ai_prompt_versions_delete CASCADE;
+DROP FUNCTION IF EXISTS prevent_ai_prompt_versions_update CASCADE;
 
 SELECT 'Cleanup complete';
 EOF2

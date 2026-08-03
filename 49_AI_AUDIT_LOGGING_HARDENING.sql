@@ -49,12 +49,12 @@ CREATE TABLE IF NOT EXISTS ai_audit_events (
   CONSTRAINT fk_job FOREIGN KEY(job_id) REFERENCES ai_jobs(id) ON DELETE SET NULL
 );
 
-CREATE INDEX idx_ai_audit_events_job_id ON ai_audit_events(job_id);
-CREATE INDEX idx_ai_audit_events_farm_id ON ai_audit_events(farm_id);
-CREATE INDEX idx_ai_audit_events_user_id ON ai_audit_events(user_id);
-CREATE INDEX idx_ai_audit_events_type ON ai_audit_events(event_type);
-CREATE INDEX idx_ai_audit_events_feature ON ai_audit_events(feature_code);
-CREATE INDEX idx_ai_audit_events_created_at ON ai_audit_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_audit_events_job_id ON ai_audit_events(job_id);
+CREATE INDEX IF NOT EXISTS idx_ai_audit_events_farm_id ON ai_audit_events(farm_id);
+CREATE INDEX IF NOT EXISTS idx_ai_audit_events_user_id ON ai_audit_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_audit_events_type ON ai_audit_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_ai_audit_events_feature ON ai_audit_events(feature_code);
+CREATE INDEX IF NOT EXISTS idx_ai_audit_events_created_at ON ai_audit_events(created_at);
 
 ALTER TABLE ai_audit_events ENABLE ROW LEVEL SECURITY;
 
@@ -115,10 +115,10 @@ CREATE TABLE IF NOT EXISTS ai_human_reviews (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_ai_human_reviews_job_id ON ai_human_reviews(job_id);
-CREATE INDEX idx_ai_human_reviews_reviewed_by ON ai_human_reviews(reviewed_by);
-CREATE INDEX idx_ai_human_reviews_decision ON ai_human_reviews(decision);
-CREATE INDEX idx_ai_human_reviews_created_at ON ai_human_reviews(created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_human_reviews_job_id ON ai_human_reviews(job_id);
+CREATE INDEX IF NOT EXISTS idx_ai_human_reviews_reviewed_by ON ai_human_reviews(reviewed_by);
+CREATE INDEX IF NOT EXISTS idx_ai_human_reviews_decision ON ai_human_reviews(decision);
+CREATE INDEX IF NOT EXISTS idx_ai_human_reviews_created_at ON ai_human_reviews(created_at);
 
 ALTER TABLE ai_human_reviews ENABLE ROW LEVEL SECURITY;
 
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS ai_approval_workflows (
   UNIQUE(feature_code, action_type)
 );
 
-CREATE INDEX idx_ai_approval_workflows_feature ON ai_approval_workflows(feature_code);
+CREATE INDEX IF NOT EXISTS idx_ai_approval_workflows_feature ON ai_approval_workflows(feature_code);
 
 ALTER TABLE ai_approval_workflows ENABLE ROW LEVEL SECURITY;
 

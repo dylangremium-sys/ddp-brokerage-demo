@@ -49,8 +49,8 @@ DO $verify$ BEGIN
   ASSERT EXISTS (
     SELECT 1 FROM information_schema.columns 
     WHERE table_schema = 'public' AND table_name = 'ai_human_reviews' 
-    AND column_name = 'audit_event_id'
-  ), 'Column ai_human_reviews.audit_event_id does not exist';
+    AND column_name = 'job_id'
+  ), 'Column ai_human_reviews.job_id does not exist';
   
   RAISE NOTICE 'ai_human_reviews table verified';
 END $verify$;

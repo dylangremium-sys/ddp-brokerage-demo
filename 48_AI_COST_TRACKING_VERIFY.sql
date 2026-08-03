@@ -49,8 +49,8 @@ DO $verify$ BEGIN
   ASSERT EXISTS (
     SELECT 1 FROM information_schema.columns 
     WHERE table_schema = 'public' AND table_name = 'ai_budget_caps' 
-    AND column_name = 'monthly_limit_usd'
-  ), 'Column ai_budget_caps.monthly_limit_usd does not exist';
+    AND column_name = 'monthly_budget_usd'
+  ), 'Column ai_budget_caps.monthly_budget_usd does not exist';
   
   RAISE NOTICE 'ai_budget_caps table verified';
 END $verify$;
