@@ -28,6 +28,7 @@ import {
 } from './lib/supabase-shim.mjs';
 import { parseVerifyOutput, evaluateVerify } from './lib/verify-parser.mjs';
 import { EvidenceBuilder, newRunId } from './lib/evidence.mjs';
+import { snapshotCatalog, assertCatalogSymmetry } from './lib/rollback-symmetry.mjs';
 
 export const EXIT = Object.freeze({
   OK: 0, APPLY: 10, VERIFY: 20, ROLLBACK: 30, GUARD: 40, UNEXPECTED_PASS: 41, ENV: 50, TEARDOWN: 60,
@@ -221,6 +222,14 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
       phaseLine(true, `VERIFY ${parsed.passed.length}/${fixture.verify.expectedPassCount}`, parsed.passed.join(''));
     }
 
+    // ---- Catalog snapshot BEFORE rollback (for symmetry check) ----
+    let catalogBefore = null;
+    try {
+      catalogBefore = snapshotCatalog(cluster);
+    } catch (err) {
+      throw new PhaseError(EXIT.ROLLBACK, `catalog snapshot failed: ${err.message}`);
+    }
+
     // ---- Destructive guard + rollback ----
     if (fixture.destructiveGuard) {
       const dg = fixture.destructiveGuard;
@@ -268,6 +277,22 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
         if (res.status !== 0) throw new PhaseError(EXIT.ROLLBACK, `rollback stage ${st.label} failed:\n${res.stderr}`);
       }
       if (fixture.rollbackStages.length) phaseLine(true, 'clean rollback complete');
+    }
+
+    // ---- Catalog snapshot AFTER rollback (for symmetry check) ----
+    let catalogAfter = null;
+    let symmetryOk = false;
+    try {
+      catalogAfter = snapshotCatalog(cluster);
+      const symmetry = assertCatalogSymmetry(catalogBefore, catalogAfter);
+      if (!symmetry.ok) {
+        throw new PhaseError(EXIT.ROLLBACK, `rollback is NOT symmetric:\n${symmetry.diff}`);
+      }
+      symmetryOk = true;
+      phaseLine(true, 'rollback is symmetric (catalog identical after undo)');
+    } catch (err) {
+      if (err instanceof PhaseError) throw err;
+      throw new PhaseError(EXIT.ROLLBACK, `symmetry check failed: ${err.message}`);
     }
 
     // ---- Post-rollback: objects removed, substrate intact ----
