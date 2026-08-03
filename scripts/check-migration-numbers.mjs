@@ -13,6 +13,9 @@ import {
   listMigrationFilenames,
   findNumberCollisions,
   formatCollisionReport,
+  findIncompleteMigrationSets,
+  formatIncompleteReport,
+  TRIPLET_FLOOR,
 } from './disposable-pg/lib/migration-numbering.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,8 +28,16 @@ if (collisions.length > 0) {
   process.exit(1);
 }
 
+const incomplete = findIncompleteMigrationSets(files);
+
+if (incomplete.length > 0) {
+  process.stderr.write(`FAIL — incomplete migration set\n\n${formatIncompleteReport(incomplete)}\n`);
+  process.exit(1);
+}
+
 const numbers = [...new Set(files.map((f) => Number(/^(\d+)_/.exec(f)[1])))].sort((a, b) => a - b);
 process.stdout.write(
   `PASS — ${files.length} numbered migration files across ${numbers.length} numbers ` +
-    `(${numbers.join(', ')}); no number claimed by two migrations.\n`,
+    `(${numbers.join(', ')}); no number claimed by two migrations, and every number ` +
+    `from ${TRIPLET_FLOOR} up carries HARDENING + VERIFY + ROLLBACK.\n`,
 );

@@ -238,6 +238,12 @@ they create exist. See `docs/runbooks/EXPORT_HUB_FOUNDATION_APPLY.md` before app
 4. If you abandon a branch, delete its row here so the number returns to the free pool.
 5. A number is a set: `NN_STEM_HARDENING.sql` + `NN_STEM_VERIFY.sql` + `NN_STEM_ROLLBACK.sql`. Two
    different stems at one number is a collision even if the files do not overlap.
+   **Enforced from number 24 up** by `npm run verify:migration-numbers`. Until 2026-08-03 this
+   rule was written here and checked nowhere: the gate only ever asked whether two stems shared a
+   number, so five HARDENING-only migrations (47–51, written 2026-08-02) passed CI green with no
+   VERIFY to show they did what they claim and no ROLLBACK to undo them. Numbers below 24 predate
+   the convention and are grandfathered — renaming an applied migration would break the runbooks
+   and freeze record that cite it by name.
 6. **Run `git worktree list` before claiming.** More than one session works in this clone. A
    sibling worktree can hold a branch that claims a number with no commit, no push and no PR —
    invisible to CI, to GitHub, and to the `git log --all` query, which only sees numbers that

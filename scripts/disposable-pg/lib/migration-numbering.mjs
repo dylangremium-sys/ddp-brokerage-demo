@@ -90,6 +90,68 @@ export function findNumberCollisions(filenames) {
   return collisions;
 }
 
+/** The number from which the HARDENING + VERIFY + ROLLBACK convention has been
+ *  applied without exception. Everything below it predates the convention and is
+ *  grandfathered: 3/4/8/13/20 are lone forward files, 9/10/17 use an `MVP`
+ *  forward suffix, 16/18 are VERIFY-only probes, and 23's forward file carries no
+ *  stage token at all. Renaming applied migrations to satisfy a check would break
+ *  the runbooks, verification documents and freeze record that cite them by name,
+ *  so the floor moves forward, never backward. */
+export const TRIPLET_FLOOR = 24;
+
+const REQUIRED_STAGES = Object.freeze(['HARDENING', 'VERIFY', 'ROLLBACK']);
+
+/** Reports every number at or above TRIPLET_FLOOR that does not carry all three
+ *  required files.
+ *
+ *  `docs/MIGRATION_NUMBER_REGISTER.md` rule 5 already states that a number IS a
+ *  set of three files, but nothing enforced it: the collision check only ever
+ *  asked whether two DIFFERENT stems claimed one number. A migration shipped with
+ *  a HARDENING file alone therefore passed CI green — no VERIFY to prove it did
+ *  what it claims, and no ROLLBACK to undo it if it did something else. Five such
+ *  numbers (47–51) were written on 2026-08-02 and the gate reported PASS.
+ *
+ *  Pure — takes filenames, touches no filesystem. */
+export function findIncompleteMigrationSets(filenames, { floor = TRIPLET_FLOOR } = {}) {
+  /** @type {Map<number, Map<string, Set<string>>>} number -> stem -> stages */
+  const byNumber = new Map();
+
+  for (const filename of filenames) {
+    const parsed = parseMigrationFilename(filename);
+    if (!parsed || parsed.number < floor) continue;
+
+    if (!byNumber.has(parsed.number)) byNumber.set(parsed.number, new Map());
+    const byStem = byNumber.get(parsed.number);
+    if (!byStem.has(parsed.stem)) byStem.set(parsed.stem, new Set());
+    if (parsed.stage) byStem.get(parsed.stem).add(parsed.stage);
+  }
+
+  const incomplete = [];
+  for (const [number, byStem] of [...byNumber.entries()].sort((a, b) => a[0] - b[0])) {
+    for (const stem of [...byStem.keys()].sort()) {
+      const stages = byStem.get(stem);
+      const missing = REQUIRED_STAGES.filter((s) => !stages.has(s));
+      if (missing.length > 0) incomplete.push({ number, stem, missing });
+    }
+  }
+  return incomplete;
+}
+
+/** Renders incomplete migration sets as an operator-readable failure report. */
+export function formatIncompleteReport(incomplete) {
+  const lines = [];
+  for (const i of incomplete) {
+    lines.push(`migration ${i.number} (${i.stem}) is missing: ${i.missing.join(', ')}`);
+    for (const stage of i.missing) lines.push(`      - ${i.number}_${i.stem}_${stage}.sql`);
+  }
+  lines.push(
+    '  FIX: a migration number is a SET of three files (register rule 5). Write the ' +
+      'missing companions — a migration with no VERIFY cannot be shown to have done ' +
+      'what it claims, and one with no ROLLBACK cannot be undone.',
+  );
+  return lines.join('\n');
+}
+
 /** Reads the repository root and returns every numbered migration filename. */
 export function listMigrationFilenames(repoRoot) {
   return readdirSync(repoRoot)
