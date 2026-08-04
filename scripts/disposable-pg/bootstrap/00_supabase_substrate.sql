@@ -105,7 +105,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   -- display_name is written by handle_new_user() and read by migration 21's
   -- VERIFY when it asserts what a brand-new auth user becomes.
   display_name text,
-  role text
+  role text,
+  -- RLS_ENABLE_STAGED.sql SELECTs this column as its stage-1 smoke test.
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 -- `status`, `reviewed_by` and `updated_at` are the columns an admin review
 -- action writes (src/lib/db.ts updateFarmProfileStatus / updateInventoryStatus)
@@ -129,6 +131,7 @@ CREATE TABLE IF NOT EXISTS public.farms (
   partner_tier text,
   risk_level text,
   reviewed_by uuid,
+  created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS public.farm_profiles (
@@ -163,6 +166,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_batches (
   quantity_kg numeric,
   client_visible boolean NOT NULL DEFAULT false,
   stock_status text,
+  created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 -- public.status_history — the compliance artefact recording how an entity
@@ -183,9 +187,13 @@ CREATE TABLE IF NOT EXISTS public.status_history (
 -- `role` distinguishes a farm owner from an ordinary member; migration 19's
 -- VERIFY reads it when it sets up the farmer whose UPDATE the guard must pin.
 CREATE TABLE IF NOT EXISTS public.farm_memberships (
+  -- A surrogate id alongside the natural key: RLS_ENABLE_STAGED.sql selects
+  -- fm.id in its stage-2 smoke test.
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
   farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
   user_id uuid,
   role text,
+  created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (farm_id, user_id)
 );
 -- Two further pre-numbering tables. ddp_scores is the per-farm scorecard from
@@ -336,9 +344,23 @@ CREATE OR REPLACE FUNCTION public.fn_protect_review_request_fields() RETURNS tri
 LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public, auth, pg_temp AS $$
 BEGIN RETURN NEW; END $$;
 
-GRANT EXECUTE ON FUNCTION public.is_ddp_admin() TO authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.has_operational_farmer_access() TO authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.has_farm_membership(uuid) TO authenticated, service_role;
+-- The EXECUTE posture migration 3 established, reproduced here because migration 3
+-- itself cannot be applied against this substrate (it refuses once migration 21's
+-- hardened handle_new_user() is installed, which this substrate models).
+--
+-- Getting this wrong is not a cosmetic inaccuracy. A GRANT does not displace
+-- PUBLIC's default EXECUTE, so a substrate that only GRANTs leaves PUBLIC holding
+-- EXECUTE on every one of these functions. Migration 12's ROLLBACK restores a
+-- baseline its own header records as measured on staging and production --
+-- PUBLIC=false, anon=false -- so against a PUBLIC-holding substrate that correct
+-- rollback is reported as destroying six privileges it never had any business
+-- restoring. The migration was right and the shim was wrong.
+REVOKE EXECUTE ON FUNCTION public.is_ddp_admin() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.is_ddp_admin() TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.has_operational_farmer_access() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.has_operational_farmer_access() TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.has_farm_membership(uuid) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.has_farm_membership(uuid) TO authenticated, service_role;
 
 -- Migration 21 / 23 artifacts a VERIFY coexistence section may check for.
 ALTER TABLE public.profiles
@@ -363,6 +385,15 @@ BEGIN
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
 END $$;
+
+-- Trigger-only functions: service_role alone. `authenticated` is deliberately
+-- absent -- nothing should call these directly.
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.handle_new_user() TO service_role;
+REVOKE EXECUTE ON FUNCTION public.fn_protect_owner_notes() FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.fn_protect_owner_notes() TO service_role;
+REVOKE EXECUTE ON FUNCTION public.fn_protect_review_request_fields() FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.fn_protect_review_request_fields() TO service_role;
 
 -- -----------------------------------------------------------------------------
 -- RLS harness posture: enable RLS on storage.objects and grant the client roles

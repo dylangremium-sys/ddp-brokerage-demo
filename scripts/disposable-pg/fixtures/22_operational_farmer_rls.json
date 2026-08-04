@@ -1,0 +1,87 @@
+{
+  "id": "22_operational_farmer_rls",
+  "title": "Migration 22 \u2014 the operational-farmer RLS overlay",
+  "description": "Applies the base schema, the farmer MVP and a pre-22 RLS baseline, then migration 22, and rolls 22 back. Scores VERIFY sections A through G. 22 overlays a RESTRICTIVE operational-farmer policy across eleven tables plus storage, so that a farmer who has not been granted operational access cannot reach farmer data even where a permissive policy would otherwise allow it.\n\nThe pre-22 baseline stage exists because 22's hardening enables row-level security on those eleven tables while commenting that the statement is a 'safety no-op if RLS is already enabled (it is, per the audit)', and its rollback correspondingly disables RLS on none of them. That rollback is correct only if RLS really was already on beforehand. The repository records that state in RLS_ENABLE_STAGED.sql, but that file cannot be chained here -- it issues bare CREATE POLICY statements for policies the substrate already carries and collides instead of layering -- so the stage reproduces just the RLS flags it sets, and creates no policy. Without it the fixture reported five tables left RLS-enabled and accused a correct rollback.\n\nThe same stage drops has_operational_farmer_access() for this fixture only. The substrate defines it for five later fixtures that legitimately run in a post-22 world; for the fixture that applies 22 itself, carrying 22's own helper into the baseline made its correct DROP look like over-reach on the function and its three grants.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "FARMER-MVP",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "RLS-BASELINE",
+      "file": "scripts/disposable-pg/fixtures/sql/96_rls_pre22_baseline.sql"
+    },
+    {
+      "label": "HARDENING-22",
+      "file": "22_OPERATIONAL_FARMER_ACCESS_RLS_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "22_OPERATIONAL_FARMER_ACCESS_RLS_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G"
+    ],
+    "expectedPassCount": 7,
+    "readOnly": true
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "22_OPERATIONAL_FARMER_ACCESS_RLS_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public",
+      "storage"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "storage.objects"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [],
+      "functions": [
+        "public.has_operational_farmer_access"
+      ],
+      "policies": [
+        "IF",
+        "farmer buckets: operational farmer or admin"
+      ]
+    },
+    "intact": {
+      "tables": [
+        "public.profiles",
+        "public.farms"
+      ],
+      "functions": [
+        "public.is_ddp_admin"
+      ],
+      "authUsersMinRows": 0
+    }
+  }
+}
