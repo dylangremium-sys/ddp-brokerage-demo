@@ -1,0 +1,58 @@
+{
+  "id": "13_public_function_execute_drift",
+  "title": "Migration 13 \u2014 drift check asserting PUBLIC holds no EXECUTE it should not (apply-only)",
+  "description": "Applies migration 13 on a disposable PostgreSQL 17 cluster. This migration ships NO ROLLBACK file, so reversibility cannot be proven and is not claimed: the fixture covers what is provable \u2014 that 13 applies cleanly against a real cluster on the major production runs. It existed outside the harness's old *_HARDENING.sql denominator (defect D6), so before this fixture a fully green run said nothing whatever about it while looking identical to one that covered it. The absence of a rollback is printed on every run rather than left to be inferred from a silence.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "FARMER-MVP",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "HARDENING-9",
+      "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql"
+    },
+    {
+      "label": "HARDENING-11",
+      "file": "11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-12",
+      "file": "12_PUBLIC_FUNCTION_EXECUTE_HARDENING.sql"
+    },
+    {
+      "label": "MIGRATION-13",
+      "file": "13_PUBLIC_FUNCTION_EXECUTE_DRIFT_CHECK.sql"
+    }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": []
+  },
+  "forwardOnly": true,
+  "postRollback": null,
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  }
+}

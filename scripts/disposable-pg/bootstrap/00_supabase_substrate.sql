@@ -155,6 +155,20 @@ CREATE TABLE IF NOT EXISTS public.inventory_batches (
   -- Omitting it made migration 29's VERIFY fail at its first INSERT, which reads
   -- as "the contaminant gate is broken" rather than "the shim is thin".
   product_name text,
+  -- notes is carried by the pre-numbering schema (SUPABASE_SCHEMA.sql) and is the
+  -- column migration 18's synthetic runtime check inserts into. Omitting it made
+  -- 18 fail at its Block 2 INSERT, which reads as "the runtime check is broken"
+  -- rather than "the shim is thin".
+  --
+  -- It is added here rather than left to SUPABASE_SCHEMA.sql because that file
+  -- uses CREATE TABLE IF NOT EXISTS: the substrate has already created
+  -- inventory_batches by the time it runs, so its fuller column list is silently
+  -- a no-op. That mechanism is why this shim drifts from the real table at all —
+  -- production's inventory_batches has 45 columns, SUPABASE_SCHEMA.sql declares
+  -- 22, and this shim now declares 15. Each addition here is a symptom; the cure
+  -- is a substrate reconciled against production, which is a larger piece of work
+  -- and a prerequisite for any migration that alters this table.
+  notes text,
   -- The three contaminant verdict columns migration 29's blocker gate reads.
   -- Added by FARMER_MVP_MIGRATION.sql, which creates inventory_batches with
   -- CREATE TABLE IF NOT EXISTS and therefore cannot add them to a table this
@@ -538,11 +552,33 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
 -- grants, so without them here that correct rollback appears to invent
 -- privileges from nowhere on eighteen table/grantee pairs.
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
--- ...except on the audit log, which is append-only by construction (migrations 9
--- and 11 guard it against UPDATE, DELETE and TRUNCATE). Migration 15's ROLLBACK
--- restores exactly INSERT/SELECT/TRIGGER/TRUNCATE/REFERENCES/MAINTAIN and
--- deliberately not DELETE or UPDATE, so a baseline holding those two makes a
--- correct rollback look like it narrowed privileges it never widened.
--- anon only: migration 15's ROLLBACK restores DELETE and UPDATE for
--- `authenticated` but not for `anon`, so the pre-15 posture differed by role.
-REVOKE DELETE, UPDATE ON public.compliance_audit_log FROM anon;
+
+-- REMOVED 2026-08-04 (defect D9). This line used to follow:
+--
+--   REVOKE DELETE, UPDATE ON public.compliance_audit_log FROM anon;
+--
+-- justified as "the pre-15 posture differed by role", on the grounds that
+-- migration 15's ROLLBACK restores DELETE and UPDATE to `authenticated` but not
+-- to `anon`. That reasoning runs backwards: it derives what the world was from
+-- what the rollback does, which is the one thing the fixture is supposed to be
+-- checking. With the carve-out in place, 15's forward
+--
+--   REVOKE UPDATE, DELETE ON public.compliance_audit_log FROM anon, authenticated
+--
+-- removed nothing from anon, so half of that statement was never exercised, and
+-- the rollback's failure to restore anon could not be seen because there was
+-- nothing to restore.
+--
+-- Production settles it. Measured read-only on 2026-08-04, prod's pg_default_acl
+-- grants `anon` DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE
+-- and UPDATE on every new table in `public` — from BOTH the postgres and
+-- supabase_admin default-ACL entries — and 22 public tables still carry
+-- DELETE/UPDATE for anon today. compliance_audit_log is created by migration 9
+-- as postgres, so at the moment migration 15 ran, anon HELD update and delete on
+-- it. The REVOKE was load-bearing.
+--
+-- Consequence, which is a real finding rather than a regression: with the true
+-- baseline restored, migration 15's rollback is asymmetric — it under-restores
+-- anon. That is fail-safe (anon ends with fewer privileges than it started) but
+-- it is not a reversal, and it is registered in lib/known-asymmetries.mjs rather
+-- than hidden in the substrate again.

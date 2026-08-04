@@ -1,0 +1,50 @@
+{
+  "id": "3_security_search_path_grants",
+  "title": "Migration 3 \u2014 security hardening: search_path pinning and grant narrowing (apply-only)",
+  "description": "Applies migration 3 on a disposable PostgreSQL 17 cluster. This migration ships NO ROLLBACK file, so reversibility cannot be proven and is not claimed: the fixture covers what is provable \u2014 that 3 applies cleanly against a real cluster on the major production runs. It existed outside the harness's old *_HARDENING.sql denominator (defect D6), so before this fixture a fully green run said nothing whatever about it while looking identical to one that covered it. The absence of a rollback is printed on every run rather than left to be inferred from a silence. A PRE-21-WORLD stage is required because the substrate is modelled on current production, which carries migration 21's hardened handle_new_user(), and migration 3 REFUSES to run against it \u2014 re-running 3 would revert that function to the 'farmer' default and re-open anonymous self-provisioning. Migration 3 predates 21, so a genuine pre-3 world is at least a pre-21 one; the existing pre-21 stage is reused rather than duplicated.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "FARMER-MVP",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "PRE-21-WORLD",
+      "file": "scripts/disposable-pg/fixtures/sql/97_pre21_world.sql"
+    },
+    {
+      "label": "MIGRATION-3",
+      "file": "3_SECURITY_HARDENING_SEARCH_PATH_AND_GRANTS.sql"
+    }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": []
+  },
+  "forwardOnly": true,
+  "postRollback": null,
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  }
+}

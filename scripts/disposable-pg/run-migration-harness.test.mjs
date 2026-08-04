@@ -36,17 +36,22 @@ describe('fixture coverage denominator', () => {
       repoFiles.map((f) => (f.match(/^(\d+)_.*_HARDENING\.sql$/) || [])[1]).filter(Boolean),
     );
     expect(cov.total).toBeGreaterThan(hardeningOnly.size);
-    expect(cov.coveredCount).toBeLessThan(cov.total);
   });
 
-  it('names the migrations it does not cover, including 10, 17 and 23', () => {
+  it('every numbered migration now has a fixture, including the 11 D6 exposed', () => {
+    // The eleven that escaped the old denominator by being named _MVP, _VERIFY,
+    // _ACL_FIX, _DRIFT_CHECK or nothing at all. Asserted by NAME rather than by
+    // count so that adding a migration and forgetting its fixture fails here,
+    // rather than quietly moving a ratio nobody reads.
     const cov = computeFixtureCoverage(repoFiles, fixtureIds);
-    expect(cov.uncovered).toEqual(
-      expect.arrayContaining(['3', '4', '8', '9', '10', '13', '16', '17', '18', '20', '23']),
-    );
-    // 10, 17 and 23 ship a real ROLLBACK no fixture has ever executed — the
-    // single most misleading state a migration can be in, so it is called out.
-    expect(cov.uncoveredWithRollback).toEqual(expect.arrayContaining(['10', '17', '23']));
+    for (const n of ['3', '4', '8', '9', '10', '13', '16', '17', '18', '20', '23']) {
+      expect(cov.uncovered, `migration ${n} lost its fixture`).not.toContain(n);
+    }
+    expect(cov.uncovered).toEqual([]);
+    expect(cov.coveredCount).toBe(cov.total);
+    // 10, 17 and 23 ship real ROLLBACKs that had never been executed anywhere.
+    // Nothing may be left in that state.
+    expect(cov.uncoveredWithRollback).toEqual([]);
   });
 
   it('FALSIFICATION: removing a fixture drops the numerator', () => {

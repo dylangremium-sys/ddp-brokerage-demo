@@ -40,6 +40,24 @@
  * Keyed by fixture id. `object` is the `kind|obj` key assertCatalogSymmetry reports.
  */
 export const KNOWN_ASYMMETRIES = {
+  '15_existing_table_audit': [
+    {
+      object: "grant|table public.compliance_audit_log -> anon",
+      was: "DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE",
+      now: "INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE",
+      reason:
+        "Migration 15's ROLLBACK grants UPDATE and DELETE back to `authenticated` only, so `anon` " +
+        "ends with fewer privileges than it started with. Unlike the other four entries this is " +
+        "believed DELIBERATE and must not be 'fixed': compliance_audit_log is append-only by " +
+        "construction (migrations 9 and 11 guard it with a trigger), and handing anon back the " +
+        "ability to UPDATE or DELETE audit rows to satisfy a symmetry check would be restoring a " +
+        "privilege nobody wants restored. Recorded because an asymmetry that is intentional still " +
+        "has to be stated -- the previous treatment was to REVOKE the privilege from the substrate " +
+        "so the baseline matched the rollback, which also silently un-tested the anon half of 15's " +
+        "forward REVOKE. Fail-safe direction; no action expected.",
+      raised: '2026-08-04',
+    },
+  ],
   "39_organisations": [
     {
       object: "constraint|public.compliance_audit_log: compliance_audit_log_action_check",

@@ -1,0 +1,72 @@
+{
+  "id": "10_buyer_pack_snapshots",
+  "title": "Migration 10 — buyer pack snapshots (first execution of its rollback)",
+  "description": "Applies the pre-numbering base schema, the farmer MVP and migration 9, then migration 10, and rolls 10 back. Migration 10 creates the three append-only tables that ARE the buyer-pack record — what was released, under whose approval, and who downloaded it — plus the mutation and truncate guards protecting them. Its ROLLBACK has shipped since the migration landed and, until this fixture, had never been executed anywhere: 10 was outside the harness's old *_HARDENING.sql denominator, so a green run said nothing whatever about it while looking identical to one that covered it (defect D6). The destructive guard is exercised in both directions because a guard whose refusal has never been observed is only a comment.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "BASE-SCHEMA", "file": "SUPABASE_SCHEMA.sql" },
+    { "label": "FARMER-MVP", "file": "FARMER_MVP_MIGRATION.sql" },
+    { "label": "HARDENING-9", "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql" },
+    { "label": "MVP-10", "file": "10_BUYER_PACK_SNAPSHOTS_MVP.sql" }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "10_BUYER_PACK_SNAPSHOTS_ROLLBACK.sql"
+      }
+    ]
+  },
+  "destructiveGuard": {
+    "livenessTable": "public.buyer_pack_snapshots",
+    "seedSql": "fixtures/sql/10_buyer_pack_guard_seed.sql",
+    "optInSetting": "buyer_pack.rollback_destructive",
+    "optInValue": "true",
+    "refusalStage": "main-rollback",
+    "expectRefusalMatch": "rollback 10 refused"
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.buyer_pack_snapshots",
+        "public.buyer_pack_audit_log",
+        "public.buyer_pack_download_log"
+      ],
+      "functions": [
+        "public.prevent_buyer_pack_mutation",
+        "public.issue_buyer_pack_snapshot"
+      ],
+      "policies": [
+        "buyer_pack_snapshots: admin select",
+        "buyer_pack_snapshots: admin insert",
+        "buyer_pack_audit_log: admin select",
+        "buyer_pack_audit_log: admin insert",
+        "buyer_pack_download_log: admin select",
+        "buyer_pack_download_log: admin insert"
+      ]
+    },
+    "intact": {
+      "tables": [
+        "public.inventory_batches",
+        "public.profiles",
+        "public.compliance_audit_log"
+      ],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.prevent_compliance_audit_log_mutation"
+      ]
+    }
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": ["auth.uid", "auth.users"]
+  }
+}

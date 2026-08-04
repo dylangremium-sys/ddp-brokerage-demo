@@ -121,6 +121,61 @@ function countRows(cluster, table) {
   return Number(scalar(cluster, `SELECT count(*) FROM ${table}`));
 }
 
+/**
+ * Effective privileges a role holds on a table, as a sorted array.
+ *
+ * Reads through coalesce(relacl, acldefault(...)) for the same reason the catalog
+ * snapshot does: a NULL relacl means "the built-in defaults", not "no privileges".
+ */
+function tablePrivileges(cluster, table, role) {
+  const out = scalar(cluster, `
+    SELECT coalesce(string_agg(DISTINCT a.privilege_type, ',' ORDER BY a.privilege_type), '')
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
+           LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+     WHERE n.nspname || '.' || c.relname = '${table}'
+       AND a.grantee = '${role}'::regrole`);
+  return out ? out.split(',') : [];
+}
+
+/**
+ * Assertions about the state AFTER the forward migration, BEFORE any rollback.
+ *
+ * The harness had no such phase, and its absence is defect D9. Rollback symmetry
+ * compares pre-apply against post-rollback, so it can only ever prove that a
+ * migration was REVERSED — never that it DID anything. A migration whose forward
+ * statement silently matched nothing produces a perfectly symmetric run: nothing
+ * happened, and nothing was undone.
+ *
+ * That is exactly how migration 15's `REVOKE UPDATE, DELETE ... FROM anon`
+ * escaped verification. Making the substrate honest exposes the rollback's
+ * failure to restore anon, but still says nothing about whether the REVOKE
+ * removed anything. Only an assertion taken while the migration is applied can.
+ */
+function assertPostApply(cluster, fixture) {
+  const pa = fixture.postApply;
+  if (!pa) return { ok: true, checks: [] };
+  const problems = [];
+
+  for (const c of pa.privileges || []) {
+    const held = tablePrivileges(cluster, c.table, c.role);
+    for (const p of c.absent || []) {
+      if (held.includes(p)) {
+        problems.push(
+          `${c.role} still holds ${p} on ${c.table} after the migration applied ` +
+          `(holds: ${held.join(',') || 'none'})`);
+      }
+    }
+    for (const p of c.present || []) {
+      if (!held.includes(p)) {
+        problems.push(
+          `${c.role} lost ${p} on ${c.table}, which the migration was not supposed to remove ` +
+          `(holds: ${held.join(',') || 'none'})`);
+      }
+    }
+  }
+  return { ok: problems.length === 0, problems };
+}
+
 function assertPostRollback(cluster, fixture) {
   const pr = fixture.postRollback;
   if (!pr) return { ok: true, checks: [] };
@@ -270,6 +325,29 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
       throw new PhaseError(EXIT.UNEXPECTED_PASS, `negative fixture ${fixture.id} was expected to fail at apply but passed`);
     }
 
+    // ---- POST-APPLY: did the migration actually DO anything? ----
+    // Runs here, while the migration is applied, because this is the only point
+    // in the run at which that question can be asked. Symmetry (below) compares
+    // pre-apply to post-rollback and is blind to a forward statement that matched
+    // nothing. See assertPostApply.
+    if (fixture.postApply) {
+      const pa = assertPostApply(cluster, fixture);
+      ev.set('postApply', { ok: pa.ok, problems: pa.problems || [] });
+      if (!pa.ok) {
+        if (expectFailure && expectFailure.phase === 'postApply') {
+          phaseLine(true, 'post-apply assertion failed AS EXPECTED (negative scenario)', pa.problems.join('\n'));
+          return { code: EXIT.OK, outcome: 'expected-failure' };
+        }
+        throw new PhaseError(EXIT.VERIFY,
+          `post-apply assertions failed — the migration did not take effect:\n  - ${pa.problems.join('\n  - ')}`);
+      }
+      phaseLine(true, `post-apply assertions hold (${(fixture.postApply.privileges || []).length} privilege check(s))`);
+    }
+    if (expectFailure && expectFailure.phase === 'postApply') {
+      throw new PhaseError(EXIT.UNEXPECTED_PASS,
+        `negative fixture ${fixture.id} was expected to fail its post-apply assertions but passed`);
+    }
+
     // ---- VERIFY ----
     if (fixture.verify?.path) {
       if (!Array.isArray(fixture.verify.expectedSections) || fixture.verify.expectedSections.length === 0 ||
@@ -375,6 +453,26 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
     } catch (err) {
       throw new PhaseError(EXIT.ROLLBACK, `post-rollback catalog snapshot failed: ${err.message}`);
     }
+    // A migration that ships NO rollback cannot be asked whether its rollback
+    // reversed anything, and comparing a pre-apply baseline to a post-apply
+    // catalog would report every object it created as an asymmetry. Those
+    // migrations are covered for what CAN be proven — that they apply on the
+    // major production runs, and that their postApply assertions hold — and the
+    // absence of a rollback is stated on every run rather than inferred from a
+    // silence. Eight of the eleven migrations D6 exposed are in this category.
+    if (fixture.forwardOnly) {
+      ev.set('rollbackSymmetry', {
+        baselineObjects: catalogBaseline?.length ?? null,
+        appliedObjects: catalogApplied.length,
+        finalObjects: null,
+        ok: null,
+        skipped: 'forwardOnly',
+      });
+      phaseLine(true,
+        'NO ROLLBACK EXISTS for this migration — applied and asserted only; reversibility is NOT proven and cannot be');
+      return { code: EXIT.OK, outcome: 'passed' };
+    }
+
     const symmetry = assertCatalogSymmetry(catalogBaseline, catalogFinal);
     // Registered, already-triaged asymmetries are subtracted here. Scoped to an
     // exact object AND its exact before/after definition, so anything the

@@ -1,0 +1,50 @@
+{
+  "id": "20_farm_admin_acl_fix",
+  "title": "Migration 20 \u2014 ACL correction on top of migration 19's farm-admin field guard (apply-only)",
+  "description": "Applies migration 20 on a disposable PostgreSQL 17 cluster. This migration ships NO ROLLBACK file, so reversibility cannot be proven and is not claimed: the fixture covers what is provable \u2014 that 20 applies cleanly against a real cluster on the major production runs. It existed outside the harness's old *_HARDENING.sql denominator (defect D6), so before this fixture a fully green run said nothing whatever about it while looking identical to one that covered it. The absence of a rollback is printed on every run rather than left to be inferred from a silence.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "FARMER-MVP",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "HARDENING-19",
+      "file": "19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql"
+    },
+    {
+      "label": "MIGRATION-20",
+      "file": "20_FARM_ADMIN_FIELD_GUARD_ACL_FIX.sql"
+    }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": []
+  },
+  "forwardOnly": true,
+  "postRollback": null,
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  }
+}

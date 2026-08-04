@@ -1,7 +1,7 @@
 {
   "id": "15_existing_table_audit",
   "title": "Migration 15 \u2014 existing-table and audit-log hardening",
-  "description": "Applies the pre-numbering base schema, the farmer MVP, migration 9 and migration 11, then migration 15, and rolls 15 back. Baseline is the state after 11, the last stage its rollback does not reverse. 15 narrows table privileges across the existing tables and the audit log. Its VERIFY script does not use the repository's scorable convention, so no VERIFY phase is declared. The proof here is entirely in the privilege snapshot: 15's rollback restores a specific grant set per role, and the fixture confirms it lands exactly on the pre-15 posture rather than approximately.",
+  "description": "Applies the pre-numbering base schema, the farmer MVP, migration 9 and migration 11, then migration 15, and rolls 15 back. Baseline is the state after 11, the last stage its rollback does not reverse. 15 narrows table privileges across the existing tables and the audit log. Its VERIFY script does not use the repository's scorable convention, so no VERIFY phase is declared -- which used to leave the proof entirely to the privilege snapshot. That snapshot compares pre-apply against post-rollback and is therefore blind to a REVOKE that removed nothing, so the postApply block below asserts the forward effect directly: after 15 applies, neither anon nor authenticated may hold UPDATE or DELETE on the audit log, and both must retain INSERT and SELECT so a narrowing that overshoots is caught too (defect D9).",
   "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
@@ -55,5 +55,33 @@
       "auth.users"
     ]
   },
-  "postRollback": null
+  "postRollback": null,
+  "postApply": {
+    "privileges": [
+      {
+        "table": "public.compliance_audit_log",
+        "role": "anon",
+        "absent": [
+          "UPDATE",
+          "DELETE"
+        ],
+        "present": [
+          "INSERT",
+          "SELECT"
+        ]
+      },
+      {
+        "table": "public.compliance_audit_log",
+        "role": "authenticated",
+        "absent": [
+          "UPDATE",
+          "DELETE"
+        ],
+        "present": [
+          "INSERT",
+          "SELECT"
+        ]
+      }
+    ]
+  }
 }
