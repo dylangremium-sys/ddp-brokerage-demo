@@ -1,0 +1,59 @@
+{
+  "id": "15_existing_table_audit",
+  "title": "Migration 15 \u2014 existing-table and audit-log hardening",
+  "description": "Applies the pre-numbering base schema, the farmer MVP, migration 9 and migration 11, then migration 15, and rolls 15 back. Baseline is the state after 11, the last stage its rollback does not reverse. 15 narrows table privileges across the existing tables and the audit log. Its VERIFY script does not use the repository's scorable convention, so no VERIFY phase is declared. The proof here is entirely in the privilege snapshot: 15's rollback restores a specific grant set per role, and the fixture confirms it lands exactly on the pre-15 posture rather than approximately.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "FARMER-MVP",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "HARDENING-9",
+      "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql"
+    },
+    {
+      "label": "HARDENING-11",
+      "file": "11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-15",
+      "file": "15_EXISTING_TABLE_AND_AUDIT_LOG_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "15_EXISTING_TABLE_AND_AUDIT_LOG_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  },
+  "postRollback": null
+}

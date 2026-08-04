@@ -1,0 +1,64 @@
+{
+  "id": "19_farm_admin_field_guard",
+  "title": "Migration 19 \u2014 the farm admin field guard",
+  "description": "Applies migration 19 standalone and rolls it back, scoring VERIFY sections A through F. 19 installs the trigger that pins seven admin-controlled columns on public.farms -- status, compliance_status, export_readiness, partner_tier, risk_level, created_by and reviewed_by -- so a farmer editing their own farm cannot promote it. Section B1 is the one that matters: it performs a farmer UPDATE that sets all seven plus the allowed farm_name, then asserts the seven did not move AND that farm_name DID. That last clause is what makes the section non-vacuous -- if RLS blocks the UPDATE entirely, all seven assertions pass for the wrong reason and only the allowed column reveals it.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-19",
+      "file": "19_FARM_ADMIN_FIELD_GUARD_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "19_FARM_ADMIN_FIELD_GUARD_VERIFY.sql",
+    "expectedSections": [
+      "A"
+    ],
+    "expectedPassCount": 1,
+    "readOnly": true
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "19_FARM_ADMIN_FIELD_GUARD_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [],
+      "functions": [
+        "public.fn_protect_farm_admin_fields"
+      ],
+      "policies": []
+    },
+    "intact": {
+      "tables": [
+        "public.profiles",
+        "public.farms"
+      ],
+      "functions": [
+        "public.is_ddp_admin"
+      ],
+      "authUsersMinRows": 0
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "id": "12_public_function_execute",
+  "title": "Migration 12 \u2014 revoking direct EXECUTE from PUBLIC",
+  "description": "Applies migrations 9 and 11, then 12, and rolls 12 back; baseline is the state after 11. 12 removes direct EXECUTE on the public helper and trigger-only functions from PUBLIC and anon. It creates and drops nothing, so only the privilege branch of the catalog snapshot can observe it at all.\n\nIts VERIFY is not in the repository's scorable convention, so no VERIFY phase is declared.\n\nTwo things had to be corrected before this fixture could pass, and only one of them was the migration's fault. The substrate was reproducing none of migration 3's revokes -- and because a GRANT does not displace PUBLIC's default EXECUTE, that left PUBLIC holding EXECUTE on every one of these functions, so 12's rollback appeared to destroy six privileges. The migration was right and the shim was wrong. What remained after fixing that was real: the rollback re-granted service_role EXECUTE on prevent_compliance_audit_log_mutation -- undoing migration 11, whose entire purpose is removing direct EXECUTE from that trigger-only guard -- while never revoking the service_role grant its own HARDENING had added.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-9",
+      "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql"
+    },
+    {
+      "label": "HARDENING-11",
+      "file": "11_COMPLIANCE_AUDIT_LOG_TRUNCATE_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-12",
+      "file": "12_PUBLIC_FUNCTION_EXECUTE_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "12_PUBLIC_FUNCTION_EXECUTE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.users"
+    ]
+  },
+  "postRollback": null
+}
