@@ -414,7 +414,6 @@ export type Page =
   | 'ddp-buyer'
   | 'ddp-missing-documents'
   | 'ddp-coa-intelligence'
-  | 'ddp-coa-review'
   | 'ddp-risk-register'
   | 'ddp-compliance-watchtower'
   | 'ddp-operations-desk'
