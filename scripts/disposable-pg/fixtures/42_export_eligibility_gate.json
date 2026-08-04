@@ -2,7 +2,7 @@
   "id": "42_export_eligibility_gate",
   "title": "Migration 42 — the export eligibility gate",
   "description": "Applies migrations 39, 40, 41 then 42, runs 42's VERIFY A-I, then rolls back 42 on a disposable PostgreSQL 18 cluster. This is the regulatory heart of the platform: DDP's existing gate asks whether the SUPPLIER is documented; this asks whether the BUYER may lawfully receive, which is the different question that keeps product out of a market that never authorised it. Seven conditions, all fail-closed -- destination ruleset resolved, buyer verified, import permit valid for holder AND type AND regime AND destination, permit headroom sufficient, exporter export licence in force for the regime, batch carries an accepted COA with no failed contaminant result, and denied-party screening clear and not stale. Every condition starts false and can only be made true by affirmative evidence, because the three likeliest early production states -- no ruleset researched, screening never run, permit not captured -- are all absence, and absence must never read as permission. Evaluations are append-only whether they pass or block, because a gate that only records refusals cannot later show that a shipment which did leave was checked at all.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

@@ -2,7 +2,7 @@
   "id": "28_digest",
   "title": "Migration 28 — Evidence digest de-duplication & extraction provenance",
   "description": "Applies migration 24's HARDENING stage as a prerequisite (28 constrains its attachment table and calls its can_operationally_access_farm helper), then migration 28. Runs VERIFY A-M, exercises the destructive-rollback guard, and rolls 28 back alone — asserting migration 24 and public.farmer_documents survive intact. The STORAGE companion of 24 is deliberately not applied: migration 28 touches no storage object.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     { "label": "24-PREREQ", "file": "24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql" },

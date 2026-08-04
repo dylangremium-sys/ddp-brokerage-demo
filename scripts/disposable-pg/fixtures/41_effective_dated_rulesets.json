@@ -2,7 +2,7 @@
   "id": "41_effective_dated_rulesets",
   "title": "Migration 41 — effective-dated rulesets",
   "description": "Applies migration 39, 40 then 41, runs 41's VERIFY A-G, then rolls back 41 on a disposable PostgreSQL 18 cluster. compliance_rules already had jurisdiction, severity, is_blocking and an approval lifecycle; what it had no concept of was TIME. The platform could answer 'is this compliant today' but not 'was this compliant when it left', which is the only question anyone asks after the fact -- and Thai cannabis regulation changed materially three times in four years. 41 adds effective_from/effective_to to compliance_rules, a versioned destination_rulesets table, and the two point-in-time resolvers that are the only supported way to ask what applied on a given day. The backfill (effective_from = created_at) is an ASSUMPTION and every backfilled row is flagged effective_from_is_estimated, because a rule transcribed later than it took effect will otherwise be under-applied to historic shipments and nobody would be able to tell which dates were guesses.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

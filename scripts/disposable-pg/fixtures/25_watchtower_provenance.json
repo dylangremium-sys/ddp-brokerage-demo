@@ -2,7 +2,7 @@
   "id": "25_watchtower_provenance",
   "title": "Migration 25 \u2014 watchtower ingestion provenance",
   "description": "Applies migration 9 then 25 and rolls 25 back; baseline is the state after 9. Migration 25 adds the provenance and ingestion-evidence layer underneath the Watchtower tables that 9 creates -- content hashes, canonical URLs and external identifiers used to deduplicate legal updates. Its VERIFY follows the repository convention, so all eight sections A-H are scored: a run that silently skipped a section fails the count guard rather than reporting a pass.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

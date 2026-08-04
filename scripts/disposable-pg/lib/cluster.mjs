@@ -22,7 +22,32 @@ export class ClusterError extends Error {
   }
 }
 
-export const DEFAULT_PG_MAJOR = Number(process.env.HARNESS_PG_MAJOR || 18);
+// 17, because production runs 17.6 (`select version()`, measured read-only
+// 2026-08-04). It was 18, which meant every migration in this repo was proven
+// reversible on a major version the live database does not run — a guarantee
+// about a database that does not exist. Between "newest" and "the one prod
+// actually runs", the harness owes its answer to the second.
+//
+// The DEFAULT tracks production and should be changed when production upgrades,
+// not before.
+export const DEFAULT_PG_MAJOR = 17;
+
+/**
+ * An explicit operator override, or null when unset.
+ *
+ * Kept SEPARATE from DEFAULT_PG_MAJOR because the two are resolved at different
+ * precedences. Every fixture carries its own `pgMajor`, and the harness used to
+ * resolve `fixture.pgMajor || DEFAULT_PG_MAJOR` — under which the fixture pin
+ * always wins, since every fixture sets one. Folding HARNESS_PG_MAJOR into the
+ * default would therefore have made the env var silently inert: a CI lane that
+ * installs 18 and sets HARNESS_PG_MAJOR=18 would still request a 17 cluster and
+ * die on a major mismatch, which reads as a broken lane rather than an ignored
+ * setting. An explicitly-set env var must beat a file-level default.
+ */
+export const PG_MAJOR_OVERRIDE =
+  process.env.HARNESS_PG_MAJOR && process.env.HARNESS_PG_MAJOR.trim() !== ''
+    ? Number(process.env.HARNESS_PG_MAJOR)
+    : null;
 const SOCKET_PORT = 5432;
 // Socket paths have a hard ~100-char limit (sockaddr_un). Keep the run dir short.
 const SOCKET_BASE = process.platform === 'win32' ? os.tmpdir() : '/tmp';

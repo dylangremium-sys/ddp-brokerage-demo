@@ -2,7 +2,7 @@
   "id": "29_contaminant_blocker_gate",
   "title": "Migration 29 \u2014 the buyer-pack contaminant blocker gate",
   "description": "Applies migrations 10, 17 and 23, then 29, and rolls 29 back; baseline is the state after 23. 29 refuses to issue a buyer pack for a batch carrying any FAILED contaminant result across heavy metals, pesticides, microbials and mycotoxins, and fails closed on a missing batch. Scores VERIFY sections A and B. Migration 23 must be in the chain even though 29's rollback does not reverse it: 23 is what creates issue_buyer_pack_snapshot, and 29's rollback restores that function rather than dropping it. Without 23 the baseline has no function at all, the restore looks like a leaked object, and the fixture accuses a correct rollback.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

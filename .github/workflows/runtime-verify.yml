@@ -2,8 +2,27 @@ name: Runtime Verify
 
 # Repository-controlled REAL execution gate for database migrations (PR-0).
 #
-# This job provisions a pinned PostgreSQL 18 and runs the disposable-Postgres
-# migration harness against every registered fixture (migration 24 is the first).
+# This job provisions a pinned PostgreSQL 17 — the major PRODUCTION runs (17.6,
+# measured read-only 2026-08-04) — and runs the disposable-Postgres migration
+# harness against every registered fixture (migration 24 is the first).
+#
+# It was pinned to 18. Every migration in this repository was therefore proven to
+# apply, verify and reverse on a major version the live database does not run.
+# Postgres majors differ in exactly the areas these migrations exercise (catalog
+# shape, privilege defaults, planner behaviour), so an 18-only proof is a
+# guarantee about a database that does not exist.
+#
+# The 18 lane is kept, in a SEPARATE job, as forward-looking signal for the
+# eventual upgrade. It is deliberately NOT the required check and is allowed to
+# fail: the question this gate answers is "will this work on production", and
+# only the 17 job answers it.
+#
+# NOTE FOR WHOEVER CONFIGURES BRANCH PROTECTION: the required context is the JOB
+# NAME, "Disposable PostgreSQL migration verification". It is held constant here
+# on purpose. Expressing the two versions as a matrix would rename the checks to
+# "... (17)" / "... (18)", and a required context that no longer matches any job
+# leaves the branch waiting on a check that can never report — indistinguishable,
+# in the UI, from a gate that is simply passing.
 # It proves — on the exact PR head, not just locally — that the migration applies,
 # VERIFY passes on real Postgres, rollback is real, the destructive guard fires,
 # and teardown leaves zero residue. It NEVER connects to staging/Production and
@@ -31,8 +50,8 @@ jobs:
     name: Disposable PostgreSQL migration verification
     runs-on: ubuntu-latest
     env:
-      HARNESS_PG_MAJOR: '18'
-      PG_BIN: /usr/lib/postgresql/18/bin
+      HARNESS_PG_MAJOR: '17'
+      PG_BIN: /usr/lib/postgresql/17/bin
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -46,10 +65,10 @@ jobs:
       - name: Install dependencies (deterministic)
         run: npm ci
 
-      # Pin PostgreSQL major 18 from the PGDG apt repo. The manually proven
-      # reference run used 18.4; the harness records the exact patch it actually
-      # ran into result.json and fails fast on a major mismatch.
-      - name: Install PostgreSQL 18 (PGDG, pinned major)
+      # Pin PostgreSQL major 17 from the PGDG apt repo, matching production's
+      # 17.6. The harness records the exact patch it actually ran into
+      # result.json and fails fast on a major mismatch.
+      - name: Install PostgreSQL 17 (PGDG, pinned major)
         run: |
           set -euo pipefail
           # Use the official PGDG setup script (handles the repo + signing key
@@ -57,7 +76,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          sudo apt-get install -y --no-install-recommends postgresql-18
+          sudo apt-get install -y --no-install-recommends postgresql-17
           "$PG_BIN/pg_ctl" --version
           "$PG_BIN/initdb" --version
 
@@ -83,3 +102,48 @@ jobs:
           path: scripts/disposable-pg/.artifacts/**/result.json
           if-no-files-found: warn
           retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Forward-looking lane. Production runs 17, so 17 is what the merge gate proves;
+  # this job exists so the eventual 17 -> 18 upgrade is not the first time anyone
+  # discovers a migration that only works on one of them.
+  #
+  # continue-on-error, and NOT a required check, deliberately: a red 18 lane means
+  # "this will need attention at upgrade time", not "this change is unsafe to ship
+  # to a 17 production". Making it blocking would hand a veto over today's
+  # releases to a database nobody is running.
+  #
+  # HARNESS_PG_MAJOR overrides the harness default AND every fixture's pgMajor.
+  # ---------------------------------------------------------------------------
+  runtime-verify-next:
+    name: Disposable PostgreSQL migration verification (PG 18, advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      HARNESS_PG_MAJOR: '18'
+      PG_BIN: /usr/lib/postgresql/18/bin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies (deterministic)
+        run: npm ci
+
+      - name: Install PostgreSQL 18 (PGDG, pinned major)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-18
+          "$PG_BIN/pg_ctl" --version
+          "$PG_BIN/initdb" --version
+
+      - name: Disposable-Postgres migration harness (all fixtures, PG 18)
+        run: npm run ci:runtime

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { runFixture, EXIT } from './run-migration-harness.mjs';
+import { readdirSync } from 'node:fs';
+import { runFixture, computeFixtureCoverage, EXIT } from './run-migration-harness.mjs';
 import { resolvePgBin } from './lib/cluster.mjs';
+import { FIXTURES_DIR, REPO_ROOT } from './lib/fixtures.mjs';
 import { assertNoSecrets } from './lib/evidence.mjs';
 
 function pgAvailable() {
@@ -16,6 +18,58 @@ function pgAvailable() {
 // on PATH. Keeps the static `npm test` job's skip structural, not environmental.
 const PG_ENABLED = !!(process.env.PG_BIN && process.env.PG_BIN.trim()) || process.env.HARNESS_REQUIRE_PG === '1';
 const HAS_PG = PG_ENABLED && pgAvailable();
+
+// Coverage arithmetic needs no cluster, so these run in the static job too. That
+// is deliberate: the bug they exist to prevent — a coverage ratio that cannot
+// fall — survived for months precisely because checking it meant booting Postgres.
+describe('fixture coverage denominator', () => {
+  const repoFiles = readdirSync(REPO_ROOT);
+  const fixtureIds = readdirSync(FIXTURES_DIR)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.replace(/\.json$/, ''));
+
+  it('counts every numbered migration, not just the ones named _HARDENING', () => {
+    const cov = computeFixtureCoverage(repoFiles, fixtureIds);
+    // 43 numbered migrations exist; only 32 are named *_HARDENING.sql. The old
+    // denominator was the latter, which is why it could only ever print 32/32.
+    const hardeningOnly = new Set(
+      repoFiles.map((f) => (f.match(/^(\d+)_.*_HARDENING\.sql$/) || [])[1]).filter(Boolean),
+    );
+    expect(cov.total).toBeGreaterThan(hardeningOnly.size);
+    expect(cov.coveredCount).toBeLessThan(cov.total);
+  });
+
+  it('names the migrations it does not cover, including 10, 17 and 23', () => {
+    const cov = computeFixtureCoverage(repoFiles, fixtureIds);
+    expect(cov.uncovered).toEqual(
+      expect.arrayContaining(['3', '4', '8', '9', '10', '13', '16', '17', '18', '20', '23']),
+    );
+    // 10, 17 and 23 ship a real ROLLBACK no fixture has ever executed — the
+    // single most misleading state a migration can be in, so it is called out.
+    expect(cov.uncoveredWithRollback).toEqual(expect.arrayContaining(['10', '17', '23']));
+  });
+
+  it('FALSIFICATION: removing a fixture drops the numerator', () => {
+    // The whole point of A2. Under the old _HARDENING denominator, deleting
+    // fixture 44 dropped BOTH numerator and denominator and still printed n/n.
+    const before = computeFixtureCoverage(repoFiles, fixtureIds);
+    const after = computeFixtureCoverage(
+      repoFiles,
+      fixtureIds.filter((id) => !id.startsWith('44_')),
+    );
+    expect(after.coveredCount).toBe(before.coveredCount - 1);
+    expect(after.total).toBe(before.total); // denominator must NOT move
+    expect(after.uncovered).toContain('44');
+  });
+
+  it('FALSIFICATION: adding a migration with no fixture raises the denominator', () => {
+    const before = computeFixtureCoverage(repoFiles, fixtureIds);
+    const after = computeFixtureCoverage([...repoFiles, '99_SOMETHING_HARDENING.sql'], fixtureIds);
+    expect(after.total).toBe(before.total + 1);
+    expect(after.coveredCount).toBe(before.coveredCount);
+    expect(after.uncovered).toContain('99');
+  });
+});
 
 describe.skipIf(!HAS_PG)('run-migration-harness end-to-end (real PostgreSQL)', () => {
   it('runs the 24_evidence fixture fully green: apply -> VERIFY 18/18 -> guard -> rollback', { timeout: 120000 }, () => {

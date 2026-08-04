@@ -2,7 +2,7 @@
   "id": "27_audit_actor_authoritative",
   "title": "Migration 27 \u2014 server-authoritative audit actor",
   "description": "Applies migration 9 then 27 and rolls 27 back; baseline is the state after 9. 27 makes the compliance audit log's actor server-authoritative: a BEFORE INSERT trigger overwrites whatever actor_id the client supplied with auth.uid(), so a forged actor cannot be recorded. Scores VERIFY sections A, B and RESIDUE. The forgery section is behavioural and depends on the substrate reading JWT claims the way hosted Supabase does -- it sets request.jwt.claims as JSON, and against a shim that only read the legacy per-claim GUC auth.uid() returned NULL and the section reported the actor stamp broken when the stamp was fine.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

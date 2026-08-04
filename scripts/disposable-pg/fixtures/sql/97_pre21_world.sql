@@ -49,6 +49,28 @@ BEGIN
 END;
 $$;
 
+-- The pre-21 role vocabulary: DEFAULT 'farmer' and a TWO-value CHECK.
+--
+-- Migration 21's whole purpose is to introduce 'pending' and stop new accounts
+-- defaulting to an approved role, so a genuine pre-21 world has neither. The
+-- substrate is modelled on current production — post-21 — and carries the
+-- three-value CHECK with no default; without this stage the baseline is post-21
+-- in exactly the respect the migration changes, and 21's rollback correctly
+-- restoring the pre-21 shape is then reported as an asymmetry.
+--
+-- This was invisible until the catalog snapshot learned to see CHECK constraints
+-- and column defaults (D7). Before that the fixture was passing on a baseline it
+-- had never fully established, which is the same class of vacuity the coverage
+-- denominator had: not a wrong answer, an unasked question.
+ALTER TABLE public.profiles
+  ALTER COLUMN role SET DEFAULT 'farmer';
+
+ALTER TABLE public.profiles
+  DROP CONSTRAINT IF EXISTS profiles_role_check;
+ALTER TABLE public.profiles
+  ADD CONSTRAINT profiles_role_check
+  CHECK (role IN ('ddp_admin', 'farmer'));
+
 -- profiles RLS and its three policies, as RLS_ENABLE_STAGED.sql establishes them.
 -- Migration 21 replaces all three with DROP IF EXISTS + CREATE, so if its rollback
 -- leaves a definition changed, that is a genuine finding rather than a gap here.

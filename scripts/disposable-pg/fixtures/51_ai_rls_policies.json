@@ -2,7 +2,7 @@
   "id": "51_ai_rls_policies",
   "title": "Migration 51 \u2014 enabling RLS across the AI tables",
   "description": "Applies migrations 47 through 50, then 51, and rolls 51 back; baseline is the state after 50. Despite its name 51 creates no policy: it switches row-level security on across thirteen AI tables and seeds the approval-workflow and model-config reference rows. Because it creates no catalog object, only the rls branch of the snapshot can observe it at all.\n\nThis fixture found a real defect and its ROLLBACK was repaired in the same change. The rollback disabled RLS on all twelve tables created by 47-50 -- which enable RLS themselves, so 51 found it already on and changed nothing there. Rolling back 51 alone therefore stripped row-level security from twelve tables that 47-50 had secured, while leaving 47-50 applied, and simultaneously failed to disable it on ai_provider_pricing, the one table 51 actually changed. The snapshot recorded the two sets moving in exactly opposite directions.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

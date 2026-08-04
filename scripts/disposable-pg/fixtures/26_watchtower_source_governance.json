@@ -2,7 +2,7 @@
   "id": "26_watchtower_source_governance",
   "title": "Migration 26 \u2014 watchtower source governance",
   "description": "Applies migration 9, then 25, then 26, and rolls 26 back; baseline is the state after 25. 26 governs which sources the Compliance Watchtower will accept a legal update from, and scores VERIFY sections A through F. This fixture could not exist until the substrate carried compliance_rules.source_legal_update_id: migration 9 declares that column, but creates the table with CREATE TABLE IF NOT EXISTS, so against a substrate that already has compliance_rules the entire statement is skipped and the column never appears.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {
