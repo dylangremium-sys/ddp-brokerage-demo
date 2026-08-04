@@ -9,8 +9,58 @@
 // then call assertCatalogSymmetry(before, after) to verify they match.
 // The snapshot includes functions WITH their signatures, not just names.
 
+const ANY_ALL_BEFORE = /\b(?:ANY|ALL)\s*\(\s*$/i;
+const ARRAY_OPEN = 'ARRAY[';
+
 /**
- * Sort the elements of every `ARRAY[...]` literal in a definition string.
+ * Index just past the `]` closing the literal that starts at `from`, or -1.
+ *
+ * Single-quoted strings are tracked so a literal containing a bracket cannot end
+ * the scan early; `''` is an escaped quote, not a terminator.
+ */
+function endOfArrayLiteral(text, from) {
+  let depth = 1;
+  let inStr = false;
+  for (let i = from; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (ch === "'" && text[i + 1] === "'") i++;
+      else if (ch === "'") inStr = false;
+      continue;
+    }
+    if (ch === "'") inStr = true;
+    else if (ch === '[') depth++;
+    else if (ch === ']' && --depth === 0) return i + 1;
+  }
+  return -1;
+}
+
+/** Split on commas at bracket/paren depth zero and outside string literals. */
+function splitTopLevel(body) {
+  const parts = [];
+  let cur = '';
+  let depth = 0;
+  let inStr = false;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (inStr) {
+      cur += ch;
+      if (ch === "'" && body[i + 1] === "'") cur += body[++i];
+      else if (ch === "'") inStr = false;
+      continue;
+    }
+    if (ch === "'") inStr = true;
+    else if (ch === '[' || ch === '(') depth++;
+    else if (ch === ']' || ch === ')') depth--;
+    else if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  parts.push(cur);
+  return parts;
+}
+
+/**
+ * Sort the elements of set-membership `ARRAY[...]` literals in a definition string.
  *
  * `role = ANY (ARRAY['pending','farmer','ddp_admin'])` and
  * `role = ANY (ARRAY['ddp_admin','farmer','pending'])` are the SAME constraint.
@@ -46,61 +96,30 @@
  *
  * Exported for test.
  */
-const ANY_ALL_BEFORE = /\b(?:ANY|ALL)\s*\(\s*$/i;
-
 export function normaliseArrayLiterals(detail) {
-  if (!detail || !detail.includes('ARRAY[')) return detail;
+  if (!detail || !detail.includes(ARRAY_OPEN)) return detail;
 
   let out = '';
-  let i = 0;
-  while (i < detail.length) {
-    const start = detail.indexOf('ARRAY[', i);
-    if (start < 0) { out += detail.slice(i); break; }
-    out += detail.slice(i, start + 'ARRAY['.length);
+  let cursor = 0;
+  for (;;) {
+    const start = detail.indexOf(ARRAY_OPEN, cursor);
+    if (start < 0) return out + detail.slice(cursor);
 
-    // Only a membership test gets sorted. Anything else keeps its written order.
-    if (!ANY_ALL_BEFORE.test(detail.slice(0, start))) {
-      i = start + 'ARRAY['.length;
-      continue;
-    }
+    const bodyStart = start + ARRAY_OPEN.length;
+    out += detail.slice(cursor, bodyStart);
+    cursor = bodyStart;
 
-    // Walk to the matching close bracket, tracking single-quoted strings so a
-    // literal containing '[' or ']' cannot end the scan early.
-    let depth = 1, j = start + 'ARRAY['.length, inStr = false;
-    while (j < detail.length && depth > 0) {
-      const ch = detail[j];
-      if (inStr) {
-        // '' is an escaped quote inside a string, not a terminator.
-        if (ch === "'" && detail[j + 1] === "'") j++;
-        else if (ch === "'") inStr = false;
-      } else if (ch === "'") inStr = true;
-      else if (ch === '[') depth++;
-      else if (ch === ']') depth--;
-      j++;
-    }
-    if (depth !== 0) { out += detail.slice(start + 'ARRAY['.length); break; }
+    // Only a membership test is sorted; anything else keeps its written order.
+    if (!ANY_ALL_BEFORE.test(detail.slice(0, start))) continue;
 
-    const body = detail.slice(start + 'ARRAY['.length, j - 1);
-    // Split on top-level commas only.
-    const parts = [];
-    let cur = '', d = 0, s = false;
-    for (let k = 0; k < body.length; k++) {
-      const ch = body[k];
-      if (s) {
-        if (ch === "'" && body[k + 1] === "'") { cur += "''"; k++; continue; }
-        if (ch === "'") s = false;
-      } else if (ch === "'") s = true;
-      else if (ch === '[' || ch === '(') d++;
-      else if (ch === ']' || ch === ')') d--;
-      else if (ch === ',' && d === 0) { parts.push(cur); cur = ''; continue; }
-      cur += ch;
-    }
-    parts.push(cur);
+    // An unbalanced literal is emitted verbatim rather than guessed at.
+    const end = endOfArrayLiteral(detail, bodyStart);
+    if (end < 0) return out + detail.slice(bodyStart);
 
-    out += parts.map((p) => p.trim()).sort().join(', ') + ']';
-    i = j;
+    const elements = splitTopLevel(detail.slice(bodyStart, end - 1));
+    out += elements.map((e) => e.trim()).sort().join(', ') + ']';
+    cursor = end;
   }
-  return out;
 }
 
 /**
