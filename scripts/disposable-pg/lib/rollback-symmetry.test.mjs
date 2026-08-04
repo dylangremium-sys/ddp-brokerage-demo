@@ -134,3 +134,77 @@ describe('rollback-symmetry: baseline vs post-rollback catalog', () => {
     expect(result2.diff).toContain('invalid snapshot format');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Privilege and row-level-security branches.
+//
+// Migrations 12, 14, 15 and 51 create and drop nothing whatsoever — they REVOKE,
+// GRANT, or switch RLS on. Against a snapshot that records only tables,
+// functions, policies and triggers, their rollbacks are invisible: baseline and
+// final are byte-identical and the check passes having proved nothing. These
+// cases pin the shape of the entries so the branches cannot be quietly dropped
+// from the query without a test going red.
+// ---------------------------------------------------------------------------
+describe('rollback-symmetry: privileges and RLS', () => {
+  it('a rollback that leaves a privilege granted is not symmetric', () => {
+    const baseline = SUBSTRATE;
+    // REVOKE ... FROM the wrong table succeeds and removes nothing, so anon
+    // keeps a privilege the migration handed it.
+    const final = [
+      { kind: 'grant', obj: 'table public.profiles -> anon', detail: 'DELETE' },
+      ...SUBSTRATE,
+    ];
+
+    const result = assertCatalogSymmetry(baseline, final);
+    expect(result.ok).toBe(false);
+    expect(result.diff).toContain('table public.profiles -> anon');
+    expect(result.leaked).toHaveLength(1);
+  });
+
+  it('a rollback that fails to restore a revoked privilege is over-reach, not a leak', () => {
+    // The direction matters to whoever reads the failure: a privilege present
+    // BEFORE and absent after was destroyed by the rollback, which is a
+    // different defect from one the rollback failed to remove.
+    const baseline = [
+      { kind: 'grant', obj: 'function is_ddp_admin() -> PUBLIC', detail: 'EXECUTE' },
+      ...SUBSTRATE,
+    ];
+    const result = assertCatalogSymmetry(baseline, SUBSTRATE);
+    expect(result.ok).toBe(false);
+    expect(result.destroyed).toHaveLength(1);
+    expect(result.diff).toContain('ROLLBACK destroyed');
+  });
+
+  it('privileges compare as a SET, so grant order never fails a correct rollback', () => {
+    const a = [
+      { kind: 'grant', obj: 'table public.farms -> anon', detail: 'INSERT,SELECT' },
+      { kind: 'grant', obj: 'table public.farms -> authenticated', detail: 'SELECT' },
+    ];
+    const b = [a[1], a[0]];
+    expect(assertCatalogSymmetry(a, b).ok).toBe(true);
+  });
+
+  it('RLS left switched on is reported as a definition change, not a new object', () => {
+    // Migration 51's failure mode. The table exists on both sides, so nothing is
+    // leaked or destroyed — only the flag moved, which the detail column carries.
+    const baseline = [{ kind: 'rls', obj: 'public.profiles', detail: 'disabled' }];
+    const final = [{ kind: 'rls', obj: 'public.profiles', detail: 'enabled' }];
+
+    const result = assertCatalogSymmetry(baseline, final);
+    expect(result.ok).toBe(false);
+    expect(result.redefined).toHaveLength(1);
+    expect(result.leaked).toHaveLength(0);
+    expect(result.diff).toContain('was disabled, now enabled');
+  });
+
+  it('RLS stripped from a table the migration never touched is caught too', () => {
+    // The inverted half of migration 51's defect: its rollback disabled RLS on
+    // twelve tables that migrations 47-50 had secured.
+    const baseline = [{ kind: 'rls', obj: 'public.ai_jobs', detail: 'enabled' }];
+    const final = [{ kind: 'rls', obj: 'public.ai_jobs', detail: 'disabled' }];
+
+    const result = assertCatalogSymmetry(baseline, final);
+    expect(result.ok).toBe(false);
+    expect(result.diff).toContain('was enabled, now disabled');
+  });
+});

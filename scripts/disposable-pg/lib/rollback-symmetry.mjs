@@ -41,6 +41,11 @@ export function snapshotCatalog(cluster) {
   const definitionDigest = (expr) =>
     `substr(md5(regexp_replace(regexp_replace(${expr}, '--[^\\n]*', '', 'g'), '\\s+', ' ', 'g')), 1, 12)`;
 
+  // A grantee of 0 is the pseudo-role PUBLIC, which `::regrole` renders as '-'.
+  // Spelling it out matters: "PUBLIC still holds EXECUTE" is the finding these
+  // migrations exist to prevent, and '-' reads like an absence.
+  const granteeName = (col) => `CASE WHEN ${col} = 0 THEN 'PUBLIC' ELSE ${col}::regrole::text END`;
+
   const query = `
     SELECT 'function' kind,
            p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' obj,
@@ -60,6 +65,68 @@ export function snapshotCatalog(cluster) {
       FROM pg_trigger t
       JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname IN ('public', 'storage') AND NOT t.tgisinternal
+
+    -- Row-level security is a per-table BOOLEAN, not an object, so nothing above
+    -- can see it. Migration 51 consists almost entirely of
+    -- "ALTER TABLE ... ENABLE ROW LEVEL SECURITY" and creates no catalog object
+    -- at all: without this branch its fixture would compare an unchanged catalog
+    -- to itself and pass having proved nothing.
+    UNION ALL SELECT 'rls', n.nspname || '.' || c.relname,
+           CASE WHEN c.relrowsecurity THEN 'enabled' ELSE 'disabled' END
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname IN ('public', 'storage') AND c.relkind IN ('r', 'p')
+        AND ${notExtensionOwned.replace('%OID%', 'c.oid').replace('%CATALOG%', 'pg_class')}
+
+    -- Privileges. Migrations 12, 14 and 15 REVOKE and GRANT and create no object
+    -- whatsoever, so to an object-only snapshot their rollbacks are invisible and
+    -- a fixture for them would pass vacuously. A rollback that restores the
+    -- structure but leaves EXECUTE granted to PUBLIC has not reversed anything
+    -- that mattered.
+    --
+    -- Every ACL is normalised through coalesce(acl, acldefault(...)) because a
+    -- NULL acl does not mean "no privileges" — it means "the built-in defaults",
+    -- which for a function include EXECUTE to PUBLIC. Comparing the stored
+    -- representation instead of the effective grants reports a rollback that
+    -- restored the right permissions as broken: migration 11 REVOKEs EXECUTE
+    -- from PUBLIC on a trigger-only guard (turning NULL into an explicit acl) and
+    -- its rollback GRANTs it back, ending at an explicit acl that is
+    -- byte-different from NULL and privilege-identical to it. Without the
+    -- normalisation that correct rollback failed with two phantom leaked grants.
+    UNION ALL SELECT 'grant',
+           'table ' || n.nspname || '.' || c.relname || ' -> ' || ${granteeName('a.grantee')},
+           string_agg(DISTINCT a.privilege_type, ',' ORDER BY a.privilege_type)
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
+           LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      WHERE n.nspname IN ('public', 'storage') AND c.relkind IN ('r', 'p', 'v')
+        AND ${notExtensionOwned.replace('%OID%', 'c.oid').replace('%CATALOG%', 'pg_class')}
+      GROUP BY 1, 2
+    UNION ALL SELECT 'grant',
+           'function ' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ') -> '
+             || ${granteeName('a.grantee')},
+           string_agg(DISTINCT a.privilege_type, ',' ORDER BY a.privilege_type)
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace,
+           LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+      WHERE n.nspname = 'public' AND p.prokind IN ('f', 'p')
+        AND ${notExtensionOwned.replace('%OID%', 'p.oid').replace('%CATALOG%', 'pg_proc')}
+      GROUP BY 1, 2
+    UNION ALL SELECT 'grant',
+           'schema ' || n.nspname || ' -> ' || ${granteeName('a.grantee')},
+           string_agg(DISTINCT a.privilege_type, ',' ORDER BY a.privilege_type)
+      FROM pg_namespace n, LATERAL aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+      WHERE n.nspname IN ('public', 'storage', 'auth', 'extensions')
+      GROUP BY 1, 2
+
+    -- Default privileges are what migration 14 hardens: they govern objects that
+    -- do not exist yet, so they leave no trace on any present object. Dropping a
+    -- pg_default_acl entry silently re-opens every table created afterwards.
+    UNION ALL SELECT 'default_acl',
+           coalesce(dn.nspname, '-') || ':' || d.defaclrole::regrole::text || ':'
+             || d.defaclobjtype::text || ' -> ' || ${granteeName('a.grantee')},
+           string_agg(DISTINCT a.privilege_type, ',' ORDER BY a.privilege_type)
+      FROM pg_default_acl d
+      LEFT JOIN pg_namespace dn ON dn.oid = d.defaclnamespace,
+           LATERAL aclexplode(d.defaclacl) a
+      GROUP BY 1, 2
     ORDER BY 1, 2, 3
   `;
 

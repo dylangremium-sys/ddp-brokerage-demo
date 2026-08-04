@@ -1,0 +1,39 @@
+{
+  "id": "14_default_privileges",
+  "title": "Migration 14 \u2014 public-table default privileges",
+  "description": "Applies migration 14 standalone and rolls it back. 14 narrows the DEFAULT PRIVILEGES on schema public, removing TRUNCATE, TRIGGER, REFERENCES and MAINTAIN from anon and authenticated on tables that do not exist yet. It creates and drops nothing, so before the catalog snapshot learned to record pg_default_acl this fixture would have compared an identical catalog to itself and passed having proved nothing at all. Default privileges are the most invisible thing a migration can change: dropping the entry silently re-opens every table created afterwards, and no present object carries a trace of it.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-14",
+      "file": "14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "14_PUBLIC_TABLE_DEFAULT_PRIVILEGE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "public"
+    ],
+    "symbols": []
+  },
+  "postRollback": null
+}

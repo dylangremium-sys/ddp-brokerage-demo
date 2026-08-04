@@ -38,11 +38,27 @@ END $roles$;
 --   real token issuance, signature verification, expiry or refresh.
 -- -----------------------------------------------------------------------------
 CREATE SCHEMA IF NOT EXISTS auth;
-CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text);
+-- raw_user_meta_data is the JSON blob Supabase Auth attaches to a signup, and
+-- handle_new_user() reads it to decide what the new profile is called.
+-- Migration 21's VERIFY inserts an auth user carrying it.
+CREATE TABLE IF NOT EXISTS auth.users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text,
+  raw_user_meta_data jsonb
+);
 
+-- Hosted Supabase reads the subject from EITHER the legacy per-claim GUC
+-- (request.jwt.claim.sub) OR the whole-claims JSON (request.jwt.claims), and
+-- coalesces them in that order. Reading only the legacy GUC silently returns
+-- NULL for any caller that sets the JSON form: migration 27's VERIFY sets
+-- request.jwt.claims, so its forged-actor section saw auth.uid() = NULL and
+-- reported the actor stamp broken when it was the shim that was wrong.
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
 LANGUAGE sql STABLE AS $$
-  SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+  SELECT coalesce(
+    nullif(current_setting('request.jwt.claim.sub', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'
+  )::uuid
 $$;
 
 -- Two distinct, fixed users so behavioural sections that need a second actor
@@ -86,6 +102,9 @@ CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid PRIMARY KEY,
   email text,
+  -- display_name is written by handle_new_user() and read by migration 21's
+  -- VERIFY when it asserts what a brand-new auth user becomes.
+  display_name text,
   role text
 );
 -- `status`, `reviewed_by` and `updated_at` are the columns an admin review
@@ -94,10 +113,21 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- measured read-only 2026-07-28: status text NULL, reviewed_by uuid NULL,
 -- updated_at timestamptz NOT NULL DEFAULT now(), and NO check constraint on
 -- status (the status vocabulary is enforced in TypeScript, not in the database).
+-- compliance_status, export_readiness, partner_tier and risk_level join
+-- created_by/status/reviewed_by as the seven columns migration 19's field guard
+-- pins against a farmer UPDATE. A substrate missing them cannot host the guard,
+-- and 19's VERIFY then fails on a missing column rather than on the property it
+-- means to test. farm_name comes from the pre-numbering schema
+-- (SUPABASE_SCHEMA.sql) and is what the admin list view reads.
 CREATE TABLE IF NOT EXISTS public.farms (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  farm_name text,
   created_by uuid,
   status text,
+  compliance_status text,
+  export_readiness text,
+  partner_tier text,
+  risk_level text,
   reviewed_by uuid,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -118,6 +148,18 @@ CREATE TABLE IF NOT EXISTS public.inventory_batches (
   created_by uuid,
   status text,
   reviewed_by uuid,
+  -- product_name is carried by the pre-numbering schema (SUPABASE_SCHEMA.sql).
+  -- Omitting it made migration 29's VERIFY fail at its first INSERT, which reads
+  -- as "the contaminant gate is broken" rather than "the shim is thin".
+  product_name text,
+  -- The three contaminant verdict columns migration 29's blocker gate reads.
+  -- Added by FARMER_MVP_MIGRATION.sql, which creates inventory_batches with
+  -- CREATE TABLE IF NOT EXISTS and therefore cannot add them to a table this
+  -- substrate has already created.
+  heavy_metals_status text,
+  pesticides_status text,
+  microbial_status text,
+  mycotoxins_status text,
   quantity_kg numeric,
   client_visible boolean NOT NULL DEFAULT false,
   stock_status text,
@@ -138,17 +180,46 @@ CREATE TABLE IF NOT EXISTS public.status_history (
   note text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+-- `role` distinguishes a farm owner from an ordinary member; migration 19's
+-- VERIFY reads it when it sets up the farmer whose UPDATE the guard must pin.
 CREATE TABLE IF NOT EXISTS public.farm_memberships (
   farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
   user_id uuid,
+  role text,
   PRIMARY KEY (farm_id, user_id)
 );
--- public.farmer_documents — created by FARMER_MVP_MIGRATION.sql (pre-numbering),
--- so it is substrate for every numbered migration. The review_status and the four
--- contaminant columns are copied from FARMER_MVP_MIGRATION.sql:162-185 because the
--- export gate reads them: a batch whose COA records a FAILED contaminant test, or
--- whose COA has not been accepted by a reviewer, must not clear the gate. It does
--- NOT reproduce migration 28's document_field_extractions provenance layer.
+-- Two further pre-numbering tables. ddp_scores is the per-farm scorecard from
+-- SUPABASE_SCHEMA.sql that migrations 15 and 22 harden; market_price_benchmarks
+-- is the shared reference table from FARMER_MVP_MIGRATION.sql that migration 22
+-- overlays with a RESTRICTIVE operational-farmer read policy.
+CREATE TABLE IF NOT EXISTS public.ddp_scores (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
+  compliance integer,
+  documentation integer,
+  total_score integer,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.market_price_benchmarks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_type text NOT NULL,
+  thc_range text,
+  price_min numeric NOT NULL,
+  price_max numeric NOT NULL,
+  unit text NOT NULL DEFAULT 'kg',
+  -- FARMER_MVP_MIGRATION.sql adds this, but it creates the table with
+  -- CREATE TABLE IF NOT EXISTS and so cannot amend one this substrate made.
+  visible_to_farmers boolean NOT NULL DEFAULT true
+);
+-- farmer_photos is the farmer-uploaded image table from FARMER_MVP_MIGRATION.sql.
+-- Migrations 15 and 22 both harden it, and migration 38 owns its storage policies.
+-- farmer_photos and farmer_review_requests are deliberately NOT shimmed here.
+-- Mirroring them column-by-column proved to be a trap: FARMER_MVP_MIGRATION.sql
+-- creates both with CREATE TABLE IF NOT EXISTS, so any substrate copy silently
+-- wins and the migration then fails on a column it believed it had created --
+-- three times in a row, on a different column each time. Fixtures that need
+-- them apply FARMER_MVP_MIGRATION.sql as a stage instead, which is the
+-- authoritative definition.
 CREATE TABLE IF NOT EXISTS public.farmer_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
@@ -190,6 +261,12 @@ CREATE TABLE IF NOT EXISTS public.compliance_rules (
   is_blocking boolean NOT NULL DEFAULT false,
   status text NOT NULL DEFAULT 'draft' CHECK (status IN (
     'draft', 'suggested', 'approved', 'active', 'paused', 'retired', 'rejected')),
+  -- Migration 9 declares this column, but 9 creates the table with
+  -- CREATE TABLE IF NOT EXISTS -- so against a substrate that already has
+  -- compliance_rules the whole statement is skipped and the column never
+  -- appears. Migration 26 then fails on the missing column. Carried here
+  -- WITHOUT 9's foreign key to public.legal_updates, which 9 itself creates.
+  source_legal_update_id uuid,
   approved_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   approved_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -234,13 +311,30 @@ CREATE OR REPLACE FUNCTION public.has_operational_farmer_access() RETURNS boolea
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, auth, pg_temp AS $$
   SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'farmer')
 $$;
-CREATE OR REPLACE FUNCTION public.has_farm_membership(target_farm_id uuid) RETURNS boolean
+-- The parameter is named p_farm_id because migration 3 names it that, and
+-- PostgreSQL refuses CREATE OR REPLACE when only the parameter NAME differs
+-- ("cannot change name of input parameter"). A shim that picked a different
+-- name made migration 3 unapplicable in the harness while being invisible to
+-- every positional caller.
+CREATE OR REPLACE FUNCTION public.has_farm_membership(p_farm_id uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, auth, pg_temp AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.farm_memberships
-    WHERE farm_id = target_farm_id AND user_id = auth.uid()
+    WHERE farm_id = p_farm_id AND user_id = auth.uid()
   )
 $$;
+
+-- The two trigger-only guards migration 3 installs. Migration 12's subject is
+-- their EXECUTE privilege, so it needs them present -- but migration 3 cannot be
+-- chained to provide them: it refuses to run once migration 21's hardened
+-- handle_new_user() is installed, which this substrate now models. Shimmed as
+-- trigger stubs; their bodies are migration 3's subject, not migration 12's.
+CREATE OR REPLACE FUNCTION public.fn_protect_owner_notes() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public, auth, pg_temp AS $$
+BEGIN RETURN NEW; END $$;
+CREATE OR REPLACE FUNCTION public.fn_protect_review_request_fields() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public, auth, pg_temp AS $$
+BEGIN RETURN NEW; END $$;
 
 GRANT EXECUTE ON FUNCTION public.is_ddp_admin() TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.has_operational_farmer_access() TO authenticated, service_role;
@@ -249,9 +343,26 @@ GRANT EXECUTE ON FUNCTION public.has_farm_membership(uuid) TO authenticated, ser
 -- Migration 21 / 23 artifacts a VERIFY coexistence section may check for.
 ALTER TABLE public.profiles
   ADD CONSTRAINT profiles_role_check CHECK (role IN ('pending','farmer','ddp_admin'));
+-- handle_new_user() must actually CREATE the profile row. A no-op stub was
+-- survivable only while nothing invoked it; now that on_auth_user_created is
+-- attached, migration 22's VERIFY depends on the real behaviour -- it INSERTs
+-- three auth.users and then UPDATEs public.profiles, never inserting a profile
+-- itself. Against a stub those UPDATEs touch zero rows and the section fails
+-- claiming a farmer was denied farmer access.
+--
+-- New users land as 'pending', which is the POST-migration-21 behaviour. That is
+-- the correct posture for every fixture numbered above 21; migration 21's own
+-- fixture replaces this function as its first act, so it is unaffected.
 CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, pg_temp AS $$
-BEGIN RETURN NEW; END $$;
+BEGIN
+  INSERT INTO public.profiles (id, email, display_name, role)
+  VALUES (NEW.id, NEW.email,
+          coalesce(NEW.raw_user_meta_data ->> 'display_name', NEW.email),
+          'pending')
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END $$;
 
 -- -----------------------------------------------------------------------------
 -- RLS harness posture: enable RLS on storage.objects and grant the client roles
@@ -278,8 +389,129 @@ CREATE POLICY inventory_batches_substrate_select ON public.inventory_batches
   USING (public.is_ddp_admin() OR public.has_farm_membership(farm_id));
 GRANT SELECT ON public.inventory_batches TO authenticated;
 
+-- The four PERMISSIVE policies that production carries on inventory_batches,
+-- from FARMER_MVP_MIGRATION.sql plus INVENTORY_BATCHES_RLS_PATCH.sql (a manual
+-- hotfix recorded, but never renumbered, after the MVP migration left only one
+-- policy in place). Migration 22 overlays a RESTRICTIVE operational-farmer
+-- policy on top of these and its VERIFY E asserts that it did not DROP them --
+-- an assertion that cannot fail, and so cannot pass meaningfully, on a substrate
+-- where they never existed.
+--
+-- The predicates are faithful in shape but condensed: the real farmer insert and
+-- update policies also pin client_visible, self-approval and stock_status
+-- transitions. Those guardrails are migration 22's subject matter, not this
+-- substrate's, and no fixture asserts them here.
+DROP POLICY IF EXISTS "inventory_batches: admin all" ON public.inventory_batches;
+CREATE POLICY "inventory_batches: admin all" ON public.inventory_batches
+  FOR ALL USING (public.is_ddp_admin()) WITH CHECK (public.is_ddp_admin());
+DROP POLICY IF EXISTS "inventory_batches: farmer select own" ON public.inventory_batches;
+CREATE POLICY "inventory_batches: farmer select own" ON public.inventory_batches
+  FOR SELECT USING (created_by = auth.uid() OR public.has_farm_membership(farm_id));
+DROP POLICY IF EXISTS "inventory_batches: farmer insert own" ON public.inventory_batches;
+CREATE POLICY "inventory_batches: farmer insert own" ON public.inventory_batches
+  FOR INSERT WITH CHECK (
+    (created_by = auth.uid() OR public.has_farm_membership(farm_id))
+    AND client_visible = false);
+DROP POLICY IF EXISTS "inventory_batches: farmer update own" ON public.inventory_batches;
+CREATE POLICY "inventory_batches: farmer update own" ON public.inventory_batches
+  FOR UPDATE USING (created_by = auth.uid() OR public.has_farm_membership(farm_id))
+  WITH CHECK (client_visible = false);
+GRANT INSERT, UPDATE ON public.inventory_batches TO authenticated;
+
+-- The remaining two permissive policies migration 22's VERIFY E requires to
+-- have pre-existed before its RESTRICTIVE overlay went on.
+ALTER TABLE public.farm_memberships ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "farm_memberships: farmer insert own" ON public.farm_memberships;
+CREATE POLICY "farm_memberships: farmer insert own" ON public.farm_memberships
+  FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+GRANT SELECT, INSERT ON public.farm_memberships TO authenticated;
+
+ALTER TABLE public.market_price_benchmarks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "market_price_benchmarks: farmer select visible" ON public.market_price_benchmarks;
+CREATE POLICY "market_price_benchmarks: farmer select visible" ON public.market_price_benchmarks
+  FOR SELECT TO authenticated USING (true);
+GRANT SELECT ON public.market_price_benchmarks TO authenticated;
+
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 GRANT USAGE ON SCHEMA storage, public, auth TO anon, authenticated, service_role;
 GRANT SELECT ON storage.objects TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role;
 GRANT INSERT, DELETE ON storage.objects TO authenticated;
+
+-- -----------------------------------------------------------------------------
+-- public.farms base RLS. These policies belong to the pre-numbering application
+-- schema and are created by NO file in this repository, so a substrate without
+-- them cannot host any migration that amends them. Migration 19 refuses to run
+-- its farmer-UPDATE section without "farms: farmer update own" and reports the
+-- absence as a PRECONDITION FAILED; migration 22's VERIFY E asserts that the
+-- pre-existing permissive policies were not dropped, which is unprovable if they
+-- never existed. Names are taken verbatim from those two VERIFY scripts.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.farms ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "farms: admin all" ON public.farms;
+CREATE POLICY "farms: admin all" ON public.farms
+  FOR ALL TO authenticated
+  USING (public.is_ddp_admin()) WITH CHECK (public.is_ddp_admin());
+DROP POLICY IF EXISTS "farms: farmer update own" ON public.farms;
+CREATE POLICY "farms: farmer update own" ON public.farms
+  FOR UPDATE TO authenticated
+  USING (public.has_farm_membership(id)) WITH CHECK (public.has_farm_membership(id));
+-- Without a SELECT policy the farmer UPDATE below matches NO rows, and every
+-- "the farmer could not change this column" assertion in migration 19's VERIFY
+-- passes because nothing happened at all -- the false-negative this substrate
+-- must not manufacture. Only 19's check on an ALLOWED column catches it.
+DROP POLICY IF EXISTS "farms: farmer select own" ON public.farms;
+CREATE POLICY "farms: farmer select own" ON public.farms
+  FOR SELECT TO authenticated
+  USING (created_by = auth.uid() OR public.has_farm_membership(id));
+DROP POLICY IF EXISTS "farms: farmer insert own" ON public.farms;
+-- Deliberately NOT written in terms of has_operational_farmer_access(): that
+-- function belongs to migration 22, whose ROLLBACK drops it. A substrate policy
+-- depending on it makes that DROP fail with "other objects depend on it", so
+-- migration 22 would be untestable because of how its own substrate was written.
+CREATE POLICY "farms: farmer insert own" ON public.farms
+  FOR INSERT TO authenticated
+  WITH CHECK (created_by = auth.uid());
+GRANT SELECT, INSERT, UPDATE ON public.farms TO authenticated;
+
+-- -----------------------------------------------------------------------------
+-- The on_auth_user_created trigger. handle_new_user() was already shimmed as a
+-- function, but Supabase attaches it to auth.users with this trigger, and
+-- migration 21 exists precisely to change what that trigger does (a brand-new
+-- auth user must land as 'pending', never 'farmer'). Without the trigger the
+-- function is unreachable and 21's VERIFY A reports "no profile row was created
+-- for the new auth user" -- a true statement about the shim, not about 21.
+--
+-- NOTE the knock-on effect: any fixture that INSERTs into auth.users now gets a
+-- profiles row automatically, so a later "seed the profile" INSERT ... ON
+-- CONFLICT DO NOTHING silently no-ops instead of writing its intended role.
+-- -----------------------------------------------------------------------------
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- -----------------------------------------------------------------------------
+-- Supabase's broad default privileges on the public schema. These govern tables
+-- that do not exist yet, so nothing about the present catalog reveals them --
+-- which is exactly why migration 14 exists to narrow them. Without this the
+-- baseline has no pg_default_acl row at all, so 14's rollback (which GRANTs the
+-- broad set back) looks like it invented privileges from nowhere.
+-- -----------------------------------------------------------------------------
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT ALL ON TABLES TO anon, authenticated;
+
+-- ...and the same broad grants on the tables that already exist. Supabase ships
+-- the public schema this way; RLS, not table privileges, is what actually
+-- constrains anon and authenticated. Migration 15's ROLLBACK restores these
+-- grants, so without them here that correct rollback appears to invent
+-- privileges from nowhere on eighteen table/grantee pairs.
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+-- ...except on the audit log, which is append-only by construction (migrations 9
+-- and 11 guard it against UPDATE, DELETE and TRUNCATE). Migration 15's ROLLBACK
+-- restores exactly INSERT/SELECT/TRIGGER/TRUNCATE/REFERENCES/MAINTAIN and
+-- deliberately not DELETE or UPDATE, so a baseline holding those two makes a
+-- correct rollback look like it narrowed privileges it never widened.
+-- anon only: migration 15's ROLLBACK restores DELETE and UPDATE for
+-- `authenticated` but not for `anon`, so the pre-15 posture differed by role.
+REVOKE DELETE, UPDATE ON public.compliance_audit_log FROM anon;
