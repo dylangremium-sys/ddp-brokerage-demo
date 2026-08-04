@@ -71,6 +71,7 @@ import DDPMasterInventory from './pages/admin/DDPMasterInventory'
 import DDPBuyerPreview from './pages/admin/DDPBuyerPreview'
 import DDPMissingDocuments from './pages/admin/DDPMissingDocuments'
 import DDPCoaIntelligence from './pages/admin/DDPCoaIntelligence'
+import { AdminCOAReviewQueue } from './pages/admin/AdminCOAReviewQueue'
 import DDPRiskRegister from './pages/admin/DDPRiskRegister'
 import DDPComplianceWatchtower from './pages/admin/DDPComplianceWatchtower'
 import DDPOperationsDesk from './pages/admin/DDPOperationsDesk'
@@ -1423,6 +1424,10 @@ export default function App() {
 
           {page === 'ddp-coa-intelligence' && isAdminRole && (
             <DDPCoaIntelligence inventory={inventory} farms={farms} />
+          )}
+
+          {page === 'ddp-coa-review' && isAdminRole && (
+            <AdminCOAReviewQueue onBack={() => goTo('ddp-overview')} />
           )}
 
           {page === 'ddp-risk-register' && isAdminRole && (

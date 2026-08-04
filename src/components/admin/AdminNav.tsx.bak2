@@ -29,7 +29,6 @@ export default function AdminNav({ page, goTo, variant = 'sidebar' }: {
   const isWatchtower = page === 'ddp-compliance-watchtower'
   const isOpsDesk = page === 'ddp-operations-desk'
   const isEnquiries = page === 'ddp-access-requests'
-  const isCoaReview = page === 'ddp-coa-review'
 
   if (variant === 'topbar') {
     return (
@@ -50,11 +49,6 @@ export default function AdminNav({ page, goTo, variant = 'sidebar' }: {
           aria-current={isEnquiries ? 'page' : undefined}
           onClick={() => goTo('ddp-access-requests')}
         >Supplier Enquiries</button>
-        <button
-          className={`nav-btn ddp-nav-btn${isCoaReview ? ' nav-active' : ''}`}
-          aria-current={isCoaReview ? 'page' : undefined}
-          onClick={() => goTo('ddp-coa-review')}
-        >COA Review</button>
         <button
           className={`nav-btn ddp-nav-btn${isFarms ? ' nav-active' : ''}`}
           aria-current={isFarms ? 'page' : undefined}
@@ -92,11 +86,6 @@ export default function AdminNav({ page, goTo, variant = 'sidebar' }: {
         aria-current={isEnquiries ? 'page' : undefined}
         onClick={() => goTo('ddp-access-requests')}
       >Supplier Enquiries</button>
-      <button
-        className={`eo-nav-item${isCoaReview ? ' eo-nav-item--active' : ''}`}
-        aria-current={isCoaReview ? 'page' : undefined}
-        onClick={() => goTo('ddp-coa-review')}
-      >COA Review</button>
       <button
         className={`eo-nav-item${isFarms ? ' eo-nav-item--active' : ''}`}
         aria-current={isFarms ? 'page' : undefined}
