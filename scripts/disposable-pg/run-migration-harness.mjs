@@ -153,7 +153,9 @@ function tablePrivileges(cluster, table, role) {
  */
 function assertPostApply(cluster, fixture) {
   const pa = fixture.postApply;
-  if (!pa) return { ok: true, checks: [] };
+  if (!pa) {
+    return { ok: true, checks: [] };
+  }
   const problems = [];
 
   for (const c of pa.privileges || []) {

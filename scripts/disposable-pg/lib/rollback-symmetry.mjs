@@ -24,13 +24,23 @@ function endOfArrayLiteral(text, from) {
   for (let i = from; i < text.length; i++) {
     const ch = text[i];
     if (inStr) {
-      if (ch === "'" && text[i + 1] === "'") i++;
-      else if (ch === "'") inStr = false;
+      if (ch === "'" && text[i + 1] === "'") {
+        i++;
+      } else if (ch === "'") {
+        inStr = false;
+      }
       continue;
     }
-    if (ch === "'") inStr = true;
-    else if (ch === '[') depth++;
-    else if (ch === ']' && --depth === 0) return i + 1;
+    if (ch === "'") {
+      inStr = true;
+    } else if (ch === '[') {
+      depth++;
+    } else if (ch === ']') {
+      depth--;
+      if (depth === 0) {
+        return i + 1;
+      }
+    }
   }
   return -1;
 }
@@ -45,14 +55,25 @@ function splitTopLevel(body) {
     const ch = body[i];
     if (inStr) {
       cur += ch;
-      if (ch === "'" && body[i + 1] === "'") cur += body[++i];
-      else if (ch === "'") inStr = false;
+      if (ch === "'" && body[i + 1] === "'") {
+        i++;
+        cur += body[i];
+      } else if (ch === "'") {
+        inStr = false;
+      }
       continue;
     }
-    if (ch === "'") inStr = true;
-    else if (ch === '[' || ch === '(') depth++;
-    else if (ch === ']' || ch === ')') depth--;
-    else if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+    if (ch === "'") {
+      inStr = true;
+    } else if (ch === '[' || ch === '(') {
+      depth++;
+    } else if (ch === ']' || ch === ')') {
+      depth--;
+    } else if (ch === ',' && depth === 0) {
+      parts.push(cur);
+      cur = '';
+      continue;
+    }
     cur += ch;
   }
   parts.push(cur);
@@ -97,27 +118,35 @@ function splitTopLevel(body) {
  * Exported for test.
  */
 export function normaliseArrayLiterals(detail) {
-  if (!detail || !detail.includes(ARRAY_OPEN)) return detail;
+  if (!detail || !detail.includes(ARRAY_OPEN)) {
+    return detail;
+  }
 
   let out = '';
   let cursor = 0;
   for (;;) {
     const start = detail.indexOf(ARRAY_OPEN, cursor);
-    if (start < 0) return out + detail.slice(cursor);
+    if (start < 0) {
+      return out + detail.slice(cursor);
+    }
 
     const bodyStart = start + ARRAY_OPEN.length;
     out += detail.slice(cursor, bodyStart);
     cursor = bodyStart;
 
     // Only a membership test is sorted; anything else keeps its written order.
-    if (!ANY_ALL_BEFORE.test(detail.slice(0, start))) continue;
+    if (!ANY_ALL_BEFORE.test(detail.slice(0, start))) {
+      continue;
+    }
 
     // An unbalanced literal is emitted verbatim rather than guessed at.
     const end = endOfArrayLiteral(detail, bodyStart);
-    if (end < 0) return out + detail.slice(bodyStart);
+    if (end < 0) {
+      return out + detail.slice(bodyStart);
+    }
 
     const elements = splitTopLevel(detail.slice(bodyStart, end - 1));
-    out += elements.map((e) => e.trim()).sort().join(', ') + ']';
+    out += `${elements.map((e) => e.trim()).sort().join(', ')}]`;
     cursor = end;
   }
 }

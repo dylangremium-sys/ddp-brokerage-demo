@@ -111,7 +111,9 @@ export const KNOWN_ASYMMETRIES = {
  * @param {{ok: boolean, leaked?: string[], destroyed?: string[], redefined?: string[], details?: object}} symmetry
  */
 export function applyKnownAsymmetries(fixtureId, symmetry) {
-  if (symmetry.ok) return { ok: true, waived: [], remaining: [] };
+  if (symmetry.ok) {
+    return { ok: true, waived: [], remaining: [] };
+  }
 
   const entries = KNOWN_ASYMMETRIES[fixtureId] || [];
   const details = symmetry.details || {};
