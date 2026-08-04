@@ -411,16 +411,36 @@ describe('normaliseArrayLiterals', () => {
   });
 
   it('does not split on a comma inside a string literal', () => {
-    const a = "ARRAY['x,y'::text, 'a'::text]";
-    const b = "ARRAY['a'::text, 'x,y'::text]";
+    // Wrapped in `= ANY (...)` because only a membership test is normalised at
+    // all; a bare ARRAY literal keeps its written order by design.
+    const a = "CHECK (v = ANY (ARRAY['x,y'::text, 'a'::text]))";
+    const b = "CHECK (v = ANY (ARRAY['a'::text, 'x,y'::text]))";
     expect(normaliseArrayLiterals(a)).toBe(normaliseArrayLiterals(b));
     // Two elements, not three — a naive split would produce 'x' and 'y'.
-    expect(normaliseArrayLiterals(a).split(',').length).toBe(3); // 'x,y' contributes one comma
+    expect(normaliseArrayLiterals(a)).toContain("'x,y'::text");
   });
 
   it('normalises every ARRAY literal when a definition contains more than one', () => {
     const a = "CHECK (a = ANY (ARRAY['q'::text, 'p'::text]) AND b = ANY (ARRAY['z'::text, 'y'::text]))";
     const b = "CHECK (a = ANY (ARRAY['p'::text, 'q'::text]) AND b = ANY (ARRAY['y'::text, 'z'::text]))";
+    expect(normaliseArrayLiterals(a)).toBe(normaliseArrayLiterals(b));
+  });
+
+  it('does NOT sort an ordered ARRAY that is not a membership test', () => {
+    // The regression this narrowing exists to prevent. 50_AI_PROMPT_REGISTRY
+    // declares `allowed_models TEXT[] DEFAULT ARRAY['claude-opus-5',
+    // 'claude-sonnet-5']` — an ordered value, not a set. A rollback restoring it
+    // with the elements swapped has changed the default, and the first version of
+    // this normaliser reported the two as identical: a false negative introduced
+    // by the fix for a false positive.
+    const a = "text[] DEFAULT ARRAY['claude-opus-5'::text, 'claude-sonnet-5'::text]";
+    const b = "text[] DEFAULT ARRAY['claude-sonnet-5'::text, 'claude-opus-5'::text]";
+    expect(normaliseArrayLiterals(a)).not.toBe(normaliseArrayLiterals(b));
+  });
+
+  it('normalises ALL(...) as well as ANY(...)', () => {
+    const a = "CHECK (r <> ALL (ARRAY['a'::text, 'b'::text]))";
+    const b = "CHECK (r <> ALL (ARRAY['b'::text, 'a'::text]))";
     expect(normaliseArrayLiterals(a)).toBe(normaliseArrayLiterals(b));
   });
 

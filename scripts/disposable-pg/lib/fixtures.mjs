@@ -120,6 +120,42 @@ export function loadFixture(idOrPath) {
     return { label: st.label, source: 'file', file: st.file, path: filePath, sql };
   });
 
+  // `forwardOnly` and rollback stages are mutually exclusive, enforced here at
+  // load time rather than trusted at run time.
+  //
+  // forwardOnly makes the runner skip the rollback symmetry check, on the
+  // grounds that a migration shipping no rollback cannot be asked whether its
+  // rollback reversed anything. Set by mistake on a fixture that DOES have a
+  // rollback, it makes the runner execute that rollback, skip every check on the
+  // result, print "NO ROLLBACK EXISTS" — which is false — and pass. One stray
+  // flag would silently switch the gate off for that migration, which is
+  // precisely the failure this whole phase exists to remove; it was reproduced
+  // on fixture 44 before this guard existed.
+  //
+  // The reverse is also refused. A fixture with no rollback stages and no
+  // forwardOnly would compare a pre-apply baseline against a post-apply catalog
+  // and report everything the migration created as an asymmetry — a confusing
+  // red rather than a dangerous green, but still worth naming at load time.
+  const declaredForwardOnly = fixture.forwardOnly === true;
+  if (declaredForwardOnly && rollbackStages.length > 0) {
+    throw new FixtureError(
+      `fixture ${fixture.id} sets forwardOnly but declares ${rollbackStages.length} rollback stage(s). ` +
+        'forwardOnly SKIPS the rollback symmetry check, so this combination runs the rollback and then ' +
+        'proves nothing about it while reporting that no rollback exists. Remove one of the two.',
+    );
+  }
+  // Negative fixtures are exempt: one that expects to fail at apply never reaches
+  // the rollback or the symmetry check, so it has no rollback stages for an
+  // entirely legitimate reason and must not be forced to claim forwardOnly —
+  // which would additionally suppress a check it never gets to.
+  if (!declaredForwardOnly && rollbackStages.length === 0 && !fixture.expectFailure) {
+    throw new FixtureError(
+      `fixture ${fixture.id} declares no rollback stages and does not set forwardOnly. ` +
+        'A migration with no rollback must say so explicitly: the symmetry check would otherwise compare ' +
+        'a pre-apply baseline against a post-apply catalog and report the migration itself as asymmetric.',
+    );
+  }
+
   // Resolve destructive-guard seed SQL.
   let destructiveGuard = null;
   if (fixture.destructiveGuard) {

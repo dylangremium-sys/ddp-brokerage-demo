@@ -24,15 +24,30 @@
  * positives with it — so the noise is a threat to the real findings, not just an
  * annoyance.
  *
- * Sorting is deliberately the ONLY normalisation. Set membership is the one place
- * where element order is provably not semantic; anywhere else — a CASE, an
- * ordered comparison, a function's argument list — order carries meaning and
- * canonicalising it would hide real changes. Nested brackets inside an element
- * (a subscript, a nested ARRAY) are left alone rather than mis-split: the
- * matcher only handles flat literals, which is what enum-style CHECKs are.
+ * Sorting is deliberately the ONLY normalisation, and it applies ONLY to an
+ * ARRAY literal that is the right-hand operand of `= ANY (...)` or `= ALL (...)`.
+ * That is the one construct where element order is provably not semantic.
+ *
+ * An earlier version of this function sorted EVERY `ARRAY[...]` it found, which
+ * did not match this paragraph. Column defaults are the counter-example that
+ * makes the difference real rather than theoretical:
+ *
+ *   allowed_models TEXT[] DEFAULT ARRAY['claude-opus-5', 'claude-sonnet-5']
+ *                                                  -- 50_AI_PROMPT_REGISTRY_HARDENING.sql:39
+ *
+ * is an ordered value. A rollback that restored it with the elements swapped
+ * changed the default, and the broad version reported the two as identical —
+ * a false negative introduced by a fix for a false positive, which is the usual
+ * way noise-reduction turns into blindness.
+ *
+ * Nested brackets inside an element (a subscript, a nested ARRAY) are left alone
+ * rather than mis-split: the matcher only handles flat literals, which is what
+ * enum-style CHECKs are.
  *
  * Exported for test.
  */
+const ANY_ALL_BEFORE = /\b(?:ANY|ALL)\s*\(\s*$/i;
+
 export function normaliseArrayLiterals(detail) {
   if (!detail || !detail.includes('ARRAY[')) return detail;
 
@@ -42,6 +57,12 @@ export function normaliseArrayLiterals(detail) {
     const start = detail.indexOf('ARRAY[', i);
     if (start < 0) { out += detail.slice(i); break; }
     out += detail.slice(i, start + 'ARRAY['.length);
+
+    // Only a membership test gets sorted. Anything else keeps its written order.
+    if (!ANY_ALL_BEFORE.test(detail.slice(0, start))) {
+      i = start + 'ARRAY['.length;
+      continue;
+    }
 
     // Walk to the matching close bracket, tracking single-quoted strings so a
     // literal containing '[' or ']' cannot end the scan early.
