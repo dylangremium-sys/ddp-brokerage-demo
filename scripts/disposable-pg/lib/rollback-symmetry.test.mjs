@@ -176,12 +176,12 @@ describe('rollback-symmetry: privileges and RLS', () => {
   });
 
   it('privileges compare as a SET, so grant order never fails a correct rollback', () => {
-    const a = [
+    const left = [
       { kind: 'grant', obj: 'table public.farms -> anon', detail: 'INSERT,SELECT' },
       { kind: 'grant', obj: 'table public.farms -> authenticated', detail: 'SELECT' },
     ];
-    const b = [a[1], a[0]];
-    expect(assertCatalogSymmetry(a, b).ok).toBe(true);
+    const right = [left[1], left[0]];
+    expect(assertCatalogSymmetry(left, right).ok).toBe(true);
   });
 
   it('RLS left switched on is reported as a definition change, not a new object', () => {
@@ -386,9 +386,9 @@ describe('rollback-symmetry: object classes added for D7', () => {
 // ---------------------------------------------------------------------------
 describe('normaliseArrayLiterals', () => {
   it('treats a reordered membership set as identical (migration 39s profiles_role_check)', () => {
-    const a = "c CHECK ((role = ANY (ARRAY['pending'::text, 'farmer'::text, 'ddp_admin'::text])))";
-    const b = "c CHECK ((role = ANY (ARRAY['ddp_admin'::text, 'farmer'::text, 'pending'::text])))";
-    expect(normaliseArrayLiterals(a)).toBe(normaliseArrayLiterals(b));
+    const left = "c CHECK ((role = ANY (ARRAY['pending'::text, 'farmer'::text, 'ddp_admin'::text])))";
+    const right = "c CHECK ((role = ANY (ARRAY['ddp_admin'::text, 'farmer'::text, 'pending'::text])))";
+    expect(normaliseArrayLiterals(left)).toBe(normaliseArrayLiterals(right));
   });
 
   it('STILL detects an ADDED value — the false positive fix must not hide a real widening', () => {
@@ -404,8 +404,8 @@ describe('normaliseArrayLiterals', () => {
   });
 
   it('leaves definitions without an ARRAY literal untouched', () => {
-    const d = 'c CHECK ((quantity_kg > 0::numeric))';
-    expect(normaliseArrayLiterals(d)).toBe(d);
+    const definition = 'c CHECK ((quantity_kg > 0::numeric))';
+    expect(normaliseArrayLiterals(definition)).toBe(definition);
     expect(normaliseArrayLiterals('')).toBe('');
     expect(normaliseArrayLiterals(null)).toBe(null);
   });
@@ -413,17 +413,17 @@ describe('normaliseArrayLiterals', () => {
   it('does not split on a comma inside a string literal', () => {
     // Wrapped in `= ANY (...)` because only a membership test is normalised at
     // all; a bare ARRAY literal keeps its written order by design.
-    const a = "CHECK (v = ANY (ARRAY['x,y'::text, 'a'::text]))";
-    const b = "CHECK (v = ANY (ARRAY['a'::text, 'x,y'::text]))";
-    expect(normaliseArrayLiterals(a)).toBe(normaliseArrayLiterals(b));
+    const left = "CHECK (v = ANY (ARRAY['x,y'::text, 'a'::text]))";
+    const right = "CHECK (v = ANY (ARRAY['a'::text, 'x,y'::text]))";
+    expect(normaliseArrayLiterals(left)).toBe(normaliseArrayLiterals(right));
     // Two elements, not three — a naive split would produce 'x' and 'y'.
-    expect(normaliseArrayLiterals(a)).toContain("'x,y'::text");
+    expect(normaliseArrayLiterals(left)).toContain("'x,y'::text");
   });
 
   it('normalises every ARRAY literal when a definition contains more than one', () => {
-    const a = "CHECK (a = ANY (ARRAY['q'::text, 'p'::text]) AND b = ANY (ARRAY['z'::text, 'y'::text]))";
-    const b = "CHECK (a = ANY (ARRAY['p'::text, 'q'::text]) AND b = ANY (ARRAY['y'::text, 'z'::text]))";
-    expect(normaliseArrayLiterals(a)).toBe(normaliseArrayLiterals(b));
+    const left = "CHECK (a = ANY (ARRAY['q'::text, 'p'::text]) AND b = ANY (ARRAY['z'::text, 'y'::text]))";
+    const right = "CHECK (a = ANY (ARRAY['p'::text, 'q'::text]) AND b = ANY (ARRAY['y'::text, 'z'::text]))";
+    expect(normaliseArrayLiterals(left)).toBe(normaliseArrayLiterals(right));
   });
 
   it('does NOT sort an ordered ARRAY that is not a membership test', () => {
@@ -433,15 +433,15 @@ describe('normaliseArrayLiterals', () => {
     // with the elements swapped has changed the default, and the first version of
     // this normaliser reported the two as identical: a false negative introduced
     // by the fix for a false positive.
-    const a = "text[] DEFAULT ARRAY['claude-opus-5'::text, 'claude-sonnet-5'::text]";
-    const b = "text[] DEFAULT ARRAY['claude-sonnet-5'::text, 'claude-opus-5'::text]";
-    expect(normaliseArrayLiterals(a)).not.toBe(normaliseArrayLiterals(b));
+    const left = "text[] DEFAULT ARRAY['claude-opus-5'::text, 'claude-sonnet-5'::text]";
+    const right = "text[] DEFAULT ARRAY['claude-sonnet-5'::text, 'claude-opus-5'::text]";
+    expect(normaliseArrayLiterals(left)).not.toBe(normaliseArrayLiterals(right));
   });
 
   it('normalises ALL(...) as well as ANY(...)', () => {
-    const a = "CHECK (r <> ALL (ARRAY['a'::text, 'b'::text]))";
-    const b = "CHECK (r <> ALL (ARRAY['b'::text, 'a'::text]))";
-    expect(normaliseArrayLiterals(a)).toBe(normaliseArrayLiterals(b));
+    const left = "CHECK (r <> ALL (ARRAY['a'::text, 'b'::text]))";
+    const right = "CHECK (r <> ALL (ARRAY['b'::text, 'a'::text]))";
+    expect(normaliseArrayLiterals(left)).toBe(normaliseArrayLiterals(right));
   });
 
   it('an unbalanced bracket degrades to returning the input, never throws', () => {

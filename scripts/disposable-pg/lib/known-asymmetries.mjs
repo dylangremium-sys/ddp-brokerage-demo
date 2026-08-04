@@ -128,11 +128,11 @@ export function applyKnownAsymmetries(fixtureId, symmetry) {
 
   for (const key of reported) {
     const entry = entries.find((e) => e.object === key);
-    const d = details[key] || {};
+    const seen = details[key] || {};
     // A registered object is waived ONLY if the definitions still match what was
     // recorded. A constraint that drifted further since the waiver was written is
     // a new defect wearing an old finding's name, and must not inherit its pass.
-    if (entry && d.was === entry.was && d.now === entry.now) {
+    if (entry && seen.was === entry.was && seen.now === entry.now) {
       waived.push({ key, reason: entry.reason, raised: entry.raised });
     } else {
       remaining.push(key);

@@ -129,7 +129,7 @@ export class DisposableCluster {
   constructor({
     pgMajor = PG_MAJOR_OVERRIDE ?? DEFAULT_PG_MAJOR,
     superuser = 'postgres',
-    log = () => {},
+    log = () => undefined,
   } = {}) {
     this.pgMajor = pgMajor;
     this.superuser = superuser;
