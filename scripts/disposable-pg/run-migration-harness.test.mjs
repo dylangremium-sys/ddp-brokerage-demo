@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync } from 'node:fs';
 import { runFixture, computeFixtureCoverage, EXIT } from './run-migration-harness.mjs';
-import { resolvePgBin } from './lib/cluster.mjs';
+import { resolvePgBin, DEFAULT_PG_MAJOR, PG_MAJOR_OVERRIDE } from './lib/cluster.mjs';
 import { FIXTURES_DIR, REPO_ROOT } from './lib/fixtures.mjs';
 import { assertNoSecrets } from './lib/evidence.mjs';
 
+const EXPECTED_PG_MAJOR = PG_MAJOR_OVERRIDE ?? DEFAULT_PG_MAJOR;
+
 function pgAvailable() {
   try {
-    resolvePgBin({});
+    // Resolve against the pinned major, not the default — see cluster.test.mjs.
+    resolvePgBin({ pgMajor: EXPECTED_PG_MAJOR });
     return true;
   } catch {
     return false;
@@ -97,7 +100,13 @@ describe.skipIf(!HAS_PG)('run-migration-harness end-to-end (real PostgreSQL)', (
     expect(r.postRollback.ok).toBe(true);
     // Teardown clean, real PG version recorded, no secrets in evidence
     expect(r.teardown.ok).toBe(true);
-    expect(r.pgVersionActual).toMatch(/^18\./);
+    // Tracks whichever major the lane is pinned to, rather than naming one.
+    // This was hardcoded to /^18\./ and stayed that way when the harness moved to
+    // 17, so the required CI job failed on `expected '17.10 (Ubuntu ...)' to match
+    // /^18\./` while every fixture passed. It survived local verification because
+    // this whole describe block is skipped unless PG_BIN or HARNESS_REQUIRE_PG is
+    // set — a silent skip, in the run that was supposed to prove the version pin.
+    expect(r.pgVersionActual).toMatch(new RegExp(`^${EXPECTED_PG_MAJOR}\\.`));
     expect(() => assertNoSecrets(r)).not.toThrow();
   });
 

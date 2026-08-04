@@ -121,7 +121,16 @@ export function resolvePgBin({ env = process.env, pgMajor = DEFAULT_PG_MAJOR } =
 }
 
 export class DisposableCluster {
-  constructor({ pgMajor = DEFAULT_PG_MAJOR, superuser = 'postgres', log = () => {} } = {}) {
+  // The default honours an explicit HARNESS_PG_MAJOR, so "this run uses major X"
+  // means the same thing to every caller. Defaulting to DEFAULT_PG_MAJOR alone
+  // put the override only where runFixture applied it by hand: a direct
+  // `new DisposableCluster({})` on the PG-18 lane asked for 17, found 18, and
+  // refused on a major mismatch that the operator had explicitly asked for.
+  constructor({
+    pgMajor = PG_MAJOR_OVERRIDE ?? DEFAULT_PG_MAJOR,
+    superuser = 'postgres',
+    log = () => {},
+  } = {}) {
     this.pgMajor = pgMajor;
     this.superuser = superuser;
     this.log = log;
