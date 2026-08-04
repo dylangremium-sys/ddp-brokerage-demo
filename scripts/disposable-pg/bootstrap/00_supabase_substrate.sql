@@ -320,6 +320,207 @@ CREATE TABLE IF NOT EXISTS public.compliance_audit_log (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- =============================================================================
+-- RECONCILIATION AGAINST PRODUCTION
+-- =============================================================================
+-- Everything above this line was written a column at a time, each addition
+-- driven by one migration failing on one missing column. That process cannot
+-- converge: it only ever adds what some VERIFY happened to touch, so the shim
+-- drifts further from the real database with every migration that does NOT
+-- fail. Before this section, production's inventory_batches had 45 columns and
+-- this file declared 16.
+--
+-- Why the drift was invisible: three fixtures (4, 15, 22) apply
+-- SUPABASE_SCHEMA.sql and FARMER_MVP_MIGRATION.sql as explicit stages, which
+-- LOOKS like building the real base schema. Both files use
+-- `CREATE TABLE IF NOT EXISTS`, and this substrate has already created those
+-- tables by the time they run — so their fuller column lists are a silent
+-- no-op. Only their `ALTER TABLE ... ADD COLUMN` statements landed. Measured:
+-- that path produced 29 of production's 45 columns on inventory_batches, and
+-- the plain substrate produced 16.
+--
+-- What that costs: a fixture for a migration that alters a column this file
+-- does not declare passes VACUOUSLY — the migration matches nothing, changes
+-- nothing, and the gate reports green. That is the exact failure mode Phase 1
+-- exists to eliminate, reappearing one layer down.
+--
+-- Derivation (measured 2026-08-04, all reads read-only against production):
+--   P = production's public schema                              595 columns
+--   R = this substrate + every numbered forward migration        708 columns
+--   U = the unnumbered pre-numbering files on a bare prelude     172 columns
+--   P - R = 96 columns production has that no numbered migration creates.
+--           95 of them appear in U, so they predate numbering and belong HERE.
+--           1 of them appears in NO repository file at all — see the drift
+--           note on inventory_batches.asking_price_thb below.
+-- No column differs in TYPE between P and R. The only object this file
+-- declares that production does NOT have is ddp_scores.updated_at, kept
+-- because migration 19's field guard pins it; production's ddp_scores has no
+-- such column, which is a real finding recorded but not fixed here.
+--
+-- Added as ALTER rather than folded into the CREATE TABLE bodies above so the
+-- reconciliation stays one reviewable block that can be re-derived from
+-- production in a single query, instead of being scattered through prose
+-- comments that each justify a single column.
+-- -----------------------------------------------------------------------------
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now() NOT NULL;
+
+ALTER TABLE public.farms
+  ADD COLUMN IF NOT EXISTS legal_business_name text,
+  ADD COLUMN IF NOT EXISTS trading_name text,
+  ADD COLUMN IF NOT EXISTS province text,
+  ADD COLUMN IF NOT EXISTS district text,
+  ADD COLUMN IF NOT EXISTS gps_coordinates text,
+  ADD COLUMN IF NOT EXISTS primary_contact text,
+  ADD COLUMN IF NOT EXISTS mobile_number text,
+  ADD COLUMN IF NOT EXISTS email text,
+  ADD COLUMN IF NOT EXISTS completion_percentage integer;
+
+-- farm_profiles is the extreme case: production carries nine jsonb sections and
+-- this file declared the primary key and the foreign key alone.
+ALTER TABLE public.farm_profiles
+  ADD COLUMN IF NOT EXISTS business_info jsonb,
+  ADD COLUMN IF NOT EXISTS ownership jsonb,
+  ADD COLUMN IF NOT EXISTS licenses jsonb,
+  ADD COLUMN IF NOT EXISTS facility jsonb,
+  ADD COLUMN IF NOT EXISTS cultivation jsonb,
+  ADD COLUMN IF NOT EXISTS strains jsonb,
+  ADD COLUMN IF NOT EXISTS lab_testing jsonb,
+  ADD COLUMN IF NOT EXISTS export_readiness_data jsonb,
+  ADD COLUMN IF NOT EXISTS monthly_reporting jsonb,
+  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now() NOT NULL,
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now() NOT NULL;
+
+-- asking_price_thb is DRIFT, not substrate: it exists on production's
+-- inventory_batches and appears in no .sql, .ts or .tsx file in this
+-- repository, on any branch (checked 2026-08-04). It is declared here anyway
+-- because a substrate that omits it cannot host a fixture for the migration
+-- that has to migrate it — the currency work (D12) would alter a column the
+-- test world does not have, match nothing, and pass. Declaring it does not
+-- bless it; it makes it testable. Its origin is still unexplained.
+--
+-- harvest_date, cure_date, test_date and expiry_date are text on production,
+-- not date. That is D13, and the shapes here are deliberately production's
+-- wrong ones: a substrate that quietly declared them as date would make the
+-- migration that converts them a no-op under test.
+ALTER TABLE public.inventory_batches
+  ADD COLUMN IF NOT EXISTS strain text,
+  ADD COLUMN IF NOT EXISTS location text,
+  ADD COLUMN IF NOT EXISTS harvest_date text,
+  ADD COLUMN IF NOT EXISTS cure_date text,
+  ADD COLUMN IF NOT EXISTS batch_number text,
+  ADD COLUMN IF NOT EXISTS thc_percent numeric,
+  ADD COLUMN IF NOT EXISTS cbd_percent numeric,
+  ADD COLUMN IF NOT EXISTS moisture_percent numeric,
+  ADD COLUMN IF NOT EXISTS water_activity numeric,
+  ADD COLUMN IF NOT EXISTS quality_grade text,
+  ADD COLUMN IF NOT EXISTS price_per_kg numeric,
+  ADD COLUMN IF NOT EXISTS coa_file_name text,
+  ADD COLUMN IF NOT EXISTS photo_url text,
+  ADD COLUMN IF NOT EXISTS storage_conditions text,
+  ADD COLUMN IF NOT EXISTS product_type text,
+  ADD COLUMN IF NOT EXISTS unit text DEFAULT 'kg'::text NOT NULL,
+  ADD COLUMN IF NOT EXISTS minimum_order_kg numeric,
+  ADD COLUMN IF NOT EXISTS total_terpenes_pct numeric,
+  ADD COLUMN IF NOT EXISTS expiry_date text,
+  ADD COLUMN IF NOT EXISTS coa_available boolean DEFAULT false NOT NULL,
+  ADD COLUMN IF NOT EXISTS lab_name text,
+  ADD COLUMN IF NOT EXISTS report_number text,
+  ADD COLUMN IF NOT EXISTS sample_name text,
+  ADD COLUMN IF NOT EXISTS test_date text,
+  ADD COLUMN IF NOT EXISTS photo_urls jsonb,
+  ADD COLUMN IF NOT EXISTS farmer_notes text,
+  ADD COLUMN IF NOT EXISTS owner_notes text,
+  ADD COLUMN IF NOT EXISTS asking_price_thb numeric;
+
+ALTER TABLE public.ddp_scores
+  ADD COLUMN IF NOT EXISTS facility_quality integer,
+  ADD COLUMN IF NOT EXISTS product_quality integer,
+  ADD COLUMN IF NOT EXISTS export_readiness integer,
+  ADD COLUMN IF NOT EXISTS reliability integer,
+  ADD COLUMN IF NOT EXISTS communication integer,
+  ADD COLUMN IF NOT EXISTS scalability integer,
+  ADD COLUMN IF NOT EXISTS gmp_readiness integer,
+  ADD COLUMN IF NOT EXISTS partner_tier text,
+  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now() NOT NULL;
+
+ALTER TABLE public.market_price_benchmarks
+  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now() NOT NULL,
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now() NOT NULL;
+
+-- lab_name, report_number, sample_name and moisture_pct are the COA provenance
+-- fields of D11 — the ones the audits reported as "written by no code". They
+-- are production columns regardless of whether anything writes them, so the
+-- substrate must carry them; whether a writer exists is a separate question.
+ALTER TABLE public.farmer_documents
+  ADD COLUMN IF NOT EXISTS file_url text,
+  ADD COLUMN IF NOT EXISTS lab_name text,
+  ADD COLUMN IF NOT EXISTS report_number text,
+  ADD COLUMN IF NOT EXISTS sample_name text,
+  ADD COLUMN IF NOT EXISTS moisture_pct numeric,
+  ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
+
+ALTER TABLE public.documents
+  ADD COLUMN IF NOT EXISTS file_url text,
+  ADD COLUMN IF NOT EXISTS expiry_date text,
+  ADD COLUMN IF NOT EXISTS review_status text,
+  ADD COLUMN IF NOT EXISTS reviewer_note text,
+  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now() NOT NULL,
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now() NOT NULL;
+
+-- -----------------------------------------------------------------------------
+-- Three tables production has that this substrate declared nowhere.
+--
+-- Migrations 4, 15 and 22 each harden one of them, and each fails outright
+-- against the plain substrate ("relation public.risk_flags does not exist").
+-- Their fixtures survive only by applying SUPABASE_SCHEMA.sql /
+-- FARMER_MVP_MIGRATION.sql as stages — the same files whose column lists this
+-- substrate silently suppresses. Declaring the tables here removes that
+-- dependency and makes the three migrations applicable from the substrate
+-- alone.
+--
+-- Column shapes, defaults and constraints are production's, measured
+-- read-only; they agree exactly with the pre-numbering files that created them.
+-- RLS is deliberately NOT enabled on any of the three: enabling it is what
+-- migrations 4 and 22 DO, and a substrate that arrived with it already on
+-- would make their forward step a no-op and their rollback asymmetric.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.risk_flags (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
+  flag_type text,
+  label text,
+  severity text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.farmer_photos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
+  inventory_batch_id uuid REFERENCES public.inventory_batches(id) ON DELETE CASCADE,
+  photo_type text NOT NULL DEFAULT 'product'
+    CHECK (photo_type IN ('product', 'packaging', 'batch_label', 'facility', 'other')),
+  file_url text NOT NULL,
+  caption text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.farmer_review_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  inventory_batch_id uuid REFERENCES public.inventory_batches(id) ON DELETE CASCADE,
+  farm_id uuid REFERENCES public.farms(id) ON DELETE CASCADE,
+  request_type text NOT NULL
+    CHECK (request_type IN ('coa', 'photo', 'quantity', 'price', 'batch_number', 'licence', 'general')),
+  message text NOT NULL,
+  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+  created_by uuid REFERENCES auth.users(id),
+  resolved_at timestamptz,
+  product_name text,
+  farm_name text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- -----------------------------------------------------------------------------
 -- Authorization helper functions earlier migrations create. These approximate
 -- the real predicates closely enough that policies/triggers evaluate identically;
