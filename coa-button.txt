@@ -1,5 +1,0 @@
-        <button
-          className={`nav-btn ddp-nav-btn${isCoaReview ? ' nav-active' : ''}`}
-          aria-current={isCoaReview ? 'page' : undefined}
-          onClick={() => goTo('ddp-coa-review')}
-        >COA Review</button>
