@@ -1,0 +1,78 @@
+{
+  "id": "26_watchtower_source_governance",
+  "title": "Migration 26 \u2014 watchtower source governance",
+  "description": "Applies migration 9, then 25, then 26, and rolls 26 back; baseline is the state after 25. 26 governs which sources the Compliance Watchtower will accept a legal update from, and scores VERIFY sections A through F. This fixture could not exist until the substrate carried compliance_rules.source_legal_update_id: migration 9 declares that column, but creates the table with CREATE TABLE IF NOT EXISTS, so against a substrate that already has compliance_rules the entire statement is skipped and the column never appears.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-9",
+      "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql"
+    },
+    {
+      "label": "HARDENING-25",
+      "file": "25_WATCHTOWER_INGESTION_PROVENANCE_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-26",
+      "file": "26_WATCHTOWER_SOURCE_GOVERNANCE_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "26_WATCHTOWER_SOURCE_GOVERNANCE_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F"
+    ],
+    "expectedPassCount": 6,
+    "readOnly": true
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "26_WATCHTOWER_SOURCE_GOVERNANCE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.users"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [],
+      "functions": [
+        "public.guard_rule_source_authority",
+        "public.source_can_act_as_authority",
+        "public.regulatory_source_tier"
+      ],
+      "policies": []
+    },
+    "intact": {
+      "tables": [
+        "public.profiles",
+        "public.farms"
+      ],
+      "functions": [
+        "public.is_ddp_admin"
+      ],
+      "authUsersMinRows": 0
+    }
+  }
+}

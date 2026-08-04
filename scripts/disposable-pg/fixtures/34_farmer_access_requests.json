@@ -1,0 +1,71 @@
+{
+  "id": "34_farmer_access_requests",
+  "title": "Migration 34 \u2014 farmer access requests",
+  "description": "Applies migration 34 standalone and rolls it back, scoring VERIFY sections A-F. 34 fixes a defect observed on the live site: the public supplier-signup form wrote the applicant's details to their own browser storage and routed them to a dashboard requiring a session the form never created, so nothing reached the business. It introduces a real intake table. The rollback therefore removes a table that in production would hold genuine applicant rows -- the symmetry check confirms it removes the structure, not that anyone should run it.",
+  "pgMajor": 18,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-34",
+      "file": "34_FARMER_ACCESS_REQUESTS_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "34_FARMER_ACCESS_REQUESTS_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F"
+    ],
+    "expectedPassCount": 6,
+    "readOnly": true
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "34_FARMER_ACCESS_REQUESTS_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.farmer_access_requests"
+      ],
+      "functions": [
+        "public.stamp_farmer_access_request_review"
+      ],
+      "policies": []
+    },
+    "intact": {
+      "tables": [
+        "public.profiles",
+        "public.farms"
+      ],
+      "functions": [
+        "public.is_ddp_admin"
+      ],
+      "authUsersMinRows": 0
+    }
+  }
+}
