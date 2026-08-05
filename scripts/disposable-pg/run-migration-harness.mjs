@@ -120,6 +120,12 @@ function bucketPresent(cluster, id) {
 function countRows(cluster, table) {
   return Number(scalar(cluster, `SELECT count(*) FROM ${table}`));
 }
+function constraintPresent(cluster, table, name) {
+  const esc = name.replace(/'/g, "''");
+  return Number(scalar(cluster,
+    `SELECT count(*) FROM pg_constraint WHERE conrelid = '${table}'::regclass AND conname = '${esc}'`,
+  )) > 0;
+}
 
 /**
  * Effective privileges a role holds on a table, as a sorted array.
@@ -173,6 +179,34 @@ function assertPostApply(cluster, fixture) {
           `${c.role} lost ${p} on ${c.table}, which the migration was not supposed to remove ` +
           `(holds: ${held.join(',') || 'none'})`);
       }
+    }
+  }
+
+  // Constraints and indexes are the OTHER way a forward migration matches
+  // nothing and still produces a symmetric run. A migration that only ADDs a
+  // CHECK or a UNIQUE INDEX declares no removed table and no removed function,
+  // so the vacuity guard below (`declaresRemovedObjects`) does not fire on it
+  // either — nothing else in the harness would notice that it did nothing.
+  for (const c of pa.constraints || []) {
+    for (const name of c.present || []) {
+      if (!constraintPresent(cluster, c.table, name)) {
+        problems.push(`constraint ${name} is ABSENT from ${c.table} after the migration applied`);
+      }
+    }
+    for (const name of c.absent || []) {
+      if (constraintPresent(cluster, c.table, name)) {
+        problems.push(`constraint ${name} is still present on ${c.table} after the migration applied`);
+      }
+    }
+  }
+  for (const name of pa.indexes?.present || []) {
+    if (!regclassPresent(cluster, name)) {
+      problems.push(`index ${name} is ABSENT after the migration applied`);
+    }
+  }
+  for (const name of pa.indexes?.absent || []) {
+    if (regclassPresent(cluster, name)) {
+      problems.push(`index ${name} is still present after the migration applied`);
     }
   }
   return { ok: problems.length === 0, problems };
@@ -343,7 +377,17 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
         throw new PhaseError(EXIT.VERIFY,
           `post-apply assertions failed — the migration did not take effect:\n  - ${pa.problems.join('\n  - ')}`);
       }
-      phaseLine(true, `post-apply assertions hold (${(fixture.postApply.privileges || []).length} privilege check(s))`);
+      // Count what was actually checked, not just the privileges — a line that
+      // says "0 privilege check(s)" next to a tick reads as nothing having been
+      // asserted when constraints or indexes were.
+      const paCounts = [
+        [(fixture.postApply.privileges || []).length, 'privilege'],
+        [(fixture.postApply.constraints || []).reduce(
+          (n, c) => n + (c.present || []).length + (c.absent || []).length, 0), 'constraint'],
+        [(fixture.postApply.indexes?.present || []).length
+          + (fixture.postApply.indexes?.absent || []).length, 'index'],
+      ].filter(([n]) => n > 0).map(([n, what]) => `${n} ${what} check(s)`);
+      phaseLine(true, `post-apply assertions hold (${paCounts.join(', ') || 'nothing declared'})`);
     }
     if (expectFailure && expectFailure.phase === 'postApply') {
       throw new PhaseError(EXIT.UNEXPECTED_PASS,
