@@ -1,0 +1,116 @@
+name: Storage Backup
+
+# Supabase backs up the DATABASE daily. It does not back up Storage — its own
+# Backups page says so: "Storage objects are not included. Restoring an old
+# backup does not restore objects that have been deleted since then."
+#
+# So the lab certificates, cultivation licences and farm photos — the evidence
+# this platform exists to sell — have no safety net at all. This job is it
+# (defect D4).
+#
+# The clock lives here because the database cannot hold it: the project has no
+# pg_cron, so there is no in-database scheduler to hang this off.
+#
+# WHAT THIS JOB IS NOT: off-site storage in the strong sense. It writes an
+# encrypted artifact to GitHub, which survives losing the Supabase project and
+# is the point — but artifacts expire (see retention-days) and are not a
+# substitute for a bucket in a third provider once the object count is material.
+# Uploading to S3/R2 is a small change to the last step when you are ready.
+
+on:
+  schedule:
+    # 03:17 UTC daily — a few hours after Supabase's own ~00:58 database backup,
+    # so the two are close enough to reason about together. Deliberately not on
+    # the hour: GitHub's scheduler is busiest then and delays runs.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      allow_empty:
+        description: 'Record a backup even if the buckets are empty'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storage-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Encrypted storage snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies (deterministic)
+        run: npm ci
+
+      # The previous run's manifest, so the plausibility check has something to
+      # compare against. Without it a backup that captured nothing looks exactly
+      # like a backup of an empty bucket, and both exit 0.
+      - name: Fetch previous manifest
+        id: prev
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: storage-manifest-latest
+          path: previous
+
+      - name: Take encrypted snapshot
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          node scripts/storage-backup/backup.mjs \
+            --out "storage-$(date -u +%Y%m%d).ddpbak" \
+            --previous previous/storage-latest.manifest.json \
+            ${{ inputs.allow_empty && '--allow-empty' || '' }}
+
+      # Independent restore of the archive that was just written, by the restore
+      # path an operator would actually use. backup.mjs already round-trips
+      # in-process; this re-runs it from disk, through the CLI, so the thing
+      # exercised daily is the thing you would reach for in an incident.
+      # "A backup that has never been restored is not a backup."
+      - name: Restore the archive and verify every object
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          node scripts/storage-backup/restore.mjs "storage-$(date -u +%Y%m%d).ddpbak" --verify
+
+      - name: Upload encrypted archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-backup-${{ github.run_id }}
+          path: storage-*.ddpbak
+          retention-days: 90
+          if-no-files-found: error
+
+      # Kept under a stable name so tomorrow's run can compare against it.
+      # The manifest holds paths, sizes and hashes — no file contents.
+      # Copied to a STABLE filename before upload. The archive is dated, but the
+      # baseline has to be findable by tomorrow's run under a name it can predict
+      # — uploading the dated manifest would mean --previous never resolves and
+      # the plausibility check silently degrades to "first run" every day.
+      - name: Upload manifest as the new baseline
+        run: cp storage-*.ddpbak.manifest.json storage-latest.manifest.json
+
+      - name: Store baseline manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-manifest-latest
+          path: storage-latest.manifest.json
+          retention-days: 90
+          overwrite: true
+          if-no-files-found: error
