@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DisposableCluster, resolvePgBin } from './lib/cluster.mjs';
@@ -96,8 +96,20 @@ describe('production shape manifest', () => {
 describe.skipIf(!HAS_PG)('substrate vs production shape (real PostgreSQL)', () => {
   let columnsByTable;
 
-  function boot() {
-    if (columnsByTable) return columnsByTable;
+  // Booted ONCE in beforeAll, with an explicit timeout, rather than lazily on
+  // first use.
+  //
+  // Lazily was wrong twice over. It made whichever test ran first carry the cost
+  // of an initdb, a server start and the whole substrate — and that test
+  // inherited vitest's 5-second default, because this file was the only one
+  // under scripts/disposable-pg/ that set no timeout at all (its siblings use
+  // 60000-120000). Running alone it passed in ~1.5s; running with the rest of
+  // the suite it timed out roughly one run in two.
+  //
+  // A flaky gate is worse than a missing one. The repo's own note on false
+  // positives applies exactly: a gate that cries wolf is a gate someone
+  // eventually switches off, taking the true positives with it.
+  beforeAll(() => {
     const cluster = new DisposableCluster({});
     try {
       cluster.create();
@@ -118,21 +130,20 @@ describe.skipIf(!HAS_PG)('substrate vs production shape (real PostgreSQL)', () =
         (columnsByTable[table] ??= []).push(col);
       }
       for (const cols of Object.values(columnsByTable)) cols.sort();
-      return columnsByTable;
     } finally {
       cluster.teardown();
     }
-  }
+  }, 120000);
 
   it('declares exactly the tables the manifest says it declares', () => {
-    expect(Object.keys(boot()).sort()).toEqual([...manifest.substrateDeclaredTables].sort());
+    expect(Object.keys(columnsByTable).sort()).toEqual([...manifest.substrateDeclaredTables].sort());
   });
 
   // One case per table rather than one big assertion, so a failure names the
   // table instead of dumping fifteen tables' worth of columns.
   for (const table of manifest.substrateDeclaredTables) {
     it(`public.${table} carries production's shape`, () => {
-      expect(boot()[table] ?? []).toEqual(expectedFor(table));
+      expect(columnsByTable[table] ?? []).toEqual(expectedFor(table));
     });
   }
 
