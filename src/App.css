@@ -4,12 +4,12 @@
   --bg-card:     #12213A;
   --bg-elevated: #1B2C47;
   --bg-deep:     #081420;
-  --accent:        #64748B;
-  --accent-strong:  #334155;
+  --accent:        #C6A24C;
+  --accent-strong:  #A8883A;
   --jade:        #114232;
   --text:        #EDF1F5;
-  --text-muted:  #93A1B2;
-  --border:      #29394D;
+  --text-muted:  #8FA2B5;
+  --border:      #2A3C52;
   --success:     #2E8B67;
   --warning:     #B8782E;
   --error:       #991B1B;
@@ -414,7 +414,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .btn-primary:hover {
   background: var(--accent-strong);
-  box-shadow: 0 2px 10px rgba(100,116,139,0.25);
+  box-shadow: 0 2px 10px rgba(198,162,76,0.28);
 }
 
 .btn-lg {
