@@ -54,7 +54,7 @@ interface Props {
 }
 
 export default function FarmerMobileNav({ lang, page, goTo, openRequestsCount = 0 }: Props) {
-  const t = T[lang]
+  const copy = T[lang]
   const isTh = lang === 'th'
 
   const items: { page: Page; label: string; icon: React.ReactNode; badge?: number }[] = [
@@ -70,7 +70,7 @@ export default function FarmerMobileNav({ lang, page, goTo, openRequestsCount = 
     },
     {
       page: 'farmer-my-stock',
-      label: t.myStock,
+      label: copy.myStock,
       icon: <IconBox />,
     },
     {

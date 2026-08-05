@@ -46,15 +46,17 @@ export default function FarmerQRCode({ url, size = 240 }: Props) {
         if (!cancelled) setError(true)
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [targetUrl, size])
 
   function handleDownload() {
     if (!dataUrl) return
-    const a = document.createElement('a')
-    a.href = dataUrl
-    a.download = 'farmer-portal-qr.png'
-    a.click()
+    const link = document.createElement('a')
+    link.href = dataUrl
+    link.download = 'farmer-portal-qr.png'
+    link.click()
   }
 
   return (
