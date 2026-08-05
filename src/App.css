@@ -28,7 +28,7 @@ button, input, select, textarea { border-radius: var(--radius-md); font-family: 
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Inter', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 15px;
   line-height: 1.5;
   color: var(--text);
@@ -5297,4 +5297,105 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   .quick-action-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THAI TYPOGRAPHY OVERRIDES  :lang(th)
+   Sarabun is loaded from Google Fonts. The HTML lang attribute is set
+   dynamically by App.tsx so these selectors activate when the user switches
+   to Thai.
+   ─────────────────────────────────────────────────────────────────────────
+   Key rules:
+   • letter-spacing must be 0 — Thai glyph stacking breaks with any spacing
+   • line-height needs room for above/below-baseline vowels and tone marks
+   • Minimum 14px for anything a farmer reads — stacked marks at ≤12px
+     lose their distinguishing detail on a phone screen
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Base: switch to Sarabun, reset letter-spacing, open up line-height */
+:lang(th) body,
+:lang(th) {
+  font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: 0;
+  line-height: 1.65;
+}
+
+/* Any element with explicit letter-spacing that may show Thai text */
+:lang(th) .page-eyebrow,
+:lang(th) .page-title,
+:lang(th) .page-desc,
+:lang(th) .nav-btn,
+:lang(th) .nav-group-label,
+:lang(th) .btn,
+:lang(th) .badge,
+:lang(th) .status-badge,
+:lang(th) .section-label,
+:lang(th) .form-section-title,
+:lang(th) .field,
+:lang(th) .field-label,
+:lang(th) .field-hint,
+:lang(th) .tab-btn,
+:lang(th) .quick-action-label,
+:lang(th) .quick-action-desc,
+:lang(th) .dashboard-welcome-name,
+:lang(th) .dashboard-completion-hint,
+:lang(th) .fmn-label,
+:lang(th) td,
+:lang(th) th {
+  letter-spacing: 0;
+}
+
+/* Bump minimum size — Thai stacked marks need room */
+:lang(th) .field-hint,
+:lang(th) .page-eyebrow,
+:lang(th) .nav-group-label,
+:lang(th) .fmn-label,
+:lang(th) .quick-action-desc,
+:lang(th) .dashboard-completion-hint {
+  font-size: 13px;
+}
+
+:lang(th) .nav-btn {
+  font-size: 13px;
+}
+
+/* Tables: Thai above-line vowels clip at tight line-heights */
+:lang(th) td,
+:lang(th) th {
+  line-height: 1.7;
+}
+
+:lang(th) .eo-table,
+:lang(th) .eo-farmer table {
+  line-height: 1.7;
+}
+
+/* Form labels and hints in farmer portal */
+:lang(th) .eo-farmer .field-label {
+  font-size: 14px;
+}
+
+:lang(th) .eo-farmer .field-hint {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* eo-farmer inputs already 16px — fine; keep that */
+
+/* Eyebrow / uppercase labels: Thai has no uppercase, so drop the transform
+   and letter-spacing so it doesn't render as stretched Thai characters */
+:lang(th) .page-eyebrow,
+:lang(th) .section-eyebrow,
+:lang(th) .nav-group-label,
+:lang(th) .dashboard-completion-label,
+:lang(th) .filter-section-title {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+}
+
+/* Bottom mobile nav labels */
+:lang(th) .fmn-label {
+  font-size: 10px;
+  line-height: 1.3;
 }

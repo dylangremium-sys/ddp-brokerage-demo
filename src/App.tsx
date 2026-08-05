@@ -644,6 +644,12 @@ export default function App() {
     return () => document.body.classList.remove('public-auth-page')
   }, [page])
 
+  // Sync the HTML lang attribute so CSS :lang(th) selectors work and
+  // screen readers announce the correct language.
+  useEffect(() => {
+    document.documentElement.lang = lang
+  }, [lang])
+
   function goTo(p: Page) {
     // The decision itself is pure and lives in lib/navigationGuard.ts; this
     // function keeps only the side effects.
