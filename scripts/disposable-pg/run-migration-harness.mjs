@@ -33,7 +33,25 @@ import { applyKnownAsymmetries } from './lib/known-asymmetries.mjs';
 
 export const EXIT = Object.freeze({
   OK: 0, APPLY: 10, VERIFY: 20, ROLLBACK: 30, GUARD: 40, UNEXPECTED_PASS: 41, ENV: 50, TEARDOWN: 60,
+  COVERAGE: 70,
 });
+
+/**
+ * Migrations allowed to ship without a fixture, each with the reason why.
+ *
+ * EMPTY, AND MEANT TO STAY THAT WAY. It exists so that waiving is a code change
+ * somebody has to justify in review, rather than a flag. It is deliberately NOT
+ * an environment variable: a waiver CI could set is the hole this gate closes,
+ * re-opened somewhere harder to see.
+ *
+ * A waiver naming a migration that is covered, or that does not exist, is itself
+ * a failure — see `staleWaivers`. A waiver that matched nothing is
+ * indistinguishable from a waiver doing its job, which is the same trap as a
+ * `DROP ... IF EXISTS` that matched nothing because the name was misspelled.
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+export const COVERAGE_WAIVERS = Object.freeze({});
 
 class PhaseError extends Error {
   constructor(code, message) {
@@ -58,10 +76,18 @@ class PhaseError extends Error {
  * down is not a measurement, and the only way to keep proving it can go down is
  * to make proving it cheap.
  *
+ * Printing the shortfall was never enough on its own. Until this function's
+ * `blocking` list was wired to the exit code, a run could print "NO FIXTURE —
+ * this run proves nothing about: 57" and then print ALL FIXTURES GREEN and exit
+ * 0, past a REQUIRED status check. The number could fall; falling simply cost
+ * nothing, which is the same defect as a number that cannot fall wearing a
+ * different hat.
+ *
  * @param {string[]} repoFiles   filenames in the repo root (not paths)
  * @param {string[]} fixtureIds  fixture ids being run, e.g. '24_evidence'
+ * @param {Record<string,string>} waivers  migration number -> written reason
  */
-export function computeFixtureCoverage(repoFiles, fixtureIds) {
+export function computeFixtureCoverage(repoFiles, fixtureIds, waivers = {}) {
   const covered = new Set(
     fixtureIds.map((id) => (id.match(/^(\d+)_/) || [])[1]).filter(Boolean),
   );
@@ -78,11 +104,27 @@ export function computeFixtureCoverage(repoFiles, fixtureIds) {
   const uncoveredWithRollback = uncovered.filter((n) =>
     repoFiles.some((f) => new RegExp(`^${n}_.*_ROLLBACK\\.sql$`).test(f)));
 
+  // Waived migrations are still reported as uncovered — the run genuinely did
+  // not exercise them — but they do not block. `blocking` is what the exit code
+  // is derived from, so the difference between "known and accepted" and "nobody
+  // noticed" lives in the repository rather than in somebody's memory.
+  const waivedSet = new Set(Object.keys(waivers));
+  const waived = uncovered.filter((n) => waivedSet.has(n));
+  const blocking = uncovered.filter((n) => !waivedSet.has(n));
+  // A waiver for a migration that IS covered, or that no longer exists, has
+  // stopped describing anything. Left unchecked these accumulate until the
+  // allowlist is a list of names nobody can account for.
+  const staleWaivers = [...waivedSet].filter((n) => !uncovered.includes(n)).sort(
+    (a, b) => Number(a) - Number(b));
+
   return {
     total: onDisk.length,
     coveredCount: onDisk.length - uncovered.length,
     uncovered,
     uncoveredWithRollback,
+    waived,
+    blocking,
+    staleWaivers,
   };
 }
 
@@ -699,9 +741,13 @@ async function main() {
   // The denominator is now every `<number>_*.sql` in the repo root, which is the
   // set an operator means by "the migrations". The ratio it prints can fall, and
   // that is the entire point: a number that cannot go down measures nothing.
+  //
+  // Coverage is only meaningful for a full run: a deliberate single-fixture run
+  // is not claiming to have covered the set, so it is not held to it.
+  let coverageFailed = false;
   if (opts.all) {
     const { readdirSync } = await import('node:fs');
-    const cov = computeFixtureCoverage(readdirSync(REPO_ROOT), ids);
+    const cov = computeFixtureCoverage(readdirSync(REPO_ROOT), ids, COVERAGE_WAIVERS);
     process.stdout.write(
       `Fixture coverage: ${cov.coveredCount}/${cov.total} numbered migrations have a fixture.\n`,
     );
@@ -716,6 +762,24 @@ async function main() {
           `  OF THOSE, these ship a ROLLBACK that has never been executed: ${cov.uncoveredWithRollback.join(', ')}\n`,
         );
       }
+      for (const n of cov.waived) {
+        process.stdout.write(`  WAIVED — ${n}: ${COVERAGE_WAIVERS[n]}\n`);
+      }
+    }
+    if (cov.blocking.length) {
+      coverageFailed = true;
+      process.stdout.write(
+        `  COVERAGE FAILURE: migration(s) ${cov.blocking.join(', ')} ship no fixture. `
+        + 'This run cannot vouch for them, so it does not pass. Write a fixture, or add an '
+        + 'entry with a reason to COVERAGE_WAIVERS in run-migration-harness.mjs.\n',
+      );
+    }
+    if (cov.staleWaivers.length) {
+      coverageFailed = true;
+      process.stdout.write(
+        `  STALE WAIVER: ${cov.staleWaivers.join(', ')} — waived, but now covered or no longer `
+        + 'present. A waiver that matches nothing looks exactly like one doing its job. Remove it.\n',
+      );
     }
   }
   let worst = EXIT.OK;
@@ -724,7 +788,21 @@ async function main() {
     process.stdout.write(`  = ${id}: ${ev.result.outcome} (exit ${code})\n`);
     if (code !== EXIT.OK) worst = code;
   }
-  process.stdout.write(worst === EXIT.OK ? '\nALL FIXTURES GREEN\n' : `\nHARNESS FAILED (exit ${worst})\n`);
+  // A fixture failure is the more specific diagnosis, so it keeps the exit code;
+  // coverage only decides the outcome when every fixture that DID run passed.
+  // What must never happen is the two combining into "ALL FIXTURES GREEN" — true
+  // of the fixtures that ran, and read by everyone as true of the migrations.
+  if (worst === EXIT.OK && coverageFailed) worst = EXIT.COVERAGE;
+  if (worst === EXIT.OK) {
+    process.stdout.write('\nALL FIXTURES GREEN\n');
+  } else if (worst === EXIT.COVERAGE) {
+    process.stdout.write(
+      '\nHARNESS FAILED (exit 70) — every fixture that ran passed, but the migration set is not '
+      + 'fully covered. See COVERAGE FAILURE above.\n',
+    );
+  } else {
+    process.stdout.write(`\nHARNESS FAILED (exit ${worst})\n`);
+  }
   process.exit(worst);
 }
 

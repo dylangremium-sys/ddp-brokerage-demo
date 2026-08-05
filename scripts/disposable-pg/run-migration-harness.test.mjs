@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync } from 'node:fs';
-import { runFixture, computeFixtureCoverage, EXIT } from './run-migration-harness.mjs';
+import { runFixture, computeFixtureCoverage, COVERAGE_WAIVERS, EXIT } from './run-migration-harness.mjs';
 import { resolvePgBin, DEFAULT_PG_MAJOR, PG_MAJOR_OVERRIDE } from './lib/cluster.mjs';
 import { FIXTURES_DIR, REPO_ROOT } from './lib/fixtures.mjs';
 import { assertNoSecrets } from './lib/evidence.mjs';
@@ -76,6 +76,74 @@ describe('fixture coverage denominator', () => {
     expect(after.total).toBe(before.total + 1);
     expect(after.coveredCount).toBe(before.coveredCount);
     expect(after.uncovered).toContain('99');
+  });
+});
+
+// The denominator above was only ever half the job. It measured the shortfall
+// correctly and then let the run pass anyway: `Fixture coverage: 46/47`, `NO
+// FIXTURE — this run proves nothing about: 57`, `ALL FIXTURES GREEN`, exit 0 —
+// measured on 8699ded, through a REQUIRED status check. These tests are about
+// the shortfall COSTING something.
+describe('fixture coverage is enforced, not merely reported', () => {
+  const repoFiles = readdirSync(REPO_ROOT);
+  const fixtureIds = readdirSync(FIXTURES_DIR)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.replace(/\.json$/, ''));
+
+  it('the repository as it stands blocks nothing', () => {
+    const cov = computeFixtureCoverage(repoFiles, fixtureIds, COVERAGE_WAIVERS);
+    expect(cov.blocking).toEqual([]);
+    expect(cov.staleWaivers).toEqual([]);
+  });
+
+  it('the waiver list is empty, so nothing is exempt by default', () => {
+    // Not a style preference. Every entry here is a migration the gate has been
+    // told not to vouch for, and the list is the only place that is written down.
+    expect(Object.keys(COVERAGE_WAIVERS)).toEqual([]);
+  });
+
+  // Computed, never hardcoded. The first draft of these tests used '57' because
+  // 57 was the next free number that day; migration 57 landed hours later WITH a
+  // fixture, so the probe silently stopped being uncovered and two falsifications
+  // failed. A test that reserves a migration number has an expiry date on it.
+  const FREE = String(Math.max(
+    0, ...repoFiles.map((f) => Number((f.match(/^(\d+)_/) || [])[1])).filter(Number.isFinite),
+  ) + 1000);
+
+  it('the probe number really is unused, or the falsifications below prove nothing', () => {
+    expect(repoFiles.some((f) => f.startsWith(`${FREE}_`))).toBe(false);
+    expect(fixtureIds.some((id) => id.startsWith(`${FREE}_`))).toBe(false);
+  });
+
+  it('FALSIFICATION: an unfixtured migration BLOCKS', () => {
+    const cov = computeFixtureCoverage(
+      [...repoFiles, `${FREE}_UNFIXTURED_HARDENING.sql`], fixtureIds, COVERAGE_WAIVERS,
+    );
+    expect(cov.blocking).toContain(FREE);
+  });
+
+  it('FALSIFICATION: losing an existing fixture BLOCKS', () => {
+    const cov = computeFixtureCoverage(
+      repoFiles, fixtureIds.filter((id) => !id.startsWith('44_')), COVERAGE_WAIVERS,
+    );
+    expect(cov.blocking).toContain('44');
+  });
+
+  it('a waived migration is still reported uncovered, but does not block', () => {
+    const cov = computeFixtureCoverage(
+      [...repoFiles, `${FREE}_UNFIXTURED_HARDENING.sql`], fixtureIds,
+      { [FREE]: 'covered by the staging apply runbook, not by a fixture' },
+    );
+    expect(cov.uncovered).toContain(FREE);   // the run still did not exercise it
+    expect(cov.waived).toContain(FREE);
+    expect(cov.blocking).not.toContain(FREE); // ...but it was an accepted decision
+  });
+
+  it('a waiver that matches nothing is itself a failure', () => {
+    // Same trap as a `DROP ... IF EXISTS` that matched nothing because the name
+    // was misspelled: indistinguishable from success unless something checks.
+    const cov = computeFixtureCoverage(repoFiles, fixtureIds, { 44: 'stale — 44 has a fixture' });
+    expect(cov.staleWaivers).toContain('44');
   });
 });
 
