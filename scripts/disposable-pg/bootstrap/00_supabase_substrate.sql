@@ -607,6 +607,22 @@ REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authentic
 GRANT  EXECUTE ON FUNCTION public.handle_new_user() TO service_role;
 REVOKE EXECUTE ON FUNCTION public.fn_protect_owner_notes() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.fn_protect_owner_notes() TO service_role;
+
+-- The trigger production actually carries. The substrate declared the FUNCTION
+-- but never the TRIGGER, which is the same class of under-representation the
+-- column reconciliation fixed: a migration that drops this trigger would be a
+-- no-op under test and its rollback would ADD a trigger the test world never
+-- had, reporting asymmetric for a correct rollback.
+--
+-- The function above is a STUB here (`BEGIN RETURN NEW; END`) while production's
+-- pins owner_notes to OLD. That difference is deliberate and predates this line:
+-- the substrate models STRUCTURE, and reproducing the real body would mean
+-- maintaining a second copy of a security-critical routine. A migration whose
+-- behaviour depends on what this trigger DOES must verify it live.
+DROP TRIGGER IF EXISTS trg_protect_owner_notes ON public.inventory_batches;
+CREATE TRIGGER trg_protect_owner_notes
+  BEFORE UPDATE ON public.inventory_batches
+  FOR EACH ROW EXECUTE FUNCTION public.fn_protect_owner_notes();
 REVOKE EXECUTE ON FUNCTION public.fn_protect_review_request_fields() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.fn_protect_review_request_fields() TO service_role;
 
@@ -666,6 +682,48 @@ GRANT INSERT, UPDATE ON public.inventory_batches TO authenticated;
 
 -- The remaining two permissive policies migration 22's VERIFY E requires to
 -- have pre-existed before its RESTRICTIVE overlay went on.
+-- public.profiles — RLS and its three policies, exactly as RLS_ENABLE_STAGED.sql
+-- and AUTH_RLS_SCHEMA.sql establish them in the pre-numbering world. Copied from
+-- scripts/disposable-pg/fixtures/sql/97_pre21_world.sql, which is this
+-- repository's own statement of that state.
+--
+-- The substrate declared NO policy on profiles at all until a red-team probe
+-- asked the obvious question and got the wrong answer: a farmer could set their
+-- own `role` to 'ddp_admin' and then read everything. Production refuses that —
+-- verified behaviourally on staging — because of the WITH CHECK below, which
+-- pins `role` to its existing value.
+--
+-- This is the dangerous direction of substrate drift. A test world that is
+-- STRICTER than production produces false failures somebody investigates; a test
+-- world that is WEAKER produces false passes nobody looks at. Any migration
+-- whose correctness rests on "a farmer cannot become an admin" was, until this
+-- line, being proven against a world where they could.
+--
+-- Migration 21 replaces all three with DROP IF EXISTS + CREATE, so a rollback
+-- that leaves a definition changed is a genuine finding rather than a gap here.
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "profiles: select own or admin" ON public.profiles;
+CREATE POLICY "profiles: select own or admin"
+  ON public.profiles FOR SELECT
+  USING (id = auth.uid() OR public.is_ddp_admin());
+
+DROP POLICY IF EXISTS "profiles: update own no role change" ON public.profiles;
+CREATE POLICY "profiles: update own no role change"
+  ON public.profiles FOR UPDATE
+  USING (id = auth.uid())
+  WITH CHECK (
+    id = auth.uid()
+    AND role = (SELECT role FROM public.profiles WHERE id = auth.uid())
+  );
+
+DROP POLICY IF EXISTS "profiles: admin update role" ON public.profiles;
+CREATE POLICY "profiles: admin update role"
+  ON public.profiles FOR UPDATE
+  USING (public.is_ddp_admin());
+
+GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
+
 ALTER TABLE public.farm_memberships ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "farm_memberships: farmer insert own" ON public.farm_memberships;
 CREATE POLICY "farm_memberships: farmer insert own" ON public.farm_memberships
