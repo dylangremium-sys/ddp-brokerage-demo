@@ -1,12 +1,28 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { getInitialPageFromPath } from './urlRouting'
 import { PUBLIC_PAGES } from './navigationGuard'
 import type { Page } from '../types'
 
-const SRC = readFileSync(join(process.cwd(), 'src/lib/urlRouting.ts'), 'utf8')
-const APP = readFileSync(join(process.cwd(), 'src/App.tsx'), 'utf8')
+// Source-reading follows the house convention set by setPasswordWiring.test.ts
+// and navigationGuard.test.ts: import.meta.glob with ?raw, resolved by vite at
+// build time. NOT node:fs — the suite runs environment: 'node' and a
+// readFileSync(process.cwd(), …) silently depends on where vitest was invoked
+// from. A wrong glob yields '' rather than throwing, so both sources are
+// asserted non-empty below before anything is matched against them.
+function source(pattern: Record<string, string>): string {
+  return Object.values(pattern)[0] ?? ''
+}
+
+const SRC = source(import.meta.glob('./urlRouting.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+const APP = source(import.meta.glob('../App.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+
+describe('the source this file reasons about actually loaded', () => {
+  it('urlRouting.ts and App.tsx are both non-empty', () => {
+    // Without this, every regex below would match nothing and pass vacuously.
+    expect(SRC.length).toBeGreaterThan(200)
+    expect(APP.length).toBeGreaterThan(1000)
+  })
+})
 
 /**
  * Deep links are the one route into the app that does NOT pass through goTo(),

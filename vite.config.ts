@@ -15,7 +15,11 @@ export default defineConfig({
     // giving up the check. It is also not "dev only" as the patch notes claim:
     // from Vite 6 onward `preview.allowedHosts` falls back to this value, and
     // package.json has a `preview` script.
-    allowedHosts: ['.replit.dev', '.repl.co'],
+    // All three Replit host suffixes: webview previews are served from
+    // *.replit.dev, published apps from *.replit.app, and legacy repls from
+    // *.repl.co. If a preview ever 403s with "Blocked request", add that exact
+    // host here — do NOT go back to `true`, which is the thing being fixed.
+    allowedHosts: ['.replit.dev', '.replit.app', '.repl.co'],
   },
   test: {
     // Stays 'node' for the whole suite. Rendering tests opt in per file with a
