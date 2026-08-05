@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // SPA mode: Vite serves index.html for any path that has no matching file,
+  // so deep links like /farmer work in the dev server without a proxy rule.
+  appType: 'spa',
   plugins: [react()],
   server: {
     allowedHosts: true,

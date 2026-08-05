@@ -1,0 +1,89 @@
+/**
+ * FarmerQRCode — renders a QR code for the /farmer deep-link URL.
+ *
+ * Used on the farmer-register page so that administrators can screenshot or
+ * print the code and post it at farm cooperatives or share via WhatsApp.
+ * The QR code is generated at render time from window.location.origin so it
+ * works in every environment (local dev, staging, production) without a
+ * build-time configuration step.
+ *
+ * Provides a "Download PNG" button so staff can save the asset for print or
+ * digital distribution.
+ */
+
+import { useEffect, useRef, useState } from 'react'
+import QRCode from 'qrcode'
+
+interface Props {
+  /** Overrides the auto-detected URL — useful in tests or when the origin is
+   *  not yet known (e.g. a static export preview). */
+  url?: string
+  /** Pixel size of the rendered canvas / downloaded PNG. Default: 240. */
+  size?: number
+}
+
+export default function FarmerQRCode({ url, size = 240 }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [dataUrl, setDataUrl] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+
+  const targetUrl = url ?? (typeof window !== 'undefined' ? `${window.location.origin}/farmer` : '/farmer')
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    let cancelled = false
+
+    QRCode.toCanvas(canvas, targetUrl, {
+      width: size,
+      margin: 2,
+      color: { dark: '#1a2d1e', light: '#ffffff' },
+    })
+      .then(() => {
+        if (!cancelled) setDataUrl(canvas.toDataURL('image/png'))
+      })
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+
+    return () => { cancelled = true }
+  }, [targetUrl, size])
+
+  function handleDownload() {
+    if (!dataUrl) return
+    const a = document.createElement('a')
+    a.href = dataUrl
+    a.download = 'farmer-portal-qr.png'
+    a.click()
+  }
+
+  return (
+    <div className="farmer-qr-wrap">
+      {error ? (
+        <p className="td-muted" style={{ fontSize: 13 }}>QR code could not be generated.</p>
+      ) : (
+        <>
+          <canvas
+            ref={canvasRef}
+            width={size}
+            height={size}
+            style={{ display: 'block', borderRadius: 8, border: '1px solid #e0e0d0' }}
+            aria-label={`QR code linking to ${targetUrl}`}
+          />
+          <p className="td-muted" style={{ fontSize: 11, marginTop: 6, textAlign: 'center', wordBreak: 'break-all' }}>
+            {targetUrl}
+          </p>
+          <button
+            type="button"
+            className="btn btn-outline"
+            style={{ marginTop: 8, fontSize: 12, padding: '5px 14px', width: '100%' }}
+            onClick={handleDownload}
+            disabled={!dataUrl}
+          >
+            Download PNG
+          </button>
+        </>
+      )}
+    </div>
+  )
+}

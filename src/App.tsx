@@ -85,6 +85,7 @@ import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
+import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
 
 // FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
 // lib/navigationGuard.ts so they can be unit tested. PUBLIC_PAGES once omitted
@@ -111,7 +112,13 @@ export default function App() {
   // screen. Landing them anywhere else — even for a moment — is the defect:
   // their session is transient, and once it lapses the account has no password
   // and no way to obtain one.
-  const [page, setPage] = useState<Page>(() => (getAuthRedirect() ? 'set-password' : 'landing'))
+  const [page, setPage] = useState<Page>(() => {
+    if (getAuthRedirect()) return 'set-password'
+    // Honour deep-link paths (e.g. /farmer) on a cold load so a bookmarked or
+    // QR-scanned URL reaches the right screen without requiring the user to
+    // navigate from the landing page first.
+    return getInitialPageFromPath(window.location.pathname) ?? 'landing'
+  })
   const [lang, setLang] = useState<Lang>('en')
   const [inventory, setInventory] = useState<InventoryItem[]>(() => getInventoryBatches())
   const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
@@ -204,6 +211,30 @@ export default function App() {
   useEffect(() => { persistInventory(inventory) }, [inventory])
   useEffect(() => { persistFarms(farms) }, [farms])
   useEffect(() => { saveReviewRequests(reviewRequests) }, [reviewRequests])
+
+  // ── URL ↔ page sync (deep links) ─────────────────────────────────────────
+  // Keep the address bar consistent with the in-memory page state so that:
+  //   • a QR scan or shared link that lands on /farmer stays on /farmer, and
+  //   • pressing the browser Back button after entering via /farmer returns to
+  //     the referrer (or the app landing page) rather than /farmer again.
+  // See lib/urlRouting.ts for the path↔page mapping.
+  const prevPageRef = useRef<Page | null>(null)
+  useEffect(() => {
+    syncUrlToPage(page)
+    prevPageRef.current = page
+  }, [page])
+
+  // Browser Back / Forward: when the user navigates via history, map the new
+  // pathname back to a page (or fall back to 'landing').
+  useEffect(() => {
+    function handlePopState() {
+      const mapped = getInitialPageFromPath(window.location.pathname)
+      setPage(mapped ?? 'landing')
+      window.scrollTo(0, 0)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   // ── Auth subscription ────────────────────────────────────────────────────
   // authLoading is initialised to false in demo mode via useState, so no
