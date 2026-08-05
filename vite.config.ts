@@ -8,7 +8,14 @@ export default defineConfig({
   appType: 'spa',
   plugins: [react()],
   server: {
-    allowedHosts: true,
+    // Named hosts, NOT `true`. `allowedHosts: true` switches off Vite's Host
+    // header check altogether — that check is what stops a hostile page from
+    // DNS-rebinding a browser onto this dev server and reading source and env
+    // off it. The suffix form below admits every *.replit.dev preview without
+    // giving up the check. It is also not "dev only" as the patch notes claim:
+    // from Vite 6 onward `preview.allowedHosts` falls back to this value, and
+    // package.json has a `preview` script.
+    allowedHosts: ['.replit.dev', '.repl.co'],
   },
   test: {
     // Stays 'node' for the whole suite. Rendering tests opt in per file with a

@@ -5227,11 +5227,9 @@ a.ln-channel-value:hover { color: #FFFFFF; }
     grid-template-columns: 1fr;
   }
 
-  /* Pill/radio rows: wrap on mobile */
-  .pill-row {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
+  /* NOTE: a `.pill-row` rule was removed here. No element in this codebase
+     carries that class — the real ones are `.pill`, `.status-pills` and
+     `.filter-tabs`. It styled nothing. */
 
   /* Make submit / action buttons full-width on mobile */
   .eo-farmer .btn-primary,
@@ -5241,17 +5239,17 @@ a.ln-channel-value:hover { color: #FFFFFF; }
     justify-content: center;
   }
 
-  /* Onboarding stepper: scale down on mobile */
-  .stepper-bar {
-    gap: 4px;
-  }
+  /* Onboarding stepper: scale down on mobile.
+     (`.stepper-bar` was dropped from this rule — no element uses it.) */
   .step-dot {
     width: 8px;
     height: 8px;
   }
 
-  /* My Stock filter row — scroll horizontally */
-  .filter-row,
+  /* Toolbar row — scroll horizontally rather than wrap.
+     (`.filter-row` was dropped from this rule: nothing carries that class.
+     The real filter control is `.filter-tabs`, which is deliberately left
+     alone — see the stacked-record note below.) */
   .toolbar-row {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -5259,14 +5257,15 @@ a.ln-channel-value:hover { color: #FFFFFF; }
     flex-wrap: nowrap;
     padding-bottom: 4px;
   }
-  .filter-row::-webkit-scrollbar,
   .toolbar-row::-webkit-scrollbar { display: none; }
 
-  /* Status table on mobile: horizontal scroll inside wrapper */
-  .inv-table-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
+  /* DELIBERATELY NOT ADDED: a horizontal-scroll rule for farmer tables.
+     The patch this block came from targeted `.inv-table-wrap`, which does not
+     exist, so the rule did nothing. Writing it against the real wrapper
+     (`.eo-farmer .table-scroll`) would have been worse than useless: line ~4360
+     already sets `overflow-x: visible` at ≤640px and reflows every farmer table
+     into stacked records, under the comment "a phone never scrolls sideways".
+     Restoring sideways scroll would undo that on purpose. Leave it. */
 
   /* Farmer register / onboarding: nav step labels */
   .step-label {
@@ -5320,6 +5319,21 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   line-height: 1.65;
 }
 
+/* Monospace must survive the language switch.
+   `:lang(th)` is specificity (0,1,0) — identical to `.mono` (line ~828) and
+   `.td-mono` (line ~667) — but this block sits at the END of the file, so it
+   wins the cascade on a tie and silently turns every reference id, weight and
+   price back into proportional Sarabun the moment the user picks Thai. Only
+   `.ddp-wrap .mono` (0,2,0) survives on its own, which would have made the
+   breakage look like an inconsistency rather than a bug. Numerals are Latin in
+   both languages, so there is nothing to gain by restyling them. */
+:lang(th) .mono,
+:lang(th) .td-mono,
+:lang(th) code,
+:lang(th) pre {
+  font-family: var(--font-mono);
+}
+
 /* Any element with explicit letter-spacing that may show Thai text */
 :lang(th) .page-eyebrow,
 :lang(th) .page-title,
@@ -5328,13 +5342,12 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 :lang(th) .nav-group-label,
 :lang(th) .btn,
 :lang(th) .badge,
-:lang(th) .status-badge,
+:lang(th) .status-pill,
 :lang(th) .section-label,
 :lang(th) .form-section-title,
 :lang(th) .field,
 :lang(th) .field-label,
 :lang(th) .field-hint,
-:lang(th) .tab-btn,
 :lang(th) .quick-action-label,
 :lang(th) .quick-action-desc,
 :lang(th) .dashboard-welcome-name,
@@ -5384,11 +5397,11 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 
 /* Eyebrow / uppercase labels: Thai has no uppercase, so drop the transform
    and letter-spacing so it doesn't render as stretched Thai characters */
+/* `.section-eyebrow` and `.filter-section-title` were removed from this list:
+   neither class exists in the codebase. */
 :lang(th) .page-eyebrow,
-:lang(th) .section-eyebrow,
 :lang(th) .nav-group-label,
-:lang(th) .dashboard-completion-label,
-:lang(th) .filter-section-title {
+:lang(th) .dashboard-completion-label {
   text-transform: none;
   letter-spacing: 0;
   font-size: 13px;

@@ -219,14 +219,19 @@ export default function App() {
   //   • pressing the browser Back button after entering via /farmer returns to
   //     the referrer (or the app landing page) rather than /farmer again.
   // See lib/urlRouting.ts for the path↔page mapping.
-  const prevPageRef = useRef<Page | null>(null)
   useEffect(() => {
     syncUrlToPage(page)
-    prevPageRef.current = page
   }, [page])
 
   // Browser Back / Forward: when the user navigates via history, map the new
   // pathname back to a page (or fall back to 'landing').
+  //
+  // This calls setPage directly rather than goTo, so it does NOT run
+  // resolveNavigationTarget. That is only safe because every path in
+  // urlRouting's PATH_TO_PAGE maps to a PUBLIC page, which the guard would
+  // admit for any visitor anyway. urlRouting.test.ts enforces that invariant —
+  // if someone adds a farmer or admin route to the map, that test fails and
+  // this handler must be routed through the guard before the route ships.
   useEffect(() => {
     function handlePopState() {
       const mapped = getInitialPageFromPath(window.location.pathname)
@@ -1554,8 +1559,16 @@ export default function App() {
         )
       })()}
 
-      {/* ── Farmer mobile bottom navigation (visible only on mobile ≤768px) ── */}
-      {showFarmerNav && isFarmerPage && (
+      {/* ── Farmer mobile bottom navigation (visible only on mobile ≤768px) ──
+          The PUBLIC_PAGES exclusion is load-bearing, not belt-and-braces.
+          FARMER_PAGES spreads PUBLIC_PAGES, so isFarmerPage is TRUE on landing,
+          login and the register screens — and showFarmerNav is true for any
+          signed-in farmer and for all of demo mode. Without this clause a farmer
+          who taps the brand logo lands on the cream public landing page with a
+          dark five-tab farmer bar pinned across the bottom. That is the same
+          defect the diagnostic strip below was already fixed for; the top navbar
+          guards itself the same way (`!PUBLIC_PAGES.includes(page)`). */}
+      {showFarmerNav && isFarmerPage && !PUBLIC_PAGES.includes(page) && (
         <FarmerMobileNav
           lang={lang}
           page={page}
