@@ -91,6 +91,18 @@ ALTER TABLE public.inventory_batches
 ALTER TABLE public.inventory_batches
   RENAME COLUMN asking_price TO asking_price_thb;
 
+-- Clear the comment the forward migration put on this column. Renaming a column
+-- carries its COMMENT along, so without this the column ends up called
+-- asking_price_thb while carrying a note explaining that it was renamed AWAY
+-- from that name — residue from a migration that has been rolled back, and a
+-- note that contradicts itself.
+--
+-- This was missed on the first pass and the gate did not catch it: the catalog
+-- snapshot did not cover comments at all, so every object matched and the run
+-- was reported symmetric. Found by adversarial re-audit; the snapshot now
+-- includes a column's comment for exactly this reason.
+COMMENT ON COLUMN public.inventory_batches.asking_price_thb IS NULL;
+
 -- Postcondition. A `DROP ... IF EXISTS` that matched nothing because a name was
 -- misspelled is indistinguishable from success, and the rollback-symmetry gate
 -- compares catalogues rather than reading intent.
@@ -112,6 +124,14 @@ BEGIN
                  WHERE table_schema='public' AND table_name='inventory_batches'
                    AND column_name='asking_price_thb') THEN
     v_problems := array_append(v_problems, 'inventory_batches.asking_price_thb was not restored');
+  END IF;
+  IF col_description('public.inventory_batches'::regclass,
+                     (SELECT attnum FROM pg_attribute
+                       WHERE attrelid = 'public.inventory_batches'::regclass
+                         AND attname = 'asking_price_thb')) IS NOT NULL THEN
+    v_problems := array_append(v_problems,
+      'the forward migration''s COMMENT is still on asking_price_thb — a column carrying a note '
+      'that it was renamed away from its own name');
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint
                  WHERE conrelid = 'public.inventory_batches'::regclass

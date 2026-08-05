@@ -290,10 +290,25 @@ export function snapshotCatalog(cluster) {
     -- exactly the kind of near-miss this is here to catch. Dropped columns
     -- (attisdropped) are excluded: PostgreSQL keeps the tombstone forever, so
     -- including them would make every DROP COLUMN rollback look asymmetric.
+    -- The COMMENT is part of the column's detail because a rollback can leave one
+    -- behind and nothing else here would notice. Migration 55 renames
+    -- asking_price_thb to asking_price and comments the new name; its rollback
+    -- renamed the column back but did NOT clear the comment, so the column
+    -- ended up carrying a note saying it had been renamed away. Every object
+    -- count matched, every definition matched, and the run was reported
+    -- symmetric. Found by adversarial re-audit (V3), not by the gate.
+    --
+    -- Digested rather than compared verbatim for the same reason function
+    -- bodies are: the value is "did this change", and a full paragraph of prose
+    -- in a diff line makes the real finding harder to see.
+    --
+    -- STILL NOT COVERED: comments on TABLES, functions and constraints. Same
+    -- class, not yet the one that bit.
     UNION ALL SELECT 'column', n.nspname || '.' || c.relname || '.' || a.attname,
            a.atttypid::regtype::text
              || CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END
              || coalesce(' DEFAULT ' || pg_get_expr(ad.adbin, ad.adrelid), '')
+             || coalesce(' COMMENT ' || substr(md5(col_description(a.attrelid, a.attnum)), 1, 12), '')
       FROM pg_attribute a
       JOIN pg_class c ON c.oid = a.attrelid
       JOIN pg_namespace n ON n.oid = c.relnamespace
