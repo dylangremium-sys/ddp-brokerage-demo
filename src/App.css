@@ -5107,7 +5107,11 @@ a.ln-channel-value:hover { color: #FFFFFF; }
     gap: 3px;
     background: transparent;
     border: none;
-    color: rgba(255,255,255,0.45);
+    /* 0.50, not 0.45. Composited over the #081a14 bar, 0.45 gives
+       rgb(119,129,126) = 4.48:1 against it — under the 4.5:1 WCAG AA floor for
+       text this size. 0.50 measures 5.24:1. Measured in-browser, not estimated;
+       if this colour or the bar background changes, re-measure the pair. */
+    color: rgba(255,255,255,0.50);
     font-family: inherit;
     font-size: 10px;
     font-weight: 500;
@@ -5289,9 +5293,12 @@ a.ln-channel-value:hover { color: #FFFFFF; }
     padding: 14px 12px;
   }
 
-  .fmn-item {
-    font-size: 9px;
-  }
+  /* NOTE: `.fmn-item { font-size: 9px }` was removed here. This block is
+     labelled "very small phones", but 390px is an iPhone 12/13/14/15 and 360px
+     is most Android — mainstream widths, not outliers. It put the smallest text
+     in the app on the primary navigation of the commonest handsets. Labels stay
+     at the base 10px; measured at 320px the tab is still 64px wide, which fits
+     "My Stock" and "สต็อกของฉัน" without clipping. */
 
   .quick-action-grid {
     grid-template-columns: 1fr;
