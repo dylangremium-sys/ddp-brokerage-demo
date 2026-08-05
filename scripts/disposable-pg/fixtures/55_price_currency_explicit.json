@@ -1,0 +1,87 @@
+{
+  "id": "55_price_currency_explicit",
+  "title": "Migration 55 \u2014 every price carries an explicit currency",
+  "description": "Applies migrations 54 then 55, runs 55's VERIFY A-G, then rolls back 55 alone. A full sweep of production's 48 public tables finds exactly three money-bearing columns and NO currency column anywhere, on a platform that brokers Thai supply to buyers abroad: the only thing recording a currency is four characters at the end of one column NAME, and a name is not a value. 55 adds price_currency to both price-bearing tables and couples it to the amount, then renames asking_price_thb to asking_price -- because once the currency lives in a column, a column name that also claims one is a second source of truth and the two can disagree. The subtle part is the constraint rename: a column rename does NOT rename its constraints, so migration 54's inventory_batches_asking_price_thb_sane would be stranded on a column no longer called that, and 54's own rollback -- which drops it by name -- would fail. 55 renames it forward and its rollback renames it back, which is why the rollback restores the constraint name BEFORE renaming the column. The two coupling rules differ deliberately: inventory_batches gets an implication (no price without a currency, because an unpriced batch has no currency to declare), market_price_benchmarks gets NOT NULL DEFAULT (its prices are already NOT NULL, so every row has an amount to denominate). Pricing is in THB and the vocabulary is exactly three codes -- THB is the pricing currency and the default, USD and EUR are quote currencies for buyers abroad. That is stated by the platform owner, not measured: production's price rows are unreadable to the read-only role, so the fact was asked for rather than inferred -- and it was got wrong twice on the way here, first inferred from a column name and then set to USD on a partial answer, which is itself the argument for storing a currency as a value rather than leaving it to be deduced. An earlier draft allowed eight codes, which was a guess about which markets might matter; a guess in a controlled vocabulary is just a wider hole. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-54",
+      "file": "54_INVENTORY_BATCH_VALUE_CONSTRAINTS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-55",
+      "file": "55_PRICE_CURRENCY_EXPLICIT_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "55_PRICE_CURRENCY_EXPLICIT_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G"
+    ],
+    "expectedPassCount": 7,
+    "note": "A asserts the rename in BOTH directions -- asking_price present AND asking_price_thb absent -- because a migration that added the new name without removing the old would leave two columns claiming the same amount. It also asserts migration 54's constraint was renamed alongside the column, which is the failure that would make 54 unrollbackable and which nothing else in the harness would notice. C tests the coupling on INSERT and on UPDATE: a rule that only holds at insert time is one UPDATE away from an unreadable row. D refuses seven shapes of wrong code -- unknown, wrong case, trailing space, a currency NAME, empty, a currency SYMBOL, and GBP, a perfectly real ISO code that is deliberately NOT in the vocabulary. 'thb' and 'THB ' are the failures a human actually produces and an exact-match CHECK is the only thing that catches them; GBP is the one that proves the list is genuinely closed rather than merely well-formed. B inserts in the pricing currency and both quote currencies for the mirror-image reason. E is the counterexample that stops the rule being overstated: an unpriced batch needs no currency and must still be admitted. G re-derives the whole claim from the catalogue rather than from this migration's own list, so a future price column on a table nobody thought about fails this section. NOT PROVEN HERE: that THB is the correct pricing currency -- that is the platform owner's statement recorded in the migration header, not a fact measured from the system. NOT PROVEN HERE either: that the amounts being stamped are really baht. This migration records a currency; it converts nothing and there is no exchange rate anywhere in this repository, so an amount stamped THB that was entered in dollars stays wrong. The five market_price_benchmarks rows in production are the live instance of that risk -- they were described as dollar figures before the pricing currency was settled as baht, and they are unreadable to the read-only role. NOT PROVEN HERE either: that no consumer outside this repository reads asking_price_thb; the rename is safe against every branch of this repo, which is a narrower claim.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "55_PRICE_CURRENCY_EXPLICIT_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "public.farms",
+      "public.inventory_batches",
+      "public.market_price_benchmarks"
+    ]
+  },
+  "postApply": {
+    "constraints": [
+      {
+        "table": "public.inventory_batches",
+        "present": [
+          "inventory_batches_price_currency_allowed",
+          "inventory_batches_price_requires_currency",
+          "inventory_batches_asking_price_sane"
+        ],
+        "absent": [
+          "inventory_batches_asking_price_thb_sane"
+        ]
+      },
+      {
+        "table": "public.market_price_benchmarks",
+        "present": [
+          "market_price_benchmarks_price_currency_allowed"
+        ]
+      }
+    ]
+  },
+  "postRollback": {
+    "intact": {
+      "tables": [
+        "public.inventory_batches",
+        "public.market_price_benchmarks",
+        "public.farms"
+      ]
+    }
+  }
+}
