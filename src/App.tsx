@@ -78,6 +78,7 @@ import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
 import FarmerNav from './components/farmer/FarmerNav'
+import FarmerMobileNav from './components/farmer/FarmerMobileNav'
 import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
@@ -1131,7 +1132,11 @@ export default function App() {
           </div>
 
           <div className="navbar-links">
-            {showFarmerNav && <FarmerNav lang={lang} page={page} goTo={goTo} />}
+            {showFarmerNav && (
+              <div className="farmer-nav-topbar">
+                <FarmerNav lang={lang} page={page} goTo={goTo} />
+              </div>
+            )}
 
             {showFarmerNav && showDDPNav && <div className="nav-sep" />}
 
@@ -1510,6 +1515,16 @@ export default function App() {
           <main className={`main-content${isFarmerPage ? ' eo-farmer' : ''}`}>{appPages}</main>
         )
       })()}
+
+      {/* ── Farmer mobile bottom navigation (visible only on mobile ≤768px) ── */}
+      {showFarmerNav && isFarmerPage && (
+        <FarmerMobileNav
+          lang={lang}
+          page={page}
+          goTo={goTo}
+          openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
+        />
+      )}
 
       {/* Internal diagnostic chrome. Hidden on every PUBLIC page, not just the
           landing: it is position:fixed with z-index 200, so on sign-in and the

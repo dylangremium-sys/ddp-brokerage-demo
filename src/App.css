@@ -5069,3 +5069,232 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   border-left-color: var(--ddp-risk-700);
   color: var(--ddp-risk-700);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FARMER PORTAL — MOBILE IMPROVEMENTS
+   ─ Bottom tab nav, touch targets, layout fixes for phones ≤768px
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Farmer bottom navigation bar ── */
+.farmer-mobile-nav {
+  display: none; /* hidden on desktop — shown only at ≤768px below */
+}
+
+@media (max-width: 768px) {
+  /* Show the fixed bottom nav */
+  .farmer-mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 300;
+    background: #081a14;
+    border-top: 1px solid rgba(198,161,91,0.18);
+    padding: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    height: calc(62px + env(safe-area-inset-bottom, 0px));
+    align-items: stretch;
+  }
+
+  /* Each tab item */
+  .fmn-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.45);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    padding: 8px 4px;
+    transition: color 0.14s;
+    -webkit-tap-highlight-color: transparent;
+    min-width: 0;
+  }
+
+  .fmn-item:active {
+    background: rgba(198,161,91,0.07);
+  }
+
+  .fmn-item.fmn-active {
+    color: var(--accent, #C6A15B);
+  }
+
+  .fmn-icon-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+  }
+
+  .fmn-item.fmn-active .fmn-icon-wrap svg {
+    stroke-width: 2.1;
+  }
+
+  .fmn-label {
+    line-height: 1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Badge (unread count) */
+  .fmn-badge {
+    position: absolute;
+    top: -3px;
+    right: -5px;
+    background: #e84e4e;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 20px;
+    min-width: 15px;
+    height: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+    line-height: 1;
+  }
+
+  /* Hide the farmer nav items from the top navbar — bottom nav takes over */
+  .farmer-nav-topbar {
+    display: none;
+  }
+
+  /* Add bottom padding to farmer pages so content isn't hidden behind the nav */
+  .main-content.eo-farmer {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Also pad the demo utility strip up when farmer nav is visible */
+  .demo-utility-strip {
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ── Farmer page layout — mobile fixes ── */
+@media (max-width: 768px) {
+  /* Reduce page-header horizontal padding on mobile */
+  .page-header {
+    padding: 18px 16px;
+  }
+
+  /* Dashboard welcome card — tighter on mobile */
+  .dashboard-welcome-card {
+    padding: 18px 16px;
+  }
+
+  /* Farmer dashboard max-width: let it fill the screen */
+  .farmer-dashboard {
+    max-width: 100%;
+  }
+
+  /* Quick-action grid: 2 columns down to 480px, then 1 */
+  .quick-action-card {
+    padding: 14px 12px;
+  }
+
+  /* Help strip — stack on small screens */
+  .dashboard-help-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  /* eo-farmer form cards — less padding */
+  .eo-farmer .form-card {
+    padding: 16px;
+  }
+
+  /* eo-farmer section padding */
+  .eo-farmer h2 {
+    font-size: 18px;
+  }
+
+  /* Form grid 2-col → 1-col earlier on farmer forms */
+  .eo-farmer .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  /* Pill/radio rows: wrap on mobile */
+  .pill-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Make submit / action buttons full-width on mobile */
+  .eo-farmer .btn-primary,
+  .eo-farmer .btn-ghost-dark,
+  .eo-farmer .btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Onboarding stepper: scale down on mobile */
+  .stepper-bar {
+    gap: 4px;
+  }
+  .step-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  /* My Stock filter row — scroll horizontally */
+  .filter-row,
+  .toolbar-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+  .filter-row::-webkit-scrollbar,
+  .toolbar-row::-webkit-scrollbar { display: none; }
+
+  /* Status table on mobile: horizontal scroll inside wrapper */
+  .inv-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Farmer register / onboarding: nav step labels */
+  .step-label {
+    display: none;
+  }
+
+  /* Requests badge in the top nav — still visible on desktop */
+  .requests-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+  }
+}
+
+/* Very small phones (≤400px) */
+@media (max-width: 400px) {
+  .main-content {
+    padding: 16px 12px;
+  }
+
+  .eo-farmer .form-card {
+    padding: 14px 12px;
+  }
+
+  .fmn-item {
+    font-size: 9px;
+  }
+
+  .quick-action-grid {
+    grid-template-columns: 1fr;
+  }
+}
