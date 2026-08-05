@@ -147,6 +147,29 @@ describe.skipIf(!HAS_PG)('substrate vs production shape (real PostgreSQL)', () =
     });
   }
 
+  // The column reconciliation covered COLUMNS. It did not cover policies, and a
+  // red-team probe found the cost: the substrate declared no policy on profiles
+  // at all, so a farmer could set their own role to 'ddp_admin' — which
+  // production refuses, verified behaviourally on staging.
+  //
+  // That is the dangerous direction of drift. A test world STRICTER than
+  // production makes a false failure somebody investigates; a test world WEAKER
+  // than production makes a false pass nobody looks at. `profiles.role` is the
+  // single discriminator between an admin and a farmer in this system, so this
+  // one is pinned by name rather than left to the general column check.
+  it('pins the profiles policies, because role is what separates an admin from a farmer', () => {
+    const sql = readFileSync(SUBSTRATE, 'utf8');
+    expect(sql).toMatch(/ALTER TABLE public\.profiles ENABLE ROW LEVEL SECURITY/);
+    for (const policy of ['profiles: select own or admin',
+                          'profiles: update own no role change',
+                          'profiles: admin update role']) {
+      expect(sql, `substrate is missing policy "${policy}"`).toContain(policy);
+    }
+    // The WITH CHECK is the part that actually stops self-promotion. Asserting
+    // the policy NAME alone would pass against a policy that had been gutted.
+    expect(sql).toMatch(/role = \(SELECT role FROM public\.profiles WHERE id = auth\.uid\(\)\)/);
+  });
+
   it('the tables production has and the substrate does not are only ones migrations create', () => {
     const declared = new Set(manifest.substrateDeclaredTables);
     const undeclared = Object.keys(manifest.productionPublicColumns).filter((t) => !declared.has(t));
