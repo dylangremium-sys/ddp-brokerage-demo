@@ -10,6 +10,7 @@ import {
   createInventoryBatch,
   updateInventoryStatus,
   patchInventoryBatch,
+  saveBatchInternalNote,
   createReviewRequest,
   resolveReviewRequest,
   loadReviewRequestsFromDB,
@@ -955,11 +956,11 @@ export default function App() {
 
   async function handleSaveOwnerNote(itemId: string, note: string) {
     await commitMutation(
-      () => patchInventoryBatch(itemId, { owner_notes: note }),
+      () => saveBatchInternalNote(itemId, note),
       {
         onCommitted: () => {
           setInventory(prev => prev.map(i =>
-            i.id === itemId ? { ...i, ownerNotes: note } : i
+            i.id === itemId ? { ...i, ownerNotes: note.trim() || undefined } : i
           ))
         },
         onError: onDbError,

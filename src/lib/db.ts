@@ -550,7 +550,9 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
     photo_urls: storablePhotoUrls.length > 0 ? storablePhotoUrls : null,
     coa_storage_path: item.coaStoragePath ?? null,
     farmer_notes: item.farmerNotes ?? null,
-    owner_notes: item.ownerNotes ?? null,
+    // ownerNotes is deliberately NOT written here. Migration 57 moved DDP's
+    // internal note to batch_internal_notes, which only a ddp_admin can touch;
+    // this path runs as the farmer creating the batch.
   })
 }
 
@@ -585,15 +587,53 @@ export async function updateInventoryStatus(
 }
 
 // ---------------------------------------------------------------------------
-// Patch an inventory batch — for admin actions (client_visible toggle,
-// owner_notes) and farmer re-submissions (stock_status change).
+// DDP's internal note about a batch.
+//
+// Lives in batch_internal_notes, not on the batch row, because a DDP admin and
+// a farmer are the SAME PostgreSQL role (`authenticated`) — only a row-level
+// policy can tell them apart, and a row-level policy needs its own row.
+// Before migration 57 this was inventory_batches.owner_notes and every farmer
+// could read their own batch's copy of it.
+//
+// No admin check here on purpose. The policy on batch_internal_notes is the
+// control; a client-side check would be advice. A non-admin calling this gets
+// nothing written and no row back.
+//
+// An empty note DELETES rather than storing '': the table refuses a blank note,
+// and "cleared" and "never written" are the same state to every reader.
+// ---------------------------------------------------------------------------
+export async function saveBatchInternalNote(batchId: string, note: string): Promise<void> {
+  if (!supabase) return
+  if (!isValidUUID(batchId)) {
+    console.warn(`saveBatchInternalNote: skipping — "${batchId}" is not a valid UUID`)
+    return
+  }
+
+  const trimmed = note.trim()
+  if (trimmed === '') {
+    const { error } = await supabase.from('batch_internal_notes').delete().eq('batch_id', batchId)
+    if (error) throw error
+    return
+  }
+
+  const { data: session } = await supabase.auth.getUser()
+  const { error } = await supabase.from('batch_internal_notes').upsert(
+    { batch_id: batchId, note: trimmed, updated_by: session?.user?.id ?? null, updated_at: new Date().toISOString() },
+    { onConflict: 'batch_id' },
+  )
+  if (error) throw error
+}
+
+// ---------------------------------------------------------------------------
+// Patch an inventory batch — for admin actions (client_visible toggle) and
+// farmer re-submissions (stock_status change). DDP's internal note is NOT here:
+// migration 57 moved it to batch_internal_notes. See saveBatchInternalNote.
 // ---------------------------------------------------------------------------
 export async function patchInventoryBatch(
   itemId: string,
   fields: Partial<{
     stock_status: string
     client_visible: boolean
-    owner_notes: string
     status: InventoryStatus
     coa_file_name: string
     coa_available: boolean
@@ -1050,7 +1090,9 @@ function batchRowToInventoryItem(row: Record<string, any>, farmName?: string): I
     mycotoxinsStatus: row.mycotoxins_status as TestStatus ?? undefined,
     photoUrls: (row.photo_urls as string[]) ?? undefined,
     farmerNotes: row.farmer_notes as string ?? undefined,
-    ownerNotes: row.owner_notes as string ?? undefined,
+    // Present only for a ddp_admin: RLS on batch_internal_notes returns no row
+    // to anyone else, so the join comes back empty and this stays undefined.
+    ownerNotes: (row.batch_internal_notes as { note?: string }[] | null)?.[0]?.note ?? undefined,
     coaStoragePath: row.coa_storage_path as string ?? undefined,
   }
 }
@@ -1309,7 +1351,7 @@ export async function loadInventoryFromDB(): Promise<InventoryItem[]> {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('inventory_batches')
-    .select('*, farms(farm_name, trading_name)')
+    .select('*, farms(farm_name, trading_name), batch_internal_notes(note)')
     .order('created_at', { ascending: false })
   if (error) {
     // Throw (not silent []) so a query failure is distinguishable from a
@@ -1334,7 +1376,7 @@ export async function loadFarmerInventoryFromDB(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (supabase as any)
     .from('inventory_batches')
-    .select('*, farms(farm_name, trading_name)')
+    .select('*, farms(farm_name, trading_name), batch_internal_notes(note)')
 
   if (idList.length > 0 && farmList.length > 0) {
     query = query.or(`id.in.(${idList.join(',')}),farm_id.in.(${farmList.join(',')})`)
