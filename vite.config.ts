@@ -4,6 +4,9 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    allowedHosts: true,
+  },
   test: {
     // Stays 'node' for the whole suite. Rendering tests opt in per file with a
     // `// @vitest-environment jsdom` docblock, so adding them cannot slow down
