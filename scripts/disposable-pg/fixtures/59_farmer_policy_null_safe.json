@@ -1,0 +1,78 @@
+{
+  "id": "59_farmer_policy_null_safe",
+  "title": "Migration 59 \u2014 the farmer policies stop refusing rows nobody meant to refuse",
+  "description": "Three predicates on inventory_batches compared a nullable column against a literal, and RLS treats a NULL result as a refusal. `status` is nullable with no default, so a farmer creating a batch without naming one was rejected outright, and a farmer editing a batch whose stock_status was NULL got 0 rows changed and NO error -- the silent half. Measured on staging 2026-08-05, not inferred. The evidence that this is an oversight rather than a rule is the predicate's own inconsistency: it already spells the NULL case out for stock_status, twice, and never for status. The fixture stages the NULL-UNSAFE policies first, verbatim as production has them, because the substrate carries neither -- they come from two of the UNNUMBERED .sql files in the repo root, which no fixture applies and the coverage denominator cannot see. VERIFY proves both directions: the NULL cases are now admitted AND self-approval, self-publishing, admin-only lifecycle states and a rival's farm are all still refused. A migration that loosens a security policy and tests only the loosening would look green while handing a farmer the ability to approve their own stock. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "PRE59-WORLD",
+      "source": "file",
+      "file": "scripts/disposable-pg/fixtures/sql/96_pre59_farmer_policies.sql"
+    },
+    {
+      "label": "HARDENING-59",
+      "file": "59_FARMER_POLICY_NULL_SAFE_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "59_FARMER_POLICY_NULL_SAFE_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "expectedPassCount": 5,
+    "note": "A asserts the premise (NULL <> 'Approved' is not TRUE) rather than assuming it. C and D are the two defects, and D asserts a ROW COUNT rather than catching an exception because the old behaviour raised nothing at all -- an exception handler would never have fired and the test would have passed while the bug remained. E is the counterweight: four things that must STILL be refused. The cross-farm gap this migration originally pinned in a section F is closed by migration 60; its proof moved there, so VERIFY 59 stays runnable against a database carrying both.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "59_FARMER_POLICY_NULL_SAFE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.farms",
+      "public.profiles",
+      "public.inventory_batches"
+    ]
+  },
+  "postApply": {
+    "policies": [
+      {
+        "table": "public.inventory_batches",
+        "present": [
+          "inventory_batches: farmer insert own",
+          "inventory_batches: farmer update own"
+        ]
+      }
+    ]
+  },
+  "postRollback": {
+    "intact": {
+      "tables": [
+        "public.inventory_batches",
+        "public.farms",
+        "public.profiles"
+      ]
+    }
+  }
+}

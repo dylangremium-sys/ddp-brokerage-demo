@@ -1,0 +1,84 @@
+{
+  "id": "60_batch_must_belong_to_your_farm",
+  "title": "Migration 60 \u2014 a batch may only be attached to a farm you have a claim to",
+  "description": "Both farmer policies decided ownership with `(created_by = auth.uid()) OR has_farm_membership(farm_id)`. The first branch tests a column ON THE ROW BEING WRITTEN, and the writer chooses that value -- so naming yourself as created_by satisfied it whatever farm_id said, and the farm test was never reached. A farmer could attach stock to a rival's farm, whose real members then saw stock they did not create. Measured on staging by migration 59's VERIFY section F, which was written to pin the gap rather than describe it. A self-referential predicate is not a permission check; it asks the caller to vouch for themselves. Replaced by has_farm_claim(farm_id): member of the farm OR its creator -- the same union the application already uses in getFarmerScope. BOTH branches are load-bearing: membership alone would lock out the creator of a brand-new farm, because NOTHING in this system writes a farm_memberships row; creator alone would lock out every co-worker. SECURITY DEFINER because an inline EXISTS on public.farms would run under the caller's RLS and reintroduce the lockout through the back door. Only the WITH CHECK clauses change -- USING keeps its created_by branch, so nobody loses a row they already hold; the hole was about which farm a row may attach TO. VERIFY proves the hole is shut (D, E) AND that nobody is locked out (B, C), with C asserting the creator has no membership row first, so it cannot pass via the wrong branch. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "PRE59-WORLD",
+      "source": "file",
+      "file": "scripts/disposable-pg/fixtures/sql/96_pre59_farmer_policies.sql"
+    },
+    {
+      "label": "HARDENING-59",
+      "file": "59_FARMER_POLICY_NULL_SAFE_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-60",
+      "file": "60_BATCH_MUST_BELONG_TO_YOUR_FARM_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "60_BATCH_MUST_BELONG_TO_YOUR_FARM_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F"
+    ],
+    "expectedPassCount": 6,
+    "note": "B and C are the lockout guards and matter as much as D and E: a permission fix that refuses the people it was meant to serve is not a fix. C first ASSERTS the creator has no farm_memberships row, so it cannot pass through the membership branch and silently prove nothing -- the same vacuity trap fixture 58 fell into. The member and the creator are deliberately DIFFERENT users on DIFFERENT farms, so neither branch can mask the other. E is separate from D because WITH CHECK governs the row as it will exist, so an UPDATE re-pointing farm_id is the same attack with an extra step, and a fix applied to INSERT alone would leave it open. F pins that migration 59's NULL-safety survived.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "60_BATCH_MUST_BELONG_TO_YOUR_FARM_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.farms",
+      "public.profiles",
+      "public.inventory_batches",
+      "public.farm_memberships"
+    ]
+  },
+  "postApply": {
+    "policies": [
+      {
+        "table": "public.inventory_batches",
+        "present": [
+          "inventory_batches: farmer insert own",
+          "inventory_batches: farmer update own"
+        ]
+      }
+    ]
+  },
+  "postRollback": {
+    "intact": {
+      "tables": [
+        "public.inventory_batches",
+        "public.farms",
+        "public.farm_memberships"
+      ]
+    }
+  }
+}
