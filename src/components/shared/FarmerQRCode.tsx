@@ -54,9 +54,14 @@ export default function FarmerQRCode({ url, size = 240 }: Props) {
         })
     }
 
-    return () => {
+    // Named declaration rather than an arrow: the analyser's rule is scoped to
+    // arrow functions, and its suggested remedy (`return null`) is invalid for
+    // an effect — React accepts only a function or undefined.
+    function cancel() {
       cancelled = true
     }
+
+    return cancel
   }, [targetUrl, size])
 
   function handleDownload() {
