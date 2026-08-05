@@ -30,21 +30,29 @@ export default function FarmerQRCode({ url, size = 240 }: Props) {
   const targetUrl = url ?? (typeof window !== 'undefined' ? `${window.location.origin}/farmer` : '/farmer')
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    // Single exit, always a cleanup function. The early `if (!canvas) return`
+    // this replaces left the effect returning undefined on one path and a
+    // function on the other. DeepSource's generic advice for that shape is
+    // `return null` — which is wrong here specifically: React rejects anything
+    // from an effect that is not a function or undefined, so returning null
+    // would trade a lint warning for a runtime one. Guarding the body instead
+    // satisfies both.
     let cancelled = false
+    const canvas = canvasRef.current
 
-    QRCode.toCanvas(canvas, targetUrl, {
-      width: size,
-      margin: 2,
-      color: { dark: '#1a2d1e', light: '#ffffff' },
-    })
-      .then(() => {
-        if (!cancelled) setDataUrl(canvas.toDataURL('image/png'))
+    if (canvas) {
+      QRCode.toCanvas(canvas, targetUrl, {
+        width: size,
+        margin: 2,
+        color: { dark: '#1a2d1e', light: '#ffffff' },
       })
-      .catch(() => {
-        if (!cancelled) setError(true)
-      })
+        .then(() => {
+          if (!cancelled) setDataUrl(canvas.toDataURL('image/png'))
+        })
+        .catch(() => {
+          if (!cancelled) setError(true)
+        })
+    }
 
     return () => {
       cancelled = true
