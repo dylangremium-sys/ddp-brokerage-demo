@@ -22,11 +22,10 @@
       "B",
       "C",
       "D",
-      "E",
-      "F"
+      "E"
     ],
-    "expectedPassCount": 6,
-    "note": "A asserts the premise (NULL <> 'Approved' is not TRUE) rather than assuming it. C and D are the two defects, and D asserts a ROW COUNT rather than catching an exception because the old behaviour raised nothing at all -- an exception handler would never have fired and the test would have passed while the bug remained. E is the counterweight: four things that must STILL be refused. F pins a KNOWN GAP that 59 deliberately does not close -- a farmer can attach a batch to a farm they are not a member of, because the ownership test is an OR satisfied by naming yourself as created_by. Nothing auto-creates a farm_memberships row, so requiring membership is a product decision about how membership is established, not a NULL-handling bug. Asserted rather than described so it is measured every run; when it is closed, F fails and must be inverted.",
+    "expectedPassCount": 5,
+    "note": "A asserts the premise (NULL <> 'Approved' is not TRUE) rather than assuming it. C and D are the two defects, and D asserts a ROW COUNT rather than catching an exception because the old behaviour raised nothing at all -- an exception handler would never have fired and the test would have passed while the bug remained. E is the counterweight: four things that must STILL be refused. The cross-farm gap this migration originally pinned in a section F is closed by migration 60; its proof moved there, so VERIFY 59 stays runnable against a database carrying both.",
     "readOnly": false
   },
   "rollback": {

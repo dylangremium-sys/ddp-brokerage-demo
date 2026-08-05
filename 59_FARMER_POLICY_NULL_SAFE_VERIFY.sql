@@ -179,58 +179,13 @@ BEGIN
 END
 $verify_e$;
 
--- -----------------------------------------------------------------------------
--- F. A KNOWN GAP, MEASURED — NOT FIXED BY THIS MIGRATION
---
--- The ownership test in both policies is an OR:
---
---   (created_by = auth.uid()) OR has_farm_membership(farm_id)
---
--- The first branch is satisfied by the INSERTING user naming THEMSELVES, whatever
--- farm_id they name. So a farmer can attach a batch to a farm they are not a
--- member of, and its real members then see stock on their farm that they did not
--- create. Measured on staging (a 0-diff production copy), 2026-08-05.
---
--- This migration deliberately does NOT close it. Nothing auto-creates a
--- farm_memberships row, so requiring membership could lock a farmer out of a farm
--- they have just created — that is a product decision about how membership is
--- established, not a NULL-handling bug, and bundling it into this change would
--- hide a semantic shift inside a fix.
---
--- Asserted rather than described, so the gap is measured on every run instead of
--- living in a comment nobody re-reads. WHEN THIS GAP IS CLOSED THIS SECTION MUST
--- BE INVERTED — its failure is the signal that the fix landed.
--- -----------------------------------------------------------------------------
-DO $verify_f$
-DECLARE
-  v_rival uuid := '00000000-0000-4000-8000-000000059f02';
-  v_admitted boolean := false;
-BEGIN
-  SET LOCAL ROLE authenticated;
-  PERFORM set_config('request.jwt.claims',
-    '{"sub":"00000000-0000-4000-8000-000000059001","role":"authenticated"}', true);
-  BEGIN
-    INSERT INTO public.inventory_batches (farm_id, created_by, batch_number)
-    VALUES (v_rival, pg_temp.v59_farmer(), 'V59-CROSS-FARM');
-    v_admitted := true;
-  EXCEPTION WHEN insufficient_privilege OR check_violation THEN
-    v_admitted := false;
-  END;
-  RESET ROLE;
+-- The gap section F used to pin -- a farmer attaching a batch to a farm they do
+-- not belong to -- is CLOSED by migration 60, which replaces the self-referential
+-- `created_by = auth.uid()` branch with has_farm_claim(). Its proof lives in
+-- 60_BATCH_MUST_BELONG_TO_YOUR_FARM_VERIFY.sql sections D and E. This section was
+-- written to fail once the gap closed, so that closing it could not be forgotten;
+-- it has done its job and been removed rather than left asserting the opposite of
+-- what is now true.
 
-  IF NOT v_admitted THEN
-    RAISE EXCEPTION
-      'VERIFY F FAILED: a farmer can no longer attach a batch to a farm they are not a member of. '
-      'That is an IMPROVEMENT, not a defect — the known gap this section pins has been closed. '
-      'Invert this section and delete the note in the migration header.';
-  END IF;
-  -- "PASSED" here means "the gap is still exactly where it was measured", NOT
-  -- "this is fine". The harness parses the word, so it has to be the word.
-  RAISE NOTICE
-    'VERIFY F PASSED (pins a KNOWN GAP — this is not an all-clear): a farmer CAN still attach a '
-    'batch to a rival''s farm, because the ownership test is an OR satisfied by naming yourself as '
-    'created_by. Deliberately out of scope for migration 59.';
-END
-$verify_f$;
 
 ROLLBACK;
