@@ -32,10 +32,46 @@ ON CONFLICT (id) DO UPDATE SET role = 'farmer';
 -- holds it by membership ALONE. farm_c is created by "creator" with NO
 -- membership row, which is the lockout case. Keeping the two branches on
 -- different users is what stops one branch masking the other.
+-- The claim MUST be set before each farm insert. Production and staging carry
+-- `trg_protect_farm_admin_fields`, which on INSERT does `new.created_by :=
+-- auth.uid()` and ignores whatever the statement supplied — an anti-spoofing
+-- measure. Inserting as a session with no JWT therefore stores created_by NULL,
+-- the creator branch of has_farm_claim matches nothing, and section C fails
+-- claiming this migration locks farmers out. It does not; the fixture did.
+-- The disposable substrate has no such trigger and honours the supplied value,
+-- so setting the claim is what makes this VERIFY mean the same thing in both.
+SELECT set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-4000-8000-000000060003","role":"authenticated"}', true);
 INSERT INTO public.farms (id, farm_name, created_by) VALUES
-  ('00000000-0000-4000-8000-000000060f01', 'V60 Member Farm',  '00000000-0000-4000-8000-000000060003'),
-  ('00000000-0000-4000-8000-000000060f02', 'V60 Creator Farm', '00000000-0000-4000-8000-000000060002'),
-  ('00000000-0000-4000-8000-000000060f03', 'V60 Rival Farm',   '00000000-0000-4000-8000-000000060003');
+  ('00000000-0000-4000-8000-000000060f01', 'V60 Member Farm', '00000000-0000-4000-8000-000000060003'),
+  ('00000000-0000-4000-8000-000000060f03', 'V60 Rival Farm',  '00000000-0000-4000-8000-000000060003');
+
+SELECT set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-4000-8000-000000060002","role":"authenticated"}', true);
+INSERT INTO public.farms (id, farm_name, created_by) VALUES
+  ('00000000-0000-4000-8000-000000060f02', 'V60 Creator Farm', '00000000-0000-4000-8000-000000060002');
+
+SELECT set_config('request.jwt.claims', NULL, true);
+
+-- Assert the fixture built what it intended. Without this the trigger can null
+-- created_by and every later section still runs, testing something else.
+DO $fixture_check$
+DECLARE v_bad text;
+BEGIN
+  SELECT string_agg(farm_name || ' created_by=' || coalesce(created_by::text,'NULL'), '; ')
+    INTO v_bad
+    FROM public.farms
+   WHERE id IN ('00000000-0000-4000-8000-000000060f01','00000000-0000-4000-8000-000000060f02',
+                '00000000-0000-4000-8000-000000060f03')
+     AND created_by IS DISTINCT FROM CASE id
+           WHEN '00000000-0000-4000-8000-000000060f02'::uuid THEN '00000000-0000-4000-8000-000000060002'::uuid
+           ELSE '00000000-0000-4000-8000-000000060003'::uuid END;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'VERIFY SETUP FAILED: farms did not get the intended created_by (%). Every '
+                    'section below would have tested the wrong thing.', v_bad;
+  END IF;
+END
+$fixture_check$;
 
 INSERT INTO public.farm_memberships (farm_id, user_id)
 VALUES ('00000000-0000-4000-8000-000000060f01', '00000000-0000-4000-8000-000000060001');
