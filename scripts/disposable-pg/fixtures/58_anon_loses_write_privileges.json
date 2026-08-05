@@ -1,10 +1,19 @@
 {
   "id": "58_anon_loses_write_privileges",
-  "title": "Migration 58 — anon loses INSERT, UPDATE and DELETE on every public table",
-  "description": "Applies migration 58 to the reconciled substrate, runs its VERIFY A-F, then rolls it back. Measured on production 2026-08-05: `anon` holds DELETE, INSERT, SELECT and UPDATE at the TABLE level on roughly twenty public tables. Nothing gets through -- measured on staging, every anon read returns 0 rows and every anon write is refused -- but RLS is doing that ALONE, and every one of those tables is one `DISABLE ROW LEVEL SECURITY` or one over-broad policy away from handing an anonymous caller the commercial spine. Two locks are not twice as good as one; they are different in kind, because the second holds while the first is being changed. SELECT is deliberately NOT revoked, and the reason is a real trade-off rather than caution: revoking it turns an anonymous read from '0 rows' into 'permission denied for table X', which is D17's live defect about error text leaking to anonymous callers, and RLS already returns nothing so the read side gains no protection. The residual is stated rather than closed -- after this, disabling RLS on a table exposes it to anonymous READS but not WRITES, which is the difference between a disclosure and a corruption. Nothing can break: anon can execute NO public function (measured, zero rows), sign-up runs through Supabase Auth against auth.users, and the intake endpoints use the service-role key server-side. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+  "title": "Migration 58 \u2014 anon loses INSERT, UPDATE and DELETE on every public table",
+  "description": "Applies migration 58 to the reconciled substrate, runs its VERIFY A-F, then rolls it back. Measured on production 2026-08-05: `anon` holds DELETE, INSERT, SELECT and UPDATE at the TABLE level on roughly twenty public tables. Nothing gets through -- measured on staging, every anon read returns 0 rows and every anon write is refused -- but RLS is doing that ALONE, and every one of those tables is one `DISABLE ROW LEVEL SECURITY` or one over-broad policy away from handing an anonymous caller the commercial spine. Two locks are not twice as good as one; they are different in kind, because the second holds while the first is being changed. SELECT is deliberately NOT revoked, and the reason is a real trade-off rather than caution: revoking it turns an anonymous read from '0 rows' into 'permission denied for table X', which is D17's live defect about error text leaking to anonymous callers, and RLS already returns nothing so the read side gains no protection. The residual is stated rather than closed -- after this, disabling RLS on a table exposes it to anonymous READS but not WRITES, which is the difference between a disclosure and a corruption. Nothing can break: anon can execute NO public function (measured, zero rows), sign-up runs through Supabase Auth against auth.users, and the intake endpoints use the service-role key server-side. NOT read-only; wrapped in BEGIN..ROLLBACK. STAGING NOTE (added after the staging rehearsal): this fixture used to apply ONLY its own HARDENING file, so section E -- 'an authenticated farmer can still create and update their own batch' -- ran against a substrate whose farmer INSERT policy carries no status or lifecycle guard at all. It passed because the refusing predicate was not there. Against staging, a 0-diff production copy, the SAME section FAILED. The fixture now stages production's real (NULL-unsafe) policies and then migration 59, so section E is asserted against the predicate production actually runs rather than a permissive stand-in.",
   "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
+    {
+      "label": "PRE59-WORLD",
+      "source": "file",
+      "file": "scripts/disposable-pg/fixtures/sql/96_pre59_farmer_policies.sql"
+    },
+    {
+      "label": "HARDENING-59",
+      "file": "59_FARMER_POLICY_NULL_SAFE_HARDENING.sql"
+    },
     {
       "label": "HARDENING-58",
       "file": "58_ANON_LOSES_WRITE_PRIVILEGES_HARDENING.sql"
@@ -12,9 +21,16 @@
   ],
   "verify": {
     "file": "58_ANON_LOSES_WRITE_PRIVILEGES_VERIFY.sql",
-    "expectedSections": ["A", "B", "C", "D", "E", "F"],
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F"
+    ],
     "expectedPassCount": 6,
-    "note": "C is the section that proves this is a SECOND lock rather than a restatement of the first. Before migration 58 an anon INSERT failed with `new row violates row-level security policy`; after it, the failure must be `insufficient_privilege` — a different SQLSTATE from a different layer, checked BEFORE any policy is consulted. The handler catches `insufficient_privilege` as success and reports the SQLSTATE of anything else, so a write still being stopped by RLS reads as a FAILURE here, not a pass: 'refused' is not the assertion, 'refused by privilege' is. B asserts SELECT is still granted, because losing it silently would convert every anonymous read into an error naming the table, and that is a decision to make deliberately rather than inherit. E is the regression guard — a revoke that overreached and took the farmer's own write path with it would satisfy every other section. F proves the DEFAULT privilege was revoked too, by creating a table and inspecting what anon got; without it the next migration to add a table re-opens the hole and nothing reports it. NOT PROVEN HERE: that no anonymous caller anywhere in the product needed one of these grants. The evidence is that anon can execute no function and reads nothing, which is strong but is an argument, not a test of the deployed frontend.",
+    "note": "C is the section that proves this is a SECOND lock rather than a restatement of the first. Before migration 58 an anon INSERT failed with `new row violates row-level security policy`; after it, the failure must be `insufficient_privilege` \u2014 a different SQLSTATE from a different layer, checked BEFORE any policy is consulted. The handler catches `insufficient_privilege` as success and reports the SQLSTATE of anything else, so a write still being stopped by RLS reads as a FAILURE here, not a pass: 'refused' is not the assertion, 'refused by privilege' is. B asserts SELECT is still granted, because losing it silently would convert every anonymous read into an error naming the table, and that is a decision to make deliberately rather than inherit. E is the regression guard \u2014 a revoke that overreached and took the farmer's own write path with it would satisfy every other section. F proves the DEFAULT privilege was revoked too, by creating a table and inspecting what anon got; without it the next migration to add a table re-opens the hole and nothing reports it. NOT PROVEN HERE: that no anonymous caller anywhere in the product needed one of these grants. The evidence is that anon can execute no function and reads nothing, which is strong but is an argument, not a test of the deployed frontend.",
     "readOnly": false
   },
   "rollback": {
@@ -27,8 +43,15 @@
     ]
   },
   "declaredSubstrate": {
-    "roles": ["anon", "authenticated", "service_role"],
-    "schemas": ["auth", "public"],
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
     "symbols": [
       "auth.uid",
       "auth.users",
@@ -43,25 +66,44 @@
       {
         "table": "public.inventory_batches",
         "role": "anon",
-        "absent": ["INSERT", "UPDATE", "DELETE"],
-        "present": ["SELECT"]
+        "absent": [
+          "INSERT",
+          "UPDATE",
+          "DELETE"
+        ],
+        "present": [
+          "SELECT"
+        ]
       },
       {
         "table": "public.farms",
         "role": "anon",
-        "absent": ["INSERT", "UPDATE", "DELETE"],
-        "present": ["SELECT"]
+        "absent": [
+          "INSERT",
+          "UPDATE",
+          "DELETE"
+        ],
+        "present": [
+          "SELECT"
+        ]
       },
       {
         "table": "public.inventory_batches",
         "role": "authenticated",
-        "present": ["INSERT", "UPDATE", "SELECT"]
+        "present": [
+          "INSERT",
+          "UPDATE",
+          "SELECT"
+        ]
       }
     ]
   },
   "postRollback": {
     "intact": {
-      "tables": ["public.inventory_batches", "public.farms"]
+      "tables": [
+        "public.inventory_batches",
+        "public.farms"
+      ]
     }
   }
 }
