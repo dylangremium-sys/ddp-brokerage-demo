@@ -49,7 +49,7 @@ function resolveCommit() {
   if (full) return { commitSha: full, commitShaShort: gitRevParse('--short HEAD') ?? full.slice(0, 7), source: 'git' }
 
   const fromEnv = process.env.VERCEL_GIT_COMMIT_SHA || process.env.DDP_COMMIT_SHA
-  if (fromEnv && fromEnv.trim()) {
+  if (fromEnv?.trim()) {
     const sha = fromEnv.trim()
     return {
       commitSha: sha,
@@ -58,6 +58,9 @@ function resolveCommit() {
     }
   }
 
+  // skipcq: JS-0002 — Node build script, never served to a browser. This warning
+  // is the only signal that a deploy is about to lose its identity, and a test
+  // asserts it reaches stderr.
   console.warn(
     'generate-version: no .git, and neither VERCEL_GIT_COMMIT_SHA nor DDP_COMMIT_SHA is set — ' +
       'falling back to "unknown". The deployed site will not be able to say which commit it is.',
@@ -73,4 +76,8 @@ writeFileSync(
   JSON.stringify({ version: pkg.version, builtAt: new Date().toISOString(), commitSha, commitShaShort }, null, 2) + '\n',
 )
 
+// skipcq: JS-0002 — this is a Node build script, never bundled or served to a
+// browser. Its stdout IS the interface: naming the SHA source here is what makes
+// a silent downgrade to "unknown" visible in the build log instead of on the
+// live site afterwards, which is the defect this file was changed to fix.
 console.log(`Generated public/version.json (v${pkg.version}, ${commitShaShort}, sha from: ${shaSource})`)

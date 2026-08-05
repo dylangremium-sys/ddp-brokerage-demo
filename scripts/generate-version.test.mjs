@@ -20,7 +20,7 @@ import { spawnSync } from 'node:child_process'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SCRIPT = join(HERE, 'generate-version.js')
 
-let sandbox
+let sandbox = null
 
 function runIn(dir, env) {
   const res = spawnSync(process.execPath, [join(dir, 'scripts', 'generate-version.js')], {
