@@ -1,0 +1,61 @@
+{
+  "id": "54_inventory_batch_value_constraints",
+  "title": "Migration 54 — value constraints and batch-number identity on inventory_batches",
+  "description": "Applies migration 54 to the reconciled substrate, runs its VERIFY A-H, then rolls it back. Production's inventory_batches carries one primary key and three foreign keys and NOTHING else -- zero CHECK, zero UNIQUE (pg_constraint, measured read-only 2026-08-04) -- on the table the reservation ledger, the buyer pack and the export gate all read. The interesting part is not that bounds were missing but that the obvious bound would not have worked: PostgreSQL sorts numeric NaN ABOVE every real number, so `CHECK (quantity_kg >= 0)` admits NaN, and one NaN quantity reads as infinite stock to anything comparing numbers. Every rule is therefore closed at both ends and additionally names NaN, which is why VERIFY D asserts the premise (`'NaN'::numeric >= 0` is TRUE on this server) before asserting the refusal -- a bound written against a premise nobody checked is how this class of defect survives. Batch-number uniqueness is per-farm, case-insensitive and whitespace-trimmed, because 'TH-2026-014' and 'th-2026-014 ' are the same batch to everybody except a byte comparison, and it is a PARTIAL index because production allows both farm_id and batch_number to be NULL and rows that identify no batch must not collide. Section H records the one thing this migration BREAKS: migration 44's VERIFY section G deliberately inserts a NaN-quantity batch, and after 54 the database refuses it -- the guarantee moves from 'the ledger copes with a NaN batch' to 'there is no NaN batch', and 44 G failing is 54 working. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-54",
+      "file": "54_INVENTORY_BATCH_VALUE_CONSTRAINTS_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "54_INVENTORY_BATCH_VALUE_CONSTRAINTS_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F", "G", "H"],
+    "expectedPassCount": 8,
+    "note": "B exists so that C-H are refusals of the VALUE and not artefacts of a broken fixture: it inserts an entirely ordinary batch and requires it to be stored. C-E walk the three shapes a lower bound alone would admit -- negative, NaN, Infinity -- across every bounded column rather than a representative one, because these constraints were written per-column and a per-column mistake is invisible to a sampled test. F carries the mis-united water activity (0.65 is a normal reading, 65 is the same reading with the wrong unit and is not detectably wrong to a human skimming a form) AND asserts the inclusive upper bound is admissible, so the ceiling cannot be off by one. G proves uniqueness in all four directions that matter: the duplicate is refused by exact match, by case and by whitespace; the same number on a DIFFERENT farm is admitted; a blank is refused; and two NULL batch numbers do NOT collide, which is the assertion that proves the index is partial. NOT PROVEN HERE: that any application code path produces values inside these bounds -- this is a database guarantee and the TypeScript layer is unchanged.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "54_INVENTORY_BATCH_VALUE_CONSTRAINTS_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": ["public.farms", "public.inventory_batches"]
+  },
+  "postApply": {
+    "constraints": [
+      {
+        "table": "public.inventory_batches",
+        "present": [
+          "inventory_batches_quantity_kg_sane",
+          "inventory_batches_minimum_order_kg_sane",
+          "inventory_batches_price_per_kg_sane",
+          "inventory_batches_asking_price_thb_sane",
+          "inventory_batches_thc_percent_range",
+          "inventory_batches_cbd_percent_range",
+          "inventory_batches_moisture_percent_range",
+          "inventory_batches_total_terpenes_pct_range",
+          "inventory_batches_water_activity_range",
+          "inventory_batches_batch_number_not_blank"
+        ]
+      }
+    ],
+    "indexes": {
+      "present": ["public.inventory_batches_farm_batch_number_key"]
+    }
+  },
+  "postRollback": {
+    "intact": {
+      "tables": ["public.inventory_batches", "public.farms"]
+    }
+  }
+}
