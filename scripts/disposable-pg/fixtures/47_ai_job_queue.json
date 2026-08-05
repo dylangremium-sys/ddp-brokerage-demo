@@ -2,7 +2,7 @@
   "id": "47_ai_job_queue",
   "title": "Migration 47 — the AI job queue foundation",
   "description": "Applies migration 47 and rolls it back on a disposable PostgreSQL 18 cluster. NO VERIFY PHASE: 47_AI_JOB_QUEUE_FOUNDATION_VERIFY.sql does not use this repository's `VERIFY <letter> PASSED:` convention -- it emits free-text RAISE NOTICE lines that the harness's parser cannot score, so declaring expectedSections here would be a fiction. What this fixture does prove is that 47 applies cleanly onto the bootstrap substrate and that its ROLLBACK returns the catalog to its exact pre-apply state, which is the property migration 47 never had a test for. The append-only pair matters: ai_job_attempts is guarded by UPDATE and DELETE triggers, so its rollback has to drop both the triggers and their functions, not just the tables -- a CASCADE on the table would remove the triggers but strand the two functions in public, which is precisely the leak the symmetry check now catches.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

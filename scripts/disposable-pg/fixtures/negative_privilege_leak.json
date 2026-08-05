@@ -2,7 +2,7 @@
   "id": "negative_privilege_leak",
   "title": "Negative \u2014 a ROLLBACK that leaves a privilege granted",
   "description": "Grants DELETE on public.profiles to `anon` and then runs a rollback that revokes DELETE on public.farms instead. REVOKE of a privilege that was never granted is not an error, so the rollback exits 0 with the unauthenticated role still holding DELETE on the profiles table. Nothing is created and nothing is dropped, so every object-level comparison -- names, signatures, definition digests, policies, triggers -- is byte-identical before and after. This fixture exists so that the privilege branch of the snapshot cannot quietly stop working: if the ACL sweep is removed or narrowed, this fixture PASSES, and an unexpected pass is a hard CI failure.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": "scripts/disposable-pg/fixtures/sql",
   "verify": {
     "file": null,

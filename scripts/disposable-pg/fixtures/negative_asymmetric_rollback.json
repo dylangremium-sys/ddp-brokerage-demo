@@ -2,7 +2,7 @@
   "id": "negative_asymmetric_rollback",
   "title": "Negative scenario — a ROLLBACK that exits 0 without removing what it created",
   "description": "Harness self-proof: the ROLLBACK drops the right function name with the wrong argument list, so every statement returns 0 while the function survives. This is the defect that shipped twice in migrations 47-51. The catalog symmetry check (baseline before apply vs catalog after rollback) must fail the run with the rollback exit code (30). Registered as an expect-failure fixture; ci:runtime treats an unexpected PASS as a hard failure, so the symmetry check cannot be silently weakened or removed.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": "scripts/disposable-pg/fixtures/sql",
   "expectFailure": { "phase": "rollback", "exitCode": 30 },
   "applyStages": [

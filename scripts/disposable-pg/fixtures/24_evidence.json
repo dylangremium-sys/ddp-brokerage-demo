@@ -2,7 +2,7 @@
   "id": "24_evidence",
   "title": "Migration 24 — Evidence Request & Resolution",
   "description": "First reference fixture. Applies the migration-24 triplet, runs VERIFY A-R, rolls back STORAGE->main, and exercises the destructive-rollback guard on a disposable PostgreSQL 18 cluster.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     { "label": "HARDENING", "file": "24_EVIDENCE_REQUEST_RESOLUTION_HARDENING.sql" },

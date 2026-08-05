@@ -2,7 +2,7 @@
   "id": "11_audit_log_truncate",
   "title": "Migration 11 \u2014 the compliance audit-log truncate guard",
   "description": "Applies migration 9 (which creates the Watchtower/compliance substrate and the prevent_compliance_audit_log_mutation guard function) then migration 11, and rolls 11 back. Baseline is therefore the state after 9, because 11 is the only stage its rollback reverses. 11 hardens public.compliance_audit_log against TRUNCATE and removes a needless direct EXECUTE on a trigger-only guard function. NO VERIFY PHASE: this migration's VERIFY script does not use the repository's `VERIFY <letter> PASSED:` convention -- it emits free-text RAISE NOTICE lines the harness cannot score, so declaring expectedSections here would be a fiction. What this fixture proves is that the migration applies onto the bootstrap substrate and that its ROLLBACK returns the catalog to its exact pre-apply state. The catalog footprint is a single TRUNCATE trigger, which is exactly the shape most at risk from a rollback written as a table-level CASCADE: dropping the table would take the trigger with it and look clean, while dropping only the trigger and leaving its function behind is a leak the symmetry snapshot now sees.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

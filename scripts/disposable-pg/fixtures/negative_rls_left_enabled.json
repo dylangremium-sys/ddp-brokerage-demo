@@ -2,7 +2,7 @@
   "id": "negative_rls_left_enabled",
   "title": "Negative \u2014 a ROLLBACK that leaves row-level security switched on",
   "description": "Enables row-level security on public.profiles and then runs a rollback that disables it on public.farms, which already had it off -- so the statement succeeds, changes nothing, and leaves profiles protected by RLS with no policies attached. That end state is worse than either intended one: with RLS on and no policy, every non-superuser read returns zero rows, which reads as 'no data' rather than as an error. RLS is a boolean on pg_class rather than an object, so only the rls branch of the snapshot can see this. Guards migration 51, which is almost entirely ENABLE ROW LEVEL SECURITY statements.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": "scripts/disposable-pg/fixtures/sql",
   "verify": {
     "file": null,

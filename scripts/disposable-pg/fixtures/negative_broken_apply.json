@@ -2,7 +2,7 @@
   "id": "negative_broken_apply",
   "title": "Negative scenario — apply raises on real PostgreSQL",
   "description": "Harness self-proof: an apply stage that RAISEs must abort the run with the apply exit code (10) and a retained evidence bundle, exercised against a REAL disposable cluster (brief §17). Registered as an expect-failure fixture; ci:runtime treats an unexpected PASS as a hard failure.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": "scripts/disposable-pg/fixtures/sql",
   "expectFailure": { "phase": "apply", "exitCode": 10 },
   "applyStages": [

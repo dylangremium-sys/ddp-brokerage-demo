@@ -9,6 +9,148 @@
 // then call assertCatalogSymmetry(before, after) to verify they match.
 // The snapshot includes functions WITH their signatures, not just names.
 
+const ANY_ALL_BEFORE = /\b(?:ANY|ALL)\s*\(\s*$/i;
+const ARRAY_OPEN = 'ARRAY[';
+
+/**
+ * Index just past the `]` closing the literal that starts at `from`, or -1.
+ *
+ * Single-quoted strings are tracked so a literal containing a bracket cannot end
+ * the scan early; `''` is an escaped quote, not a terminator.
+ */
+function endOfArrayLiteral(text, from) {
+  let depth = 1;
+  let inStr = false;
+  for (let i = from; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (ch === "'" && text[i + 1] === "'") {
+        i++;
+      } else if (ch === "'") {
+        inStr = false;
+      }
+      continue;
+    }
+    if (ch === "'") {
+      inStr = true;
+    } else if (ch === '[') {
+      depth++;
+    } else if (ch === ']') {
+      depth--;
+      if (depth === 0) {
+        return i + 1;
+      }
+    }
+  }
+  return -1;
+}
+
+/** Split on commas at bracket/paren depth zero and outside string literals. */
+function splitTopLevel(body) {
+  const parts = [];
+  let cur = '';
+  let depth = 0;
+  let inStr = false;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (inStr) {
+      cur += ch;
+      if (ch === "'" && body[i + 1] === "'") {
+        i++;
+        cur += body[i];
+      } else if (ch === "'") {
+        inStr = false;
+      }
+      continue;
+    }
+    if (ch === "'") {
+      inStr = true;
+    } else if (ch === '[' || ch === '(') {
+      depth++;
+    } else if (ch === ']' || ch === ')') {
+      depth--;
+    } else if (ch === ',' && depth === 0) {
+      parts.push(cur);
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  parts.push(cur);
+  return parts;
+}
+
+/**
+ * Sort the elements of set-membership `ARRAY[...]` literals in a definition string.
+ *
+ * `role = ANY (ARRAY['pending','farmer','ddp_admin'])` and
+ * `role = ANY (ARRAY['ddp_admin','farmer','pending'])` are the SAME constraint.
+ * PostgreSQL renders the elements in whatever order the DDL wrote them, so a
+ * rollback that re-creates a CHECK with its values listed differently reports as
+ * a redefinition when nothing about the admissible set changed. Migration 39's
+ * rollback does exactly this to profiles_role_check.
+ *
+ * That false positive matters more than it looks. A gate that cries wolf on a
+ * correct rollback is a gate someone eventually switches off, taking the true
+ * positives with it — so the noise is a threat to the real findings, not just an
+ * annoyance.
+ *
+ * Sorting is deliberately the ONLY normalisation, and it applies ONLY to an
+ * ARRAY literal that is the right-hand operand of `= ANY (...)` or `= ALL (...)`.
+ * That is the one construct where element order is provably not semantic.
+ *
+ * An earlier version of this function sorted EVERY `ARRAY[...]` it found, which
+ * did not match this paragraph. Column defaults are the counter-example that
+ * makes the difference real rather than theoretical:
+ *
+ *   allowed_models TEXT[] DEFAULT ARRAY['claude-opus-5', 'claude-sonnet-5']
+ *                                                  -- 50_AI_PROMPT_REGISTRY_HARDENING.sql:39
+ *
+ * is an ordered value. A rollback that restored it with the elements swapped
+ * changed the default, and the broad version reported the two as identical —
+ * a false negative introduced by a fix for a false positive, which is the usual
+ * way noise-reduction turns into blindness.
+ *
+ * Nested brackets inside an element (a subscript, a nested ARRAY) are left alone
+ * rather than mis-split: the matcher only handles flat literals, which is what
+ * enum-style CHECKs are.
+ *
+ * Exported for test.
+ */
+export function normaliseArrayLiterals(detail) {
+  if (!detail || !detail.includes(ARRAY_OPEN)) {
+    return detail;
+  }
+
+  let out = '';
+  let cursor = 0;
+  for (;;) {
+    const start = detail.indexOf(ARRAY_OPEN, cursor);
+    if (start < 0) {
+      return out + detail.slice(cursor);
+    }
+
+    const bodyStart = start + ARRAY_OPEN.length;
+    out += detail.slice(cursor, bodyStart);
+    cursor = bodyStart;
+
+    // Only a membership test is sorted; anything else keeps its written order.
+    if (!ANY_ALL_BEFORE.test(detail.slice(0, start))) {
+      continue;
+    }
+
+    // An unbalanced literal is emitted verbatim rather than guessed at.
+    const end = endOfArrayLiteral(detail, bodyStart);
+    if (end < 0) {
+      return out + detail.slice(bodyStart);
+    }
+
+    const elements = splitTopLevel(detail.slice(bodyStart, end - 1));
+    out += `${elements.map((e) => e.trim()).sort().join(', ')}]`;
+    cursor = end;
+  }
+}
+
 /**
  * Snapshot the public schema catalog in a form suitable for before/after comparison.
  * Returns a sorted array of { kind, obj } tuples.
@@ -127,6 +269,101 @@ export function snapshotCatalog(cluster) {
       LEFT JOIN pg_namespace dn ON dn.oid = d.defaclnamespace,
            LATERAL aclexplode(d.defaclacl) a
       GROUP BY 1, 2
+
+    -- ========================================================================
+    -- BELOW: object classes added 2026-08-04 (defect D7).
+    --
+    -- Everything above tracks objects that live in their own catalog row and
+    -- have a name. That covered functions, tables, policies, triggers, RLS and
+    -- privileges — and nothing else. A migration that added a CHECK constraint,
+    -- an index, a NOT NULL, a column, or a column default produced a catalog
+    -- snapshot IDENTICAL to the one before it ran, so its rollback could remove
+    -- none of them and the symmetry check would still report success.
+    --
+    -- That is the difference between "the rollback did not leave a stray table"
+    -- and "the rollback reversed the migration". Only the first was ever proven.
+    -- ========================================================================
+
+    -- Columns, with type, nullability and default. atttypid::regtype rather
+    -- than format_type() so a domain reads as the domain, not its base type —
+    -- a rollback that swaps a constrained domain for its underlying type is
+    -- exactly the kind of near-miss this is here to catch. Dropped columns
+    -- (attisdropped) are excluded: PostgreSQL keeps the tombstone forever, so
+    -- including them would make every DROP COLUMN rollback look asymmetric.
+    UNION ALL SELECT 'column', n.nspname || '.' || c.relname || '.' || a.attname,
+           a.atttypid::regtype::text
+             || CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END
+             || coalesce(' DEFAULT ' || pg_get_expr(ad.adbin, ad.adrelid), '')
+      FROM pg_attribute a
+      JOIN pg_class c ON c.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+      WHERE n.nspname IN ('public', 'storage') AND c.relkind IN ('r', 'p')
+        AND a.attnum > 0 AND NOT a.attisdropped
+        AND ${notExtensionOwned.replace('%OID%', 'c.oid').replace('%CATALOG%', 'pg_class')}
+
+    -- Constraints: CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY and EXCLUDE alike.
+    -- pg_get_constraintdef is the whole definition, so a CHECK whose predicate
+    -- is weakened on rollback (>= 0 restored as > -1) is caught, not just one
+    -- that disappears. Constraint NAMES are unstable for system-generated ones,
+    -- so the key is table+name and the detail is the definition.
+    UNION ALL SELECT 'constraint',
+           n.nspname || '.' || c.relname || ': ' || con.conname,
+           -- contype is "char", for which || has no unambiguous resolution;
+           -- casting explicitly rather than relying on an implicit one.
+           con.contype::text || ' ' || pg_get_constraintdef(con.oid)
+      FROM pg_constraint con
+      JOIN pg_class c ON c.oid = con.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname IN ('public', 'storage')
+        AND ${notExtensionOwned.replace('%OID%', 'c.oid').replace('%CATALOG%', 'pg_class')}
+
+    -- Indexes. pg_get_indexdef covers uniqueness, method, columns, ordering,
+    -- INCLUDE and the WHERE of a partial index. An index backing a constraint
+    -- is intentionally still listed: dropping the constraint but leaving the
+    -- index (or the reverse) is a real asymmetry, and the constraint branch
+    -- above would not see it.
+    UNION ALL SELECT 'index', n.nspname || '.' || ic.relname,
+           pg_get_indexdef(i.indexrelid)
+      FROM pg_index i
+      JOIN pg_class ic ON ic.oid = i.indexrelid
+      JOIN pg_class tc ON tc.oid = i.indrelid
+      JOIN pg_namespace n ON n.oid = tc.relnamespace
+      WHERE n.nspname IN ('public', 'storage')
+        AND ${notExtensionOwned.replace('%OID%', 'tc.oid').replace('%CATALOG%', 'pg_class')}
+
+    -- Views and materialised views. The 'table' branch above matches relkind
+    -- r/p only, so a migration creating a view was invisible to it — and views
+    -- are how this repo exposes filtered reads (procurement_decisions_current),
+    -- which makes a leftover one a privilege leak, not a tidiness problem.
+    UNION ALL SELECT 'view', n.nspname || '.' || c.relname,
+           ${definitionDigest('pg_get_viewdef(c.oid)')}
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname IN ('public', 'storage') AND c.relkind IN ('v', 'm')
+        AND ${notExtensionOwned.replace('%OID%', 'c.oid').replace('%CATALOG%', 'pg_class')}
+
+    -- Sequences, including the identity/serial ones a CREATE TABLE makes
+    -- implicitly. A rollback that drops a table but not its sequence leaves the
+    -- next apply to fail on a name clash — reported today as a mystery.
+    UNION ALL SELECT 'sequence', n.nspname || '.' || c.relname,
+           s.seqtypid::regtype::text || ' inc ' || s.seqincrement || ' min ' || s.seqmin
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_sequence s ON s.seqrelid = c.oid
+      WHERE n.nspname IN ('public', 'storage') AND c.relkind = 'S'
+        AND ${notExtensionOwned.replace('%OID%', 'c.oid').replace('%CATALOG%', 'pg_class')}
+
+    -- Enum types and their VALUES. Postgres cannot remove an enum label, so a
+    -- migration that adds one is effectively irreversible — which is a fact the
+    -- author should confront at review time rather than discover in production.
+    -- Listing labels in sort order makes the addition visible as an asymmetry.
+    UNION ALL SELECT 'type', n.nspname || '.' || t.typname,
+           coalesce((SELECT string_agg(e.enumlabel, ',' ORDER BY e.enumsortorder)
+                       FROM pg_enum e WHERE e.enumtypid = t.oid), t.typtype::text)
+      FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+      WHERE n.nspname IN ('public', 'storage')
+        AND t.typtype IN ('e', 'd')
+        AND ${notExtensionOwned.replace('%OID%', 't.oid').replace('%CATALOG%', 'pg_type')}
     ORDER BY 1, 2, 3
   `;
 
@@ -134,6 +371,9 @@ export function snapshotCatalog(cluster) {
   if (result.status !== 0) {
     throw new Error(`catalog snapshot failed: ${result.stderr || result.stdout}`);
   }
+
+  // See normaliseArrayLiterals — applied to every detail, because a CHECK is not
+  // the only definition PostgreSQL may render with a reordered ARRAY literal.
 
   // psql runs with -tA, so rows are unaligned and pipe-separated. A policy's
   // qual can itself contain pipes, so split only on the FIRST two.
@@ -147,7 +387,7 @@ export function snapshotCatalog(cluster) {
     objects.push({
       kind: line.slice(0, first).trim(),
       obj: line.slice(first + 1, second).trim(),
-      detail: line.slice(second + 1).trim(),
+      detail: normaliseArrayLiterals(line.slice(second + 1).trim()),
     });
   }
 
@@ -204,5 +444,15 @@ export function assertCatalogSymmetry(before, after) {
     }
   }
 
-  return { ok: false, diff: lines.join('\n'), leaked, destroyed, redefined };
+  // The before/after definition of every reported key, so a caller can decide
+  // whether a specific asymmetry is the one it already knows about. Without this
+  // an allowlist could only match on object NAME, which would waive any future
+  // change to that object as well — far too blunt for a check whose value is
+  // that it notices small differences.
+  const details = {};
+  for (const k of [...leaked, ...destroyed, ...redefined]) {
+    details[k] = { was: beforeMap.get(k) ?? null, now: afterMap.get(k) ?? null };
+  }
+
+  return { ok: false, diff: lines.join('\n'), leaked, destroyed, redefined, details };
 }

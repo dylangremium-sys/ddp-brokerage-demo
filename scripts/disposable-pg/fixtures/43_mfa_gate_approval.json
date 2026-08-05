@@ -2,7 +2,7 @@
   "id": "43_mfa_gate_approval",
   "title": "Migration 43 — MFA for gate approval",
   "description": "Applies migrations 39-43, runs 43's VERIFY A-G, then rolls back 43 on a disposable PostgreSQL 18 cluster. Plan section 10 requires multi-factor authentication for any role able to approve a compliance gate; DDP has none today, so a single password is all that stands between an attacker and the ability to override the export gate -- the one action that lets product move against a failed check. Enforcement is real and wired in as a BEFORE INSERT trigger on export_gate_overrides (a trigger, not a check inside an RPC, so it holds no matter which code path writes the row, including the SQL editor). It ships DISABLED because enabling it before any administrator has enrolled a second factor would lock every approver out at once, turning a security improvement into an outage. A MISSING settings row means REQUIRED, not disabled: deleting a row must never be a way to switch off a control, since that is the edit an attacker reaches for and the one an operator makes by accident.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

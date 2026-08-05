@@ -1,0 +1,66 @@
+{
+  "id": "18_synthetic_runtime_verify",
+  "title": "Migration 18 \u2014 synthetic runtime verification of the applied schema (apply-only)",
+  "description": "Applies migration 18 on a disposable PostgreSQL 17 cluster. This migration ships NO ROLLBACK file, so reversibility cannot be proven and is not claimed: the fixture covers what is provable \u2014 that 18 applies cleanly against a real cluster on the major production runs. It existed outside the harness's old *_HARDENING.sql denominator (defect D6), so before this fixture a fully green run said nothing whatever about it while looking identical to one that covered it. The absence of a rollback is printed on every run rather than left to be inferred from a silence. A DDP-ADMIN-ACTOR stage precedes it because 18 SKIPs its first block, via a NOTICE rather than an error, when no ddp_admin profile exists \u2014 so without it the fixture would pass while the block never ran. Its Block 2 calls public.issue_buyer_pack_snapshot, which in today's repository only migration 23 defines \u2014 migration 10 deliberately deleted its own copy. Migration 18 predates 23, so the PRE-23-WORLD stage supplies the migration-10-era definition, which is the function 18 was written against.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "FARMER-MVP",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "HARDENING-9",
+      "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql"
+    },
+    {
+      "label": "MVP-10",
+      "file": "10_BUYER_PACK_SNAPSHOTS_MVP.sql"
+    },
+    {
+      "label": "MVP-17",
+      "file": "17_PROCUREMENT_DECISIONS_MVP.sql"
+    },
+    {
+      "label": "PRE-23-WORLD",
+      "file": "scripts/disposable-pg/fixtures/sql/98_pre23_world.sql"
+    },
+    {
+      "label": "DDP-ADMIN-ACTOR",
+      "file": "scripts/disposable-pg/fixtures/sql/99_ddp_admin_actor.sql"
+    },
+    {
+      "label": "MIGRATION-18",
+      "file": "18_SYNTHETIC_RUNTIME_VERIFY.sql"
+    }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": []
+  },
+  "forwardOnly": true,
+  "postRollback": null,
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  }
+}

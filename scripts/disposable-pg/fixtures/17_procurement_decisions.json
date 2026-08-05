@@ -1,0 +1,55 @@
+{
+  "id": "17_procurement_decisions",
+  "title": "Migration 17 — procurement decisions (first execution of its rollback)",
+  "description": "Applies the base schema, the farmer MVP, migration 9 and migration 10, then migration 17, and rolls 17 back. 17 records who authorised each buyer-pack release and why, with a trigger making the table append-only and a CHECK requiring a non-empty reason. It depends on migration 10 because procurement_decisions.snapshot_id references buyer_pack_snapshots. Like 10 and 23, its ROLLBACK had never been executed anywhere before this fixture (defect D6). It is also the first fixture whose rollback drops a VIEW — procurement_decisions_current — which the catalog snapshot could not see at all until the D7 work, since the table branch matches relkind r/p only.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "BASE-SCHEMA", "file": "SUPABASE_SCHEMA.sql" },
+    { "label": "FARMER-MVP", "file": "FARMER_MVP_MIGRATION.sql" },
+    { "label": "HARDENING-9", "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql" },
+    { "label": "MVP-10", "file": "10_BUYER_PACK_SNAPSHOTS_MVP.sql" },
+    { "label": "MVP-17", "file": "17_PROCUREMENT_DECISIONS_MVP.sql" }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "17_PROCUREMENT_DECISIONS_ROLLBACK.sql"
+      }
+    ]
+  },
+  "destructiveGuard": {
+    "livenessTable": "public.procurement_decisions",
+    "seedSql": "fixtures/sql/17_procurement_guard_seed.sql",
+    "optInSetting": "procurement.rollback_destructive",
+    "optInValue": "true",
+    "refusalStage": "main-rollback",
+    "expectRefusalMatch": "rollback 17 refused"
+  },
+  "postRollback": {
+    "removed": {
+      "tables": ["public.procurement_decisions"],
+      "functions": ["public.prevent_procurement_decision_mutation"],
+      "policies": [
+        "procurement_decisions: admin select",
+        "procurement_decisions: admin insert"
+      ]
+    },
+    "intact": {
+      "tables": ["public.buyer_pack_snapshots", "public.profiles"],
+      "functions": ["public.is_ddp_admin"]
+    }
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": ["auth.uid", "auth.users"]
+  }
+}

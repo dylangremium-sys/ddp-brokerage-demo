@@ -2,7 +2,7 @@
   "id": "50_ai_prompt_registry",
   "title": "Migration 50 \u2014 the AI prompt registry",
   "description": "Applies migration 50 standalone and rolls it back. 50 is the prompt and model-version registry that makes an AI result reproducible after the fact -- ai_prompts, ai_prompt_versions and ai_model_configs. NO VERIFY PHASE: this migration's VERIFY script does not use the repository's `VERIFY <letter> PASSED:` convention -- it emits free-text RAISE NOTICE lines the harness cannot score, so declaring expectedSections here would be a fiction. What this fixture proves is that the migration applies onto the bootstrap substrate and that its ROLLBACK returns the catalog to its exact pre-apply state. It is the largest catalog footprint of the AI set (four tables, four functions, four policies and two triggers), so it is also the fixture most likely to expose an incomplete rollback.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

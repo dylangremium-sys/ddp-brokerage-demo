@@ -1,0 +1,46 @@
+{
+  "id": "9_compliance_watchtower",
+  "title": "Migration 9 \u2014 the compliance watchtower tables and the append-only audit log (apply-only)",
+  "description": "Applies migration 9 on a disposable PostgreSQL 17 cluster. This migration ships NO ROLLBACK file, so reversibility cannot be proven and is not claimed: the fixture covers what is provable \u2014 that 9 applies cleanly against a real cluster on the major production runs. It existed outside the harness's old *_HARDENING.sql denominator (defect D6), so before this fixture a fully green run said nothing whatever about it while looking identical to one that covered it. The absence of a rollback is printed on every run rather than left to be inferred from a silence.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "FARMER-MVP",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "MIGRATION-9",
+      "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql"
+    }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": []
+  },
+  "forwardOnly": true,
+  "postRollback": null,
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  }
+}

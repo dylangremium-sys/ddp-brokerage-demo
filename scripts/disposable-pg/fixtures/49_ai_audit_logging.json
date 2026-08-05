@@ -2,7 +2,7 @@
   "id": "49_ai_audit_logging",
   "title": "Migration 49 \u2014 AI audit logging and human review",
   "description": "Applies migration 47 then 49 and rolls 49 back; baseline is the state after 47. 49 adds the immutable audit trail for AI operations and human approvals (ai_audit_events, ai_human_reviews). NO VERIFY PHASE: this migration's VERIFY script does not use the repository's `VERIFY <letter> PASSED:` convention -- it emits free-text RAISE NOTICE lines the harness cannot score, so declaring expectedSections here would be a fiction. What this fixture proves is that the migration applies onto the bootstrap substrate and that its ROLLBACK returns the catalog to its exact pre-apply state. Immutability here is enforced by UPDATE and DELETE triggers rather than by permissions, so the rollback must remove both the triggers and the functions behind them; leaving the functions resident is the exact leak the catalog digest was added to catch.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

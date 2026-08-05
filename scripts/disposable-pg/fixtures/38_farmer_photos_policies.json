@@ -2,7 +2,7 @@
   "id": "38_farmer_photos_policies",
   "title": "Migration 38 \u2014 farmer-photos object policies",
   "description": "Applies migration 37 then 38, runs 38's VERIFY A-C, then rolls back 38 on a disposable PostgreSQL 18 cluster. 38 is split from 37 because CREATE POLICY on storage.objects requires OWNERSHIP, which the production SQL Editor's postgres role does not hold (storage.objects is owned by supabase_admin) -- while a bucket write needs only table privileges. 38 declares 37 as a precondition and refuses if the farmer-photos bucket is absent or public: installing object policies on a public bucket would create the appearance of access control without the substance. Rolling 38 back leaves the bucket and its objects untouched; only access is removed, fail-closed.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

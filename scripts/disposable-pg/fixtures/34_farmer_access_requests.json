@@ -2,7 +2,7 @@
   "id": "34_farmer_access_requests",
   "title": "Migration 34 \u2014 farmer access requests",
   "description": "Applies migration 34 standalone and rolls it back, scoring VERIFY sections A-F. 34 fixes a defect observed on the live site: the public supplier-signup form wrote the applicant's details to their own browser storage and routed them to a dashboard requiring a session the form never created, so nothing reached the business. It introduces a real intake table. The rollback therefore removes a table that in production would hold genuine applicant rows -- the symmetry check confirms it removes the structure, not that anyone should run it.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {
