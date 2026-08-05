@@ -4,12 +4,12 @@
   --bg-card:     #12213A;
   --bg-elevated: #1B2C47;
   --bg-deep:     #081420;
-  --accent:        #64748B;
-  --accent-strong:  #334155;
+  --accent:        #C6A24C;
+  --accent-strong:  #A8883A;
   --jade:        #114232;
   --text:        #EDF1F5;
-  --text-muted:  #93A1B2;
-  --border:      #29394D;
+  --text-muted:  #8FA2B5;
+  --border:      #2A3C52;
   --success:     #2E8B67;
   --warning:     #B8782E;
   --error:       #991B1B;
@@ -28,7 +28,7 @@ button, input, select, textarea { border-radius: var(--radius-md); font-family: 
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Inter', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 15px;
   line-height: 1.5;
   color: var(--text);
@@ -414,7 +414,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .btn-primary:hover {
   background: var(--accent-strong);
-  box-shadow: 0 2px 10px rgba(100,116,139,0.25);
+  box-shadow: 0 2px 10px rgba(198,162,76,0.28);
 }
 
 .btn-lg {
@@ -5068,4 +5068,354 @@ a.ln-channel-value:hover { color: #FFFFFF; }
 .ddp-wrap .notice-error {
   border-left-color: var(--ddp-risk-700);
   color: var(--ddp-risk-700);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FARMER PORTAL — MOBILE IMPROVEMENTS
+   ─ Bottom tab nav, touch targets, layout fixes for phones ≤768px
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Farmer bottom navigation bar ── */
+.farmer-mobile-nav {
+  display: none; /* hidden on desktop — shown only at ≤768px below */
+}
+
+@media (max-width: 768px) {
+  /* Show the fixed bottom nav */
+  .farmer-mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 300;
+    background: #081a14;
+    border-top: 1px solid rgba(198,161,91,0.18);
+    padding: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    height: calc(62px + env(safe-area-inset-bottom, 0px));
+    align-items: stretch;
+  }
+
+  /* Each tab item */
+  .fmn-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    /* 0.50, not 0.45. Composited over the #081a14 bar, 0.45 gives
+       rgb(119,129,126) = 4.48:1 against it — under the 4.5:1 WCAG AA floor for
+       text this size. 0.50 measures 5.24:1. Measured in-browser, not estimated;
+       if this colour or the bar background changes, re-measure the pair. */
+    color: rgba(255,255,255,0.50);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    padding: 8px 4px;
+    transition: color 0.14s;
+    -webkit-tap-highlight-color: transparent;
+    min-width: 0;
+  }
+
+  .fmn-item:active {
+    background: rgba(198,161,91,0.07);
+  }
+
+  .fmn-item.fmn-active {
+    color: var(--accent, #C6A15B);
+  }
+
+  .fmn-icon-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+  }
+
+  .fmn-item.fmn-active .fmn-icon-wrap svg {
+    stroke-width: 2.1;
+  }
+
+  .fmn-label {
+    line-height: 1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Badge (unread count) */
+  .fmn-badge {
+    position: absolute;
+    top: -3px;
+    right: -5px;
+    background: #e84e4e;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 20px;
+    min-width: 15px;
+    height: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+    line-height: 1;
+  }
+
+  /* Hide the farmer nav items from the top navbar — bottom nav takes over */
+  .farmer-nav-topbar {
+    display: none;
+  }
+
+  /* Add bottom padding to farmer pages so content isn't hidden behind the nav */
+  .main-content.eo-farmer {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Also pad the demo utility strip up when farmer nav is visible */
+  .demo-utility-strip {
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ── Farmer page layout — mobile fixes ── */
+@media (max-width: 768px) {
+  /* Reduce page-header horizontal padding on mobile */
+  .page-header {
+    padding: 18px 16px;
+  }
+
+  /* Dashboard welcome card — tighter on mobile */
+  .dashboard-welcome-card {
+    padding: 18px 16px;
+  }
+
+  /* Farmer dashboard max-width: let it fill the screen */
+  .farmer-dashboard {
+    max-width: 100%;
+  }
+
+  /* Quick-action grid: 2 columns down to 480px, then 1 */
+  .quick-action-card {
+    padding: 14px 12px;
+  }
+
+  /* Help strip — stack on small screens */
+  .dashboard-help-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  /* eo-farmer form cards — less padding */
+  .eo-farmer .form-card {
+    padding: 16px;
+  }
+
+  /* eo-farmer section padding */
+  .eo-farmer h2 {
+    font-size: 18px;
+  }
+
+  /* Form grid 2-col → 1-col earlier on farmer forms */
+  .eo-farmer .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  /* NOTE: a `.pill-row` rule was removed here. No element in this codebase
+     carries that class — the real ones are `.pill`, `.status-pills` and
+     `.filter-tabs`. It styled nothing. */
+
+  /* Make submit / action buttons full-width on mobile */
+  .eo-farmer .btn-primary,
+  .eo-farmer .btn-ghost-dark,
+  .eo-farmer .btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Onboarding stepper: scale down on mobile.
+     (`.stepper-bar` was dropped from this rule — no element uses it.) */
+  .step-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  /* Toolbar row — scroll horizontally rather than wrap.
+     (`.filter-row` was dropped from this rule: nothing carries that class.
+     The real filter control is `.filter-tabs`, which is deliberately left
+     alone — see the stacked-record note below.) */
+  .toolbar-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+  .toolbar-row::-webkit-scrollbar { display: none; }
+
+  /* DELIBERATELY NOT ADDED: a horizontal-scroll rule for farmer tables.
+     The patch this block came from targeted `.inv-table-wrap`, which does not
+     exist, so the rule did nothing. Writing it against the real wrapper
+     (`.eo-farmer .table-scroll`) would have been worse than useless: line ~4360
+     already sets `overflow-x: visible` at ≤640px and reflows every farmer table
+     into stacked records, under the comment "a phone never scrolls sideways".
+     Restoring sideways scroll would undo that on purpose. Leave it. */
+
+  /* Farmer register / onboarding: nav step labels */
+  .step-label {
+    display: none;
+  }
+
+  /* Requests badge in the top nav — still visible on desktop */
+  .requests-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+  }
+}
+
+/* Very small phones (≤400px) */
+@media (max-width: 400px) {
+  .main-content {
+    padding: 16px 12px;
+  }
+
+  .eo-farmer .form-card {
+    padding: 14px 12px;
+  }
+
+  /* NOTE: `.fmn-item { font-size: 9px }` was removed here. This block is
+     labelled "very small phones", but 390px is an iPhone 12/13/14/15 and 360px
+     is most Android — mainstream widths, not outliers. It put the smallest text
+     in the app on the primary navigation of the commonest handsets. Labels stay
+     at the base 10px; measured at 320px the tab is still 64px wide, which fits
+     "My Stock" and "สต็อกของฉัน" without clipping. */
+
+  .quick-action-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THAI TYPOGRAPHY OVERRIDES  :lang(th)
+   Sarabun is loaded from Google Fonts. The HTML lang attribute is set
+   dynamically by App.tsx so these selectors activate when the user switches
+   to Thai.
+   ─────────────────────────────────────────────────────────────────────────
+   Key rules:
+   • letter-spacing must be 0 — Thai glyph stacking breaks with any spacing
+   • line-height needs room for above/below-baseline vowels and tone marks
+   • Minimum 14px for anything a farmer reads — stacked marks at ≤12px
+     lose their distinguishing detail on a phone screen
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Base: switch to Sarabun, reset letter-spacing, open up line-height */
+:lang(th) body,
+:lang(th) {
+  font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: 0;
+  line-height: 1.65;
+}
+
+/* Monospace must survive the language switch.
+   `:lang(th)` is specificity (0,1,0) — identical to `.mono` (line ~828) and
+   `.td-mono` (line ~667) — but this block sits at the END of the file, so it
+   wins the cascade on a tie and silently turns every reference id, weight and
+   price back into proportional Sarabun the moment the user picks Thai. Only
+   `.ddp-wrap .mono` (0,2,0) survives on its own, which would have made the
+   breakage look like an inconsistency rather than a bug. Numerals are Latin in
+   both languages, so there is nothing to gain by restyling them. */
+:lang(th) .mono,
+:lang(th) .td-mono,
+:lang(th) code,
+:lang(th) pre {
+  font-family: var(--font-mono);
+}
+
+/* Any element with explicit letter-spacing that may show Thai text */
+:lang(th) .page-eyebrow,
+:lang(th) .page-title,
+:lang(th) .page-desc,
+:lang(th) .nav-btn,
+:lang(th) .nav-group-label,
+:lang(th) .btn,
+:lang(th) .badge,
+:lang(th) .status-pill,
+:lang(th) .section-label,
+:lang(th) .form-section-title,
+:lang(th) .field,
+:lang(th) .field-label,
+:lang(th) .field-hint,
+:lang(th) .quick-action-label,
+:lang(th) .quick-action-desc,
+:lang(th) .dashboard-welcome-name,
+:lang(th) .dashboard-completion-hint,
+:lang(th) .fmn-label,
+:lang(th) td,
+:lang(th) th {
+  letter-spacing: 0;
+}
+
+/* Bump minimum size — Thai stacked marks need room */
+:lang(th) .field-hint,
+:lang(th) .page-eyebrow,
+:lang(th) .nav-group-label,
+:lang(th) .fmn-label,
+:lang(th) .quick-action-desc,
+:lang(th) .dashboard-completion-hint {
+  font-size: 13px;
+}
+
+:lang(th) .nav-btn {
+  font-size: 13px;
+}
+
+/* Tables: Thai above-line vowels clip at tight line-heights */
+:lang(th) td,
+:lang(th) th {
+  line-height: 1.7;
+}
+
+:lang(th) .eo-table,
+:lang(th) .eo-farmer table {
+  line-height: 1.7;
+}
+
+/* Form labels and hints in farmer portal */
+:lang(th) .eo-farmer .field-label {
+  font-size: 14px;
+}
+
+:lang(th) .eo-farmer .field-hint {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* eo-farmer inputs already 16px — fine; keep that */
+
+/* Eyebrow / uppercase labels: Thai has no uppercase, so drop the transform
+   and letter-spacing so it doesn't render as stretched Thai characters */
+/* `.section-eyebrow` and `.filter-section-title` were removed from this list:
+   neither class exists in the codebase. */
+:lang(th) .page-eyebrow,
+:lang(th) .nav-group-label,
+:lang(th) .dashboard-completion-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+}
+
+/* Bottom mobile nav labels */
+:lang(th) .fmn-label {
+  font-size: 10px;
+  line-height: 1.3;
 }

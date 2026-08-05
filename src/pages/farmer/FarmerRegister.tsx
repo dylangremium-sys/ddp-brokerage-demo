@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Lang } from '../../types'
 import { submitAccessRequest, AccessRequestError } from '../../lib/accessRequestClient'
+import FarmerQRCode from '../../components/shared/FarmerQRCode'
 
 const THAI_PROVINCES = [
   'Amnat Charoen', 'Ang Thong', 'Bangkok', 'Bueng Kan', 'Buri Ram',
@@ -144,6 +145,19 @@ export default function FarmerRegister({ lang, onComplete }: Props) {
           {isTh
             ? 'ใช้เวลาแค่ 2 นาที ทีมงานจะตรวจสอบและส่งคำเชิญทางอีเมล'
             : 'It takes 2 minutes. Our team reviews each request and sends an invitation by email.'}
+        </p>
+      </div>
+
+      {/* QR code share card — lets administrators print or forward the link */}
+      <div className="card form-card auth-card" style={{ maxWidth: 480, margin: '0 auto 24px', textAlign: 'center' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#444' }}>
+          {isTh ? 'แชร์ลิงก์นี้ให้เกษตรกร' : 'Share this link with farmers'}
+        </div>
+        <FarmerQRCode size={180} />
+        <p className="td-muted" style={{ fontSize: 12, marginTop: 8 }}>
+          {isTh
+            ? 'สแกน QR หรือส่งลิงก์ /farmer เพื่อเปิดฟอร์มนี้โดยตรง'
+            : 'Scan the QR code or share the /farmer link to open this form directly.'}
         </p>
       </div>
 

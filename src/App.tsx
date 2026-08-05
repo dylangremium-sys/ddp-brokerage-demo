@@ -79,12 +79,14 @@ import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
 import FarmerNav from './components/farmer/FarmerNav'
+import FarmerMobileNav from './components/farmer/FarmerMobileNav'
 import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
+import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
 
 // FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
 // lib/navigationGuard.ts so they can be unit tested. PUBLIC_PAGES once omitted
@@ -111,7 +113,13 @@ export default function App() {
   // screen. Landing them anywhere else — even for a moment — is the defect:
   // their session is transient, and once it lapses the account has no password
   // and no way to obtain one.
-  const [page, setPage] = useState<Page>(() => (getAuthRedirect() ? 'set-password' : 'landing'))
+  const [page, setPage] = useState<Page>(() => {
+    if (getAuthRedirect()) return 'set-password'
+    // Honour deep-link paths (e.g. /farmer) on a cold load so a bookmarked or
+    // QR-scanned URL reaches the right screen without requiring the user to
+    // navigate from the landing page first.
+    return getInitialPageFromPath(window.location.pathname) ?? 'landing'
+  })
   const [lang, setLang] = useState<Lang>('en')
   const [inventory, setInventory] = useState<InventoryItem[]>(() => getInventoryBatches())
   const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
@@ -204,6 +212,35 @@ export default function App() {
   useEffect(() => { persistInventory(inventory) }, [inventory])
   useEffect(() => { persistFarms(farms) }, [farms])
   useEffect(() => { saveReviewRequests(reviewRequests) }, [reviewRequests])
+
+  // ── URL ↔ page sync (deep links) ─────────────────────────────────────────
+  // Keep the address bar consistent with the in-memory page state so that:
+  //   • a QR scan or shared link that lands on /farmer stays on /farmer, and
+  //   • pressing the browser Back button after entering via /farmer returns to
+  //     the referrer (or the app landing page) rather than /farmer again.
+  // See lib/urlRouting.ts for the path↔page mapping.
+  useEffect(() => {
+    syncUrlToPage(page)
+  }, [page])
+
+  // Browser Back / Forward: when the user navigates via history, map the new
+  // pathname back to a page (or fall back to 'landing').
+  //
+  // This calls setPage directly rather than goTo, so it does NOT run
+  // resolveNavigationTarget. That is only safe because every path in
+  // urlRouting's PATH_TO_PAGE maps to a PUBLIC page, which the guard would
+  // admit for any visitor anyway. urlRouting.test.ts enforces that invariant —
+  // if someone adds a farmer or admin route to the map, that test fails and
+  // this handler must be routed through the guard before the route ships.
+  useEffect(() => {
+    function handlePopState() {
+      const mapped = getInitialPageFromPath(window.location.pathname)
+      setPage(mapped ?? 'landing')
+      window.scrollTo(0, 0)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   // ── Auth subscription ────────────────────────────────────────────────────
   // authLoading is initialised to false in demo mode via useState, so no
@@ -643,6 +680,12 @@ export default function App() {
     document.body.classList.toggle('public-auth-page', isPublicAuthPage)
     return () => document.body.classList.remove('public-auth-page')
   }, [page])
+
+  // Sync the HTML lang attribute so CSS :lang(th) selectors work and
+  // screen readers announce the correct language.
+  useEffect(() => {
+    document.documentElement.lang = lang
+  }, [lang])
 
   function goTo(p: Page) {
     // The decision itself is pure and lives in lib/navigationGuard.ts; this
@@ -1132,7 +1175,11 @@ export default function App() {
           </div>
 
           <div className="navbar-links">
-            {showFarmerNav && <FarmerNav lang={lang} page={page} goTo={goTo} />}
+            {showFarmerNav && (
+              <div className="farmer-nav-topbar">
+                <FarmerNav lang={lang} page={page} goTo={goTo} />
+              </div>
+            )}
 
             {showFarmerNav && showDDPNav && <div className="nav-sep" />}
 
@@ -1511,6 +1558,24 @@ export default function App() {
           <main className={`main-content${isFarmerPage ? ' eo-farmer' : ''}`}>{appPages}</main>
         )
       })()}
+
+      {/* ── Farmer mobile bottom navigation (visible only on mobile ≤768px) ──
+          The PUBLIC_PAGES exclusion is load-bearing, not belt-and-braces.
+          FARMER_PAGES spreads PUBLIC_PAGES, so isFarmerPage is TRUE on landing,
+          login and the register screens — and showFarmerNav is true for any
+          signed-in farmer and for all of demo mode. Without this clause a farmer
+          who taps the brand logo lands on the cream public landing page with a
+          dark five-tab farmer bar pinned across the bottom. That is the same
+          defect the diagnostic strip below was already fixed for; the top navbar
+          guards itself the same way (`!PUBLIC_PAGES.includes(page)`). */}
+      {showFarmerNav && isFarmerPage && !PUBLIC_PAGES.includes(page) && (
+        <FarmerMobileNav
+          lang={lang}
+          page={page}
+          goTo={goTo}
+          openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
+        />
+      )}
 
       {/* Internal diagnostic chrome. Hidden on every PUBLIC page, not just the
           landing: it is position:fixed with z-index 200, so on sign-in and the

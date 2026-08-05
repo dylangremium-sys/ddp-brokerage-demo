@@ -87,7 +87,14 @@ describe('the invited user can reach the screen', () => {
     // Landing anywhere else — even briefly — is the defect: the session is
     // transient, and once it lapses the account has no password and no route to
     // one.
-    expect(APP).toMatch(/useState<Page>\(\(\)\s*=>\s*\(getAuthRedirect\(\)\s*\?\s*'set-password'/)
+    //
+    // The initializer may be inline `() => (getAuthRedirect() ? 'set-password' : …)`
+    // OR a multi-line block `() => { if (getAuthRedirect()) return 'set-password'; … }`.
+    // The invariant is that the set-password screen is returned when a redirect
+    // is present, NOT the shape of the initializer itself.
+    const hasInline = /useState<Page>\(\(\)\s*=>\s*\(getAuthRedirect\(\)\s*\?\s*'set-password'/.test(APP)
+    const hasBlock = /useState<Page>\(\(\)\s*=>\s*\{[\s\S]{0,200}getAuthRedirect\(\)[\s\S]{0,100}'set-password'/.test(APP)
+    expect(hasInline || hasBlock, "App.tsx must initialise page to 'set-password' when getAuthRedirect() is truthy").toBe(true)
   })
 
   it('the auth subscription passes the pending flag into the routing decision', () => {

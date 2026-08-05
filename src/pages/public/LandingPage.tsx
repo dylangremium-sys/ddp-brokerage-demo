@@ -275,10 +275,18 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
               <LockIcon size={14} />
               {t.navSecureLogin}
             </button>
-            <button type="button" className="ln-secure-login" onClick={onSupplierSignup}>
+            {/* Deep-link: renders as a real <a> so a bookmark, WhatsApp share,
+                or QR scan lands directly on the farmer register screen. The
+                onClick still uses the in-app goTo so the SPA doesn't hard-
+                reload when the user is already on the page. */}
+            <a
+              href="/farmer"
+              className="ln-secure-login"
+              onClick={(e) => { e.preventDefault(); onSupplierSignup() }}
+            >
               <UserGlyph />
               {lang === 'th' ? 'สมัครเป็นผู้จัดหาสินค้า' : 'Supplier signup'}
-            </button>
+            </a>
           </div>
         </div>
       </header>
