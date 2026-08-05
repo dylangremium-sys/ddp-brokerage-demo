@@ -235,7 +235,11 @@ export default function FarmerSubmitInventory({
       mycotoxinsStatus: form.mycotoxinsStatus || undefined,
       photoUrls: photos.length > 0 ? toPreviews(photos) : undefined,
       farmerNotes: form.farmerNotes || undefined,
-      ownerNotes: initialItem?.ownerNotes,
+      // ownerNotes is DDP's internal note and is deliberately not carried by the
+      // farmer form. Round-tripping it here made the farmer's own submission the
+      // vehicle for a field they are not supposed to see; since migration 57 the
+      // database would refuse the write anyway, and sending it would be a
+      // request that silently does nothing.
     }
   }
 

@@ -1,0 +1,62 @@
+{
+  "id": "57_broker_notes_out_of_reach",
+  "title": "Migration 57 — the broker's private note moves out of the supplier's reach",
+  "description": "Applies migration 57 to the reconciled substrate, runs its VERIFY A-G, then rolls it back. `inventory_batches.owner_notes` is DDP's internal note -- the admin screen labels it 'Internal:' and a trigger exists specifically to stop a farmer WRITING it -- but nothing stopped a farmer READING it, measured on staging 2026-08-05. The fix cannot be a column privilege, and the reason is the interesting part: a DDP admin and a farmer are the SAME PostgreSQL role (`authenticated`), distinguished only by `is_ddp_admin()` inside a row-level policy. Any control at the privilege layer hits both identically. RLS is the only mechanism here that can tell them apart, and RLS is row-level -- so the secret has to live in its own row. Two couplings make this migration more than a column move. The trigger `trg_protect_owner_notes` fires BEFORE UPDATE and assigns NEW.owner_notes, so dropping the column while it is attached breaks every batch update in the platform; it is dropped first and VERIFY G proves updates still work. And `fn_protect_owner_notes()` is deliberately LEFT orphaned, because its body differs between production (the real pin) and the test substrate (a stub), so a rollback re-creating it would have to pick one and be wrong in the other world. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-57",
+      "file": "57_BROKER_NOTES_OUT_OF_REACH_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "57_BROKER_NOTES_OUT_OF_REACH_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F", "G"],
+    "expectedPassCount": 7,
+    "note": "C is the section that carries the migration, and it asserts in BOTH directions: the farmer who OWNS the batch sees zero note rows, AND still sees the batch itself. Without the second half a farmer who could see nothing at all would pass just as well, and the test would be measuring a broken fixture rather than a working lock. The admin arm is the other control -- a lock nobody can open is not a fix. D exists because a read hole traded for a write hole is no improvement: a farmer able to INSERT a note could plant something in DDP's own record of the batch. G is the regression guard for the dropped trigger, which fired BEFORE UPDATE and assigned a column that no longer exists -- had it been left attached, every batch update in the platform would raise, and no other section would have noticed. NOT PROVEN HERE: that the application stops sending the note to the browser. This closes it at the database, which is the layer a farmer cannot go around; the TypeScript changes ship alongside and are covered by their own tests.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "57_BROKER_NOTES_OUT_OF_REACH_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.farms",
+      "public.farm_memberships",
+      "public.inventory_batches",
+      "public.is_ddp_admin",
+      "public.fn_protect_owner_notes"
+    ]
+  },
+  "postApply": {
+    "constraints": [
+      {
+        "table": "public.batch_internal_notes",
+        "present": ["batch_internal_notes_pkey", "batch_internal_notes_note_check"]
+      }
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": ["public.batch_internal_notes"],
+      "policies": ["batch_internal_notes_admin_only"]
+    },
+    "intact": {
+      "tables": ["public.inventory_batches", "public.farms"],
+      "functions": ["public.is_ddp_admin", "public.fn_protect_owner_notes"],
+      "authUsersMinRows": 2
+    }
+  }
+}

@@ -607,6 +607,22 @@ REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authentic
 GRANT  EXECUTE ON FUNCTION public.handle_new_user() TO service_role;
 REVOKE EXECUTE ON FUNCTION public.fn_protect_owner_notes() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.fn_protect_owner_notes() TO service_role;
+
+-- The trigger production actually carries. The substrate declared the FUNCTION
+-- but never the TRIGGER, which is the same class of under-representation the
+-- column reconciliation fixed: a migration that drops this trigger would be a
+-- no-op under test and its rollback would ADD a trigger the test world never
+-- had, reporting asymmetric for a correct rollback.
+--
+-- The function above is a STUB here (`BEGIN RETURN NEW; END`) while production's
+-- pins owner_notes to OLD. That difference is deliberate and predates this line:
+-- the substrate models STRUCTURE, and reproducing the real body would mean
+-- maintaining a second copy of a security-critical routine. A migration whose
+-- behaviour depends on what this trigger DOES must verify it live.
+DROP TRIGGER IF EXISTS trg_protect_owner_notes ON public.inventory_batches;
+CREATE TRIGGER trg_protect_owner_notes
+  BEFORE UPDATE ON public.inventory_batches
+  FOR EACH ROW EXECUTE FUNCTION public.fn_protect_owner_notes();
 REVOKE EXECUTE ON FUNCTION public.fn_protect_review_request_fields() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.fn_protect_review_request_fields() TO service_role;
 
