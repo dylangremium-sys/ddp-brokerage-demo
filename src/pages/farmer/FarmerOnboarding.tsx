@@ -53,6 +53,29 @@ const BLANK: Draft = {
   scoreCommunication: 0, scoreScalability: 0, scoreGMPReadiness: 0,
 }
 
+/** [English, Thai] names for the fields validation can complain about. */
+const FIELD_LABELS: Record<string, [string, string]> = {
+  tradingName: ['Farm / trading name', 'ชื่อฟาร์ม'],
+  province: ['Province', 'จังหวัด'],
+  district: ['District', 'อำเภอ'],
+  farmType: ['Farm type', 'ประเภทฟาร์ม'],
+  primaryContact: ['Contact name', 'ชื่อผู้ติดต่อ'],
+  position: ['Position', 'ตำแหน่ง'],
+  email: ['Email', 'อีเมล'],
+  mobileNumber: ['Mobile number', 'เบอร์มือถือ'],
+  lineId: ['LINE ID', 'ไลน์ไอดี'],
+  qtyAvailableNow: ['Quantity available now', 'ปริมาณที่มีตอนนี้'],
+  typicalThc: ['Typical THC %', 'THC โดยทั่วไป (%)'],
+  typicalCbd: ['Typical CBD %', 'CBD โดยทั่วไป (%)'],
+  harvestsPerYear: ['Harvests per year', 'จำนวนรอบเก็บเกี่ยวต่อปี'],
+  avgYieldPerHarvest: ['Average yield per harvest', 'ผลผลิตเฉลี่ยต่อรอบ'],
+  annualCapacity: ['Annual capacity', 'กำลังผลิตต่อปี'],
+  qtyAvailable30: ['Available in 30 days', 'พร้อมส่งใน 30 วัน'],
+  qtyAvailable60: ['Available in 60 days', 'พร้อมส่งใน 60 วัน'],
+  qtyAvailable90: ['Available in 90 days', 'พร้อมส่งใน 90 วัน'],
+  qtyAvailable180: ['Available in 180 days', 'พร้อมส่งใน 180 วัน'],
+}
+
 /**
  * Bilingual on the spot, matching how the rest of the farmer screens handle
  * copy. The validator returns codes precisely so it stays free of UI.
@@ -79,28 +102,6 @@ function describeIssue(issue: FarmValidationIssue, lang: Lang): string {
   }
 }
 
-/** [English, Thai] names for the fields validation can complain about. */
-const FIELD_LABELS: Record<string, [string, string]> = {
-  tradingName: ['Farm / trading name', 'ชื่อฟาร์ม'],
-  province: ['Province', 'จังหวัด'],
-  district: ['District', 'อำเภอ'],
-  farmType: ['Farm type', 'ประเภทฟาร์ม'],
-  primaryContact: ['Contact name', 'ชื่อผู้ติดต่อ'],
-  position: ['Position', 'ตำแหน่ง'],
-  email: ['Email', 'อีเมล'],
-  mobileNumber: ['Mobile number', 'เบอร์มือถือ'],
-  lineId: ['LINE ID', 'ไลน์ไอดี'],
-  qtyAvailableNow: ['Quantity available now', 'ปริมาณที่มีตอนนี้'],
-  typicalThc: ['Typical THC %', 'THC โดยทั่วไป (%)'],
-  typicalCbd: ['Typical CBD %', 'CBD โดยทั่วไป (%)'],
-  harvestsPerYear: ['Harvests per year', 'จำนวนรอบเก็บเกี่ยวต่อปี'],
-  avgYieldPerHarvest: ['Average yield per harvest', 'ผลผลิตเฉลี่ยต่อรอบ'],
-  annualCapacity: ['Annual capacity', 'กำลังผลิตต่อปี'],
-  qtyAvailable30: ['Available in 30 days', 'พร้อมส่งใน 30 วัน'],
-  qtyAvailable60: ['Available in 60 days', 'พร้อมส่งใน 60 วัน'],
-  qtyAvailable90: ['Available in 90 days', 'พร้อมส่งใน 90 วัน'],
-  qtyAvailable180: ['Available in 180 days', 'พร้อมส่งใน 180 วัน'],
-}
 
 const TOTAL_STEPS = 9
 const FARM_TYPES = ['Indoor', 'Greenhouse', 'Outdoor', 'Mixed']
