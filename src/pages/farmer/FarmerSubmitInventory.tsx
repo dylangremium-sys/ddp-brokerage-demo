@@ -12,7 +12,20 @@ interface Props {
   lang: Lang
   farms: FarmProfile[]
   initialItem?: InventoryItem | null
-  onSubmit: (item: InventoryItem, coaFile?: File | null, photoFiles?: File[]) => void | Promise<void>
+  /**
+   * Must report whether the write actually landed.
+   *
+   * This was typed `void | Promise<void>`. App.tsx's handler did return a
+   * boolean, but the prop type erased it at the component boundary — a place
+   * `tsc -b` cannot see a loss — so the form could not tell a committed
+   * submission from a rejected one, and rendered the success screen either
+   * way. The farmer saw a red error banner and a green tick at the same time,
+   * which is why fifty-nine rejected inserts produced no bug report.
+   *
+   * `Promise<boolean>` is the contract: true only if the row is in the
+   * database.
+   */
+  onSubmit: (item: InventoryItem, coaFile?: File | null, photoFiles?: File[]) => Promise<boolean>
   onBack: () => void
   marketBenchmarks?: MarketBenchmark[]
   openRequests?: ReviewRequest[]
@@ -210,6 +223,10 @@ export default function FarmerSubmitInventory({
       waterActivity: form.waterActivity,
       qualityGrade: 'A',
       pricePerKg,
+      // Preserved, not re-derived. There is no currency control on this form,
+      // so an edit that dropped this would let the write path's THB fallback
+      // redenominate an existing USD or EUR batch without touching its number.
+      priceCurrency: initialItem?.priceCurrency,
       certFileName: form.coaFileName,
       photoUrl: photos[0]?.preview ?? '',
       storageConditions: form.storageConditions,
@@ -243,9 +260,13 @@ export default function FarmerSubmitInventory({
     }
   }
 
-  function handleSaveDraft(e: React.FormEvent) {
+  async function handleSaveDraft(e: React.FormEvent) {
     e.preventDefault()
-    onSubmit(buildItem(true))
+    // "Saved" is only true if the draft reached the database. This was
+    // fire-and-forget: the confirmation appeared before the write settled, and
+    // stayed up if it was rejected.
+    const saveCommitted = await onSubmit(buildItem(true))
+    if (!saveCommitted) return
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
@@ -258,8 +279,12 @@ export default function FarmerSubmitInventory({
     try {
       // Only entries with bytes can be uploaded. Draft-restored previews have no
       // File and are not re-sent; they are already on file or never were.
-      await onSubmit(item, coaFile ?? null, toUploadFiles(photos))
-      setSubmitted(true)
+      //
+      // The success screen is shown only for a committed write. On rejection the
+      // form stays on screen with the farmer's input intact, which is both where
+      // the error banner is actionable and what makes the failure recoverable.
+      const committed = await onSubmit(item, coaFile ?? null, toUploadFiles(photos))
+      if (committed) setSubmitted(true)
     } catch {
       // keep page usable
     } finally {

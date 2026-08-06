@@ -465,6 +465,28 @@ export interface MarketBenchmark {
   visibleToFarmers: boolean
 }
 
+/**
+ * The currencies production will accept on a batch price.
+ *
+ * Mirrors the live CHECK `inventory_batches_price_currency_allowed`, verified
+ * against production 2026-08-06:
+ *
+ *   price_currency IS NULL OR price_currency = ANY (ARRAY['THB','USD','EUR'])
+ *
+ * A companion CHECK, `inventory_batches_price_requires_currency`, refuses any
+ * row that carries a price without one. Widening this list is a database
+ * change first — the constraint is the authority, not this type.
+ */
+export const BATCH_PRICE_CURRENCIES = ['THB', 'USD', 'EUR'] as const
+export type BatchPriceCurrency = (typeof BATCH_PRICE_CURRENCIES)[number]
+
+/**
+ * Thai baht. The owner-stated pricing currency for DDP, and the only one the
+ * product offers today — there is no currency control on the batch form, so
+ * every batch a farmer submits is priced in THB.
+ */
+export const DEFAULT_BATCH_PRICE_CURRENCY: BatchPriceCurrency = 'THB'
+
 export interface InventoryItem {
   id: string
   farmerName: string
@@ -482,6 +504,13 @@ export interface InventoryItem {
   waterActivity: string
   qualityGrade: string
   pricePerKg: number
+  /**
+   * The currency `pricePerKg` is stated in. Optional on the type because
+   * records created before the column existed do not carry one; the write
+   * path in `db.ts` always sends a value, because production refuses a priced
+   * row without it.
+   */
+  priceCurrency?: BatchPriceCurrency
   certFileName: string
   photoUrl: string
   storageConditions: string

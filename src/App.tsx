@@ -1328,6 +1328,9 @@ export default function App() {
                 // them where the error banner is actionable.
                 const committed = await handleInventorySubmit(item, coaFile)
                 if (committed && item.stockStatus !== 'draft') goTo('farmer-my-stock')
+                // Returned, not swallowed: the form decides whether to show a
+                // success screen, and it can only do that if it is told.
+                return committed
               }}
               onBack={() => goTo('farmer-my-stock')}
               marketBenchmarks={marketBenchmarks}

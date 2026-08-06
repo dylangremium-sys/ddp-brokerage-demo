@@ -7,9 +7,26 @@ import {
   saveFarms as lsSaveFarms,
   resetDemo as lsResetDemo,
 } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType } from '../types'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType, BatchPriceCurrency } from '../types'
+import { BATCH_PRICE_CURRENCIES, DEFAULT_BATCH_PRICE_CURRENCY } from '../types'
 
 export { isSupabaseConfigured }
+
+/**
+ * An empty or whitespace-only string is the absence of a value, and must reach
+ * Postgres as NULL rather than ''.
+ *
+ * The form's text inputs are '' until touched, and several of the columns they
+ * feed refuse a blank outright: a `date` column rejects ''::date with 22007,
+ * and `batch_number` carries a not-blank CHECK. Coercing here — at the single
+ * payload boundary — rather than at each callsite means a field added to the
+ * form later cannot reintroduce the defect by forgetting to do it.
+ */
+function nullIfBlank(value: string | null | undefined): string | null {
+  if (value == null) return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
 
 // ---------------------------------------------------------------------------
 // UUID guard — seed farms use 'farm-1' style IDs that are not valid UUIDs.
@@ -514,15 +531,25 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
     strain: item.productName,
     location: item.location,
     quantity_kg: item.quantityKg,
-    harvest_date: item.harvestDate,
-    cure_date: item.cureDate,
-    batch_number: item.batchNumber,
+    // These three are `string` on InventoryItem and the form leaves them '' when
+    // untouched. Postgres refuses all three: '' fails the ::date cast on the two
+    // date columns, and batch_number carries a live not-blank CHECK. A blank is
+    // the absence of a value, so it is sent as NULL.
+    harvest_date: nullIfBlank(item.harvestDate),
+    cure_date: nullIfBlank(item.cureDate),
+    batch_number: nullIfBlank(item.batchNumber),
     thc_percent: item.thcPct,
     cbd_percent: item.cbdPct,
     moisture_percent: item.moisturePct,
     water_activity: parseFloat(item.waterActivity) || null,
     quality_grade: item.qualityGrade,
     price_per_kg: item.pricePerKg,
+    // Production refuses a priced row that does not state its currency
+    // (inventory_batches_price_requires_currency). The application states it
+    // explicitly rather than relying on a column default: a default would make
+    // the currency an assumption of the database's, silently applied to a
+    // future non-THB listing, instead of a fact the submitting client asserts.
+    price_currency: item.priceCurrency ?? DEFAULT_BATCH_PRICE_CURRENCY,
     coa_file_name: item.certFileName || null,
     photo_url: item.photoUrl || null,
     storage_conditions: item.storageConditions,
@@ -1066,6 +1093,14 @@ function batchRowToInventoryItem(row: Record<string, any>, farmName?: string): I
     waterActivity: String(row.water_activity ?? ''),
     qualityGrade: row.quality_grade as string ?? '',
     pricePerKg: (row.price_per_kg as number) ?? 0,
+    // Carried so an edit cannot silently redenominate the batch. Without this
+    // the item loads with no currency, the write path falls back to THB, and a
+    // 100 USD batch is saved as 100 THB with the number untouched. Unknown
+    // values are dropped rather than trusted — the column's CHECK allows only
+    // THB/USD/EUR, so anything else is data this build does not understand.
+    priceCurrency: (BATCH_PRICE_CURRENCIES as readonly string[]).includes(row.price_currency as string)
+      ? (row.price_currency as BatchPriceCurrency)
+      : undefined,
     certFileName: row.coa_file_name as string ?? '',
     photoUrl: row.photo_url as string ?? '',
     storageConditions: row.storage_conditions as string ?? '',
