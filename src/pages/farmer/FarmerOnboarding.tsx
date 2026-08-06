@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { validateFarmProfile, blockingIssues, type FarmValidationIssue } from '../../lib/farmProfileValidation'
 import { T } from '../../translations'
 import { calcCompletion, loadFarmDraft, saveFarmDraft, clearFarmDraft } from '../../data'
 import type { Lang, FarmProfile } from '../../types'
@@ -50,6 +51,29 @@ const BLANK: Draft = {
   scoreCompliance: 0, scoreDocumentation: 0, scoreFacilityQuality: 0,
   scoreProductQuality: 0, scoreExportReadiness: 0, scoreReliability: 0,
   scoreCommunication: 0, scoreScalability: 0, scoreGMPReadiness: 0,
+}
+
+/** [English, Thai] names for the fields validation can complain about. */
+const FIELD_LABELS: Record<string, [string, string]> = {
+  tradingName: ['Farm / trading name', 'ชื่อฟาร์ม'],
+  province: ['Province', 'จังหวัด'],
+  district: ['District', 'อำเภอ'],
+  farmType: ['Farm type', 'ประเภทฟาร์ม'],
+  primaryContact: ['Contact name', 'ชื่อผู้ติดต่อ'],
+  position: ['Position', 'ตำแหน่ง'],
+  email: ['Email', 'อีเมล'],
+  mobileNumber: ['Mobile number', 'เบอร์มือถือ'],
+  lineId: ['LINE ID', 'ไลน์ไอดี'],
+  qtyAvailableNow: ['Quantity available now', 'ปริมาณที่มีตอนนี้'],
+  typicalThc: ['Typical THC %', 'THC โดยทั่วไป (%)'],
+  typicalCbd: ['Typical CBD %', 'CBD โดยทั่วไป (%)'],
+  harvestsPerYear: ['Harvests per year', 'จำนวนรอบเก็บเกี่ยวต่อปี'],
+  avgYieldPerHarvest: ['Average yield per harvest', 'ผลผลิตเฉลี่ยต่อรอบ'],
+  annualCapacity: ['Annual capacity', 'กำลังผลิตต่อปี'],
+  qtyAvailable30: ['Available in 30 days', 'พร้อมส่งใน 30 วัน'],
+  qtyAvailable60: ['Available in 60 days', 'พร้อมส่งใน 60 วัน'],
+  qtyAvailable90: ['Available in 90 days', 'พร้อมส่งใน 90 วัน'],
+  qtyAvailable180: ['Available in 180 days', 'พร้อมส่งใน 180 วัน'],
 }
 
 const TOTAL_STEPS = 9
@@ -110,6 +134,7 @@ function YesNoSelect({ value, onChange }: { value: string; onChange: (v: string)
 export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBack }: Props) {
   const t = T[lang]
   const [step, setStep] = useState(1)
+  const [issues, setIssues] = useState<FarmValidationIssue[]>([])
   const [draftSavedMsg, setDraftSavedMsg] = useState(false)
 
   // Load draft from localStorage on mount, pre-fill contact info from profile
@@ -184,7 +209,43 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
     if (step > 1) setStep(s => s - 1)
   }
 
+  /**
+   * Bilingual on the spot, matching how the rest of the farmer screens handle
+   * copy. The validator returns codes precisely so it stays free of UI.
+   */
+  function describe(issue: FarmValidationIssue): string {
+    const th = lang === 'th'
+    const label = (FIELD_LABELS[issue.field] ?? [issue.field, issue.field])[th ? 1 : 0]
+    switch (issue.code) {
+      case 'required':          return th ? `กรุณากรอก${label}` : `${label} is required`
+      case 'contact-required':  return th
+        ? 'กรุณาระบุช่องทางติดต่ออย่างน้อยหนึ่งช่องทาง (อีเมล เบอร์มือถือ หรือ LINE)'
+        : 'Give DDP at least one way to contact you — email, mobile or LINE'
+      case 'email-invalid':     return th ? 'รูปแบบอีเมลไม่ถูกต้อง' : 'That email address does not look right'
+      case 'phone-invalid':     return th ? 'เบอร์โทรศัพท์ไม่ถูกต้อง' : 'That phone number does not look right'
+      case 'not-a-number':      return th ? `${label} ต้องเป็นตัวเลข` : `${label} must be a number`
+      case 'negative':          return th ? `${label} ต้องไม่ติดลบ` : `${label} cannot be negative`
+      case 'percent-out-of-range': return th ? `${label} ต้องอยู่ระหว่าง 0 ถึง 100` : `${label} must be between 0 and 100`
+      case 'cannabinoids-implausible': return th
+        ? 'THC และ CBD รวมกันเกิน 100% — โปรดตรวจสอบอีกครั้ง'
+        : 'THC and CBD add up to more than 100% — please double-check'
+    }
+  }
+
   function handleFinalSubmit() {
+    // Checked only here. Saving a draft and stepping between pages stays
+    // unblocked: a farmer part-way through nine steps on a phone must always
+    // be able to stop without losing the work.
+    const found = validateFarmProfile(form as Record<string, unknown>)
+    setIssues(found)
+    if (blockingIssues(found).length > 0) {
+      // Deliberately stays on the review step. Jumping straight to the first
+      // bad field moves the farmer away from the summary that explains why —
+      // they get teleported with no reason given. The panel lists everything
+      // and each entry carries its own "go to step" link, so the farmer
+      // chooses, and can see the whole list before deciding.
+      return
+    }
     clearFarmDraft()
     const now = new Date().toISOString()
     const complete = calcCompletion(form)
@@ -494,6 +555,37 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
               <div className="review-pill">✓ {t.licenceTypeLabel}: {form[LICENCE_TYPE_FIELDS[licenceType]]}</div>
             )}
           </div>
+
+          {issues.length > 0 && (
+            <div
+              className="form-error-panel"
+              role="alert"
+              style={{
+                border: '1px solid var(--danger, #c0392b)', borderRadius: 8,
+                padding: '12px 14px', marginBottom: 16,
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                {lang === 'th' ? 'กรุณาตรวจสอบข้อมูลต่อไปนี้' : 'Please check the following'}
+              </div>
+              <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                {issues.map(i => (
+                  <li key={`${i.field}-${i.code}`} style={{ marginBottom: 2 }}>
+                    {describe(i)}
+                    {' '}
+                    <button
+                      type="button"
+                      className="btn-link"
+                      onClick={() => setStep(i.step)}
+                      style={{ background: 'none', border: 0, padding: 0, textDecoration: 'underline', cursor: 'pointer' }}
+                    >
+                      {lang === 'th' ? `(ไปขั้นตอนที่ ${i.step})` : `(go to step ${i.step})`}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* What can be added later */}
           <div className="review-can-add-later">
