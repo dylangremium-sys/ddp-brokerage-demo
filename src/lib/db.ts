@@ -7,8 +7,8 @@ import {
   saveFarms as lsSaveFarms,
   resetDemo as lsResetDemo,
 } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType } from '../types'
-import { DEFAULT_BATCH_PRICE_CURRENCY } from '../types'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType, BatchPriceCurrency } from '../types'
+import { BATCH_PRICE_CURRENCIES, DEFAULT_BATCH_PRICE_CURRENCY } from '../types'
 
 export { isSupabaseConfigured }
 
@@ -1093,6 +1093,14 @@ function batchRowToInventoryItem(row: Record<string, any>, farmName?: string): I
     waterActivity: String(row.water_activity ?? ''),
     qualityGrade: row.quality_grade as string ?? '',
     pricePerKg: (row.price_per_kg as number) ?? 0,
+    // Carried so an edit cannot silently redenominate the batch. Without this
+    // the item loads with no currency, the write path falls back to THB, and a
+    // 100 USD batch is saved as 100 THB with the number untouched. Unknown
+    // values are dropped rather than trusted — the column's CHECK allows only
+    // THB/USD/EUR, so anything else is data this build does not understand.
+    priceCurrency: (BATCH_PRICE_CURRENCIES as readonly string[]).includes(row.price_currency as string)
+      ? (row.price_currency as BatchPriceCurrency)
+      : undefined,
     certFileName: row.coa_file_name as string ?? '',
     photoUrl: row.photo_url as string ?? '',
     storageConditions: row.storage_conditions as string ?? '',

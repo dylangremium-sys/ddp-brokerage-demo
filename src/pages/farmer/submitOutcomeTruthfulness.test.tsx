@@ -30,8 +30,8 @@ const FARM: FarmProfile = {
   province: 'Chiang Mai',
 } as FarmProfile
 
-const SUCCESS_EN = /Submitted for Review/i
-const SUCCESS_TH = /ส่งเรียบร้อยแล้ว/
+const SUCCESS_EN = /Submitted for Review/iu
+const SUCCESS_TH = /ส่งเรียบร้อยแล้ว/u
 
 type SubmitHandler = (
   item: InventoryItem,
@@ -55,10 +55,10 @@ function renderForm(onSubmit: SubmitHandler) {
 function submitForm() {
   // Matched on the full placeholder: /Purple Gelato/ alone also matches the
   // COA sample-name field, whose placeholder falls back to the same words.
-  fireEvent.change(screen.getByPlaceholderText(/Purple Gelato, Dried Flower A/i), {
+  fireEvent.change(screen.getByPlaceholderText(/Purple Gelato, Dried Flower A/iu), {
     target: { value: 'Sativa Gold' },
   })
-  fireEvent.click(screen.getByRole('button', { name: /Submit for Review/i }))
+  fireEvent.click(screen.getByRole('button', { name: /Submit for Review/iu }))
 }
 
 // This repo's vitest has no global setup file, so Testing Library's automatic

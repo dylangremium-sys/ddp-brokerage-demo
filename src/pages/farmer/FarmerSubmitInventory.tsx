@@ -223,6 +223,10 @@ export default function FarmerSubmitInventory({
       waterActivity: form.waterActivity,
       qualityGrade: 'A',
       pricePerKg,
+      // Preserved, not re-derived. There is no currency control on this form,
+      // so an edit that dropped this would let the write path's THB fallback
+      // redenominate an existing USD or EUR batch without touching its number.
+      priceCurrency: initialItem?.priceCurrency,
       certFileName: form.coaFileName,
       photoUrl: photos[0]?.preview ?? '',
       storageConditions: form.storageConditions,

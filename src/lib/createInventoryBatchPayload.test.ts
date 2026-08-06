@@ -30,23 +30,42 @@ import type { InventoryItem } from '../types'
  * wrong one, and this repository already has five of those.
  */
 
-const h = vi.hoisted(() => ({
+const captured = vi.hoisted(() => ({
   upserts: [] as Array<{ table: string; data: Record<string, unknown> }>,
+  /** Rows the mocked SELECT returns, keyed by table. */
+  rows: {} as Record<string, Array<Record<string, unknown>>>,
 }))
 
-vi.mock('./supabase', () => ({
-  isSupabaseConfigured: true,
-  supabase: {
-    from: (table: string) => ({
-      upsert: (data: Record<string, unknown>) => {
-        h.upserts.push({ table, data })
-        return Promise.resolve({ error: null })
-      },
-    }),
-  },
-}))
+vi.mock('./supabase', () => {
+  const selectResult = (table: string) => Promise.resolve({
+    data: captured.rows[table] ?? [], error: null,
+  })
+  return {
+    isSupabaseConfigured: true,
+    supabase: {
+      from: (table: string) => ({
+        upsert: (data: Record<string, unknown>) => {
+          captured.upserts.push({ table, data })
+          return Promise.resolve({ error: null })
+        },
+        // Chainable, because the real queries are .select().order() AND
+        // .select().in().order(). A double that answers only the shape the
+        // test happens to hit is how a mock ends up endorsing a query it
+        // never actually modelled.
+        select: () => {
+          const builder = {
+            order: () => selectResult(table),
+            in: () => builder,
+            eq: () => builder,
+          }
+          return builder
+        },
+      }),
+    },
+  }
+})
 
-import { createInventoryBatch } from './db'
+import { createInventoryBatch, loadInventoryFromDB } from './db'
 
 const BATCH_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const FARM_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -89,7 +108,7 @@ function farmerSubmission(overrides: Partial<InventoryItem> = {}): InventoryItem
 
 async function capturePayload(item: InventoryItem): Promise<Record<string, unknown>> {
   await createInventoryBatch(item, USER_ID)
-  const batchWrite = h.upserts.find((u) => u.table === 'inventory_batches')
+  const batchWrite = captured.upserts.find((u) => u.table === 'inventory_batches')
   if (!batchWrite) throw new Error('no write to inventory_batches was attempted')
   return batchWrite.data
 }
@@ -114,13 +133,14 @@ const datesAreNullOrParseable = (r: Record<string, unknown>) =>
   DATE_COLUMNS.every((c) => r[c] == null || !Number.isNaN(Date.parse(String(r[c]))))
 
 beforeEach(() => {
-  h.upserts.length = 0
+  captured.upserts.length = 0
+  captured.rows = {}
 })
 
 describe('createInventoryBatch — the payload production actually receives', () => {
   it('writes to inventory_batches, not some other table', async () => {
     await capturePayload(farmerSubmission())
-    expect(h.upserts.map((u) => u.table)).toContain('inventory_batches')
+    expect(captured.upserts.map((u) => u.table)).toContain('inventory_batches')
   })
 
   it('states a price currency — the row production refused for fifty-nine attempts', async () => {
@@ -175,13 +195,49 @@ describe('createInventoryBatch — the payload production actually receives', ()
     expect(payload.cure_date).toBe('2026-03-20')
   })
 
+  it('preserves a stored non-THB currency when a batch is edited', async () => {
+    // The fallback exists for NEW batches. Applying it to an edit would
+    // redenominate the batch while leaving its number untouched: a 100 USD
+    // listing saved back as 100 THB. Caught in review of this very change.
+    const payload = await capturePayload(farmerSubmission({ priceCurrency: 'USD' }))
+    expect(payload.price_currency).toBe('USD')
+  })
+
+  it('falls back to THB only when the batch carries no currency', async () => {
+    const payload = await capturePayload(farmerSubmission())
+    expect(payload.price_currency).toBe('THB')
+  })
+
+  it('a USD batch loaded from the database is still USD when written back', async () => {
+    // The real defect this guards, found in review of this change: the row ->
+    // item mapper dropped price_currency and the form did not preserve it, so
+    // the write path's THB fallback applied to an EDIT. A 100 USD listing was
+    // saved back as 100 THB — number untouched, denomination silently changed.
+    // Load and save are exercised together because either half alone looks fine.
+    captured.rows.inventory_batches = [{
+      id: BATCH_ID,
+      farm_id: FARM_ID,
+      product_name: 'Sativa Gold',
+      quantity_kg: 25,
+      price_per_kg: 100,
+      price_currency: 'USD',
+      status: 'Pending Review',
+    }]
+
+    const [loaded] = await loadInventoryFromDB()
+    expect(loaded.priceCurrency, 'the loader dropped the currency').toBe('USD')
+
+    const payload = await capturePayload(loaded)
+    expect(payload.price_currency, 'the write path redenominated the batch').toBe('USD')
+  })
+
   it('satisfies every transcribed production CHECK at once', async () => {
     for (const item of [
       farmerSubmission(),
       farmerSubmission({ pricePerKg: 0 }),
       farmerSubmission({ batchNumber: 'GV-1', harvestDate: '2026-01-02', cureDate: '2026-02-03' }),
     ]) {
-      h.upserts.length = 0
+      captured.upserts.length = 0
       const payload = await capturePayload(item)
       const failed = [
         ['price_requires_currency', priceRequiresCurrency(payload)],
