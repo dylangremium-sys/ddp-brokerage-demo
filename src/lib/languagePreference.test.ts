@@ -70,7 +70,7 @@ describe('detectLanguage', () => {
   it('returns null when nothing is supported, rather than guessing', () => {
     expect(detectLanguage(['fr-FR', 'de-DE'])).toBeNull()
     expect(detectLanguage([])).toBeNull()
-    expect(detectLanguage(undefined)).toBeNull()
+    expect(detectLanguage()).toBeNull()
   })
 })
 
@@ -112,8 +112,12 @@ describe('initialLanguage', () => {
   })
 
   it('falls back to English when nothing is known', () => {
+    // Both arguments are explicit. Passing `undefined` for preferences would
+    // trigger the parameter default, which reads the host's navigator — so the
+    // test would silently depend on whatever language the machine running it
+    // is set to, and would have asserted nothing about the no-preferences path.
     expect(initialLanguage(fakeStorage(), [])).toBe(FALLBACK_LANGUAGE)
-    expect(initialLanguage(null, undefined)).toBe(FALLBACK_LANGUAGE)
+    expect(initialLanguage(null, [])).toBe(FALLBACK_LANGUAGE)
   })
 
   it('does not throw when storage is hostile', () => {

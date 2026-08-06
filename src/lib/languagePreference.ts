@@ -37,7 +37,7 @@ export function isSupportedLanguage(value: unknown): value is Lang {
  * Matches on the primary subtag, so `th-TH` selects Thai — a Thai phone reports
  * a region and matching the whole string would never hit.
  */
-export function detectLanguage(preferences: readonly string[] | undefined): Lang | null {
+export function detectLanguage(preferences?: readonly string[]): Lang | null {
   for (const preference of preferences ?? []) {
     const primary = preference.split('-')[0]?.toLowerCase()
     if (isSupportedLanguage(primary)) return primary
