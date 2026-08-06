@@ -107,6 +107,25 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u
 const PHONE_ALLOWED = /^[+(\d][\d\s\-()]*$/u
 const MIN_PHONE_DIGITS = 8
 
+/**
+ * The first number in a value that may carry its unit.
+ *
+ * Every numeric field on this form prompts for one: the placeholders read
+ * 'e.g. 800 kg', 'e.g. 2000 kg/year', 'e.g. 0.1%'. A farmer who follows the
+ * form's own example types '800 kg', and `Number('800 kg')` is NaN — so a
+ * validator that used Number() directly would refuse the submission of anyone
+ * who read the instructions. An earlier version of this file did exactly that.
+ *
+ * Ranges ('20–25%') take their lower bound. Only a value with no number in it
+ * at all — 'lots', 'a few' — is treated as not a number.
+ */
+export function parseLeadingNumber(value: string): number | null {
+  const match = value.match(/-?\d+(?:[.,]\d+)?/u)
+  if (!match) return null
+  const parsed = Number(match[0].replace(',', '.'))
+  return Number.isNaN(parsed) ? null : parsed
+}
+
 type Draft = Record<string, unknown>
 
 const text = (draft: Draft, field: string): string =>
@@ -151,24 +170,24 @@ export function validateFarmProfile(draft: Draft): FarmValidationIssue[] {
 
   for (const field of NON_NEGATIVE_FIELDS) {
     if (!filled(draft, field)) continue
-    const value = Number(text(draft, field))
-    if (Number.isNaN(value)) issues.push(issue(field, 'not-a-number'))
+    const value = parseLeadingNumber(text(draft, field))
+    if (value === null) issues.push(issue(field, 'not-a-number'))
     else if (value < 0) issues.push(issue(field, 'negative'))
   }
 
   for (const field of PERCENT_FIELDS) {
     if (!filled(draft, field)) continue
-    const value = Number(text(draft, field))
-    if (Number.isNaN(value)) issues.push(issue(field, 'not-a-number'))
+    const value = parseLeadingNumber(text(draft, field))
+    if (value === null) issues.push(issue(field, 'not-a-number'))
     else if (value < 0 || value > 100) issues.push(issue(field, 'percent-out-of-range'))
   }
 
   // A warning, not a block: unusual combinations exist, and a farmer must not
   // be stopped by a plausibility opinion.
-  const thc = Number(text(draft, 'typicalThc'))
-  const cbd = Number(text(draft, 'typicalCbd'))
+  const thc = parseLeadingNumber(text(draft, 'typicalThc'))
+  const cbd = parseLeadingNumber(text(draft, 'typicalCbd'))
   if (filled(draft, 'typicalThc') && filled(draft, 'typicalCbd')
-      && !Number.isNaN(thc) && !Number.isNaN(cbd) && thc + cbd > 100) {
+      && thc !== null && cbd !== null && thc + cbd > 100) {
     issues.push(issue('typicalThc', 'cannabinoids-implausible', 'warning'))
   }
 

@@ -56,8 +56,40 @@ function goToReviewStep() {
   }
 }
 
+/** The Field component nests its input inside a <label>, so labels are queryable. */
+function fill(label: RegExp, value: string) {
+  fireEvent.change(screen.getByLabelText(label), { target: { value } })
+}
+
+function next() {
+  const button = screen.queryByRole('button', { name: /next/iu })
+  if (!button) throw new Error('no Next control')
+  fireEvent.click(button)
+}
+
+/**
+ * Fills everything the validator requires, plus a THC/CBD pair that sums past
+ * 100 — so the draft is submittable but carries exactly one warning.
+ */
+function fillMinimumValidProfile() {
+  fill(/trading name/iu, 'Green Valley Farm')
+  fill(/province/iu, 'Chiang Mai')
+  next()
+  fill(/primary contact/iu, 'Somchai')
+  fill(/email/iu, 'somchai@example.com')
+  next(); next(); next()
+  fill(/typical THC/iu, '70')
+  fill(/typical CBD/iu, '45')
+}
+
 const submitButton = () =>
   screen.queryByRole('button', { name: /submit|send to ddp|finish/iu })
+
+function clickSubmit() {
+  const submit = submitButton()
+  if (!submit) throw new Error('no submit control found on the review step')
+  fireEvent.click(submit)
+}
 
 describe('the wizard refuses an unusable farm record', () => {
   it('does not submit an entirely empty form', () => {
@@ -65,8 +97,8 @@ describe('the wizard refuses an unusable farm record', () => {
     goToReviewStep()
 
     const submit = submitButton()
-    expect(submit, 'no submit control found on the review step').not.toBeNull()
-    fireEvent.click(submit!)
+    if (!submit) throw new Error('no submit control found on the review step')
+    fireEvent.click(submit)
 
     expect(onSubmit).not.toHaveBeenCalled()
   })
@@ -74,7 +106,7 @@ describe('the wizard refuses an unusable farm record', () => {
   it('tells the farmer what is wrong, and which step to fix it on', () => {
     renderWizard()
     goToReviewStep()
-    fireEvent.click(submitButton()!)
+    clickSubmit()
 
     expect(screen.queryByRole('alert')).not.toBeNull()
     expect(screen.getByRole('alert').textContent).toMatch(/required/iu)
@@ -94,8 +126,34 @@ describe('the wizard refuses an unusable farm record', () => {
   it('never blocks saving a draft', () => {
     renderWizard()
     const save = screen.queryByRole('button', { name: /save|progress/iu })
-    expect(save, 'no draft-save control found').not.toBeNull()
-    fireEvent.click(save!)
+    if (!save) throw new Error('no draft-save control found')
+    fireEvent.click(save)
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('a warning must actually be seen', () => {
+  it('does not submit a warning-only profile on the first press', () => {
+    // Previously the save succeeded and the app navigated to farmer-status in
+    // the same click, so "please double-check" rendered and vanished at once.
+    const { onSubmit } = renderWizard()
+    fillMinimumValidProfile()
+    goToReviewStep()
+
+    clickSubmit()
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toMatch(/double-check/iu)
+  })
+
+  it('submits on the second press, once the farmer has seen it', () => {
+    const { onSubmit } = renderWizard()
+    fillMinimumValidProfile()
+    goToReviewStep()
+
+    clickSubmit()
+    clickSubmit()
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 })

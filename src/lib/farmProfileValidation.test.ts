@@ -75,6 +75,37 @@ describe('formats, checked only once something is typed', () => {
   })
 })
 
+describe('numbers, as the form itself invites them to be typed', () => {
+  // Every numeric field prompts with its unit: 'e.g. 800 kg', 'e.g. 2000
+  // kg/year', 'e.g. 0.1%'. Refusing those would block precisely the farmers who
+  // followed the instructions — which an earlier version of this file did.
+  it.each([
+    ['qtyAvailableNow', '800 kg'],
+    ['annualCapacity', '2000 kg/year'],
+    ['avgYieldPerHarvest', '500 kg'],
+    ['typicalThc', '22%'],
+    ['typicalThc', '0.1%'],
+    ['typicalCbd', '20–25%'],
+    ['harvestsPerYear', '4 per year'],
+  ])('accepts %s = %s', (field, value) => {
+    expect(codes(valid({ [field]: value }))).toEqual([])
+  })
+
+  it('reads a range from its lower bound', () => {
+    expect(codes(valid({ typicalThc: '20–25%' }))).toEqual([])
+    expect(codes(valid({ typicalThc: '120–130%' }))).toContain('percent-out-of-range')
+  })
+
+  it('still rejects a value with no number in it at all', () => {
+    expect(codes(valid({ annualCapacity: 'lots' }))).toContain('not-a-number')
+    expect(codes(valid({ qtyAvailableNow: 'a few sacks' }))).toContain('not-a-number')
+  })
+
+  it('still rejects a negative quantity written with its unit', () => {
+    expect(codes(valid({ qtyAvailableNow: '-5 kg' }))).toContain('negative')
+  })
+})
+
 describe('numbers', () => {
   it('rejects text where a quantity belongs', () => {
     expect(codes(valid({ annualCapacity: 'lots' }))).toContain('not-a-number')
