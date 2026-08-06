@@ -90,8 +90,8 @@ function farmerSubmission(overrides: Partial<InventoryItem> = {}): InventoryItem
 async function capturePayload(item: InventoryItem): Promise<Record<string, unknown>> {
   await createInventoryBatch(item, USER_ID)
   const batchWrite = h.upserts.find((u) => u.table === 'inventory_batches')
-  expect(batchWrite, 'no write to inventory_batches was attempted').toBeDefined()
-  return batchWrite!.data
+  if (!batchWrite) throw new Error('no write to inventory_batches was attempted')
+  return batchWrite.data
 }
 
 // --- production's live CHECK expressions, as predicates -------------------

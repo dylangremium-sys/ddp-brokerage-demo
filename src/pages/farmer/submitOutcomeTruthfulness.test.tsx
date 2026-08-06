@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import FarmerSubmitInventory from './FarmerSubmitInventory'
-import type { FarmProfile } from '../../types'
+import type { FarmProfile, InventoryItem } from '../../types'
 
 /**
  * P1 / W1.3 — a rejected submission rendered the success screen.
@@ -33,14 +33,15 @@ const FARM: FarmProfile = {
 const SUCCESS_EN = /Submitted for Review/i
 const SUCCESS_TH = /ส่งเรียบร้อยแล้ว/
 
-function renderForm(onSubmit: (...args: never[]) => Promise<boolean>) {
+type SubmitHandler = (
+  item: InventoryItem,
+  coaFile?: File | null,
+  photoFiles?: File[],
+) => Promise<boolean>
+
+function renderForm(onSubmit: SubmitHandler) {
   return render(
-    <FarmerSubmitInventory
-      lang="en"
-      farms={[FARM]}
-      onSubmit={onSubmit as never}
-      onBack={() => {}}
-    />,
+    <FarmerSubmitInventory lang="en" farms={[FARM]} onSubmit={onSubmit} onBack={vi.fn()} />,
   )
 }
 
@@ -93,8 +94,9 @@ describe('a rejected submission must not look like a successful one', () => {
   })
 
   it('does not show the success screen while the write is still in flight', async () => {
-    let settle: (v: boolean) => void = () => {}
-    const onSubmit = vi.fn().mockReturnValue(new Promise<boolean>((r) => { settle = r }))
+    let settle!: (v: boolean) => void
+    const inFlight = new Promise<boolean>((resolve) => { settle = resolve })
+    const onSubmit = vi.fn().mockReturnValue(inFlight)
     renderForm(onSubmit)
 
     await submitForm()
