@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { formatDate } from '../../lib/formatDate'
 import type { Lang, InventoryItem } from '../../types'
 
 interface Props {
@@ -261,7 +262,7 @@ export default function FarmerMyStock({
                     : <span className="pill" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>{isTh ? 'ไม่มี COA' : 'No COA'}</span>
                 }
                 {item.harvestDate && (
-                  <span className="pill">{isTh ? 'เก็บเกี่ยว' : 'Harvest'} {item.harvestDate}</span>
+                  <span className="pill">{isTh ? 'เก็บเกี่ยว' : 'Harvest'} {formatDate(item.harvestDate, lang)}</span>
                 )}
                 {(item.photoUrls?.length ?? 0) > 0 && (
                   <span className="pill">{item.photoUrls!.length} photo{item.photoUrls!.length === 1 ? '' : 's'}</span>
@@ -286,7 +287,7 @@ export default function FarmerMyStock({
                 </button>
                 {item.submittedAt && (
                   <span style={{ fontSize: 12, color: 'var(--text-muted)', alignSelf: 'center' }}>
-                    {isTh ? 'อัปเดต' : 'Updated'} {new Date(item.submittedAt).toLocaleDateString()}
+                    {isTh ? 'อัปเดต' : 'Updated'} {formatDate(item.submittedAt, lang)}
                   </span>
                 )}
               </div>
