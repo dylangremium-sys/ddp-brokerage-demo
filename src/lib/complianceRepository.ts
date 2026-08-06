@@ -1,5 +1,8 @@
 import { supabase, isSupabaseConfigured } from './supabase.js'
 import { isEnforcedRuleStatus } from './complianceRules.js'
+import { selectBlockingRuleAlerts } from './complianceRuleEnforcement.js'
+import type { RuleEnforcementState } from './complianceRuleEnforcement.js'
+import { loadStoredComplianceRules, loadStoredComplianceAlerts } from './complianceLocalAlerts.js'
 import type {
   ComplianceAlert,
   ComplianceAuditLog,
@@ -382,6 +385,11 @@ interface ComplianceRuleRow {
   source_legal_update_id: string | null
   approved_by: string | null
   approved_at: string | null
+  // Added to the table by migration 41. `select('*')` has been returning these
+  // all along; ruleFromRow simply dropped them, so nothing downstream could see
+  // whether a rule was actually in force. Rule enforcement needs them.
+  effective_from: string | null
+  effective_to: string | null
   created_at: string
   updated_at: string
 }
@@ -400,6 +408,8 @@ function ruleFromRow(row: ComplianceRuleRow): ComplianceRule {
     sourceLegalUpdateId: row.source_legal_update_id,
     approvedBy: row.approved_by,
     approvedAt: row.approved_at,
+    effectiveFrom: row.effective_from ?? null,
+    effectiveTo: row.effective_to ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -486,6 +496,122 @@ function alertFromRow(row: ComplianceAlertRow): ComplianceAlert {
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,
     resolutionNotes: row.resolution_notes,
+  }
+}
+
+/**
+ * The authoritative rule-enforcement state for ONE entity, for the buyer-pack
+ * gate. Reads compliance rules and the alerts raised against this entity, and
+ * returns the subset that must block right now.
+ *
+ * FAILS CLOSED, and that is the whole point of the function. Every failure path
+ * — Supabase unconfigured, either query erroring, an unexpected throw — returns
+ * `{ blockingAlerts: [], unavailable: true }`, which the gate reads as blocking.
+ * It deliberately does NOT use `raise()` like its neighbours: a throw here would
+ * surface as an unhandled rejection in the caller's effect and leave the gate
+ * state at `null`, which also blocks but tells the operator nothing. An explicit
+ * `unavailable` lets the screen say WHY it is blocked.
+ *
+ * Note the two reads are NOT a transaction. A rule promoted between them could
+ * be missed for one render; the next resolve catches it. That is acceptable
+ * because every inconsistency here resolves toward blocking or a stale unblock
+ * that self-corrects, never toward a permanent silent unblock.
+ */
+export async function resolveEnforcedRuleAlerts(
+  entityType: ComplianceRule['entityType'],
+  entityId: string,
+): Promise<RuleEnforcementState> {
+  const unavailable: RuleEnforcementState = { blockingAlerts: [], unavailable: true }
+  if (!entityId) return unavailable
+
+  // DEMO MODE (no Supabase): the local cache IS the store, exactly as it is for
+  // procurement overrides. This must NOT report `unavailable` — doing so would
+  // block every buyer pack in the demo build, and it would be a lie: the rules
+  // and alerts are readable, they just live in localStorage. It also means the
+  // enforcement gate is demonstrable without a database, which is the point of
+  // the demo build.
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      blockingAlerts: selectBlockingRuleAlerts(
+        entityType,
+        entityId,
+        loadStoredComplianceRules(),
+        loadStoredComplianceAlerts(),
+      ),
+      unavailable: false,
+    }
+  }
+
+  try {
+    const client = supabase
+    const [rulesResult, alertsResult] = await Promise.all([
+      client.from('compliance_rules').select('*'),
+      client.from('compliance_alerts').select('*').eq('entity_type', entityType).eq('entity_id', entityId),
+    ])
+    if (rulesResult.error || alertsResult.error) return unavailable
+
+    const rules = (rulesResult.data as ComplianceRuleRow[] ?? []).map(ruleFromRow)
+    const alerts = (alertsResult.data as ComplianceAlertRow[] ?? []).map(alertFromRow)
+    return {
+      blockingAlerts: selectBlockingRuleAlerts(entityType, entityId, rules, alerts),
+      unavailable: false,
+    }
+  } catch {
+    return unavailable
+  }
+}
+
+/**
+ * The same question as resolveEnforcedRuleAlerts, asked for many batches at
+ * once, for the Qualified Buyer Preview list. One pair of queries rather than
+ * one pair per candidate.
+ *
+ * FAILS CLOSED AS A WHOLE. If either read fails, `unavailable` is true for the
+ * entire set and the caller must treat every candidate as blocked — not just
+ * the ones it happened to get rows for. A partial answer here would silently
+ * approve exactly the batches whose alerts did not come back.
+ *
+ * A batch with no alerts gets a settled, clean state — absence of an alert is a
+ * real answer, distinct from a failed read.
+ */
+export async function resolveEnforcedRuleAlertsForBatches(
+  batchIds: string[],
+): Promise<{ byBatchId: Map<string, RuleEnforcementState>; unavailable: boolean }> {
+  const empty = new Map<string, RuleEnforcementState>()
+  if (batchIds.length === 0) return { byBatchId: empty, unavailable: false }
+
+  // DEMO MODE: same contract as the single-entity resolver above.
+  if (!isSupabaseConfigured || !supabase) {
+    const rules = loadStoredComplianceRules()
+    const alerts = loadStoredComplianceAlerts()
+    return {
+      byBatchId: new Map(batchIds.map(id => [
+        id,
+        { blockingAlerts: selectBlockingRuleAlerts('batch', id, rules, alerts), unavailable: false },
+      ])),
+      unavailable: false,
+    }
+  }
+
+  try {
+    const client = supabase
+    const [rulesResult, alertsResult] = await Promise.all([
+      client.from('compliance_rules').select('*'),
+      client.from('compliance_alerts').select('*').eq('entity_type', 'batch').in('entity_id', batchIds),
+    ])
+    if (rulesResult.error || alertsResult.error) return { byBatchId: empty, unavailable: true }
+
+    const rules = (rulesResult.data as ComplianceRuleRow[] ?? []).map(ruleFromRow)
+    const alerts = (alertsResult.data as ComplianceAlertRow[] ?? []).map(alertFromRow)
+    const byBatchId = new Map<string, RuleEnforcementState>(
+      batchIds.map(id => [
+        id,
+        { blockingAlerts: selectBlockingRuleAlerts('batch', id, rules, alerts), unavailable: false },
+      ]),
+    )
+    return { byBatchId, unavailable: false }
+  } catch {
+    return { byBatchId: empty, unavailable: true }
   }
 }
 

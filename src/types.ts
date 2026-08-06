@@ -317,6 +317,16 @@ export interface ComplianceRule {
   sourceLegalUpdateId?: string | null
   approvedBy?: string | null
   approvedAt?: string | null
+  /**
+   * Effective dating, added to the table by migration 41 but absent from this
+   * interface until rule enforcement needed it. `effective_from` is NOT NULL
+   * DEFAULT current_date in the database, so a row always has one; it is
+   * optional here only because a client projection may omit the column.
+   * Optional/absent must therefore be read as "unknown", never as "not yet in
+   * force" — see isRuleWithinEffectiveWindow.
+   */
+  effectiveFrom?: string | null
+  effectiveTo?: string | null
   createdAt: string
   updatedAt: string
 }
