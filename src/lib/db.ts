@@ -8,8 +8,25 @@ import {
   resetDemo as lsResetDemo,
 } from '../data'
 import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType } from '../types'
+import { DEFAULT_BATCH_PRICE_CURRENCY } from '../types'
 
 export { isSupabaseConfigured }
+
+/**
+ * An empty or whitespace-only string is the absence of a value, and must reach
+ * Postgres as NULL rather than ''.
+ *
+ * The form's text inputs are '' until touched, and several of the columns they
+ * feed refuse a blank outright: a `date` column rejects ''::date with 22007,
+ * and `batch_number` carries a not-blank CHECK. Coercing here — at the single
+ * payload boundary — rather than at each callsite means a field added to the
+ * form later cannot reintroduce the defect by forgetting to do it.
+ */
+function nullIfBlank(value: string | null | undefined): string | null {
+  if (value == null) return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
 
 // ---------------------------------------------------------------------------
 // UUID guard — seed farms use 'farm-1' style IDs that are not valid UUIDs.
@@ -514,15 +531,25 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
     strain: item.productName,
     location: item.location,
     quantity_kg: item.quantityKg,
-    harvest_date: item.harvestDate,
-    cure_date: item.cureDate,
-    batch_number: item.batchNumber,
+    // These three are `string` on InventoryItem and the form leaves them '' when
+    // untouched. Postgres refuses all three: '' fails the ::date cast on the two
+    // date columns, and batch_number carries a live not-blank CHECK. A blank is
+    // the absence of a value, so it is sent as NULL.
+    harvest_date: nullIfBlank(item.harvestDate),
+    cure_date: nullIfBlank(item.cureDate),
+    batch_number: nullIfBlank(item.batchNumber),
     thc_percent: item.thcPct,
     cbd_percent: item.cbdPct,
     moisture_percent: item.moisturePct,
     water_activity: parseFloat(item.waterActivity) || null,
     quality_grade: item.qualityGrade,
     price_per_kg: item.pricePerKg,
+    // Production refuses a priced row that does not state its currency
+    // (inventory_batches_price_requires_currency). The application states it
+    // explicitly rather than relying on a column default: a default would make
+    // the currency an assumption of the database's, silently applied to a
+    // future non-THB listing, instead of a fact the submitting client asserts.
+    price_currency: item.priceCurrency ?? DEFAULT_BATCH_PRICE_CURRENCY,
     coa_file_name: item.certFileName || null,
     photo_url: item.photoUrl || null,
     storage_conditions: item.storageConditions,
