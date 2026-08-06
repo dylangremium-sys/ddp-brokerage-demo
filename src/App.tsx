@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import './App.css'
 import {
   getFarmProfiles,
@@ -85,6 +85,7 @@ import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
+import { initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
 import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
 
@@ -120,7 +121,15 @@ export default function App() {
     // navigate from the landing page first.
     return getInitialPageFromPath(window.location.pathname) ?? 'landing'
   })
-  const [lang, setLang] = useState<Lang>('en')
+  // Opens in the farmer's own language, and remembers the choice. This was a
+  // hardcoded 'en' that was never persisted, so a Thai farm scanning the QR
+  // code landed on an English form with no way to change it — see
+  // lib/languagePreference.ts.
+  const [lang, setLangState] = useState<Lang>(initialLanguage)
+  const setLang = useCallback((next: Lang) => {
+    setLangState(next)
+    storeLanguage(next)
+  }, [])
   const [inventory, setInventory] = useState<InventoryItem[]>(() => getInventoryBatches())
   const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
   const [reviewFarmId, setReviewFarmId] = useState<string | null>(null)
@@ -1189,9 +1198,11 @@ export default function App() {
           </div>
 
           <div className="navbar-right">
-            {isDemo ? (
-              isFarmerPage && <LangToggle lang={lang} setLang={setLang} />
-            ) : (
+            {/* The toggle used to live inside the `isDemo` branch, so in
+                production — the only place a real farmer ever is — it did not
+                render at all. It is not a demo affordance. */}
+            {isFarmerPage && <LangToggle lang={lang} setLang={setLang} />}
+            {!isDemo && (
               currentProfile
                 ? <UserBadge profile={currentProfile} onSignOut={handleSignOut} />
                 : <button className="btn btn-primary" style={{ fontSize: 13, padding: '6px 14px' }} onClick={() => goTo('login')}>Sign in</button>
@@ -1267,6 +1278,7 @@ export default function App() {
         <main className="main-content public-auth-shell">
           <FarmerRegister
             lang={lang}
+            setLang={setLang}
             /* Returns to the landing page. It previously routed to
                farmer-dashboard, which requires a session the request flow
                never creates — the dead end this replaced. */

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Lang } from '../../types'
 import { submitAccessRequest, AccessRequestError } from '../../lib/accessRequestClient'
 import FarmerQRCode from '../../components/shared/FarmerQRCode'
+import LangToggle from '../../components/shared/LangToggle'
 
 const THAI_PROVINCES = [
   'Amnat Charoen', 'Ang Thong', 'Bangkok', 'Bueng Kan', 'Buri Ram',
@@ -27,10 +28,17 @@ type SubRole = 'Farmer' | 'Farm Manager' | 'Broker'
 
 interface Props {
   lang: Lang
+  /**
+   * This page is the QR-code landing spot, and it is a PUBLIC page — the navbar
+   * that carries the language toggle is not rendered here at all. Without a
+   * toggle of its own, a Thai farm arriving by QR had no way to reach the Thai
+   * interface. It is the one screen that most needs one.
+   */
+  setLang: (l: Lang) => void
   onComplete: () => void
 }
 
-export default function FarmerRegister({ lang, onComplete }: Props) {
+export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -136,6 +144,11 @@ export default function FarmerRegister({ lang, onComplete }: Props) {
 
   return (
     <div className="page-wrap auth-page">
+      {/* First thing on the page, before any English prose, because a farmer
+          who cannot read the heading needs to find this without reading it. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', maxWidth: 480, margin: '0 auto 8px' }}>
+        <LangToggle lang={lang} setLang={setLang} />
+      </div>
       <div className="page-header farmer-header" style={{ maxWidth: 480, margin: '0 auto 24px' }}>
         <div className="page-eyebrow">DDP Brokerage</div>
         <h1 className="page-title">
