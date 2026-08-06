@@ -52,7 +52,7 @@ function renderForm(onSubmit: SubmitHandler) {
  * handler returns early on the same condition — so a test that skips this step
  * would assert nothing at all while appearing to pass.
  */
-async function submitForm() {
+function submitForm() {
   // Matched on the full placeholder: /Purple Gelato/ alone also matches the
   // COA sample-name field, whose placeholder falls back to the same words.
   fireEvent.change(screen.getByPlaceholderText(/Purple Gelato, Dried Flower A/i), {
@@ -71,7 +71,7 @@ describe('a rejected submission must not look like a successful one', () => {
     const onSubmit = vi.fn().mockResolvedValue(false)
     const { container } = renderForm(onSubmit)
 
-    await submitForm()
+    submitForm()
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
 
     expect(screen.queryByText(SUCCESS_EN)).toBeNull()
@@ -84,7 +84,7 @@ describe('a rejected submission must not look like a successful one', () => {
     const onSubmit = vi.fn().mockResolvedValue(true)
     const { container } = renderForm(onSubmit)
 
-    await submitForm()
+    submitForm()
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
 
     // Without this the first test would pass against a form that can never
@@ -99,7 +99,7 @@ describe('a rejected submission must not look like a successful one', () => {
     const onSubmit = vi.fn().mockReturnValue(inFlight)
     renderForm(onSubmit)
 
-    await submitForm()
+    submitForm()
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
 
     expect(screen.queryByText(SUCCESS_EN)).toBeNull()
