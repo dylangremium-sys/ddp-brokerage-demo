@@ -434,6 +434,10 @@ export type Page =
   | 'ddp-compliance-watchtower'
   | 'ddp-operations-desk'
   | 'ddp-access-requests'
+  // Onboarding a buyer is a form, not a triage action: there is no buyer
+  // self-registration, so unlike a farmer there is no enquiry row to provision
+  // FROM. Hence its own page rather than a control on 'ddp-access-requests'.
+  | 'ddp-buyer-provisioning'
 
 export type StockStatus =
   | 'draft'
