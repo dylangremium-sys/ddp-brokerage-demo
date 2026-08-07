@@ -135,25 +135,30 @@ export function selectBlockingRuleAlerts(
 
   const unresolved = new Set<string>(UNRESOLVED_ALERT_STATUSES)
 
-  return alerts
-    .filter(alert =>
-      alert.entityType === entityType
-      && alert.entityId === entityId
-      && unresolved.has(alert.status)
-      && !!alert.ruleId
-      && blockingRules.has(alert.ruleId),
-    )
-    .map(alert => {
-      const rule = blockingRules.get(alert.ruleId!)!
-      return {
-        alertId: alert.id,
-        alertTitle: alert.alertTitle,
-        ruleId: rule.id,
-        ruleCode: rule.ruleCode,
-        ruleTitle: rule.title,
-        severity: alert.severity,
-      }
-    })
+  // A guard sequence rather than filter+map: the map half would need two
+  // non-null assertions to re-state what the filter already proved, and an
+  // assertion on a security gate is a claim the compiler cannot check. Each
+  // early return below is a distinct, readable reason an alert does not block.
+  return alerts.flatMap(alert => {
+    if (alert.entityType !== entityType) return []
+    if (alert.entityId !== entityId) return []
+    if (!unresolved.has(alert.status)) return []
+
+    const ruleId = alert.ruleId
+    if (!ruleId) return []
+
+    const rule = blockingRules.get(ruleId)
+    if (!rule) return []
+
+    return [{
+      alertId: alert.id,
+      alertTitle: alert.alertTitle,
+      ruleId: rule.id,
+      ruleCode: rule.ruleCode,
+      ruleTitle: rule.title,
+      severity: alert.severity,
+    }]
+  })
 }
 
 /**

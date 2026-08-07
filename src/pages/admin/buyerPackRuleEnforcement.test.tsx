@@ -97,6 +97,13 @@ function outputButtons() {
   )
 }
 
+// Each case carries an explicit 20s timeout. These are the only tests in the
+// file that dynamically import the page module AND await an async resolver, and
+// under the full suite running in parallel on a loaded machine that exceeded
+// vitest's 5s default — once, intermittently, which is the worst way for a gate
+// test to fail. In isolation the whole file runs in under 4s; the headroom costs
+// nothing when things are healthy and removes a flake that would otherwise teach
+// people to re-run CI until it passes.
 describe('W8 — an approved compliance rule blocks the buyer pack', () => {
   beforeEach(() => {
     installLocalStorage()
@@ -104,7 +111,7 @@ describe('W8 — an approved compliance rule blocks the buyer pack', () => {
   })
   afterEach(cleanup)
 
-  it('names the blocking rule on screen and disables buyer-facing output', async () => {
+  it('names the blocking rule on screen and disables buyer-facing output', { timeout: 20000 }, async () => {
     seedLocalStore([BLOCKING_RULE], [OPEN_ALERT])
     await renderPack()
 
@@ -122,7 +129,7 @@ describe('W8 — an approved compliance rule blocks the buyer pack', () => {
     for (const b of buttons) expect(b.disabled).toBe(true)
   })
 
-  it('does NOT block when the same rule is only suggested — approve is what enforces', async () => {
+  it('does NOT block when the same rule is only suggested — approve is what enforces', { timeout: 20000 }, async () => {
     seedLocalStore([{ ...BLOCKING_RULE, status: 'suggested' }], [OPEN_ALERT])
     await renderPack()
 
@@ -133,7 +140,7 @@ describe('W8 — an approved compliance rule blocks the buyer pack', () => {
     expect(document.body.textContent).not.toContain('LEGAL_EXPORT_PERMIT')
   })
 
-  it('does NOT block once the alert is resolved — resolving releases the pack', async () => {
+  it('does NOT block once the alert is resolved — resolving releases the pack', { timeout: 20000 }, async () => {
     seedLocalStore([BLOCKING_RULE], [{ ...OPEN_ALERT, status: 'resolved' }])
     await renderPack()
 
@@ -144,7 +151,7 @@ describe('W8 — an approved compliance rule blocks the buyer pack', () => {
     expect(document.body.textContent).not.toContain('LEGAL_EXPORT_PERMIT')
   })
 
-  it('does NOT block a rule outside its effective window', async () => {
+  it('does NOT block a rule outside its effective window', { timeout: 20000 }, async () => {
     seedLocalStore([{ ...BLOCKING_RULE, effectiveFrom: '2099-01-01' }], [OPEN_ALERT])
     await renderPack()
 
