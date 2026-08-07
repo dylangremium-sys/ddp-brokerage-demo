@@ -57,11 +57,18 @@ describe('robots.txt', () => {
     expect(directives[0]).toMatch(/^User-agent:\s*\*$/i)
   })
 
-  it('keeps farmer onboarding out of the index', () => {
+  /**
+   * `Disallow` controls CRAWLING, not indexing. An externally linked `/farmer`
+   * can still surface in results as a bare URL, and disallowing it is in fact
+   * what would stop a crawler ever reading a `noindex` placed there later. So
+   * this is hygiene, not the containment P0.4 asks for; genuine `noindex` for
+   * onboarding and auth surfaces stays with the search-exposure programme.
+   */
+  it('keeps farmer onboarding out of crawling', () => {
     expect(directives).toContain('Disallow: /farmer')
   })
 
-  it('keeps the API surface out of the index', () => {
+  it('keeps the API surface out of crawling', () => {
     expect(directives).toContain('Disallow: /api/')
   })
 
