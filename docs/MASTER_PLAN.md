@@ -405,4 +405,49 @@ These are not style preferences. Each one is derived from a specific defect that
 
 ---
 
-**Prepared 2026-08-06.** Every factual claim carries the command that produced it (§3). Ledger arithmetic is computed and asserted, not hand-totalled (§2). Amend only under the rule in §0.
+## 10. WORK DELIVERED SINCE PUBLICATION
+
+Recorded separately from scoring on purpose. **Shipping is not scoring.** A row moves only when its §5 acceptance test passes and its evidence command is re-run — several items below are live in production and still carry zero points, because the test that would score them needs a session or a device this work could not obtain.
+
+| Ref | Work | State | Rows scored |
+|---|---|---|---|
+| W0.1 | Authorised deploy path repaired | **Live.** 4 consecutive green deploys after 12 consecutive failures; the "verify the live site serves this exact commit" step has now executed for the first time | **0** — A-D1/A-D2 pending a scoring pass |
+| W0.2 | Dead contact domain corrected | **Live.** 0 occurrences of the unregistered domain in the deployed bundle | **0** — B-A4 needs the two mailboxes proven to receive |
+| W1 | Batch submission unblocked; failure reported truthfully | **Live** (`018925b`) | **0** — needs a farmer session; baseline recorded below |
+| W10.3 | Thai reachable on the QR landing path | **Live, verified end to end in a real browser**: toggle present, switches, persists across reload, `<html lang="th">`, 0 console errors | **0** — handset auto-detection not verified live |
+| W10.1 | Farm profile validation | PR open | 0 |
+| W10.5 | Farmer-form accessibility | PR open | 0 |
+
+**Baseline for the W1 acceptance test, recorded 2026-08-06:**
+
+```
+inventory_batches  →  n_live_tup = 1,  n_tup_ins = 59
+```
+
+Submit a priced batch as a farmer and re-run the §5 evidence command. Live rows moving 1 → 2 closes F-B2 and unlocks most of W1's 193 points. If it does not move, the fix is incomplete and that matters more than any row.
+
+---
+
+## 11. FINDINGS RAISED SINCE PUBLICATION
+
+Each was measured while doing the work above, and none is fixed by it.
+
+**F-N1 — 105 of the farm wizard's 131 fields are never collected.** `FarmerOnboarding` declares 131 fields in its draft and renders **26**. The other 105 are written to `public.farms` as empty strings on every submission. The audit's "~120 fields, zero validation" is really a 26-field form writing 131 columns. Decide which it is before building farm scoring (row **A-F2**) on top of them — a completeness percentage computed over fields nobody can fill is a number that cannot mean anything.
+
+**F-N2 — `public.farms` has no constraints at all.** Zero CHECK constraints; three NOT NULL columns (`id`, `created_at`, `updated_at`). `inventory_batches` has nineteen. W10.1 puts a guard in the client, where anything that is not the wizard bypasses it. The durable fix is CHECKs on the table — **W5 / Lane B**, and it needs a migration number.
+
+**F-N3 — every numeric field prompts with its unit, so numeric validation must parse leniently.** The placeholders read `e.g. 800 kg`, `e.g. 2000 kg/year`, `e.g. 0.1%`. `Number('800 kg')` is `NaN`. Any validation using `Number()` directly refuses precisely the farmers who followed the instructions — which the first draft of W10.1 did, and which its own tests caught. **Two placeholders are also simply wrong**: `harvestsPerYear` prompts `e.g. 500 kg` (a weight, for a count) and `typicalCbd` prompts `e.g. 10–12 weeks` (a duration, for a percentage).
+
+**F-N4 — a row → item mapper that drops a column silently redenominates data.** `batchRowToInventoryItem` did not map `price_currency`, so an edited batch reached the write path with none and picked up the THB fallback: a 100 USD listing saved back as 100 THB, number untouched. Fixed in W1, but the rule generalises — **when a write path supplies a default, every read path must carry that column**, or an edit becomes a silent conversion. Worth checking the other mappers against their write paths.
+
+**F-N5 — an unpriced batch stores `0`, not NULL.** `pricePerKg` is `parseFloat(x) || 0`, so a batch submitted with no price reads to a buyer as **฿0/kg** rather than "price on application". A truthfulness defect belonging to **W4 / B-P7**; changing it ripples into the `InventoryItem` type and the benchmark comparison.
+
+**F-N6 — the farm draft calls `localStorage` unguarded.** `loadFarmDraft`/`saveFarmDraft` have no try/catch. Safari private mode throws on `setItem`, which would surface as a crash rather than a lost draft. Belongs with **W10.2**.
+
+**F-N7 — `.deepsource.toml` says the JavaScript analyzer is an accepted red. That is now false.** `main` passes it. During this work the analyzer produced two genuinely useful findings — a validator that would have blocked every compliant farmer, and a test that was silently reading the host machine's language instead of asserting anything. **Treat a red as signal and delete the stale note**, or the next person will wave it through.
+
+**F-N8 — the fix for iOS zoom already existed and had not been applied everywhere.** The `.eo-farmer` rules set `font-size: 16px` with the comment "16px keeps iOS from zooming the page on focus"; the generic `.field` used by every signed-out form stayed at 14px. Where a hazard has already been diagnosed once in this codebase, **check whether the remedy reached every surface** before treating it as new.
+
+---
+
+**Prepared 2026-08-06; §10–§11 added 2026-08-06 after the first delivery pass.** Every factual claim carries the command that produced it (§3). Ledger arithmetic is computed and asserted, not hand-totalled (§2). Amend only under the rule in §0.
