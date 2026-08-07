@@ -74,19 +74,46 @@ export function formatComplianceLabel(value: string): string {
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
+// ── TWO QUESTIONS, TWO PREDICATES ────────────────────────────────────────────
+//
+// There used to be one function here — `isEnforcedRuleStatus` — whose docblock
+// called it "the single canonical definition". It was answering two different
+// questions for two different sets of callers:
+//
+//   "has a human blessed this rule?"   → stamping approved_by / approved_at
+//   "does this rule gate work now?"    → the buyer-pack gate, rule impact,
+//                                        alert derivation, rule linking
+//
+// Those are not the same question, and a caller could not tell which one it had
+// asked. 41_EFFECTIVE_DATED_RULESETS_HARDENING.sql had already reached this
+// conclusion on the database side and said so plainly: "Two functions rather
+// than one flag, because a single function serving both questions is a function
+// whose callers cannot tell which one they asked." This is the same split,
+// applied to the application.
+//
+// The enforcement question additionally depends on the EFFECTIVE WINDOW, which
+// no predicate here can see from a bare status — so it lives with the rest of
+// the enforcement logic, in complianceRuleEnforcement.ts (`isRuleEnforcedNow`).
+
 /**
- * The single canonical definition of "counts as human-approved/active" for a
- * rule status. Draft/suggested/paused/retired/rejected are never enforced.
- * Exported separately from isRuleEnforced so call sites that only have a bare
- * status value (e.g. a pending Supabase write) don't need to re-derive the
- * same condition independently.
+ * "A human has blessed this rule." True for `approved` and `active`; false for
+ * draft, suggested, paused, retired and rejected.
+ *
+ * Use this for APPROVAL BOOKKEEPING — stamping `approved_by`/`approved_at`, or
+ * counting how much review work has been signed off. It says nothing about
+ * whether the rule is currently gating anything, because a blessed rule can sit
+ * outside its effective window, and `approved` may or may not mean "switched
+ * on" (see the OPEN QUESTION in complianceRuleEnforcement.ts).
+ *
+ * Takes a bare status so a pending Supabase write can ask without a full row.
  */
-export function isEnforcedRuleStatus(status: ComplianceRuleStatus): boolean {
+export function isHumanApprovedRuleStatus(status: ComplianceRuleStatus): boolean {
   return status === 'approved' || status === 'active'
 }
 
-export function isRuleEnforced(rule: ComplianceRule): boolean {
-  return isEnforcedRuleStatus(rule.status)
+/** Row-level form of {@link isHumanApprovedRuleStatus}. */
+export function isRuleHumanApproved(rule: ComplianceRule): boolean {
+  return isHumanApprovedRuleStatus(rule.status)
 }
 
 export function createBaselineComplianceRules(now = new Date().toISOString()): ComplianceRule[] {

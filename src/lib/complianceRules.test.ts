@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ComplianceRule, ComplianceRuleStatus } from '../types'
-import { isEnforcedRuleStatus, isRuleEnforced, RULE_STATUSES } from './complianceRules'
+import { isHumanApprovedRuleStatus, isRuleHumanApproved, RULE_STATUSES } from './complianceRules'
 
 function makeRule(status: ComplianceRuleStatus): ComplianceRule {
   return {
@@ -21,28 +21,28 @@ function makeRule(status: ComplianceRuleStatus): ComplianceRule {
   }
 }
 
-describe('isEnforcedRuleStatus / isRuleEnforced', () => {
+describe('isHumanApprovedRuleStatus / isRuleEnforced', () => {
   it('treats only approved and active as enforced', () => {
-    const enforced = RULE_STATUSES.filter(isEnforcedRuleStatus)
+    const enforced = RULE_STATUSES.filter(isHumanApprovedRuleStatus)
     expect(enforced.sort()).toEqual(['active', 'approved'])
   })
 
   it('never treats draft, suggested, paused, retired, or rejected as enforced', () => {
     const neverEnforced: ComplianceRuleStatus[] = ['draft', 'suggested', 'paused', 'retired', 'rejected']
     for (const status of neverEnforced) {
-      expect(isEnforcedRuleStatus(status)).toBe(false)
-      expect(isRuleEnforced(makeRule(status))).toBe(false)
+      expect(isHumanApprovedRuleStatus(status)).toBe(false)
+      expect(isRuleHumanApproved(makeRule(status))).toBe(false)
     }
   })
 
   it('treats approved and active rules as enforced', () => {
-    expect(isRuleEnforced(makeRule('approved'))).toBe(true)
-    expect(isRuleEnforced(makeRule('active'))).toBe(true)
+    expect(isRuleHumanApproved(makeRule('approved'))).toBe(true)
+    expect(isRuleHumanApproved(makeRule('active'))).toBe(true)
   })
 
-  it('isRuleEnforced delegates to isEnforcedRuleStatus for every status (no divergent logic)', () => {
+  it('isRuleEnforced delegates to isHumanApprovedRuleStatus for every status (no divergent logic)', () => {
     for (const status of RULE_STATUSES) {
-      expect(isRuleEnforced(makeRule(status))).toBe(isEnforcedRuleStatus(status))
+      expect(isRuleHumanApproved(makeRule(status))).toBe(isHumanApprovedRuleStatus(status))
     }
   })
 })

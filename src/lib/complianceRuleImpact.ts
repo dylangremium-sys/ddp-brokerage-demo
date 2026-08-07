@@ -1,5 +1,5 @@
 import type { ComplianceAlert, ComplianceRule, ComplianceRuleEntityType, ComplianceSeverity } from '../types'
-import { isRuleEnforced } from './complianceRules'
+import { isRuleEnforcedNow } from './complianceRuleEnforcement'
 import { SAFE_RULE_IMPACT_LABEL, type SafeRuleImpactLabel } from './complianceTerminology'
 
 // Read-only join between human-approved/active compliance_rules and the
@@ -29,7 +29,7 @@ const enforcedRuleMapCache = new WeakMap<ComplianceRule[], Map<string, Complianc
 function getEnforcedRuleMap(rules: ComplianceRule[]): Map<string, ComplianceRule> {
   const cached = enforcedRuleMapCache.get(rules)
   if (cached) return cached
-  const map = new Map(rules.filter(isRuleEnforced).map(rule => [rule.id, rule]))
+  const map = new Map(rules.filter(rule => isRuleEnforcedNow(rule)).map(rule => [rule.id, rule]))
   enforcedRuleMapCache.set(rules, map)
   return map
 }
@@ -37,7 +37,7 @@ function getEnforcedRuleMap(rules: ComplianceRule[]): Map<string, ComplianceRule
 /**
  * Returns the compliance-rule impact for one entity, or null if no
  * approved/active rule has an unresolved alert against it. Draft, suggested,
- * paused, retired, and rejected rules are never considered (isRuleEnforced
+ * paused, retired, and rejected rules are never considered (isRuleEnforcedNow
  * is the only gate). Resolved/dismissed alerts are treated as cleared and
  * never surfaced here.
  */
