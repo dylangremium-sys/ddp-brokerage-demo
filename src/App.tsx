@@ -169,6 +169,13 @@ export default function App() {
 
   // Farmer data scope — null until loaded, empty Sets if farmer has no data
   const [farmerScope, setFarmerScope] = useState<FarmerScope | null>(null)
+  // Distinguishes "this farmer has no stock" from "we could not find out".
+  // The catch below sets an EMPTY scope on failure, which makes every derived
+  // farmer list compute to [] — indistinguishable from a genuinely new farm,
+  // so a farmer whose load failed was told they had nothing and invited to add
+  // their first listing. The admin side already tracks this; the farmer side
+  // did not.
+  const [farmerLoadFailed, setFarmerLoadFailed] = useState(false)
 
   // Review requests (owner → farmer messages) and stock edit tracking
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>(() => loadReviewRequests())
@@ -363,6 +370,7 @@ export default function App() {
         ])
         // Superseded while loading → drop every result; do not touch state.
         if (!active) return
+        setFarmerLoadFailed(false)
         setFarmerScope(scope)
         // Populate farmer's farm profiles so Add Stock can resolve selectedFarm
         // and write farm_id correctly on every new batch submission.
@@ -387,6 +395,7 @@ export default function App() {
       .catch(err => {
         if (!active) return
         console.warn('getFarmerScope / data load failed:', err)
+        setFarmerLoadFailed(true)
         setFarmerScope({ farmIds: new Set(), itemIds: new Set() })
         // Fail closed: a failed farmer load must not leave prior (possibly
         // admin-wide) requests visible.
@@ -1326,7 +1335,8 @@ export default function App() {
                   openRequestCount={farmerReviewRequests.filter(r => r.status === 'open').length}
                   onGoRequests={() => goTo('farmer-requests')}
                   onCoaUpload={isFarmerRole && isSupabaseConfigured ? handleCoaUpload : undefined}
-                />
+                  loadFailed={farmerLoadFailed}
+              />
           )}
 
           {page === 'farmer-stock-form' && (
