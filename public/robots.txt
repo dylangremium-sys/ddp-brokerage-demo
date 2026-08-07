@@ -1,0 +1,23 @@
+# DDP Brokerage — public crawl policy
+#
+# WHY THIS FILE MUST EXIST AS A STATIC FILE
+# vercel.json rewrites /((?!api/).*) -> /index.html. With no static file here,
+# a request for /robots.txt did not 404 — it returned the SPA shell as
+# 200 text/html, so crawlers received an HTML document where a directive file
+# belongs. Vercel serves static files before rewrites (the same reason
+# /favicon.svg resolves), so this file wins without any vercel.json change.
+#
+# SCOPE OF THE PUBLIC SEARCH SURFACE TODAY
+# The application is state-routed, not URL-routed: src/lib/urlRouting.ts maps
+# exactly one deep link. So the public surface is the landing page at / plus
+# /farmer, and /farmer is farmer onboarding — not public corporate information.
+#
+# Assets are deliberately NOT disallowed. The landing page is client-rendered,
+# so a crawler that cannot fetch /assets/*.js and /assets/*.css sees an empty
+# document. Blocking them would hide the page it is trying to read.
+
+User-agent: *
+Disallow: /farmer
+Disallow: /api/
+
+Sitemap: https://www.ddpbrokerage.com/sitemap.xml
