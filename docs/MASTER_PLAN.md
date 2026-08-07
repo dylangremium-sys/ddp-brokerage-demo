@@ -18,7 +18,7 @@ This plan supersedes every prior planning artefact for scoring and sequencing pu
 | `DDP_BROKERAGE_FORENSIC_PLAN_VS_ACHIEVEMENT_AUDIT_2026-08-05.md` + `09.json` | **VOID. Do not cite.** Five load-bearing errors, listed in §3.4. Delete or archive out of the working tree. |
 | `docs/MASTER_DEVELOPMENT_ROADMAP.md` | Retained as intent. **Superseded on facts** — §342 states no buyer role exists in the schema; production disagrees (§3.2). |
 | All 18 `PHASE_*_VALIDATION.md` | Excluded, per the corpus's own instruction not to cite them in due diligence. |
-| GitHub issue #77 (P0 gate, open since 2026-07-27) | **Unresolved governance item.** See §7, OWNER-01. |
+| GitHub issue #77 (P0 gate, 2026-07-27 → 2026-08-07) | **REVOKED by the owner in writing, [2026-08-07](https://github.com/dylangremium-sys/ddp-brokerage-demo/issues/77#issuecomment-5213065462).** Closed as `NOT_PLANNED` with a recorded revocation, not a completion claim — the source-backed COA slice it required was never delivered end to end. **It no longer blocks anything.** Its substance is not discarded: the implementation sits in open PRs #95, #132 and #137, the gap queue lives in `docs/WATCHTOWER_CANONICAL_ARCHITECTURE.md` §9, and its non-negotiable rules (no verified source retrieval → no regulatory suggestion; a parsed COA is evidence, not proof; AI may summarise but never approve; only an authorised human decides; do not weaken RLS) remain binding on that work. |
 
 **Rule of amendment.** A row's score changes only when its acceptance test in §5 passes and its evidence command in §5 is re-run and recorded. Nobody edits a score without the evidence line. Nobody edits an acceptance test to make a red result green — that is the exact failure mode that produced three of the defects below.
 
@@ -97,7 +97,7 @@ Everything below was measured on 2026-08-06 against live production, the live bu
 | `thaiCalendar.ts` unused | import scan | referenced only by itself and its own test |
 | Deploy path broken | `gh api` over the last 14 `Security CI` runs on main | `Deploy to Production`: **12 failure, 2 success** — the 12 are the most recent |
 | No human review gate | `gh api .../branches/main/protection` | `required_approving_review_count: 0`, 2 required checks, enforce_admins true |
-| P0 gate still open | `gh issue view 77` | **OPEN** since 2026-07-27 |
+| P0 gate still open | `gh issue view 77` | **OPEN** since 2026-07-27 — *as measured 2026-08-06. Superseded: revoked in writing by the owner and closed `NOT_PLANNED` on 2026-08-07 (§0, §7).* |
 
 ### 3.2 Corrected — one baseline statement to retire
 
@@ -366,7 +366,7 @@ These cannot be completed by an engineer or an agent. Each blocks specific rows.
 
 | ID | Action | Blocks |
 |---|---|---|
-| OWNER-01 | Resolve GitHub issue #77 — the P0 gate that says all other DDP work stops until the source-backed COA Watchtower is complete. It is open since 2026-07-27 and the marketplace workstream proceeded anyway. Close it, or revoke it in writing as its own terms require. | Governance for every phase |
+| ~~OWNER-01~~ | ~~Resolve GitHub issue #77 — the P0 gate that says all other DDP work stops until the source-backed COA Watchtower is complete.~~ **DONE 2026-08-07 — revoked in writing, per the gate's own terms.** Nothing is gated on it any more. | ~~Governance for every phase~~ — cleared |
 | OWNER-02 | Un-mark the two `VITE_*` Vercel Production vars as Sensitive (or authorise the GitHub Secrets alternative) | W0.1 — A-D1, A-D2 |
 | OWNER-03 | Register `ddp-brokerage.com` defensively and approve the contact-copy change | W0.2 — B-A4 |
 | OWNER-04 | Configure custom SMTP in the production Supabase project | W6.3 — F-A4, F-A5 |
