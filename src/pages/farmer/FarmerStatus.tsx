@@ -1,4 +1,5 @@
 import { T, FARM_STATUS_LABEL, INVENTORY_STATUS_LABEL } from '../../translations'
+import { formatBatchPrice } from '../../lib/formatPrice'
 import { formatDate } from '../../lib/formatDate'
 import type { Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, CarbonProgrammeStatus } from '../../types'
 
@@ -232,7 +233,7 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
                   {item.thcPct > 0 && <span className="pill">{t.thcPrefix} {item.thcPct}%</span>}
                   {item.cbdPct > 0 && <span className="pill">{t.cbdPrefix} {item.cbdPct}%</span>}
                   {item.waterActivity && <span className="pill">{t.waPrefix} {item.waterActivity}</span>}
-                  <span className="pill">฿{item.pricePerKg}/{t.kgUnit}</span>
+                  <span className="pill">{formatBatchPrice(item.pricePerKg, item.priceCurrency, t.kgUnit)}</span>
                   {item.harvestDate && <span className="pill">{t.harvestPrefix} {formatDate(item.harvestDate, lang)}</span>}
                   {item.certFileName && <span className="pill pill-doc">{item.certFileName}</span>}
                 </div>

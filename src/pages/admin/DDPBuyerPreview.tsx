@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { formatBatchPrice } from '../../lib/formatPrice'
 import type { FarmProfile, InventoryItem, ProcurementDecision } from '../../types'
 import { DDPVerifiedSupplySeal } from '../../components/logos'
 import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass, testStatusClass, testStatusLabel } from '../../data'
@@ -556,7 +557,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
       `Farm:             ${item.farmName}`,
       `Location:         ${location}`,
       `Available Qty:    ${item.quantityKg > 0 ? `${item.quantityKg.toLocaleString()} ${item.unit ?? 'kg'}` : '—'}`,
-      `Price per kg:     ${item.pricePerKg > 0 ? `฿${item.pricePerKg.toLocaleString()} THB/kg` : '—'}`,
+      `Price per kg:     ${formatBatchPrice(item.pricePerKg, item.priceCurrency)}`,
       '',
       `THC:              ${na(item.thcPct, '%')}`,
       `CBD:              ${na(item.cbdPct, '%')}`,
@@ -727,7 +728,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
             )}
             <div className="buyer-pack-field">
               <span className="buyer-pack-lbl">Price / kg</span>
-              <span>{item.pricePerKg > 0 ? `฿${item.pricePerKg.toLocaleString()} THB/kg` : '—'}</span>
+              <span>{formatBatchPrice(item.pricePerKg, item.priceCurrency)}</span>
             </div>
             {item.harvestDate && (
               <div className="buyer-pack-field">

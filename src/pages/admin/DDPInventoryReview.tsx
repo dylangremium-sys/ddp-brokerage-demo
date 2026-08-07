@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { formatBatchPrice } from '../../lib/formatPrice'
 import type { FarmProfile, InventoryItem, InventoryStatus, ReviewRequest, StoredPhoto } from '../../types'
 import { deriveComplianceTier, COMPLIANCE_TIER_LABEL } from '../../data'
 import { DocumentCard } from '../../components/shared/DocumentCard'
@@ -209,7 +210,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                 <div className="detail-row"><span className="dl">Location</span><span className="dv">{item.location}</span></div>
                 <div className="detail-row"><span className="dl">Quantity</span><span className="dv">{item.quantityKg.toLocaleString()} kg</span></div>
                 <div className="detail-row"><span className="dl">Quality Grade</span><span className="dv"><span className="grade-chip">Grade {item.qualityGrade}</span></span></div>
-                <div className="detail-row"><span className="dl">Price per kg</span><span className="dv">฿{item.pricePerKg}</span></div>
+                <div className="detail-row"><span className="dl">Price per kg</span><span className="dv">{formatBatchPrice(item.pricePerKg, item.priceCurrency)}</span></div>
                 <div className="detail-row"><span className="dl">Harvest Date</span><span className="dv">{item.harvestDate || '—'}</span></div>
                 <div className="detail-row"><span className="dl">Cure Date</span><span className="dv">{item.cureDate || '—'}</span></div>
               </div>
