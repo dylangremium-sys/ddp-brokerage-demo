@@ -25,6 +25,8 @@ export function resolvePostLoginDecision(profile: UserProfile | null): PostLogin
       return { kind: 'route', page: 'ddp-overview' }
     case 'farmer':
       return { kind: 'route', page: 'farmer-dashboard' }
+    case 'buyer':
+      return { kind: 'route', page: 'buyer-dashboard' }
     case 'pending':
       return { kind: 'denied', reason: 'pending-approval' }
     default:

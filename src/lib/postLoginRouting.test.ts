@@ -47,7 +47,11 @@ describe('resolvePostLoginDecision', () => {
   })
 
   it('fails closed for an unknown / unexpected role', () => {
-    const unknownRole = { ...baseProfile, role: 'buyer' as unknown as UserProfile['role'] }
+    // Was 'buyer', which stopped being unknown when W3.1 added the role — the
+    // switch gained a case and this assertion started proving the opposite of
+    // what it says. Replaced with a value that is genuinely not in the union;
+    // a placeholder chosen because it is not a role anyone plans to add.
+    const unknownRole = { ...baseProfile, role: 'auditor' as unknown as UserProfile['role'] }
     expect(resolvePostLoginDecision(unknownRole)).toEqual({
       kind: 'denied',
       reason: 'unresolved-role',
