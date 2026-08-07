@@ -1353,11 +1353,24 @@ export default function App() {
               lang={lang}
               farms={farmerFarms}
               initialItem={stockEditItemId ? farmerInventory.find(i => i.id === stockEditItemId) : null}
-              onSubmit={async (item, coaFile) => {
+              onSubmit={async (item, coaFile, photoFiles) => {
+                // photoFiles IS load-bearing. This lambda used to take only
+                // (item, coaFile), so the form's third argument was dropped on
+                // the floor and handleInventorySubmit's photo block — which is
+                // guarded by `if (photoFiles?.length …)` — could never run. The
+                // result was farmer_photos with n_tup_ins = 0 in production:
+                // not one insert ever ATTEMPTED, against a durable upload path
+                // that was built, tested and correct.
+                //
+                // TypeScript cannot catch this and never will: a function of
+                // fewer parameters is assignable to a type of more, by design.
+                // The guard is the forwarding test in
+                // src/lib/mutationNavigationOrdering.test.ts.
+                //
                 // Navigate only on a committed submission. Leaving the form in
                 // place on failure keeps the farmer's input recoverable and puts
                 // them where the error banner is actionable.
-                const committed = await handleInventorySubmit(item, coaFile)
+                const committed = await handleInventorySubmit(item, coaFile, photoFiles)
                 if (committed && item.stockStatus !== 'draft') goTo('farmer-my-stock')
                 // Returned, not swallowed: the form decides whether to show a
                 // success screen, and it can only do that if it is told.
