@@ -4,7 +4,7 @@
 **Canonical location:** this file, `docs/MASTER_PLAN.md`. Any copy outside the repository is a mirror and loses authority the moment the two differ.
 **Baseline scored:** production `0ca8a3b72f64db63bb13d6e066b22bc2665cff8d`, Supabase project `iihxjrfxmycjafbtjvvq`.
 **Current score: 390 / 1000 capped (Buyer 250, Farmer 450 of 578 raw, Admin 450 of 565 raw). Target: 1000 / 1000.**
-**Gap: 1,506 rubric points across 99 rows.** 170 points banked 2026-08-07 — see §12.
+**Gap: 1,491 rubric points across 98 rows.** 185 points banked 2026-08-07 — see §12. **W0 is closed.**
 
 ---
 
@@ -52,7 +52,7 @@ Computed from the baseline rows, not hand-totalled. Every row is assigned to exa
 
 | WS | Workstream | Rows | Points | Buyer | Farmer | Admin |
 |---|---|---:|---:|---:|---:|---:|
-| **W0** | Unblock the pipeline (deploy path + dead contact domain) | 1 | **15** | 15 | — | — |
+| **W0** | Unblock the pipeline — **CLOSED** | 0 | **0** | — | — | — |
 | **W3** | Build the buyer product | 26 | **438** | 423 | — | 15 |
 | **W2** | Evidence becomes real files, registered and hashed | 12 | **227** | 60 | 142 | 25 |
 | **W1** | Make the farmer journey actually work | 4 | **48** | 30 | 7 | 11 |
@@ -65,7 +65,7 @@ Computed from the baseline rows, not hand-totalled. Every row is assigned to exa
 | **W8** | Watchtower rules that enforce | 2 | **35** | — | — | 35 |
 | **W12** | A billable event | 2 | **25** | 15 | — | 10 |
 | **W11** | PDPA / data-subject rights | 1 | **25** | — | 25 | — |
-| | **TOTAL** | **99** | **1506** | **649** | **422** | **435** |
+| | **TOTAL** | **98** | **1491** | **634** | **422** | **435** |
 
 **48 rows (940 points) are already at 100%.** They are listed in §6 and are a regression list, not a work list. Losing one of them costs the same as failing to win a new one.
 
@@ -142,13 +142,13 @@ Each phase has an exit gate. Do not start the next phase until the gate passes �
 
 | Phase | Workstreams | Points | Exit gate |
 |---|---|---:|---|
-| **P0 — Unblock** | W0 | **15** | A merge to `main` produces a green `Deploy to Production` including step 9, and every published contact address resolves and receives mail |
+| **P0 — Unblock** | W0 — **COMPLETE** | **0** | A merge to `main` produces a green `Deploy to Production` including step 9, and every published contact address resolves and receives mail |
 | **P1 — A farm can trade** | W1 (48 left) + W10.1–10.2 (53) + W5.2–5.4 (50) | **151** | A real farmer account submits a priced batch; the row exists; a forced DB error renders an error, not a success screen |
 | **P2 — Evidence is real** | W2 (227) + W6 (179) | **406** | A COA upload produces a storage object **and** a register row **and** a digest; the farmer is notified of an evidence request and can respond |
 | **P3 — Operable and auditable** | W5 remainder (119) + W7 (119) + W8 (35) + W9 (56) | **329** | Zero of the 19 routine tasks require raw SQL; `status_history` is append-only and attributed; an approved compliance rule demonstrably blocks a pack |
 | **P4 — The buyer product** | W3 (438) + W4 (50) + W12 (25) | **513** | A provisioned buyer signs in, finds a batch, requests a pack, receives it, and cannot see any other buyer's data or any farm identity DDP has not disclosed |
 | **P5 — Rights and polish** | W11 (25) + W10 remainder (67) | **92** | A data-subject deletion request completes through the product; the four known accessibility violations are closed |
-| | **TOTAL** | **1506** | Every persona at 1000 |
+| | **TOTAL** | **1491** | Every persona at 1000 |
 
 **Why W3 is last despite being the largest.** A buyer catalogue with nothing in it is worth zero points and negative credibility. The catalogue is only meaningful once farms can list (P1) and evidence is real (P2). Building it first would produce a demo, which is precisely what this project already has too much of.
 
@@ -158,7 +158,7 @@ Each phase has an exit gate. Do not start the next phase until the gate passes �
 
 Each item states the defect, the work, the acceptance test (what proves it), and the evidence command (how the score is re-measured). Points are the rubric points recovered.
 
-### W0 — Unblock the pipeline · 15 points remaining · **W0.1 CLOSED, scored §12**
+### W0 — Unblock the pipeline · **CLOSED 2026-08-07, both halves scored in §12**
 
 **W0.1 — The authorised deploy path (A-D1 15, A-D2 10) — ✅ CLOSED 2026-08-07, scored in §12.**
 Merging a PR does not ship it, and nothing says so. 12 consecutive `Deploy to Production` failures; production ships only from a developer's CLI; step 9 — "verify the live site serves this exact commit" — has never executed once.
@@ -412,7 +412,7 @@ Recorded separately from scoring on purpose. **Shipping is not scoring.** A row 
 | Ref | Work | State | Rows scored |
 |---|---|---|---|
 | W0.1 | Authorised deploy path repaired | **Live.** 4 consecutive green deploys after 12 consecutive failures; the "verify the live site serves this exact commit" step has now executed for the first time | **0** — A-D1/A-D2 pending a scoring pass |
-| W0.2 | Dead contact domain corrected | **Live.** 0 occurrences of the unregistered domain in the deployed bundle | **0** — B-A4 needs the two mailboxes proven to receive |
+| W0.2 | Dead contact domain corrected | **Live.** 0 occurrences of the unregistered domain in the deployed bundle | **15** — B-A4, mailboxes confirmed receiving 2026-08-07 |
 | W1 | Batch submission unblocked; failure reported truthfully | **Live** (`018925b`) | **0** — needs a farmer session; baseline recorded below |
 | W10.3 | Thai reachable on the QR landing path | **Live, verified end to end in a real browser**: toggle present, switches, persists across reload, `<html lang="th">`, 0 console errors | **0** — handset auto-detection not verified live |
 | W10.1 | Farm profile validation | PR open | 0 |
@@ -532,7 +532,7 @@ That last point is the one worth understanding. The Admin persona is **capped at
 **Not scored, and why** — the discipline is the point:
 
 - **F-U2 (Thai on the primary entry path)** — Thai *is* verified live in a real browser: the toggle renders on `/farmer`, switches the page, persists across a reload, and sets `<html lang="th">`, with zero console errors. But W10's §5 acceptance test asks for a Thai-speaking farmer completing onboarding **on a 375px phone** and resuming **on another device**, and neither has been done. The work is live; the row stays at 6.
-- **B-A4 (contact channel)** — the dead domain is gone from the deployed bundle, but nobody has proven the two mailboxes receive. Owner action, §7.
+- ~~**B-A4 (contact channel)**~~ — **SCORED 2026-08-07, 0 → 15.** The owner sent test messages to `info@` and `partnerships@ddpbrokerage.com` and confirmed both were received. Combined with the deployed bundle carrying **0** occurrences of the unregistered domain, the channel is proven working end to end. *Recorded late: I told the owner I was scoring this and then did not, which the self-audit in `docs/LANE_A_SELF_AUDIT_2026-08-07.md` caught as RED-1.*
 - **All of W1 (193 points)** — the fix is live; the acceptance test needs a farmer session. Baseline stands at `n_live_tup = 1`, `n_tup_ins = 59`.
 
 Six pieces of work are live and 25 points are banked. The distance between those two numbers is what this section exists to keep honest.
