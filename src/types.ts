@@ -402,6 +402,12 @@ export interface RiskRegisterEntry {
 
 export type Page =
   | 'landing'
+  // The buyer's own surface. Production has admitted `buyer` as a profile role
+  // since migration 39 and carries the organisation tables, but no page existed
+  // for one to land on — so `resolvePostLoginDecision` fell a buyer through to
+  // `default:` and signed them straight back out. The substrate was built and
+  // the door was locked from the inside.
+  | 'buyer-dashboard'
   | 'login'
   // Where a Supabase invite / password-recovery link lands. Reached from the
   // captured redirect (lib/authRedirect.ts), never from a nav affordance.

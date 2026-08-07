@@ -1,0 +1,85 @@
+{
+  "id": "61_rule_enforcement_status_parity",
+  "title": "Migration 61 — rule enforcement status parity",
+  "description": "Applies migrations 39, 40, 41 then 61, runs 61's VERIFY A-E, then rolls 61 back on a disposable PostgreSQL cluster. Two places answered 'is this rule enforced?' and disagreed about one status: the application (isRuleEnforcedNow) said approved OR active, the database (compliance_rules_currently_enforced, migration 41) said active only. Since #157 the application's answer is the one that actually stops a buyer pack, so a rule at status 'approved' could block output while the database reported it as not enforced -- a gate whose reason could not be verified from the data. The owner decided on 2026-08-07 that approved means switched on, which resolves it in the application's favour, so the DATABASE widens here. Narrowing the application instead was rejected: it would silently stop a rule that blocks a pack today from blocking it tomorrow, and quietly weakening a safety gate is not a way to tidy a mismatch. Both resolvers change, because compliance_rules_in_force already admits paused and retired precisely because those were switched on at some point -- under the same reasoning 'approved' belongs there too, and widening only one would move the divergence rather than close it.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-39",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-40",
+      "file": "40_LICENCES_AND_PERMITS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-41",
+      "file": "41_EFFECTIVE_DATED_RULESETS_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-61",
+      "file": "61_RULE_ENFORCEMENT_STATUS_PARITY_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "61_RULE_ENFORCEMENT_STATUS_PARITY_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "expectedPassCount": 5,
+    "note": "B is the point: an approved rule inside its window is reported as currently enforced, matching what already blocks buyer packs. Every other section exists to stop B passing for the wrong reason. C proves the widening was by ONE status and not five -- a paused rule must still not block a shipment today. D is the section a lazy implementation fails: both its fixture rows are status 'approved', one starting in 30 days and one that ended 30 days ago, so anything that widened the status filter and dropped the effective-window predicate passes A, B and C and dies here. E proves the historical resolver widened in step, and still answers the point-in-time question -- the expired approved rule IS in force at a date inside its own window, which is what makes judging a past shipment by its own date possible.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "61_RULE_ENFORCEMENT_STATUS_PARITY_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.compliance_rules",
+      "public.compliance_audit_log",
+      "public.is_ddp_admin"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [],
+      "functions": [],
+      "policies": []
+    },
+    "intact": {
+      "tables": [
+        "public.compliance_rules"
+      ],
+      "functions": [
+        "public.compliance_rules_in_force",
+        "public.compliance_rules_currently_enforced",
+        "public.is_ddp_admin",
+        "auth.uid"
+      ],
+      "authUsersMinRows": 2
+    }
+  }
+}

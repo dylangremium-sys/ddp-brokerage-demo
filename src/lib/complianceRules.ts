@@ -309,3 +309,84 @@ export function createBaselineComplianceRules(now = new Date().toISOString()): C
     updatedAt: now,
   }))
 }
+
+// ── REVIEW DECISIONS → STATUSES ──────────────────────────────────────────────
+//
+// These two mappings existed as four copies of a nested ternary, inline in
+// DDPComplianceWatchtower.tsx: one pair on the Supabase path and an identical
+// pair on the demo/localStorage path. The `decision` they switched on was typed
+// `string`, so nothing forced a branch to exist for every decision — and one did
+// not. `approve_rule` was never named, fell through to the `'reviewed'` default,
+// and left the update in a WEAKER state than `create_rule` produced, while the
+// rule it created was inserted as `active`. The strongest decision an operator
+// could take looked like the mildest afterwards.
+//
+// Four copies is also why fixing it in one place would not have fixed it: the
+// demo path would have kept the old behaviour, exactly the "half a gate" failure
+// this repository has hit before.
+//
+// Both functions take the union rather than `string`, and switch exhaustively,
+// so adding a decision to the union without deciding its statuses is a COMPILE
+// error rather than a silent fall-through to 'reviewed'.
+
+/** Every decision an administrator can record against a compliance review. */
+export type ComplianceReviewDecision =
+  | 'informational'
+  | 'create_rule'
+  | 'approve_rule'
+  | 'send_to_legal'
+  | 'reject'
+  | 'archive'
+
+export const REVIEW_DECISIONS: ComplianceReviewDecision[] = [
+  'informational',
+  'create_rule',
+  'approve_rule',
+  'send_to_legal',
+  'reject',
+  'archive',
+]
+
+export function isComplianceReviewDecision(value: string): value is ComplianceReviewDecision {
+  return (REVIEW_DECISIONS as string[]).includes(value)
+}
+
+/**
+ * The status the REVIEW row takes. Unchanged behaviour, extracted from two
+ * identical inline ternaries.
+ */
+export function reviewStatusForDecision(
+  decision: ComplianceReviewDecision,
+): 'reviewed' | 'sent_to_legal' | 'rejected' | 'archived' {
+  switch (decision) {
+    case 'send_to_legal': return 'sent_to_legal'
+    case 'reject':        return 'rejected'
+    case 'archive':       return 'archived'
+    case 'informational':
+    case 'create_rule':
+    case 'approve_rule':  return 'reviewed'
+  }
+}
+
+/**
+ * The status the LEGAL UPDATE takes.
+ *
+ * `approve_rule` maps to `rule_suggested`, alongside `create_rule`. Both produce
+ * a rule from this update, so both must advance it past `reviewed`; before this
+ * function existed only `create_rule` did. `rule_suggested` is the strongest
+ * status the CHECK vocabulary offers for "a rule came out of this" — there is no
+ * `rule_approved` — so approve and create share it rather than approve being
+ * silently demoted below create.
+ */
+export function legalUpdateStatusForDecision(
+  decision: ComplianceReviewDecision,
+): LegalUpdateStatus {
+  switch (decision) {
+    case 'send_to_legal': return 'sent_to_legal'
+    case 'reject':        return 'rejected'
+    case 'archive':       return 'archived'
+    case 'create_rule':
+    case 'approve_rule':  return 'rule_suggested'
+    case 'informational': return 'reviewed'
+  }
+}

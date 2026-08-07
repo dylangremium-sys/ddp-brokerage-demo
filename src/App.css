@@ -2753,6 +2753,21 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   border: 1px solid rgba(46,139,103,0.3);
 }
 
+/* Buyer and pending chips. Added with the buyer role (W3.1): the badge used to
+   render every non-admin as a farmer, so a buyer would have been shown a
+   "Farmer" chip on their own account page. */
+.chip-buyer {
+  background: rgba(59,130,246,0.12);
+  color: #1d4ed8;
+  border: 1px solid rgba(59,130,246,0.3);
+}
+
+.chip-pending {
+  background: rgba(148,163,184,0.15);
+  color: var(--text-muted);
+  border: 1px solid rgba(148,163,184,0.35);
+}
+
 .user-email {
   font-size: 12px;
   color: var(--text-muted);
