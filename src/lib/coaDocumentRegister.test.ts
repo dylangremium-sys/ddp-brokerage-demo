@@ -79,7 +79,7 @@ describe('recordCoaDocument — refusing a digest the register cannot stand behi
     ['upper case', DIGEST.toUpperCase()],
     ['non-hex characters', 'z'.repeat(64)],
     ['empty', ''],
-    ['65 characters', DIGEST + 'a'],
+    ['65 characters', `${DIGEST}a`],
   ] as const) {
     it(`refuses a digest that is ${label}`, async () => {
       await expect(
@@ -109,17 +109,17 @@ describe('hashFileHex — the fingerprint itself', () => {
   })
 
   it('gives different bytes different digests', async () => {
-    const a = await hashFileHex(new File(['one'], 'a.pdf'))
-    const b = await hashFileHex(new File(['two'], 'b.pdf'))
-    expect(a).not.toBe(b)
-    expect(a).toMatch(/^[0-9a-f]{64}$/)
-    expect(b).toMatch(/^[0-9a-f]{64}$/)
+    const digestOfOne = await hashFileHex(new File(['one'], 'a.pdf'))
+    const digestOfTwo = await hashFileHex(new File(['two'], 'b.pdf'))
+    expect(digestOfOne).not.toBe(digestOfTwo)
+    expect(digestOfOne).toMatch(/^[0-9a-f]{64}$/)
+    expect(digestOfTwo).toMatch(/^[0-9a-f]{64}$/)
   })
 
   it('digests the content, not the file name', async () => {
-    const a = await hashFileHex(new File(['same'], 'first.pdf'))
-    const b = await hashFileHex(new File(['same'], 'second.pdf'))
-    expect(a).toBe(b)
+    const firstUpload = await hashFileHex(new File(['same'], 'first.pdf'))
+    const secondUpload = await hashFileHex(new File(['same'], 'second.pdf'))
+    expect(firstUpload).toBe(secondUpload)
   })
 })
 
