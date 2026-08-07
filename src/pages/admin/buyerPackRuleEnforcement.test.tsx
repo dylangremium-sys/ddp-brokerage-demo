@@ -15,6 +15,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, waitFor } from '@testing-library/react'
 import type { ComplianceAlert, ComplianceRule, InventoryItem, FarmProfile } from '../../types'
+import { SEED_FARMS, SEED_INVENTORY } from '../../data'
+import DDPBuyerPreview from './DDPBuyerPreview'
 
 const BATCH_ID = 'batch-under-test'
 
@@ -46,22 +48,11 @@ const OPEN_ALERT: ComplianceAlert = {
   createdAt: '2026-08-06T00:00:00.000Z',
 }
 
-const ITEM: InventoryItem = {
-  id: BATCH_ID,
-  farmId: 'farm-1',
-  farmName: 'Test Farm',
-  productType: 'flower',
-  strain: 'Purple Gelato',
-  quantityKg: 10,
-  harvestDate: '2026-01-01',
-  status: 'Approved',
-} as unknown as InventoryItem
-
-const FARM: FarmProfile = {
-  id: 'farm-1',
-  tradingName: 'Test Farm',
-  legalBusinessName: 'Test Farm Co Ltd',
-} as unknown as FarmProfile
+// Fixtures are derived from the real seed records rather than hand-built and
+// cast. A double `as unknown as` would let a shape drift out of sync with the
+// type it claims to satisfy — precisely the failure this file exists to catch.
+const FARM: FarmProfile = SEED_FARMS[0]
+const ITEM: InventoryItem = { ...SEED_INVENTORY[0], id: BATCH_ID, farmId: FARM.id, farmName: FARM.tradingName }
 
 // Node 25 exposes its own partial `localStorage` global, which shadows jsdom's
 // and throws on .clear(). Install a plain in-memory stub, as the other tests in
@@ -85,10 +76,8 @@ function seedLocalStore(rules: ComplianceRule[], alerts: ComplianceAlert[]) {
   localStorage.setItem('ddp_compliance_alerts', JSON.stringify(alerts))
 }
 
-async function renderPack() {
-  const mod = await import('./DDPBuyerPreview')
-  const Component = mod.default as unknown as React.ComponentType<Record<string, unknown>>
-  render(<Component inventory={[ITEM]} farms={[FARM]} selectedItem={ITEM} />)
+function renderPack() {
+  render(<DDPBuyerPreview inventory={[ITEM]} farms={[FARM]} selectedItem={ITEM} />)
 }
 
 function outputButtons() {
@@ -97,13 +86,12 @@ function outputButtons() {
   )
 }
 
-// Each case carries an explicit 20s timeout. These are the only tests in the
-// file that dynamically import the page module AND await an async resolver, and
-// under the full suite running in parallel on a loaded machine that exceeded
-// vitest's 5s default — once, intermittently, which is the worst way for a gate
-// test to fail. In isolation the whole file runs in under 4s; the headroom costs
-// nothing when things are healthy and removes a flake that would otherwise teach
-// people to re-run CI until it passes.
+// Each case carries an explicit 20s timeout. Rendering the full buyer pack and
+// awaiting an async resolver exceeded vitest's 5s default once, under the whole
+// suite running in parallel on a loaded machine — intermittently, which is the
+// worst way for a gate test to fail. In isolation the file runs in under 4s; the
+// headroom costs nothing when things are healthy and removes a flake that would
+// otherwise teach people to re-run CI until it passes.
 describe('W8 — an approved compliance rule blocks the buyer pack', () => {
   beforeEach(() => {
     installLocalStorage()
@@ -113,7 +101,7 @@ describe('W8 — an approved compliance rule blocks the buyer pack', () => {
 
   it('names the blocking rule on screen and disables buyer-facing output', { timeout: 20000 }, async () => {
     seedLocalStore([BLOCKING_RULE], [OPEN_ALERT])
-    await renderPack()
+    renderPack()
 
     await waitFor(() => {
       expect(screen.getByText(/LEGAL_EXPORT_PERMIT/)).toBeTruthy()
@@ -131,7 +119,7 @@ describe('W8 — an approved compliance rule blocks the buyer pack', () => {
 
   it('does NOT block when the same rule is only suggested — approve is what enforces', { timeout: 20000 }, async () => {
     seedLocalStore([{ ...BLOCKING_RULE, status: 'suggested' }], [OPEN_ALERT])
-    await renderPack()
+    renderPack()
 
     // Assert the pack actually RENDERED before asserting the rule text is absent
     // — otherwise a component that threw would satisfy this test vacuously.
@@ -142,7 +130,7 @@ describe('W8 — an approved compliance rule blocks the buyer pack', () => {
 
   it('does NOT block once the alert is resolved — resolving releases the pack', { timeout: 20000 }, async () => {
     seedLocalStore([BLOCKING_RULE], [{ ...OPEN_ALERT, status: 'resolved' }])
-    await renderPack()
+    renderPack()
 
     // Assert the pack actually RENDERED before asserting the rule text is absent
     // — otherwise a component that threw would satisfy this test vacuously.
@@ -153,7 +141,7 @@ describe('W8 — an approved compliance rule blocks the buyer pack', () => {
 
   it('does NOT block a rule outside its effective window', { timeout: 20000 }, async () => {
     seedLocalStore([{ ...BLOCKING_RULE, effectiveFrom: '2099-01-01' }], [OPEN_ALERT])
-    await renderPack()
+    renderPack()
 
     // Assert the pack actually RENDERED before asserting the rule text is absent
     // — otherwise a component that threw would satisfy this test vacuously.
