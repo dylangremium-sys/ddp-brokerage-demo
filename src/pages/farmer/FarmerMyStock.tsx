@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { formatBatchPrice } from '../../lib/formatPrice'
 import { formatDate } from '../../lib/formatDate'
 import type { Lang, InventoryItem } from '../../types'
 
@@ -238,7 +239,7 @@ export default function FarmerMyStock({
                   <span className="pill">{item.quantityKg.toLocaleString()} {item.unit ?? 'kg'}</span>
                 )}
                 {item.pricePerKg > 0 && (
-                  <span className="pill">฿{item.pricePerKg.toLocaleString()}/{item.unit ?? 'kg'}</span>
+                  <span className="pill">{formatBatchPrice(item.pricePerKg, item.priceCurrency, item.unit ?? 'kg')}</span>
                 )}
                 {item.thcPct > 0 && <span className="pill">THC {item.thcPct}%</span>}
                 {item.cbdPct > 0 && <span className="pill">CBD {item.cbdPct}%</span>}
