@@ -3,7 +3,7 @@
 **Status:** ACTIVE — sole source of truth for DDP Brokerage from 2026-08-06.
 **Canonical location:** this file, `docs/MASTER_PLAN.md`. Any copy outside the repository is a mirror and loses authority the moment the two differ.
 **Baseline scored:** production `0ca8a3b72f64db63bb13d6e066b22bc2665cff8d`, Supabase project `iihxjrfxmycjafbtjvvq`.
-**Current score: 385 / 1000 capped (476 raw). Target: 1000 / 1000.**
+**Current score: 390 / 1000 capped (Buyer 250, Farmer 450 of 578 raw, Admin 450 of 565 raw). Target: 1000 / 1000.**
 **Gap: 1,506 rubric points across 99 rows.** 170 points banked 2026-08-07 — see §12.
 
 ---
@@ -505,6 +505,16 @@ Nothing was written, and nothing claimed to be. The same failure a day earlier r
 
 W1's §5 acceptance test is now satisfied in **both** directions — a good submission lands, a failed one says so. That was the defect that made fifty-eight failures invisible, and it is the one that mattered most: a blocked insert is an outage, but a blocked insert reported as success is an outage nobody can see.
 
+
+**CAP DECISION — MADE BY THE OWNER, 2026-08-07: the cap HOLDS.**
+
+Recorded before the reasoning that produced it, so nobody re-opens it by accident. The Farmer persona stays **capped at 450** against a raw **578**, and the overall score stays **390**.
+
+The owner's ground: the caps exist because the business cannot complete a cycle end to end, and **there is still no buyer**. The farmer half being fixed does not make the lifecycle whole. Lifting the cap would have read 428 and flattered a system that still cannot sell anything.
+
+Note what this means going forward: **the Farmer persona is now 128 raw points above its cap.** Further farmer-side work scores nothing visible until the cap lifts, and the cap lifts on **W3 — the buyer product**. That is the plan's largest workstream (438 points) and, from today, the only one that can move the headline number.
+
+The original framing of that decision, retained for the record:
 
 **A cap decision is now required, and is deliberately not being made here.** The Farmer and Admin caps of 450 rest on the stated ground that "the admin's primary lifecycle cannot complete, because its input (farmer submissions) is blocked and its output (a buyer) does not exist." **The input half is no longer true.** Whether the 450 cap still binds the Farmer persona on the remaining half alone is a scoring judgement for the owner, not something to assume in either direction:
 
