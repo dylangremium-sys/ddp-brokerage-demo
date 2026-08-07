@@ -1,0 +1,39 @@
+{
+  "id": "62_compliance_rule_conditions",
+  "title": "Migration 62 — compliance rule conditions",
+  "description": "Applies migrations 39, 40, 41, 61 then 62, runs 62's VERIFY A-D, then rolls 62 back on a disposable PostgreSQL cluster. A compliance rule could say who it applies to, how much it matters and whether it is in force, but never what makes a batch VIOLATE it -- which is why nothing evaluates rules and a human must link rule to batch by hand for the #157 gate to fire. 62 adds one nullable JSONB column holding the structured predicate from src/lib/complianceRuleCondition.ts. Nullable is the point: every existing rule keeps working, and some regulations genuinely cannot be reduced to a field comparison, so 'has no condition' must stay distinguishable from 'has an empty one'. The CHECK guards SHAPE ONLY -- field names and operator/type agreement are validated by parseRuleCondition in the application, because re-implementing the field registry as a Postgres CHECK would create a second definition of a valid condition that then drifts from the first, which is exactly the divergence migration 61 had just finished closing. Storing a condition still makes nothing enforce: no trigger reads the column and the buyer-pack gate does not consult it.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "HARDENING-39", "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql" },
+    { "label": "HARDENING-40", "file": "40_LICENCES_AND_PERMITS_HARDENING.sql" },
+    { "label": "HARDENING-41", "file": "41_EFFECTIVE_DATED_RULESETS_HARDENING.sql" },
+    { "label": "HARDENING-61", "file": "61_RULE_ENFORCEMENT_STATUS_PARITY_HARDENING.sql" },
+    { "label": "HARDENING-62", "file": "62_COMPLIANCE_RULE_CONDITIONS_HARDENING.sql" }
+  ],
+  "verify": {
+    "file": "62_COMPLIANCE_RULE_CONDITIONS_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D"],
+    "expectedPassCount": 4,
+    "note": "C is the section that matters and it asserts a NEGATIVE that looks like a bug: a condition naming a field that does not exist IS accepted. That is deliberate -- the CHECK is a shape guard, and duplicating the field registry into SQL would recreate the two-definitions defect migration 61 closed. C also proves the shapes that MUST be refused are refused: a bare JSON string (an expression string is precisely what option A rejects), a bare array, and an object carrying none of field/all/any/not. B proves the column is optional and that a rule without a condition is still reported as enforced, so 62 cannot be shown to have disturbed 61.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      { "label": "main-rollback", "source": "file", "file": "62_COMPLIANCE_RULE_CONDITIONS_ROLLBACK.sql" }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": ["auth.uid", "auth.users", "public.profiles", "public.compliance_rules", "public.compliance_audit_log", "public.is_ddp_admin"]
+  },
+  "postRollback": {
+    "removed": { "tables": [], "functions": [], "policies": [] },
+    "intact": {
+      "tables": ["public.compliance_rules"],
+      "functions": ["public.compliance_rules_currently_enforced", "public.compliance_rules_in_force", "public.is_ddp_admin", "auth.uid"],
+      "authUsersMinRows": 2
+    }
+  }
+}
