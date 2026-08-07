@@ -237,6 +237,7 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
                 <button
                   key={r}
                   type="button"
+                  aria-pressed={role === r}
                   className={`role-btn${role === r ? ' role-btn-active' : ''}`}
                   onClick={() => setRole(r)}
                 >
@@ -255,11 +256,13 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
             <div className="role-selector">
               <button
                 type="button"
+                aria-pressed={preferredLang === 'th'}
                 className={`role-btn${preferredLang === 'th' ? ' role-btn-active' : ''}`}
                 onClick={() => setPreferredLang('th')}
               >ภาษาไทย</button>
               <button
                 type="button"
+                aria-pressed={preferredLang === 'en'}
                 className={`role-btn${preferredLang === 'en' ? ' role-btn-active' : ''}`}
                 onClick={() => setPreferredLang('en')}
               >English</button>
