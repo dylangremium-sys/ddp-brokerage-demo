@@ -57,11 +57,26 @@ export const FARMER_PAGES: Page[] = [
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
 ]
 
+/**
+ * Buyer-scoped pages.
+ *
+ * A buyer sees the public surfaces and their own dashboard, and nothing else.
+ * They must never reach a farmer or admin page: the farmer screens carry other
+ * farms' identities, and the admin screens carry review decisions and internal
+ * notes. RLS is the real boundary — this list keeps the client from asking.
+ */
+export const BUYER_PAGES: Page[] = [...PUBLIC_PAGES, 'buyer-dashboard']
+
 export interface NavigationContext {
   /** Demo mode has no backend and no real identity; guards do not apply. */
   isDemo: boolean
   isSignedIn: boolean
   isAdminRole: boolean
+  /**
+   * Optional so existing callers keep working. Absent means "not a buyer",
+   * which is the safe default: the buyer rules below only ever RESTRICT.
+   */
+  isBuyerRole?: boolean
 }
 
 /**
@@ -75,6 +90,21 @@ export function resolveNavigationTarget(requested: Page, ctx: NavigationContext)
 
   // A signed-out caller may only reach a public page.
   if (!ctx.isSignedIn && !PUBLIC_PAGES.includes(requested)) return 'login'
+
+  // A buyer may reach their own surface and the public ones, nothing else.
+  // Checked BEFORE the admin rule: a buyer is not an admin, and leaving this
+  // until later would let a buyer request an admin page and be returned it.
+  if (ctx.isBuyerRole) {
+    return BUYER_PAGES.includes(requested) ? requested : 'buyer-dashboard'
+  }
+
+  // Conversely, nobody but a buyer lands on the buyer surface. An admin has
+  // their own buyer PREVIEW for seeing what a buyer would see; sending them to
+  // the real one would show them a surface scoped to an identity they do not
+  // hold.
+  if (requested === 'buyer-dashboard') {
+    return ctx.isAdminRole ? 'ddp-overview' : 'farmer-dashboard'
+  }
 
   // An admin has no farmer dashboard; steer them to their own overview. Public
   // pages are exempt so an admin can still view the landing and auth screens.
