@@ -22,6 +22,7 @@ import {
   isEnforcedRuleStatus,
   isRuleEnforced,
 } from '../../lib/complianceRules'
+import { isRuleBlockingNow } from '../../lib/complianceRuleEnforcement'
 import { deriveRuleBasedComplianceAlerts, mergeComplianceAlerts } from '../../lib/complianceAlerts'
 import { COMPLIANCE_ALERTS_STORAGE_KEY, loadStoredComplianceAlerts, COMPLIANCE_RULES_STORAGE_KEY, loadStoredComplianceRules } from '../../lib/complianceLocalAlerts'
 import { deriveExportReadiness } from '../../lib/complianceScoring'
@@ -414,6 +415,8 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
 
   const pendingReviews = reviews.filter(review => review.status === 'pending' || review.status === 'in_review')
   const activeRuleCount = rules.filter(isRuleEnforced).length
+  // The subset of the above that can ACTUALLY stop a buyer pack — see the tile.
+  const enforcingNowCount = rules.filter(rule => isRuleBlockingNow(rule)).length
   const blockingAlertCount = alerts.filter(alert => alert.status === 'blocked').length
 
   // entryActorType defaults to 'admin' so every existing call site (all of
@@ -1526,6 +1529,18 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
         <div className="summary-card s-total"><div className="summary-val">{legalUpdates.length}</div><div className="summary-lbl">Legal Updates</div></div>
         <div className="summary-card s-pending"><div className="summary-val">{pendingReviews.length}</div><div className="summary-lbl">Needs Review</div></div>
         <div className="summary-card s-approved"><div className="summary-val">{activeRuleCount}</div><div className="summary-lbl">Approved / Active Rules</div></div>
+        {/* "Approved / Active" is NOT the same number as "can stop a buyer pack",
+            and now that rules actually enforce, showing only the first invites the
+            reader to assume every one of them is doing something. This tile is the
+            honest count: blocking by design, status enforced, and inside its
+            effective window. */}
+        <div
+          className="summary-card s-approved"
+          title="Rules that can stop a buyer pack right now: is_blocking, an enforced status, and today inside the effective window. A suggested, paused, retired or not-yet-effective rule is excluded."
+        >
+          <div className="summary-val">{enforcingNowCount}</div>
+          <div className="summary-lbl">Enforcing Now</div>
+        </div>
         <div className="summary-card s-missing"><div className="summary-val">{blockingAlertCount}</div><div className="summary-lbl">Blocking Alerts</div></div>
       </div>
 
@@ -1685,8 +1700,26 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                       <td style={{ minWidth: 250 }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'informational') }}>Mark informational</button>
-                          <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'create_rule') }}>Create suggested rule</button>
-                          <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'approve_rule') }}>Approve rule</button>
+                          {/* THESE TWO BUTTONS DIFFER IN A WAY THE LABELS ALONE DO NOT CARRY.
+                              "Create suggested rule" inserts at status 'suggested', which
+                              enforces NOTHING — compliance_rules_currently_enforced() and the
+                              buyer-pack gate both require 'active'. "Approve rule" inserts at
+                              'active' and is the only one of the two that can stop a pack.
+                              Without this said out loud, the predictable failure is an operator
+                              creating a rule, watching a non-conforming pack issue anyway, and
+                              reporting enforcement as broken. */}
+                          <button
+                            className="btn btn-review"
+                            disabled={busy}
+                            title="Records the rule at status 'suggested'. A suggested rule does NOT block anything — promote it to active before it can stop a buyer pack."
+                            onClick={() => { void updateReviewDecision(review, 'create_rule') }}
+                          >Create suggested rule</button>
+                          <button
+                            className="btn btn-review"
+                            disabled={busy}
+                            title="Records the rule at status 'active' and stamps the approval. An active blocking rule WILL block the buyer pack of any batch with an open alert naming it."
+                            onClick={() => { void updateReviewDecision(review, 'approve_rule') }}
+                          >Approve rule (enforces)</button>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'send_to_legal') }}>Send to legal</button>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'reject') }}>Reject</button>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'archive') }}>Archive</button>
