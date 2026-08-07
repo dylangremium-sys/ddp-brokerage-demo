@@ -17,11 +17,10 @@
 // reconciliation; see the comment at the top of complianceRules.ts for why they
 // were split.
 //
-// One disagreement with the database SURVIVES that split and is deliberately
-// left open, because it is a product decision rather than a coding one:
-// `isRuleEnforcedNow` accepts `approved` as well as `active`, while
-// `compliance_rules_currently_enforced()` (migration 41) accepts only `active`.
-// The full reasoning, and how to close it in one line, is on that function.
+// The database now AGREES with this file. `isRuleEnforcedNow` and
+// `public.compliance_rules_currently_enforced()` both accept `approved` and
+// `active` inside the effective window, since migration 61 widened the SQL to
+// match. If either vocabulary changes, change both — see that function.
 //
 // ── FAIL CLOSED ────────────────────────────────────────────────────────────────
 // A rule state we could not read must never be allowed to CLEAR a block, for the
@@ -97,25 +96,23 @@ export function isRuleWithinEffectiveWindow(
  * check, because a bare status check cannot see the effective window and will
  * happily enforce a rule that expired last year or starts next year.
  *
- * ── OPEN QUESTION, DELIBERATELY LEFT OPEN ───────────────────────────────────
- * This includes status `approved` as well as `active`, matching the behaviour
- * shipped in #157. The database's `compliance_rules_currently_enforced()`
- * (migration 41) is NARROWER: `active` only. The two therefore still disagree
- * about one status, and that disagreement is a PRODUCT decision, not a coding
- * one:
+ * ── STATUS VOCABULARY: SETTLED, AND SHARED WITH THE DATABASE ────────────────
+ * `approved` and `active` both enforce; draft, suggested, paused, retired and
+ * rejected do not. A paused rule is paused and must not block a shipment today.
  *
- *   • If `approved` means "a human signed it off but it is not switched on
- *     yet", then only `active` should enforce and this should narrow to match
- *     the database.
- *   • If `approved` and `active` are effectively synonyms in the operator's
- *     head, the database function should widen instead.
+ * This disagreed with `compliance_rules_currently_enforced()` (migration 41,
+ * `active` only) until 2026-08-07, when the owner decided that **approved means
+ * switched on** — it is not a staging state ahead of activation. That resolved
+ * the divergence in this file's favour, so migration 61 widened the SQL rather
+ * than narrowing this. Narrowing here would have silently stopped a rule that
+ * blocks a buyer pack today from blocking it tomorrow, which is a weakening of a
+ * safety gate and not a way to tidy a mismatch.
  *
- * It is left WIDE here on purpose: narrowing it would silently stop a rule that
- * blocks a buyer pack today from blocking it tomorrow, and quietly weakening a
- * safety gate is not a change to make as a side effect of a refactor. Flipping
- * it is one line — swap `isHumanApprovedRuleStatus` for `status === 'active'` —
- * once someone decides what `approved` means. Until then the divergence is
- * named rather than hidden, and asserted by test.
+ * THE TWO SIDES ARE NOW A CONTRACT. Changing the vocabulary here without
+ * changing migration 61's, or vice versa, reopens a state where a pack can be
+ * blocked by a rule the database reports as not enforced. Both ends are pinned:
+ * the parity test in complianceRuleEnforcement.test.ts, and section B of
+ * 61_RULE_ENFORCEMENT_STATUS_PARITY_VERIFY.sql.
  */
 export function isRuleEnforcedNow(rule: ComplianceRule, asOf: Date = new Date()): boolean {
   return isHumanApprovedRuleStatus(rule.status)
