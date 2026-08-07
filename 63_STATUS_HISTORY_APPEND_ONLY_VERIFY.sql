@@ -1,5 +1,5 @@
 -- =============================================================================
--- 62_STATUS_HISTORY_APPEND_ONLY_VERIFY.sql
+-- 63_STATUS_HISTORY_APPEND_ONLY_VERIFY.sql
 --
 -- Proves status_history is append-only and attributed, WITHOUT proving it by
 -- accident.
@@ -20,7 +20,7 @@
 --
 -- RUNNING THIS AGAINST PRODUCTION: wrap it in a transaction you roll back.
 --
---   { echo "BEGIN;"; cat 62_..._VERIFY.sql; echo "ROLLBACK;"; } \
+--   { echo "BEGIN;"; cat 63_..._VERIFY.sql; echo "ROLLBACK;"; } \
 --     | psql "$PROD" -v ON_ERROR_STOP=1
 --
 -- Not for tidiness. Section D attempts a TRUNCATE, and a TRUNCATE that is NOT
@@ -70,7 +70,7 @@ BEGIN
 
   -- ── Fixture ───────────────────────────────────────────────────────────────
   INSERT INTO public.status_history (entity_type, entity_id, old_status, new_status, note)
-  VALUES ('v62_probe', gen_random_uuid(), 'before', 'after', 'migration 62 verify fixture')
+  VALUES ('v63_probe', gen_random_uuid(), 'before', 'after', 'migration 63 verify fixture')
   RETURNING id INTO v_id;
 
   -- ── B. UPDATE is refused ──────────────────────────────────────────────────
@@ -84,7 +84,7 @@ BEGIN
   IF NOT v_refused THEN
     RAISE EXCEPTION
       'VERIFY B FAILED: an UPDATE against status_history SUCCEEDED as a superuser. The trail can '
-      'still be rewritten by the roles RLS cannot restrain, which is the defect 62 exists to close.';
+      'still be rewritten by the roles RLS cannot restrain, which is the defect 63 exists to close.';
   END IF;
 
   SELECT count(*) INTO v_count FROM public.status_history WHERE id = v_id AND new_status = 'after';
@@ -196,7 +196,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION
       'VERIFY G FAILED: the RESTRICTIVE overlay from migration 22 is missing or is no longer '
-      'restrictive. Migration 62 must not touch it — removing it WIDENS access.';
+      'restrictive. Migration 63 must not touch it — removing it WIDENS access.';
   END IF;
 
   SELECT count(*) INTO v_count
@@ -212,7 +212,7 @@ BEGIN
   -- ── Fixture removal ───────────────────────────────────────────────────────
   -- Only possible by dropping the guard, so it is recreated and re-checked.
   DROP TRIGGER status_history_no_update_delete ON public.status_history;
-  DELETE FROM public.status_history WHERE entity_type = 'v62_probe';
+  DELETE FROM public.status_history WHERE entity_type = 'v63_probe';
   CREATE TRIGGER status_history_no_update_delete
     BEFORE DELETE OR UPDATE ON public.status_history
     FOR EACH ROW EXECUTE FUNCTION public.prevent_status_history_mutation();
@@ -241,6 +241,6 @@ BEGIN
       'restored with the wrong function or firing events. This script left the table unprotected.';
   END IF;
 
-  RAISE NOTICE 'VERIFY 62 COMPLETE: 7 sections passed, fixtures removed, guard restored and re-checked.';
+  RAISE NOTICE 'VERIFY 63 COMPLETE: 7 sections passed, fixtures removed, guard restored and re-checked.';
 END
 $verify$;

@@ -1,4 +1,4 @@
--- Pre-migration world for fixture 62.
+-- Pre-migration world for fixture 63.
 --
 -- The substrate creates the status_history TABLE and nothing else — no
 -- policies, no grants. Production's policies come from two places: the
@@ -18,8 +18,8 @@
 --   status_history: operational farmer or admin   RESTRICTIVE ALL
 --   authenticated = arwd
 --
--- The RESTRICTIVE one is the whole reason fixture 62 exists in this shape. If
--- it were reproduced as PERMISSIVE here, migration 62's section G would pass
+-- The RESTRICTIVE one is the whole reason fixture 63 exists in this shape. If
+-- it were reproduced as PERMISSIVE here, migration 63's section G would pass
 -- against a world that does not exist, and the fixture would be asserting
 -- against a tidied-up straw man rather than the real before-state.
 
@@ -53,6 +53,6 @@ CREATE POLICY "status_history: operational farmer or admin"
   USING (public.has_operational_farmer_access() OR public.is_ddp_admin())
   WITH CHECK (public.has_operational_farmer_access() OR public.is_ddp_admin());
 
--- The pre-62 grant. Broader than the RLS can actually use — which is the point
--- migration 62's header is careful about, and what its section E revokes.
+-- The pre-63 grant. Broader than the RLS can actually use — which is the point
+-- migration 63's header is careful about, and what its section E revokes.
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.status_history TO authenticated;

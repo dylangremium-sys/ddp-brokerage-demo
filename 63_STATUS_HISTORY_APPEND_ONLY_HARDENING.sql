@@ -1,5 +1,5 @@
 -- =============================================================================
--- 62_STATUS_HISTORY_APPEND_ONLY_HARDENING.sql
+-- 63_STATUS_HISTORY_APPEND_ONLY_HARDENING.sql
 --
 -- Makes status_history append-only and attributed.
 --
@@ -57,7 +57,7 @@ ALTER TABLE public.status_history
   ADD COLUMN IF NOT EXISTS changed_by uuid REFERENCES auth.users(id) ON DELETE SET NULL;
 
 COMMENT ON COLUMN public.status_history.changed_by IS
-  'The authenticated user who caused this status change, forced from auth.uid() by fn_status_history_set_actor (migration 62). NULL only for rows predating migration 62, or for trusted server-side writes with no session.';
+  'The authenticated user who caused this status change, forced from auth.uid() by fn_status_history_set_actor (migration 63). NULL only for rows predating migration 63, or for trusted server-side writes with no session.';
 
 -- ── 2. The actor cannot be chosen by the caller ─────────────────────────────
 -- OVERWRITES rather than defaults. A column DEFAULT is silently replaceable by
@@ -128,6 +128,6 @@ REVOKE UPDATE, DELETE ON public.status_history FROM authenticated;
 -- privilege expansion rather than hardening.
 
 COMMENT ON TABLE public.status_history IS
-  'Append-only status trail. UPDATE, DELETE and TRUNCATE are refused by trigger for EVERY role, including ddp_admin, service_role and the table owner — the roles RLS cannot restrain. Actor is forced from auth.uid(). Hardened by migration 62.';
+  'Append-only status trail. UPDATE, DELETE and TRUNCATE are refused by trigger for EVERY role, including ddp_admin, service_role and the table owner — the roles RLS cannot restrain. Actor is forced from auth.uid(). Hardened by migration 63.';
 
 COMMIT;
