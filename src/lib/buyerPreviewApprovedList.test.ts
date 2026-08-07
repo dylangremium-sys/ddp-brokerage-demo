@@ -254,11 +254,33 @@ describe('F3 — the list is wired to the authoritative read', () => {
     return arities
   }
 
-  it('passes all four arguments at every call site — decision AND override halves', () => {
+  it('passes all five arguments at every call site — decision, override AND rule-enforcement halves', () => {
     const arities = callSiteArity(PREVIEW_SRC)
     // Both gate-bearing surfaces: the single-batch pack and the preview list.
     expect(arities.length).toBeGreaterThanOrEqual(2)
-    expect(arities).toEqual(arities.map(() => 4))
+    // Was four. Compliance-rule enforcement added a fifth argument, and it is
+    // under exactly the same assertion for exactly the same reason: a call site
+    // short of the full set re-opens whichever half it omitted. This number is
+    // meant to be bumped deliberately when the gate grows another authoritative
+    // input — never to be relaxed to a >= or a "some".
+    expect(arities).toEqual(arities.map(() => 5))
+  })
+
+  /**
+   * The arity check above proves the ARGUMENT is passed, not that it is passed
+   * something real: `computeBuyerDisclosureStatus(item, farms, a, o, null)`
+   * would satisfy it while pinning the gate shut forever, and
+   * `..., { blockingAlerts: [], unavailable: false }` would satisfy it while
+   * disabling rule enforcement entirely. Both call sites must therefore pass a
+   * value that traces back to the resolver.
+   */
+  it('feeds the rule-enforcement argument from the authoritative resolver, not a literal', () => {
+    expect(PREVIEW_SRC).toContain('resolveEnforcedRuleAlerts(')
+    expect(PREVIEW_SRC).toContain('resolveEnforcedRuleAlertsForBatches(')
+    // The single-batch pack passes the state it resolved…
+    expect(PREVIEW_SRC).toContain('overrideState, ruleEnforcement)')
+    // …and the list passes the per-batch entry it looked up.
+    expect(PREVIEW_SRC).toContain('overrideState, rules)')
   })
 
   it('resolves authoritative overrides for the listed batches, batched', () => {
