@@ -1,4 +1,5 @@
 import type { Lang, ReviewRequest, InventoryItem } from '../../types'
+import { formatDate } from '../../lib/formatDate'
 
 interface Props {
   lang: Lang
@@ -108,10 +109,7 @@ export default function FarmerRequests({
                   </div>
 
                   <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, marginBottom: 14 }}>
-                    {new Date(req.createdAt).toLocaleDateString(
-                      isTh ? 'th-TH' : 'en-GB',
-                      { day: 'numeric', month: 'short', year: 'numeric' }
-                    )}
+                    {formatDate(req.createdAt, lang)}
                   </div>
 
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

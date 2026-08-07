@@ -5419,3 +5419,35 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   font-size: 10px;
   line-height: 1.3;
 }
+
+/* ── Touch targets and iOS zoom (P1 / W10.5) ───────────────────────────────
+   Scoped to `pointer: coarse`, i.e. a finger, so desktop density is unchanged.
+
+   Two separate problems, both measured on the signed-out farmer forms — the
+   ones a farm actually arrives on from a QR code, on a phone:
+
+   1. `.field input` was 14px. iOS Safari zooms the whole page in when a field
+      smaller than 16px receives focus, so every tap jumped the layout and the
+      farmer had to pinch back out. The `.eo-farmer` surfaces were given 16px
+      for exactly this reason; the generic `.field` never got it.
+
+   2. Tap targets sat under the 44px WCAG 2.5.5 minimum: inputs ≈38px,
+      `.role-btn` ≈34px, `.lang-btn` ≈28px — and `.lang-btn` is the control a
+      Thai farmer needs first. */
+@media (pointer: coarse) {
+  .field input,
+  .field select,
+  .field textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .role-btn {
+    min-height: 44px;
+  }
+
+  .lang-btn {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
+}
