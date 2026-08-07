@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildAuditLogInsertPayload } from './complianceRepository'
-import { isEnforcedRuleStatus } from './complianceRules'
+import { isHumanApprovedRuleStatus } from './complianceRules'
 
 // buildAuditLogInsertPayload is the pure payload builder insertAuditLog()
 // sends to Supabase — extracted specifically so actor-type attribution can
@@ -56,13 +56,13 @@ describe('buildAuditLogInsertPayload — actor-type attribution', () => {
 })
 
 describe('Phase 0C does not change existing rule-enforcement behaviour', () => {
-  it('isEnforcedRuleStatus is unchanged', () => {
-    expect(isEnforcedRuleStatus('draft')).toBe(false)
-    expect(isEnforcedRuleStatus('suggested')).toBe(false)
-    expect(isEnforcedRuleStatus('paused')).toBe(false)
-    expect(isEnforcedRuleStatus('retired')).toBe(false)
-    expect(isEnforcedRuleStatus('rejected')).toBe(false)
-    expect(isEnforcedRuleStatus('approved')).toBe(true)
-    expect(isEnforcedRuleStatus('active')).toBe(true)
+  it('the human-approval predicate is unchanged by the enforcement split', () => {
+    expect(isHumanApprovedRuleStatus('draft')).toBe(false)
+    expect(isHumanApprovedRuleStatus('suggested')).toBe(false)
+    expect(isHumanApprovedRuleStatus('paused')).toBe(false)
+    expect(isHumanApprovedRuleStatus('retired')).toBe(false)
+    expect(isHumanApprovedRuleStatus('rejected')).toBe(false)
+    expect(isHumanApprovedRuleStatus('approved')).toBe(true)
+    expect(isHumanApprovedRuleStatus('active')).toBe(true)
   })
 })

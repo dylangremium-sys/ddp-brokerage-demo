@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ComplianceSeverity, LegalUpdateAffectedArea } from '../types'
-import { isEnforcedRuleStatus } from './complianceRules'
+import { isHumanApprovedRuleStatus } from './complianceRules'
 import { runComplianceAnalysis } from './aiComplianceProvider'
 import type { ComplianceAIProvider } from './aiComplianceProvider'
 import type { AIComplianceModelInfo, AICompliancePromptVersion, AIComplianceOutput } from './aiComplianceTypes'
@@ -66,13 +66,13 @@ describe('Phase 0A does not change existing Compliance Watchtower behaviour', ()
   // safety guard only, with no UI or enforcement wiring. That absence of
   // wiring is verified structurally (git status shows only new files added
   // in this change, nothing existing modified), not by this test suite.
-  it('existing rule-enforcement gate logic (isEnforcedRuleStatus) is unchanged', () => {
-    expect(isEnforcedRuleStatus('draft')).toBe(false)
-    expect(isEnforcedRuleStatus('suggested')).toBe(false)
-    expect(isEnforcedRuleStatus('paused')).toBe(false)
-    expect(isEnforcedRuleStatus('retired')).toBe(false)
-    expect(isEnforcedRuleStatus('rejected')).toBe(false)
-    expect(isEnforcedRuleStatus('approved')).toBe(true)
-    expect(isEnforcedRuleStatus('active')).toBe(true)
+  it('the human-approval predicate is unchanged by the enforcement split', () => {
+    expect(isHumanApprovedRuleStatus('draft')).toBe(false)
+    expect(isHumanApprovedRuleStatus('suggested')).toBe(false)
+    expect(isHumanApprovedRuleStatus('paused')).toBe(false)
+    expect(isHumanApprovedRuleStatus('retired')).toBe(false)
+    expect(isHumanApprovedRuleStatus('rejected')).toBe(false)
+    expect(isHumanApprovedRuleStatus('approved')).toBe(true)
+    expect(isHumanApprovedRuleStatus('active')).toBe(true)
   })
 })

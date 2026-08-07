@@ -7,37 +7,21 @@
 // approve a blocking rule and the buyer pack would still issue. See
 // docs/WATCHTOWER_CANONICAL_ARCHITECTURE.md §1 (gap W8).
 //
-// ── WHAT COUNTS AS "IN FORCE", AND WHY THIS FILE DOES NOT SIMPLY CALL
-//    public.compliance_rules_currently_enforced() ─────────────────────────────
+// ── WHAT COUNTS AS "IN FORCE" ────────────────────────────────────────────────
 //
-// There are two definitions of "this rule is enforced" in this codebase and they
-// DISAGREE. That is a defect in its own right; it is recorded so the next reader
-// does not assume one of them is authoritative:
+// `isRuleEnforcedNow` below is the application's single answer to "does this
+// rule gate work right now?". Every caller that acts as though a rule has force
+// uses it. Its companion, `isHumanApprovedRuleStatus` in complianceRules.ts,
+// answers the different question "has a human blessed this?" and is used only
+// for approval bookkeeping. Those two were one overloaded function until the
+// reconciliation; see the comment at the top of complianceRules.ts for why they
+// were split.
 //
-//   • isEnforcedRuleStatus() in complianceRules.ts says 'approved' OR 'active',
-//     and its docblock calls itself "the single canonical definition". It has no
-//     concept of effective dating at all, because it predates migration 41,
-//     which added effective_from / effective_to and was never reconciled with it.
-//
-//   • compliance_rules_currently_enforced() (41_EFFECTIVE_DATED_RULESETS) says
-//     status = 'active' ONLY, and additionally requires today to fall inside the
-//     effective window.
-//
-// A gate cannot be built on an ambiguity — whichever it picked, the other
-// definition would keep producing a screen that disagreed with the gate. So this
-// module takes the SAFE HALF OF EACH, deliberately:
-//
-//   STATUS   — the WIDER set (isEnforcedRuleStatus: approved or active).
-//              Failing to block is the dangerous direction. A rule a human has
-//              approved should not be silently inert because a second promotion
-//              step was never taken.
-//   DATE     — the NARROWER set (inside the effective window).
-//              A rule not yet in force, or already expired, must NOT block. That
-//              is not caution, it is a wrong answer.
-//
-// This is a decision, not a discovery. If the team reconciles the two
-// definitions later, this module should follow the reconciled one and this
-// comment should be deleted rather than left to rot.
+// One disagreement with the database SURVIVES that split and is deliberately
+// left open, because it is a product decision rather than a coding one:
+// `isRuleEnforcedNow` accepts `approved` as well as `active`, while
+// `compliance_rules_currently_enforced()` (migration 41) accepts only `active`.
+// The full reasoning, and how to close it in one line, is on that function.
 //
 // ── FAIL CLOSED ────────────────────────────────────────────────────────────────
 // A rule state we could not read must never be allowed to CLEAR a block, for the
@@ -52,7 +36,7 @@ import type {
   ComplianceRuleEntityType,
   ComplianceSeverity,
 } from '../types'
-import { isEnforcedRuleStatus } from './complianceRules'
+import { isHumanApprovedRuleStatus } from './complianceRules'
 
 /**
  * Alert statuses that still represent a LIVE problem. 'resolved' and 'dismissed'
@@ -104,13 +88,46 @@ export function isRuleWithinEffectiveWindow(
 }
 
 /**
- * True when this rule is capable of blocking work right now: it blocks by
- * design, its status counts as enforced, and today is inside its window.
+ * THE CANONICAL "does this rule gate work right now?" PREDICATE for the
+ * application. A rule is enforced now when a human has blessed its status and
+ * today falls inside its effective window.
+ *
+ * Every caller that acts as though a rule has force — the buyer-pack gate, rule
+ * impact, alert derivation, rule linking — must use this and not a bare status
+ * check, because a bare status check cannot see the effective window and will
+ * happily enforce a rule that expired last year or starts next year.
+ *
+ * ── OPEN QUESTION, DELIBERATELY LEFT OPEN ───────────────────────────────────
+ * This includes status `approved` as well as `active`, matching the behaviour
+ * shipped in #157. The database's `compliance_rules_currently_enforced()`
+ * (migration 41) is NARROWER: `active` only. The two therefore still disagree
+ * about one status, and that disagreement is a PRODUCT decision, not a coding
+ * one:
+ *
+ *   • If `approved` means "a human signed it off but it is not switched on
+ *     yet", then only `active` should enforce and this should narrow to match
+ *     the database.
+ *   • If `approved` and `active` are effectively synonyms in the operator's
+ *     head, the database function should widen instead.
+ *
+ * It is left WIDE here on purpose: narrowing it would silently stop a rule that
+ * blocks a buyer pack today from blocking it tomorrow, and quietly weakening a
+ * safety gate is not a change to make as a side effect of a refactor. Flipping
+ * it is one line — swap `isHumanApprovedRuleStatus` for `status === 'active'` —
+ * once someone decides what `approved` means. Until then the divergence is
+ * named rather than hidden, and asserted by test.
+ */
+export function isRuleEnforcedNow(rule: ComplianceRule, asOf: Date = new Date()): boolean {
+  return isHumanApprovedRuleStatus(rule.status)
+    && isRuleWithinEffectiveWindow(rule, asOf)
+}
+
+/**
+ * True when this rule is capable of BLOCKING work right now: it is enforced now
+ * (above) and it blocks by design rather than merely informing.
  */
 export function isRuleBlockingNow(rule: ComplianceRule, asOf: Date = new Date()): boolean {
-  return rule.isBlocking === true
-    && isEnforcedRuleStatus(rule.status)
-    && isRuleWithinEffectiveWindow(rule, asOf)
+  return rule.isBlocking === true && isRuleEnforcedNow(rule, asOf)
 }
 
 /**
