@@ -12,6 +12,65 @@
 
 ---
 
+# 0. QUEUED — NOT SCHEDULED
+
+**Decision, 2026-08-07: do not begin this programme yet.** This document is the
+agreed specification for the work; it is not an instruction to start it. Anyone
+picking it up should read this section first.
+
+## Why it is queued
+
+The public search surface this programme governs is currently **one page**.
+
+`src/pages/public/` contains `LandingPage`, `LoginPage`, `SetPasswordPage` and
+`ForgotPasswordPage` — there is no about, contact, privacy, terms or company
+page. `PAGE_TO_PATH` in `src/lib/urlRouting.ts` maps exactly one deep link
+(`farmer-register` → `/farmer`), and P0.4 of this plan says that one should be
+kept out of the index anyway. So the set of URLs this plan would optimise is
+`/`, and Phases 4, 5, 7 and 8 have no subject matter until public corporate
+pages exist.
+
+This is a sequencing judgement, not a criticism of the plan. Metadata
+architecture, an information architecture for corporate pages, and Search
+Console monitoring all presuppose pages to apply them to.
+
+## Entry conditions — start when all three hold
+
+1. **At least two real public corporate pages exist** to index.
+2. **The buyer surface exists, or is explicitly declared out of public search.**
+   There is currently no buyer login or buyer-facing surface, so search would
+   deliver buyers to a site with nowhere for them to go.
+3. **Phase 0 re-baseline has been redone.** The baseline commit recorded above
+   is already stale — `main` moved to `b09358e` the day this document was
+   written. Do not implement against the section 2 snapshot without re-checking
+   it.
+
+## What was carved out and done anyway
+
+Three items were separated from this programme and shipped as an independent
+hygiene change, because they fix a live defect and do not depend on the entry
+conditions above:
+
+- a static `public/robots.txt`;
+- a static `public/sitemap.xml`;
+- a meta description in `index.html`.
+
+That change also records the canonical host decision. It does **not** discharge
+P0.6, P1.2, P1.3 or P2.2, which remain owned by this document — it removes a
+defect that was live in production while the plan waits.
+
+## What should be pulled out and handled separately
+
+- **P1.5 (unsupported compliance/certification language).** This is legal
+  exposure on a live public site whether or not anyone arrives via search. It
+  should not sit behind a search-exposure gate.
+- **P0.5 and P0.7 (private data not anonymously reachable).** Already
+  discharged by earlier verified work: anon holds 0 reads, 0 writes and 0
+  function `EXECUTE`, RLS is enabled on 49/49 tables, and all three storage
+  buckets are private. These need periodic **re-verification**, not a project.
+
+---
+
 ## 1. Scope and boundaries
 
 This plan is intentionally limited to:
@@ -88,6 +147,30 @@ as public application states, while farmer operational pages and DDP admin pages
 ### 2.4 robots discovery
 
 A repository code search for `robots` returned no matching file at document creation time. This must be re-verified before implementation because repository state can change after this document is written.
+
+**Correction, 2026-08-07 — the live behaviour was worse than "absent".** The
+repository search was right, but absence of the file did not produce a `404`.
+`vercel.json` rewrites `/((?!api/).*)` to `/index.html`, so both well-known
+paths returned the SPA shell:
+
+```text
+GET https://ddpbrokerage.com/robots.txt   -> 200  content-type: text/html
+GET https://ddpbrokerage.com/sitemap.xml  -> 200  content-type: text/html
+```
+
+A `200` is the trap. A crawler requesting a directive file and receiving an HTML
+document does not retry and does not warn, so the missing policy looks
+identical to a satisfied one from the outside.
+
+The fix needs **no `vercel.json` change**: Vercel serves static files ahead of
+rewrites, which is the same reason `/favicon.svg` resolves today. Both files now
+exist in `public/` with a regression guard at
+`src/lib/crawlPolicyFiles.test.ts`.
+
+**Method note for Phase 0:** re-baselining must probe deployed URLs, not only
+the repository. A repository-only search reports "no robots policy", which is
+true but understates the defect; only the HTTP response shows that the path was
+actively returning something wrong.
 
 ---
 
@@ -248,6 +331,39 @@ Acceptance requirements:
 6. `version.json` remains reachable through the canonical deployment path used by CI.
 
 Record the exact `curl -I` output in the implementation evidence.
+
+## Measured evidence, 2026-08-07 — status `IN PROGRESS`
+
+All four variants were probed. `curl -sSI` status line and `Location` only:
+
+```text
+http://ddpbrokerage.com/       HTTP/1.0 308  ->  https://ddpbrokerage.com/
+https://ddpbrokerage.com/      HTTP/2   308  ->  https://www.ddpbrokerage.com/
+http://www.ddpbrokerage.com/   HTTP/1.0 308  ->  https://www.ddpbrokerage.com/
+https://www.ddpbrokerage.com/  HTTP/2   200
+```
+
+Against the acceptance requirements above:
+
+| # | Requirement | Result |
+|---|---|---|
+| 1 | Exactly one variant returns the final `200` | PASS — `https://www.ddpbrokerage.com/` |
+| 2 | Every other variant permanently redirects | PASS — `308` in all three cases |
+| 3 | No redirect loop | PASS — every chain terminates at the canonical origin |
+| 4 | No unnecessary multi-hop chains | PARTIAL — `http://` apex takes two hops (scheme upgrade, then host). This is standard Vercel apex behaviour and is not worth engineering away |
+| 5 | The final public page emits the chosen canonical URL | **FAIL — outstanding** |
+| 6 | `version.json` reachable via the canonical CI path | not re-checked here |
+
+**Therefore `www.ddpbrokerage.com` is the canonical host**, established by
+deployed behaviour rather than by intent, and it is what
+`public/sitemap.xml` and the `Sitemap:` line of `public/robots.txt` publish.
+
+Requirement 5 is deliberately left open. A `<link rel="canonical">` placed in
+`index.html` would be served for **every** path by the SPA rewrite, so `/farmer`
+would canonicalise to `/`. That may in fact be the wanted default given P0.4,
+but it is a decision this programme should take explicitly, not a side effect of
+editing the static shell. `src/lib/crawlPolicyFiles.test.ts` asserts the absence
+of a static canonical link so that the decision has to be made deliberately.
 
 ### Gate 2
 
