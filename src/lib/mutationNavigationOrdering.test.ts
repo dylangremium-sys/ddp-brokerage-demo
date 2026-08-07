@@ -43,6 +43,22 @@ function fnBody(src: string, signature: string): string {
   return src.slice(start)
 }
 
+/**
+ * The <FarmerSubmitInventory onSubmit={…}> lambda, sliced from App.tsx.
+ *
+ * Anchored on `onSubmit={async (` rather than on the full parameter list: the
+ * previous version anchored on the literal `onSubmit={async (item, coaFile)`,
+ * which meant fixing the parameter list made every assertion here slice an
+ * empty string and pass vacuously. A locator that only finds the broken form of
+ * the code cannot guard the fixed form.
+ */
+function farmerStockFormCaller(): string {
+  const start = APP_SRC.indexOf('onSubmit={async (')
+  const end = APP_SRC.indexOf("onBack={() => goTo('farmer-my-stock')}")
+  if (start === -1 || end === -1 || end < start) return ''
+  return APP_SRC.slice(start, end)
+}
+
 describe('F5 — source fixture is readable', () => {
   it('loads App.tsx', () => {
     expect(APP_SRC.length).toBeGreaterThan(1000)
@@ -66,15 +82,44 @@ describe('F5 — no handler navigates after a failed write', () => {
   })
 
   it('the farmer-stock-form caller navigates only on a committed submission', () => {
-    const caller = APP_SRC.slice(
-      APP_SRC.indexOf('onSubmit={async (item, coaFile)'),
-      APP_SRC.indexOf('onBack={() => goTo(\'farmer-my-stock\')}'),
-    )
+    const caller = farmerStockFormCaller()
     expect(caller).not.toBe('')
     // The bare `await` followed by an unconditional goTo is the defect.
-    expect(caller).not.toMatch(/await handleInventorySubmit\(item, coaFile\)\s*\n\s*if \(item\.stockStatus/)
-    expect(caller).toContain('const committed = await handleInventorySubmit(item, coaFile)')
+    expect(caller).not.toMatch(/await handleInventorySubmit\([^)]*\)\s*\n\s*if \(item\.stockStatus/)
+    expect(caller).toMatch(/const committed = await handleInventorySubmit\(/)
     expect(caller).toMatch(/if \(committed && item\.stockStatus !== 'draft'\) goTo\('farmer-my-stock'\)/)
+  })
+
+  // ── The dropped-argument guard ────────────────────────────────────────────
+  //
+  // This lambda took (item, coaFile) while FarmerSubmitInventory called it with
+  // (item, coaFile, photoFiles). The third argument was discarded silently, so
+  // handleInventorySubmit's photo block — guarded by `if (photoFiles?.length …)`
+  // — could never run. Production measured farmer_photos n_tup_ins = 0: not one
+  // insert ever ATTEMPTED, against an upload path that was built and correct.
+  //
+  // NOTHING ELSE CATCHES THIS. TypeScript will not: a function of fewer
+  // parameters is assignable to a type of more, deliberately, because dropping
+  // trailing arguments is normally safe. Here it is the whole defect. The
+  // callback also cannot be type-annotated into safety — the assignability rule
+  // is what makes React event and prop callbacks ergonomic everywhere else.
+  //
+  // So the guard is textual, and it asserts FORWARDING rather than a fixed
+  // spelling: any parameter the props type declares must reach the handler.
+  it('the farmer-stock-form caller forwards every argument it is given', () => {
+    const caller = farmerStockFormCaller()
+    const params = /onSubmit=\{async \(([^)]*)\)/.exec(caller)?.[1] ?? ''
+    const declared = params.split(',').map(p => p.trim()).filter(Boolean)
+
+    // The props type is the contract; the lambda must accept all of it.
+    expect(declared).toEqual(['item', 'coaFile', 'photoFiles'])
+
+    const forwarded = /handleInventorySubmit\(([^)]*)\)/.exec(caller)?.[1] ?? ''
+    const passed = forwarded.split(',').map(a => a.trim()).filter(Boolean)
+
+    // …and pass all of it on. Accepting photoFiles and then not forwarding it
+    // is the same defect wearing a longer signature.
+    expect(passed).toEqual(declared)
   })
 
   it('every audited handler routes its write through commitMutation', () => {
