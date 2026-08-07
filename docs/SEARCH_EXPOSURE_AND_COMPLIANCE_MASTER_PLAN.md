@@ -36,14 +36,26 @@ Console monitoring all presuppose pages to apply them to.
 
 ## Entry conditions — start when all three hold
 
-1. **At least two real public corporate pages exist** to index.
+1. **At least two real public corporate pages exist** to index. **This is the
+   binding condition.** `src/pages/public/` still contains only Landing, Login,
+   SetPassword and ForgotPassword.
 2. **The buyer surface exists, or is explicitly declared out of public search.**
-   There is currently no buyer login or buyer-facing surface, so search would
-   deliver buyers to a site with nowhere for them to go.
+   ~~There is currently no buyer login or buyer-facing surface, so search would
+   deliver buyers to a site with nowhere for them to go.~~ **Largely met on
+   2026-08-07:** PR #174 landed a buyer sign-in as `e22de7d`, adding
+   `src/pages/buyer/BuyerDashboard.tsx`, buyer post-login routing and buyer
+   navigation. What remains is the explicit declaration — buyer surfaces are
+   authenticated and stay outside public search — not the surface itself.
 3. **Phase 0 re-baseline has been redone.** The baseline commit recorded above
-   is already stale — `main` moved to `b09358e` the day this document was
+   is already stale, and demonstrably so: `main` moved to `b09358e`, then
+   `e22de7d`, then `46cf5af` within a single day of this document being
    written. Do not implement against the section 2 snapshot without re-checking
    it.
+
+**How fast condition 2 moved is the point of this section.** It was written as
+a hard blocker in the morning and was substantially satisfied by the afternoon.
+Re-check all three against `main` before concluding the programme is still
+blocked; do not treat this list as a standing verdict.
 
 ## What was carved out and done anyway
 
@@ -55,9 +67,30 @@ conditions above:
 - a static `public/sitemap.xml`;
 - a meta description in `index.html`.
 
+**Merged as `46cf5af` (PR #173) and verified in production on 2026-08-07:**
+
+```text
+GET https://www.ddpbrokerage.com/robots.txt   -> 200  content-type: text/plain
+GET https://www.ddpbrokerage.com/sitemap.xml  -> 200  content-type: application/xml
+```
+
+`/version.json` reports `commitSha 46cf5af`, so the deployed bundle is that
+commit. Under this document's status vocabulary that is `VERIFIED` — repository
+evidence plus deployed behaviour.
+
+**Note for every later phase: CI cannot produce this evidence.** The `prebuild`
+guard refuses to build without Supabase configuration, so `dist/` is never
+emitted locally and no green check anywhere in this repository observes what a
+crawler actually receives. The `curl -sI` pair above is the only proof, and it
+can only be run after a production deploy.
+
 That change also records the canonical host decision. It does **not** discharge
-P0.6, P1.2, P1.3 or P2.2, which remain owned by this document — it removes a
-defect that was live in production while the plan waits.
+P0.4, P0.6, P1.2, P1.3 or P2.2, which remain owned by this document — it
+removes a defect that was live in production while the plan waits. P0.4 in
+particular is untouched: `Disallow: /farmer` controls **crawling, not
+indexing**. An externally linked `/farmer` can still surface as a bare URL, and
+disallowing the path is precisely what would stop a crawler ever reading a
+`noindex` placed there later. Real containment is still to be designed here.
 
 ## What should be pulled out and handled separately
 
@@ -143,6 +176,13 @@ Other application pages generally revert the address bar to `/` unless explicitl
 as public application states, while farmer operational pages and DDP admin pages are protected by navigation logic.
 
 **Important:** client-side navigation classification is not a substitute for authentication, authorization, database RLS, or server-side data protection.
+
+**Re-checked 2026-08-07, after the buyer sign-in landed (`e22de7d`) — this
+section still holds.** `PUBLIC_PAGES` is unchanged: `landing` plus the four
+auth pages. The new `buyer-dashboard` was added to `BUYER_PAGES`, not to
+`PUBLIC_PAGES`, and the guard still bounces a signed-out caller requesting
+anything outside `PUBLIC_PAGES` to `login`. So the public surface did not grow
+when the buyer product arrived.
 
 ### 2.4 robots discovery
 
