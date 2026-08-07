@@ -1,0 +1,82 @@
+{
+  "id": "62_status_history_append_only",
+  "title": "Migration 62 \u2014 status_history append-only and attributed",
+  "description": "Applies a pre-62 world reproducing production's three status_history policies and its arwd grant exactly -- including the RESTRICTIVE overlay migration 22 creates -- then 62, runs 62's VERIFY A-G, then rolls 62 back on a disposable PostgreSQL cluster. status_history was the only log table with zero protective triggers and no actor column: compliance_audit_log and commercial_audit_log both carry two triggers each. The exposure is NOT the alarming-looking authenticated=arwd grant -- the operational-farmer policy is RESTRICTIVE, so it narrows access and never grants it, and the only PERMISSIVE policy admitting UPDATE or DELETE is the admin one. The real gap is that a DDP ADMINISTRATOR could rewrite or delete any row with nothing recording it, and that service_role and the table owner bypass RLS entirely and could additionally TRUNCATE. No policy can reach those roles; a trigger can. So 62 puts the guarantee in triggers, adds a changed_by forced from auth.uid(), and revokes UPDATE/DELETE from authenticated as a second layer rather than as the fix. Section G exists because the plausible wrong fix -- widening or dropping the RESTRICTIVE policy to make the grant look consistent -- would REMOVE a restriction while reading as hardening.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "PRE62-WORLD",
+      "file": "scripts/disposable-pg/fixtures/sql/97_pre62_status_history.sql"
+    },
+    {
+      "label": "HARDENING-62",
+      "file": "62_STATUS_HISTORY_APPEND_ONLY_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "62_STATUS_HISTORY_APPEND_ONLY_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G"
+    ],
+    "expectedPassCount": 7,
+    "note": "B, C and D are the point, and they run as a SUPERUSER on purpose: the superuser is one of the roles the pre-62 table could not restrain, so proving refusal for an under-privileged role would prove nothing. D is separate from B and C because a row-level trigger never fires for TRUNCATE -- a table guarded only by the row-level trigger is still emptiable in one statement -- and it carries a catalog interlock so it never attempts the statement unless the guard is already proven present. F asserts the ABSENCE of a column DEFAULT on changed_by: a default would satisfy 'attribution exists' while remaining overridable by any caller, which is the forgery the BEFORE INSERT trigger prevents. G asserts the migration did NOT touch the policies, and is the section that catches the tempting wrong fix.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "62_STATUS_HISTORY_APPEND_ONLY_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.status_history",
+      "public.inventory_batches",
+      "public.is_ddp_admin",
+      "public.has_operational_farmer_access",
+      "public.has_farm_membership"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [],
+      "functions": [
+        "public.prevent_status_history_mutation",
+        "public.fn_status_history_set_actor"
+      ],
+      "policies": []
+    },
+    "intact": {
+      "tables": [
+        "public.status_history"
+      ],
+      "functions": [
+        "public.is_ddp_admin",
+        "public.has_operational_farmer_access",
+        "auth.uid"
+      ]
+    }
+  }
+}
