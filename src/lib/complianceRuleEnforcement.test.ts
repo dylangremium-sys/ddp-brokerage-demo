@@ -94,19 +94,27 @@ describe('isRuleEnforcedNow — the one predicate for "does this rule gate work 
   })
 
   /**
-   * PINS A KNOWN, DELIBERATE DIVERGENCE so it cannot be "tidied away" by someone
-   * who notices the mismatch and assumes it is an oversight. The application
-   * accepts 'approved'; the database's compliance_rules_currently_enforced()
-   * accepts only 'active'. Closing it is a PRODUCT decision about what
-   * 'approved' means — see the docblock on isRuleEnforcedNow. When that decision
-   * is made, change this test deliberately rather than deleting it.
+   * PINS PARITY WITH THE DATABASE. These two disagreed about `approved` until
+   * 2026-08-07, when the owner decided that approved MEANS SWITCHED ON. That
+   * resolved it in the application's favour, so migration 61 widened
+   * compliance_rules_currently_enforced() to `('approved','active')` to match
+   * this function rather than the other way round — narrowing here would have
+   * silently stopped a rule that blocks a buyer pack today from blocking it
+   * tomorrow.
+   *
+   * If either side's status vocabulary changes, BOTH must change. This test and
+   * section B of 61_RULE_ENFORCEMENT_STATUS_PARITY_VERIFY.sql are the two ends
+   * of that contract.
    */
-  it('is deliberately WIDER than the SQL: approved counts here, but not in compliance_rules_currently_enforced()', () => {
-    const approved = rule({ status: 'approved' })
-    expect(isRuleEnforcedNow(approved, AS_OF)).toBe(true)
-    // What the SQL function would say about the same row:
-    const sqlWouldEnforce = approved.status === 'active'
-    expect(sqlWouldEnforce).toBe(false)
+  it('agrees with the database: approved and active both enforce, per migration 61', () => {
+    const enforcingStatuses: ComplianceRuleStatus[] = ['approved', 'active']
+    for (const status of enforcingStatuses) {
+      expect(isRuleEnforcedNow(rule({ status }), AS_OF)).toBe(true)
+    }
+    // The statuses migration 61 deliberately did NOT widen to.
+    for (const status of ['draft', 'suggested', 'paused', 'retired', 'rejected'] as ComplianceRuleStatus[]) {
+      expect(isRuleEnforcedNow(rule({ status }), AS_OF)).toBe(false)
+    }
   })
 })
 
@@ -115,9 +123,8 @@ describe('isRuleBlockingNow — the status ambiguity, resolved deliberately', ()
     expect(isRuleBlockingNow(rule({ status: 'active' }), AS_OF)).toBe(true)
   })
 
-  it('ALSO blocks on approved, even though compliance_rules_currently_enforced() would not', () => {
-    // The wider status set is taken on purpose: failing to block is the
-    // dangerous direction. See the module header.
+  it('blocks on approved as well as active — parity with the database since migration 61', () => {
+    // Was a deliberate divergence; migration 61 closed it by widening the SQL.
     expect(isRuleBlockingNow(rule({ status: 'approved' }), AS_OF)).toBe(true)
   })
 
