@@ -21,7 +21,10 @@ import {
   formatComplianceLabel,
   isHumanApprovedRuleStatus,
   isRuleHumanApproved,
+  legalUpdateStatusForDecision,
+  reviewStatusForDecision,
 } from '../../lib/complianceRules'
+import type { ComplianceReviewDecision } from '../../lib/complianceRules'
 import { isRuleBlockingNow, isRuleEnforcedNow, UNRESOLVED_ALERT_STATUSES } from '../../lib/complianceRuleEnforcement'
 import { deriveRuleBasedComplianceAlerts, mergeComplianceAlerts } from '../../lib/complianceAlerts'
 import { COMPLIANCE_ALERTS_STORAGE_KEY, loadStoredComplianceAlerts, COMPLIANCE_RULES_STORAGE_KEY, loadStoredComplianceRules } from '../../lib/complianceLocalAlerts'
@@ -1114,7 +1117,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     })
   }
 
-  async function updateReviewDecision(review: ComplianceReview, decision: string): Promise<void> {
+  async function updateReviewDecision(review: ComplianceReview, decision: ComplianceReviewDecision): Promise<void> {
     setActionMessage(null)
     const now = new Date().toISOString()
     const relatedUpdate = review.legalUpdateId ? legalUpdates.find(update => update.id === review.legalUpdateId) : undefined
@@ -1126,7 +1129,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       }
       setBusy(true)
       try {
-        const nextStatus: ComplianceReview['status'] = decision === 'send_to_legal' ? 'sent_to_legal' : decision === 'reject' ? 'rejected' : decision === 'archive' ? 'archived' : 'reviewed'
+        const nextStatus: ComplianceReview['status'] = reviewStatusForDecision(decision)
         const updatedReview = await repo.updateReview(review.id, {
           status: nextStatus,
           decision,
@@ -1135,15 +1138,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
 
         let nextLegalUpdates = legalUpdates
         if (relatedUpdate) {
-          const updateStatus: LegalUpdate['status'] = decision === 'send_to_legal'
-            ? 'sent_to_legal'
-            : decision === 'reject'
-              ? 'rejected'
-              : decision === 'archive'
-                ? 'archived'
-                : decision === 'create_rule'
-                  ? 'rule_suggested'
-                  : 'reviewed'
+          const updateStatus: LegalUpdate['status'] = legalUpdateStatusForDecision(decision)
           const updatedLegalUpdate = await repo.updateLegalUpdateStatus(relatedUpdate.id, updateStatus)
           nextLegalUpdates = legalUpdates.map(update => update.id === updatedLegalUpdate.id ? updatedLegalUpdate : update)
         }
@@ -1202,7 +1197,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
 
     const nextReview: ComplianceReview = {
       ...review,
-      status: decision === 'send_to_legal' ? 'sent_to_legal' : decision === 'reject' ? 'rejected' : decision === 'archive' ? 'archived' : 'reviewed',
+      status: reviewStatusForDecision(decision),
       decision,
       reviewedBy: actorName,
       reviewedAt: now,
@@ -1210,15 +1205,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     }
 
     if (relatedUpdate) {
-      const updateStatus: LegalUpdate['status'] = decision === 'send_to_legal'
-        ? 'sent_to_legal'
-        : decision === 'reject'
-          ? 'rejected'
-          : decision === 'archive'
-            ? 'archived'
-            : decision === 'create_rule'
-              ? 'rule_suggested'
-              : 'reviewed'
+      const updateStatus: LegalUpdate['status'] = legalUpdateStatusForDecision(decision)
       const updatedLegalUpdate: LegalUpdate = { ...relatedUpdate, status: updateStatus, updatedAt: now }
       nextLegalUpdates = legalUpdates.map(update => update.id === updatedLegalUpdate.id ? updatedLegalUpdate : update)
       afterState = { review: nextReview, legalUpdate: updatedLegalUpdate }
