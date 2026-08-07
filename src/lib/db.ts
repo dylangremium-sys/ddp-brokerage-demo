@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase'
 import { shouldPersistToBrowser } from './browserPersistence'
+import { sha256Hex } from './sha256'
 import {
   loadInventory as lsLoadInventory,
   saveInventory as lsSaveInventory,
@@ -862,6 +863,77 @@ export async function uploadCoaFile(
     .upload(storagePath, file, { contentType: 'application/pdf', upsert: false })
   if (error) throw new Error(`COA upload failed: ${error.message}`)
   return { storagePath }
+}
+
+/**
+ * Fingerprint a file's bytes before they leave the browser.
+ *
+ * Hashed from the SAME File object that is handed to the uploader, so the digest
+ * describes exactly what was sent. Hashing a re-read or a server-side copy would
+ * prove only that two reads agreed, not that the stored bytes are the ones the
+ * farmer chose.
+ *
+ * This is integrity-since-upload and nothing more. It does NOT establish that a
+ * certificate is authentic or that the issuing laboratory produced it — a byte
+ * hash cannot speak to origin. Claiming otherwise is the single easiest false
+ * statement to make about this feature.
+ */
+export async function hashFileHex(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  return sha256Hex(bytes)
+}
+
+/**
+ * Record an uploaded COA in public.farmer_documents — the evidence register.
+ *
+ * The register, its sha256 index and its RLS have existed since migrations 15,
+ * 22, 28 and 42. Nothing ever wrote to it: three files sat in storage against
+ * zero register rows, so the platform held bytes it had no record of. This is
+ * the write path those migrations were built for.
+ *
+ * `file_url` holds the storage PATH, not a URL — same reasoning as
+ * recordBatchPhoto: a signed URL expires, so persisting one stores a link that
+ * works today and breaks silently later.
+ *
+ * Called only AFTER the bytes are up, so the register can never advertise a
+ * document that does not exist. The reverse order leaves a row pointing at
+ * nothing.
+ *
+ * sha256_hex and sha256_recorded_at are written together because the table's
+ * `sha256_pairing_check` requires both or neither. The schema permits both NULL
+ * for rows that predate hashing; THIS PATH NEVER PRODUCES ONE — an unhashed new
+ * upload would be a register entry that cannot support the only integrity claim
+ * the register exists to make.
+ */
+export async function recordCoaDocument(input: {
+  farmId?: string
+  batchId: string
+  fileName: string
+  storagePath: string
+  sha256Hex: string
+}): Promise<{ id: string }> {
+  if (!supabase) throw new Error('Supabase not configured')
+  if (!/^[0-9a-f]{64}$/.test(input.sha256Hex)) {
+    // Fail here rather than at the CHECK constraint: a 23514 from PostgREST
+    // reaches the farmer as an opaque failure, and an uppercase or truncated
+    // digest is a programming error worth naming precisely.
+    throw new Error('COA digest is not a 64-character lower-case hex SHA-256.')
+  }
+  const id = crypto.randomUUID()
+  await sbInsert('farmer_documents', {
+    id,
+    farm_id: input.farmId && isValidUUID(input.farmId) ? input.farmId : null,
+    inventory_batch_id: input.batchId,
+    document_type: 'coa',
+    file_name: input.fileName,
+    file_url: input.storagePath,
+    sha256_hex: input.sha256Hex,
+    sha256_recorded_at: new Date().toISOString(),
+    // review_status is left to its 'pending' default. A document is not
+    // reviewed by being uploaded, and defaulting it to anything else would
+    // manufacture a review that no person performed.
+  })
+  return { id }
 }
 
 // Generate a 1-hour signed URL for a private COA file.

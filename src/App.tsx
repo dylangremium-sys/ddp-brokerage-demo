@@ -21,6 +21,8 @@ import {
   loadFarmerInventoryFromDB,
   loadFarmerFarmsFromDB,
   uploadCoaFile,
+  hashFileHex,
+  recordCoaDocument,
   uploadBatchPhoto,
   recordBatchPhoto,
   getPhotoSignedUrl,
@@ -830,6 +832,16 @@ export default function App() {
     if (coaFile && isSupabaseConfigured && isFarmerRole && currentProfile && item.id) {
       await commitMutation(
         async () => {
+          // Hash BEFORE the upload, from the same File the uploader receives, so
+          // the digest describes exactly the bytes that were sent. Hashing after
+          // a round trip would only prove two reads agreed.
+          //
+          // Deliberately not tolerant of a hashing failure. The register exists
+          // to support one claim — that a document is unchanged since upload —
+          // and a row without a digest cannot support it. An unhashed entry
+          // would be worse than a loud failure, because it would look complete.
+          const digest = await hashFileHex(coaFile)
+
           const { storagePath } = await uploadCoaFile(
             coaFile,
             currentProfile.id,
@@ -840,6 +852,18 @@ export default function App() {
             coa_file_name: coaFile.name,
             coa_available: true,
             coa_storage_path: storagePath,
+          })
+          // The evidence register. Written last, after the bytes exist and the
+          // batch points at them, so the register can never name a document
+          // that is absent. Before this call the platform stored certificates
+          // it had no record of: files in the bucket, zero rows in the register
+          // those files were meant to be catalogued by.
+          await recordCoaDocument({
+            farmId: item.farmId,
+            batchId: item.id,
+            fileName: coaFile.name,
+            storagePath,
+            sha256Hex: digest,
           })
           return storagePath
         },
