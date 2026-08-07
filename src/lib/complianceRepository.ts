@@ -1,6 +1,8 @@
 import { supabase, isSupabaseConfigured } from './supabase.js'
 import { isHumanApprovedRuleStatus } from './complianceRules.js'
 import { selectBlockingRuleAlerts } from './complianceRuleEnforcement.js'
+import { parseRuleCondition } from './complianceRuleCondition.js'
+import type { RuleCondition } from './complianceRuleConditionTypes.js'
 import type { RuleEnforcementState } from './complianceRuleEnforcement.js'
 import { loadStoredComplianceRules, loadStoredComplianceAlerts } from './complianceLocalAlerts.js'
 import type {
@@ -390,6 +392,9 @@ interface ComplianceRuleRow {
   // whether a rule was actually in force. Rule enforcement needs them.
   effective_from: string | null
   effective_to: string | null
+  // Migration 62. Optional on the row so a read against a pre-62 database still
+  // maps cleanly to null rather than throwing.
+  condition?: unknown
   created_at: string
   updated_at: string
 }
@@ -410,9 +415,42 @@ function ruleFromRow(row: ComplianceRuleRow): ComplianceRule {
     approvedAt: row.approved_at,
     effectiveFrom: row.effective_from ?? null,
     effectiveTo: row.effective_to ?? null,
+    // A stored condition is UNTRUSTED until parsed. The column's CHECK guards
+    // shape only, and a row could predate a registry change or have been written
+    // by something that bypassed the application. An unparseable condition maps
+    // to null, which means "no automatic condition" — the rule still exists and
+    // is still human-linkable, it simply cannot self-evaluate. Silently keeping
+    // a malformed predicate would be worse: it would evaluate as UNEVALUABLE
+    // against every batch and bury an operator in triage items.
+    condition: parseStoredCondition(row.condition),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+/**
+ * Turns whatever is in the column into a condition, or null. Never throws: a
+ * bad row must not take down the whole rules list.
+ */
+function parseStoredCondition(raw: unknown): RuleCondition | null {
+  if (raw === null || raw === undefined) return null
+  const parsed = parseRuleCondition(raw)
+  return parsed.ok ? parsed.condition : null
+}
+
+/**
+ * Validates a condition on the way IN, so an invalid one is refused at
+ * authoring time with a message naming the failing path — rather than being
+ * stored and discovered later as a rule that cannot decide anything.
+ * `undefined` means "leave it alone"; `null` means "clear it".
+ */
+function conditionForWrite(condition: RuleCondition | null | undefined): unknown {
+  if (condition === undefined || condition === null) return null
+  const parsed = parseRuleCondition(condition)
+  if (!parsed.ok) {
+    throw new Error(`Invalid rule condition: ${parsed.errors.join('; ')}`)
+  }
+  return parsed.condition
 }
 
 export async function fetchRules(): Promise<ComplianceRule[]> {
@@ -441,6 +479,7 @@ export async function insertRule(input: Omit<ComplianceRule, 'id' | 'createdAt' 
       source_legal_update_id: input.sourceLegalUpdateId ?? null,
       approved_by: asUuidOrNull(input.approvedBy),
       approved_at: input.approvedAt ?? null,
+      condition: conditionForWrite(input.condition),
     })
     .select('*')
     .single()

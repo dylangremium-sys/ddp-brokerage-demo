@@ -40,10 +40,13 @@
 // nothing can half-use it. See parseRuleCondition's rejection of unknown keys.
 
 import type { InventoryItem } from '../types'
+import type { RuleCondition, RuleFieldType, RuleLeaf } from './complianceRuleConditionTypes'
+
+// The shape lives in a dependency-free leaf module so types.ts can reference it
+// without importing this one. Re-exported so existing importers are unaffected.
+export type { RuleCondition, RuleFieldType, RuleLeaf }
 
 // ── The field registry ───────────────────────────────────────────────────────
-
-export type RuleFieldType = 'number' | 'date' | 'text'
 
 interface RuleFieldSpec {
   type: RuleFieldType
@@ -96,19 +99,6 @@ export const OPERATORS_BY_TYPE: Record<RuleFieldType, readonly string[]> = {
 }
 
 // ── The condition shape ──────────────────────────────────────────────────────
-
-export interface RuleLeaf {
-  field: string
-  op: string
-  /** Absent for isPresent / isAbsent, which take no operand. */
-  value?: number | string | string[]
-}
-
-export type RuleCondition =
-  | RuleLeaf
-  | { all: RuleCondition[] }
-  | { any: RuleCondition[] }
-  | { not: RuleCondition }
 
 // ── Validation, which happens on WRITE ───────────────────────────────────────
 

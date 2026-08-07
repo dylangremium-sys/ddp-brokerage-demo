@@ -1,3 +1,4 @@
+import type { RuleCondition } from './lib/complianceRuleConditionTypes'
 export type Lang = 'en' | 'th'
 
 export type { UserRole, UserProfile } from './services/auth.js'
@@ -327,6 +328,13 @@ export interface ComplianceRule {
    */
   effectiveFrom?: string | null
   effectiveTo?: string | null
+  /**
+   * Structured predicate deciding whether an entity violates this rule
+   * (migration 62). `null`/absent means the rule has NO automatic condition and
+   * is linked to entities by a human — which is every rule that exists today.
+   * Absent must never be read as "matches everything".
+   */
+  condition?: RuleCondition | null
   createdAt: string
   updatedAt: string
 }

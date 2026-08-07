@@ -32,5 +32,27 @@ export default defineConfig({
     // this repo executed a single line of JSX, so a screen could break while the
     // suite stayed green.
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.mjs'],
+    // Vitest's default is 5s. That is ample for the node tests, which dominate,
+    // but the `.test.tsx` files mount a real component tree in jsdom and the
+    // security-migration guard reads the whole SQL corpus — those take seconds
+    // each on an idle machine and blow 5s on a busy one.
+    //
+    // Measured during the W1 work: three consecutive full-suite runs failed with
+    // 2, then 9, then 2 tests red, a DIFFERENT subset every time, and EVERY one
+    // of them passed in isolation. Files hit included farmOnboardingValidation,
+    // submitOutcomeTruthfulness, ErrorBoundary, BrowserOnlyProvenanceNotice,
+    // AiDraftPanel, farmerRegisterLanguage and guardRedefinition — i.e. every
+    // rendering test plus the corpus guard, which is the signature of a timeout
+    // rather than a defect.
+    //
+    // Raised globally rather than per file, because per-file timeouts are
+    // whack-a-mole: the next `.test.tsx` anyone writes starts flaky and the
+    // author has no reason to suspect why. A gate test that fails
+    // intermittently is worse than no test, because it teaches people to re-run
+    // CI until it passes — and this suite gates a compliance system.
+    //
+    // This does NOT hide a slow test: a genuine hang still fails, just at 20s.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
   },
 })
