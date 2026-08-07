@@ -3,8 +3,8 @@
 **Status:** ACTIVE — sole source of truth for DDP Brokerage from 2026-08-06.
 **Canonical location:** this file, `docs/MASTER_PLAN.md`. Any copy outside the repository is a mirror and loses authority the moment the two differ.
 **Baseline scored:** production `0ca8a3b72f64db63bb13d6e066b22bc2665cff8d`, Supabase project `iihxjrfxmycjafbtjvvq`.
-**Current score: 385 / 1000 capped (451 raw). Target: 1000 / 1000.**
-**Gap: 1,676 rubric points across 107 rows.**
+**Current score: 385 / 1000 capped (476 raw). Target: 1000 / 1000.**
+**Gap: 1,651 rubric points across 105 rows.** First 25 points banked 2026-08-07 — see §12.
 
 ---
 
@@ -52,7 +52,7 @@ Computed from the baseline rows, not hand-totalled. Every row is assigned to exa
 
 | WS | Workstream | Rows | Points | Buyer | Farmer | Admin |
 |---|---|---:|---:|---:|---:|---:|
-| **W0** | Unblock the pipeline (deploy path + dead contact domain) | 3 | **40** | 15 | — | 25 |
+| **W0** | Unblock the pipeline (deploy path + dead contact domain) | 1 | **15** | 15 | — | — |
 | **W3** | Build the buyer product | 26 | **438** | 423 | — | 15 |
 | **W2** | Evidence becomes real files, registered and hashed | 12 | **227** | 60 | 142 | 25 |
 | **W1** | Make the farmer journey actually work | 10 | **193** | 30 | 152 | 11 |
@@ -65,7 +65,7 @@ Computed from the baseline rows, not hand-totalled. Every row is assigned to exa
 | **W8** | Watchtower rules that enforce | 2 | **35** | — | — | 35 |
 | **W12** | A billable event | 2 | **25** | 15 | — | 10 |
 | **W11** | PDPA / data-subject rights | 1 | **25** | — | 25 | — |
-| | **TOTAL** | **107** | **1676** | **649** | **567** | **460** |
+| | **TOTAL** | **105** | **1651** | **649** | **567** | **435** |
 
 **48 rows (940 points) are already at 100%.** They are listed in §6 and are a regression list, not a work list. Losing one of them costs the same as failing to win a new one.
 
@@ -142,13 +142,13 @@ Each phase has an exit gate. Do not start the next phase until the gate passes �
 
 | Phase | Workstreams | Points | Exit gate |
 |---|---|---:|---|
-| **P0 — Unblock** | W0 | **40** | A merge to `main` produces a green `Deploy to Production` including step 9, and every published contact address resolves and receives mail |
+| **P0 — Unblock** | W0 | **15** | A merge to `main` produces a green `Deploy to Production` including step 9, and every published contact address resolves and receives mail |
 | **P1 — A farm can trade** | W1 (193) + W10.1–10.2 (53) + W5.2–5.4 (50) | **296** | A real farmer account submits a priced batch; the row exists; a forced DB error renders an error, not a success screen |
 | **P2 — Evidence is real** | W2 (227) + W6 (179) | **406** | A COA upload produces a storage object **and** a register row **and** a digest; the farmer is notified of an evidence request and can respond |
 | **P3 — Operable and auditable** | W5 remainder (119) + W7 (119) + W8 (35) + W9 (56) | **329** | Zero of the 19 routine tasks require raw SQL; `status_history` is append-only and attributed; an approved compliance rule demonstrably blocks a pack |
 | **P4 — The buyer product** | W3 (438) + W4 (50) + W12 (25) | **513** | A provisioned buyer signs in, finds a batch, requests a pack, receives it, and cannot see any other buyer's data or any farm identity DDP has not disclosed |
 | **P5 — Rights and polish** | W11 (25) + W10 remainder (67) | **92** | A data-subject deletion request completes through the product; the four known accessibility violations are closed |
-| | **TOTAL** | **1676** | Every persona at 1000 |
+| | **TOTAL** | **1651** | Every persona at 1000 |
 
 **Why W3 is last despite being the largest.** A buyer catalogue with nothing in it is worth zero points and negative credibility. The catalogue is only meaningful once farms can list (P1) and evidence is real (P2). Building it first would produce a demo, which is precisely what this project already has too much of.
 
@@ -158,9 +158,9 @@ Each phase has an exit gate. Do not start the next phase until the gate passes �
 
 Each item states the defect, the work, the acceptance test (what proves it), and the evidence command (how the score is re-measured). Points are the rubric points recovered.
 
-### W0 — Unblock the pipeline · 40 points · **do this first**
+### W0 — Unblock the pipeline · 15 points remaining · **W0.1 CLOSED, scored §12**
 
-**W0.1 — The authorised deploy path (A-D1 15, A-D2 10).**
+**W0.1 — The authorised deploy path (A-D1 15, A-D2 10) — ✅ CLOSED 2026-08-07, scored in §12.**
 Merging a PR does not ship it, and nothing says so. 12 consecutive `Deploy to Production` failures; production ships only from a developer's CLI; step 9 — "verify the live site serves this exact commit" — has never executed once.
 
 - **Primary fix:** remove the `Sensitive` designation from `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel Production so `vercel pull` returns them. Both values are already public in the shipped bundle (§3.3), so nothing is disclosed that isn't already disclosed.
@@ -447,6 +447,29 @@ Each was measured while doing the work above, and none is fixed by it.
 **F-N7 — `.deepsource.toml` says the JavaScript analyzer is an accepted red. That is now false.** `main` passes it. During this work the analyzer produced two genuinely useful findings — a validator that would have blocked every compliant farmer, and a test that was silently reading the host machine's language instead of asserting anything. **Treat a red as signal and delete the stale note**, or the next person will wave it through.
 
 **F-N8 — the fix for iOS zoom already existed and had not been applied everywhere.** The `.eo-farmer` rules set `font-size: 16px` with the comment "16px keeps iOS from zooming the page on focus"; the generic `.field` used by every signed-out form stayed at 14px. Where a hazard has already been diagnosed once in this codebase, **check whether the remedy reached every surface** before treating it as new.
+
+---
+
+## 12. ROWS SCORED
+
+The first rows to move, and the only ones so far. Each is here because its §5 acceptance test passed and its evidence command was re-run — not because the work shipped.
+
+| Row | Was | Now | Evidence |
+|---|---:|---:|---|
+| **A-D1** Authorised deploy path works | 0 / 15 | **15** | **6 consecutive** `Deploy to Production` jobs on `main`, every one green **including** the "Verify the live site serves this exact commit" step — a step that had never executed once before 2026-08-06 |
+| **A-D2** Live build has passing-CI provenance | 0 / 10 | **10** | The deploy job is gated `needs: verify`, builds from the exact merge commit, and the live `/version.json` `commitSha` equals `origin/main` on every one of those runs |
+
+**Admin raw: 540 → 565. Overall: unchanged at 385.**
+
+That last point is the one worth understanding. The Admin persona is **capped at 450** because its primary lifecycle cannot complete, and the raw score was already above the cap — so banking 25 real points moves the headline by nothing. The cap lifts only when a farmer can submit and a buyer exists; until then, Admin work is invisible in the total no matter how much of it is done.
+
+**Not scored, and why** — the discipline is the point:
+
+- **F-U2 (Thai on the primary entry path)** — Thai *is* verified live in a real browser: the toggle renders on `/farmer`, switches the page, persists across a reload, and sets `<html lang="th">`, with zero console errors. But W10's §5 acceptance test asks for a Thai-speaking farmer completing onboarding **on a 375px phone** and resuming **on another device**, and neither has been done. The work is live; the row stays at 6.
+- **B-A4 (contact channel)** — the dead domain is gone from the deployed bundle, but nobody has proven the two mailboxes receive. Owner action, §7.
+- **All of W1 (193 points)** — the fix is live; the acceptance test needs a farmer session. Baseline stands at `n_live_tup = 1`, `n_tup_ins = 59`.
+
+Six pieces of work are live and 25 points are banked. The distance between those two numbers is what this section exists to keep honest.
 
 ---
 
