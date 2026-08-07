@@ -13,7 +13,14 @@ export type { ProvisionResult, PendingProfile }
 // 'pending' is a NON-operational role: a self-registered or admin-invited user
 // who has not yet been provisioned as a farmer by DDP. resolvePostLoginDecision
 // denies pending accounts, so they cannot reach any operator dashboard.
-export type UserRole = 'ddp_admin' | 'farmer' | 'pending'
+//
+// 'buyer' has been a legal value of profiles.role in production since migration
+// 39 — verified against the live CHECK — while this union omitted it. A buyer
+// account could therefore exist in the database and be signed out on every
+// login attempt, because the routing switch had no case for it. Buyers remain
+// DDP-provisioned only: nothing here creates one, and self-registration cannot
+// produce this role.
+export type UserRole = 'ddp_admin' | 'farmer' | 'pending' | 'buyer'
 
 export interface UserProfile {
   id: string

@@ -61,6 +61,7 @@ import FarmerOnboarding from './pages/farmer/FarmerOnboarding'
 import FarmerAdvancedProfile from './pages/farmer/FarmerAdvancedProfile'
 import FarmerMyStock from './pages/farmer/FarmerMyStock'
 import FarmerSubmitInventory from './pages/farmer/FarmerSubmitInventory'
+import BuyerDashboard from './pages/buyer/BuyerDashboard'
 import FarmerRequests from './pages/farmer/FarmerRequests'
 import FarmerStatus from './pages/farmer/FarmerStatus'
 import DDPOverview from './pages/admin/DDPOverview'
@@ -521,6 +522,7 @@ export default function App() {
   const isSignedIn = isDemo || currentProfile !== null
   const isAdminRole = isDemo || currentProfile?.role === 'ddp_admin'
   const isFarmerRole = !isDemo && currentProfile?.role === 'farmer'
+  const isBuyerRole = !isDemo && currentProfile?.role === 'buyer'
   const isFarmerPage = FARMER_PAGES.includes(page)
   // Derived — true while a farmer's scope is being fetched from Supabase
   const scopeLoading = isFarmerRole && farmerScope === null
@@ -708,7 +710,7 @@ export default function App() {
   function goTo(p: Page) {
     // The decision itself is pure and lives in lib/navigationGuard.ts; this
     // function keeps only the side effects.
-    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole })
+    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole, isBuyerRole })
     // DO NOT CLEAR dbError HERE. An earlier revision of this fix did, and it was
     // wrong in a way worth recording.
     //
@@ -1283,6 +1285,12 @@ export default function App() {
       )}
 
       {/* ── Supplier access request (no navbar) ── */}
+      {page === 'buyer-dashboard' && (
+        <main className="main-content">
+          <BuyerDashboard lang={lang} profile={currentProfile} onSignOut={handleSignOut} />
+        </main>
+      )}
+
       {page === 'farmer-register' && (
         <main className="main-content public-auth-shell">
           <FarmerRegister
