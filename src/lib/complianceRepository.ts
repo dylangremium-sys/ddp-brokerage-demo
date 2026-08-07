@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase.js'
-import { isEnforcedRuleStatus } from './complianceRules.js'
+import { isHumanApprovedRuleStatus } from './complianceRules.js'
 import { selectBlockingRuleAlerts } from './complianceRuleEnforcement.js'
 import type { RuleEnforcementState } from './complianceRuleEnforcement.js'
 import { loadStoredComplianceRules, loadStoredComplianceAlerts } from './complianceLocalAlerts.js'
@@ -450,7 +450,7 @@ export async function insertRule(input: Omit<ComplianceRule, 'id' | 'createdAt' 
 
 export async function updateRuleStatus(id: string, status: ComplianceRule['status'], approvedBy: string | null): Promise<ComplianceRule> {
   const client = requireClient()
-  const isApproving = isEnforcedRuleStatus(status)
+  const isApproving = isHumanApprovedRuleStatus(status)
   const { data, error } = await client
     .from('compliance_rules')
     .update({

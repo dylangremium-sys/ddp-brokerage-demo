@@ -4,7 +4,7 @@
 **Canonical location:** this file, `docs/MASTER_PLAN.md`. Any copy outside the repository is a mirror and loses authority the moment the two differ.
 **Baseline scored:** production `0ca8a3b72f64db63bb13d6e066b22bc2665cff8d`, Supabase project `iihxjrfxmycjafbtjvvq`.
 **Current score: 385 / 1000 capped (476 raw). Target: 1000 / 1000.**
-**Gap: 1,651 rubric points across 105 rows.** First 25 points banked 2026-08-07 — see §12.
+**Gap: 1,546 rubric points across 101 rows.** 130 points banked 2026-08-07 — see §12.
 
 ---
 
@@ -55,7 +55,7 @@ Computed from the baseline rows, not hand-totalled. Every row is assigned to exa
 | **W0** | Unblock the pipeline (deploy path + dead contact domain) | 1 | **15** | 15 | — | — |
 | **W3** | Build the buyer product | 26 | **438** | 423 | — | 15 |
 | **W2** | Evidence becomes real files, registered and hashed | 12 | **227** | 60 | 142 | 25 |
-| **W1** | Make the farmer journey actually work | 10 | **193** | 30 | 152 | 11 |
+| **W1** | Make the farmer journey actually work | 6 | **88** | 30 | 47 | 11 |
 | **W6** | Evidence requests and notifications | 12 | **179** | — | 125 | 54 |
 | **W5** | Audit trail, attribution and migration parity | 11 | **169** | 30 | 14 | 125 |
 | **W10** | Localisation, accessibility, validation and recovery | 11 | **120** | 20 | 100 | — |
@@ -65,7 +65,7 @@ Computed from the baseline rows, not hand-totalled. Every row is assigned to exa
 | **W8** | Watchtower rules that enforce | 2 | **35** | — | — | 35 |
 | **W12** | A billable event | 2 | **25** | 15 | — | 10 |
 | **W11** | PDPA / data-subject rights | 1 | **25** | — | 25 | — |
-| | **TOTAL** | **105** | **1651** | **649** | **567** | **435** |
+| | **TOTAL** | **101** | **1546** | **649** | **462** | **435** |
 
 **48 rows (940 points) are already at 100%.** They are listed in §6 and are a regression list, not a work list. Losing one of them costs the same as failing to win a new one.
 
@@ -143,12 +143,12 @@ Each phase has an exit gate. Do not start the next phase until the gate passes �
 | Phase | Workstreams | Points | Exit gate |
 |---|---|---:|---|
 | **P0 — Unblock** | W0 | **15** | A merge to `main` produces a green `Deploy to Production` including step 9, and every published contact address resolves and receives mail |
-| **P1 — A farm can trade** | W1 (193) + W10.1–10.2 (53) + W5.2–5.4 (50) | **296** | A real farmer account submits a priced batch; the row exists; a forced DB error renders an error, not a success screen |
+| **P1 — A farm can trade** | W1 (88 left) + W10.1–10.2 (53) + W5.2–5.4 (50) | **191** | A real farmer account submits a priced batch; the row exists; a forced DB error renders an error, not a success screen |
 | **P2 — Evidence is real** | W2 (227) + W6 (179) | **406** | A COA upload produces a storage object **and** a register row **and** a digest; the farmer is notified of an evidence request and can respond |
 | **P3 — Operable and auditable** | W5 remainder (119) + W7 (119) + W8 (35) + W9 (56) | **329** | Zero of the 19 routine tasks require raw SQL; `status_history` is append-only and attributed; an approved compliance rule demonstrably blocks a pack |
 | **P4 — The buyer product** | W3 (438) + W4 (50) + W12 (25) | **513** | A provisioned buyer signs in, finds a batch, requests a pack, receives it, and cannot see any other buyer's data or any farm identity DDP has not disclosed |
 | **P5 — Rights and polish** | W11 (25) + W10 remainder (67) | **92** | A data-subject deletion request completes through the product; the four known accessibility violations are closed |
-| | **TOTAL** | **1651** | Every persona at 1000 |
+| | **TOTAL** | **1546** | Every persona at 1000 |
 
 **Why W3 is last despite being the largest.** A buyer catalogue with nothing in it is worth zero points and negative credibility. The catalogue is only meaningful once farms can list (P1) and evidence is real (P2). Building it first would produce a demo, which is precisely what this project already has too much of.
 
@@ -458,6 +458,35 @@ The first rows to move, and the only ones so far. Each is here because its §5 a
 |---|---:|---:|---|
 | **A-D1** Authorised deploy path works | 0 / 15 | **15** | **6 consecutive** `Deploy to Production` jobs on `main`, every one green **including** the "Verify the live site serves this exact commit" step — a step that had never executed once before 2026-08-06 |
 | **A-D2** Live build has passing-CI provenance | 0 / 10 | **10** | The deploy job is gated `needs: verify`, builds from the exact merge commit, and the live `/version.json` `commitSha` equals `origin/main` on every one of those runs |
+
+### Scored 2026-08-07 — a farmer listed a batch in production
+
+The acceptance test in §5 W1 was run by the owner against production. Measured before and after with the §5 evidence command:
+
+```
+before   inventory_batches | n_live_tup 1 | n_tup_ins 59      (58 silent failures)
+after    inventory_batches | n_live_tup 3 | n_tup_ins 61      (2 attempts, 2 rows, 0 failures)
+```
+
+Those inserts **could not have succeeded** unless the client sent `price_currency`: `inventory_batches_price_requires_currency` refuses a priced row without one. The constraint that caused the outage is what certifies the fix.
+
+| Row | Was | Now | Basis |
+|---|---:|---:|---|
+| **F-B2** Batch submission succeeds | 0 / 50 | **50** | Two submissions, two rows, no failures |
+| **F-R1** Submit for review | 0 / 20 | **20** | Unblocked by the same evidence |
+| **F-V2** A real farm could list a batch today | 0 / 20 | **20** | A real farm did |
+| **F-B1** Batch form captures required fields | 15 / 30 | **30** | The form can now fulfil its purpose |
+
+**Farmer raw: 433 → 538.**
+
+**A cap decision is now required, and is deliberately not being made here.** The Farmer and Admin caps of 450 rest on the stated ground that "the admin's primary lifecycle cannot complete, because its input (farmer submissions) is blocked and its output (a buyer) does not exist." **The input half is no longer true.** Whether the 450 cap still binds the Farmer persona on the remaining half alone is a scoring judgement for the owner, not something to assume in either direction:
+
+- Cap still binding → Farmer **450**, overall **390**
+- Cap lifted for Farmer → Farmer **538**, overall **416**
+
+Recorded as an open decision. Silently choosing the flattering number is exactly the failure this plan exists to prevent.
+
+**Still not scored from W1:** F-B3 (failure reported truthfully, 25) and F-S2 (errors surfaced, 15) — both need the other half of the acceptance test: force a database error and confirm an error state renders rather than a success screen. Untested.
 
 **Admin raw: 540 → 565. Overall: unchanged at 385.**
 

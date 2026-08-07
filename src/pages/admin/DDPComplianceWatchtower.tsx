@@ -19,10 +19,10 @@ import {
   COMPLIANCE_SEVERITIES,
   RULE_ENTITY_TYPES,
   formatComplianceLabel,
-  isEnforcedRuleStatus,
-  isRuleEnforced,
+  isHumanApprovedRuleStatus,
+  isRuleHumanApproved,
 } from '../../lib/complianceRules'
-import { isRuleBlockingNow } from '../../lib/complianceRuleEnforcement'
+import { isRuleBlockingNow, isRuleEnforcedNow, UNRESOLVED_ALERT_STATUSES } from '../../lib/complianceRuleEnforcement'
 import { deriveRuleBasedComplianceAlerts, mergeComplianceAlerts } from '../../lib/complianceAlerts'
 import { COMPLIANCE_ALERTS_STORAGE_KEY, loadStoredComplianceAlerts, COMPLIANCE_RULES_STORAGE_KEY, loadStoredComplianceRules } from '../../lib/complianceLocalAlerts'
 import { deriveExportReadiness } from '../../lib/complianceScoring'
@@ -414,10 +414,15 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const readiness = useMemo(() => deriveExportReadiness(farms, inventory, alerts), [farms, inventory, alerts])
 
   const pendingReviews = reviews.filter(review => review.status === 'pending' || review.status === 'in_review')
-  const activeRuleCount = rules.filter(isRuleEnforced).length
+  const activeRuleCount = rules.filter(isRuleHumanApproved).length
   // The subset of the above that can ACTUALLY stop a buyer pack — see the tile.
   const enforcingNowCount = rules.filter(rule => isRuleBlockingNow(rule)).length
-  const blockingAlertCount = alerts.filter(alert => alert.status === 'blocked').length
+  // Counts every alert the GATE would treat as live, not just status
+  // 'blocked'. It previously counted only the latter, so an 'open' alert could
+  // stop a buyer pack while this tile read zero — the operator would see no
+  // reason for the block anywhere on this page.
+  const unresolvedAlertStatuses = new Set<string>(UNRESOLVED_ALERT_STATUSES)
+  const blockingAlertCount = alerts.filter(alert => unresolvedAlertStatuses.has(alert.status)).length
 
   // entryActorType defaults to 'admin' so every existing call site (all of
   // which pass only `entry`) is unchanged. A future AI-originated intake
@@ -1298,8 +1303,8 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     const updated: ComplianceRule = {
       ...rule,
       status,
-      approvedBy: isEnforcedRuleStatus(status) ? actorName : rule.approvedBy,
-      approvedAt: isEnforcedRuleStatus(status) ? now : rule.approvedAt,
+      approvedBy: isHumanApprovedRuleStatus(status) ? actorName : rule.approvedBy,
+      approvedAt: isHumanApprovedRuleStatus(status) ? now : rule.approvedAt,
       updatedAt: now,
     }
     persistRulesLocal(rules.map(item => item.id === rule.id ? updated : item))
@@ -1330,7 +1335,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     // selection time) so a rule that was paused/retired/rejected between
     // opening the dropdown and clicking submit can never be linked.
     const linkedRule = rules.find(rule => rule.id === alertForm.linkedRuleId)
-    const linkedRuleId = linkedRule && isRuleEnforced(linkedRule) ? linkedRule.id : null
+    const linkedRuleId = linkedRule && isRuleEnforcedNow(linkedRule) ? linkedRule.id : null
 
     if (repo.isSupabaseConfigured) {
       if (!isSupabaseAdmin) {
@@ -1857,7 +1862,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                 <span>Linked approved rule</span>
                 <select value={alertForm.linkedRuleId} onChange={e => setAlertForm({ ...alertForm, linkedRuleId: e.target.value })}>
                   <option value="">No linked rule</option>
-                  {rules.filter(isRuleEnforced).map(rule => (
+                  {rules.filter(rule => isRuleEnforcedNow(rule)).map(rule => (
                     <option key={rule.id} value={rule.id}>{rule.ruleCode} — {rule.title}</option>
                   ))}
                 </select>

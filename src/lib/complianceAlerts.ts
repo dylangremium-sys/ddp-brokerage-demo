@@ -1,5 +1,5 @@
 import type { ComplianceAlert, ComplianceRule, ComplianceRuleEntityType, ComplianceSeverity, FarmProfile, InventoryItem, TestStatus } from '../types'
-import { isRuleEnforced } from './complianceRules'
+import { isRuleEnforcedNow } from './complianceRuleEnforcement'
 import { hasValue, hasFarmLicence, hasGacpOrGap, hasCoa, farmForItem } from './complianceEvidence'
 
 function isPastDate(value?: string): boolean {
@@ -15,7 +15,7 @@ function isMissingTest(status?: TestStatus): boolean {
 function enforcedRuleMap(rules: ComplianceRule[]): Map<string, ComplianceRule> {
   const map = new Map<string, ComplianceRule>()
   for (const rule of rules) {
-    if (isRuleEnforced(rule)) map.set(rule.ruleCode, rule)
+    if (isRuleEnforcedNow(rule)) map.set(rule.ruleCode, rule)
   }
   return map
 }

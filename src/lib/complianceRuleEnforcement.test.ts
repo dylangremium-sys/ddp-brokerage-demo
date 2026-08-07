@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { ComplianceAlert, ComplianceRule, ComplianceRuleStatus } from '../types'
 import {
   describeRuleBlock,
+  isRuleEnforcedNow,
   hasEnforcedRuleBlock,
   isRuleBlockingNow,
   isRuleEnforcementUnverified,
@@ -67,6 +68,45 @@ describe('isRuleWithinEffectiveWindow', () => {
     // A projection that omits the column must never quietly stop the gate blocking.
     expect(isRuleWithinEffectiveWindow({ effectiveFrom: null, effectiveTo: null }, AS_OF)).toBe(true)
     expect(isRuleWithinEffectiveWindow({ effectiveFrom: undefined, effectiveTo: undefined }, AS_OF)).toBe(true)
+  })
+})
+
+describe('isRuleEnforcedNow — the one predicate for "does this rule gate work now?"', () => {
+  it('is true for an approved or active rule inside its window', () => {
+    expect(isRuleEnforcedNow(rule({ status: 'active' }), AS_OF)).toBe(true)
+    expect(isRuleEnforcedNow(rule({ status: 'approved' }), AS_OF)).toBe(true)
+  })
+
+  it.each<ComplianceRuleStatus>(['draft', 'suggested', 'paused', 'retired', 'rejected'])(
+    'is false for %s',
+    status => { expect(isRuleEnforcedNow(rule({ status }), AS_OF)).toBe(false) },
+  )
+
+  it('is false outside the effective window even when the status qualifies', () => {
+    expect(isRuleEnforcedNow(rule({ effectiveFrom: '2099-01-01' }), AS_OF)).toBe(false)
+    expect(isRuleEnforcedNow(rule({ effectiveTo: '2020-01-01' }), AS_OF)).toBe(false)
+  })
+
+  it('does NOT depend on isBlocking — an informational rule is still in force', () => {
+    // The gate asks isRuleBlockingNow; other callers (rule impact, alert
+    // derivation) legitimately care about non-blocking rules that are in force.
+    expect(isRuleEnforcedNow(rule({ isBlocking: false }), AS_OF)).toBe(true)
+  })
+
+  /**
+   * PINS A KNOWN, DELIBERATE DIVERGENCE so it cannot be "tidied away" by someone
+   * who notices the mismatch and assumes it is an oversight. The application
+   * accepts 'approved'; the database's compliance_rules_currently_enforced()
+   * accepts only 'active'. Closing it is a PRODUCT decision about what
+   * 'approved' means — see the docblock on isRuleEnforcedNow. When that decision
+   * is made, change this test deliberately rather than deleting it.
+   */
+  it('is deliberately WIDER than the SQL: approved counts here, but not in compliance_rules_currently_enforced()', () => {
+    const approved = rule({ status: 'approved' })
+    expect(isRuleEnforcedNow(approved, AS_OF)).toBe(true)
+    // What the SQL function would say about the same row:
+    const sqlWouldEnforce = approved.status === 'active'
+    expect(sqlWouldEnforce).toBe(false)
   })
 })
 
