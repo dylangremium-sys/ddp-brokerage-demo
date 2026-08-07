@@ -65,7 +65,9 @@ describe('a buyer reaches their own surface and the public ones', () => {
     expect(resolveNavigationTarget(page, AS_BUYER)).toBe('buyer-dashboard')
   })
 
-  it.each(['ddp-overview', 'ddp-inventory-dashboard', 'ddp-access-requests'] as Page[])(
+  // 'ddp-buyer-provisioning' is the page that CREATES buyers. A buyer reaching
+  // it would be the shortest path from one buyer account to any number of them.
+  it.each(['ddp-overview', 'ddp-inventory-dashboard', 'ddp-access-requests', 'ddp-buyer-provisioning'] as Page[])(
     'sends a buyer away from the admin page %s', (page) => {
       expect(resolveNavigationTarget(page, AS_BUYER)).toBe('buyer-dashboard')
     })
