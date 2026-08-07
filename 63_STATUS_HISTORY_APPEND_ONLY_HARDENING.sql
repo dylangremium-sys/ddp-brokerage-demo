@@ -122,7 +122,30 @@ CREATE TRIGGER status_history_no_truncate
 -- misrepresent what was exposed.
 REVOKE UPDATE, DELETE ON public.status_history FROM authenticated;
 
--- ── 5. Policies are deliberately UNCHANGED ──────────────────────────────────
+-- ── 5. EXECUTE ACLs on the two trigger-only functions ───────────────────────
+-- Neither function is ever called directly. PostgreSQL invokes a trigger
+-- function through the trigger mechanism, which does not check EXECUTE at all,
+-- so no role needs the privilege for the guards to work. Both are SECURITY
+-- DEFINER, so a grant would hand out a definer-rights entry point in exchange
+-- for nothing.
+--
+-- Same treatment migration 11 gives prevent_compliance_audit_log_mutation. A
+-- REVOKE of a grant that does not exist is a harmless no-op, so this is
+-- idempotent.
+--
+-- acl-no-grant: fn_status_history_set_actor
+-- acl-no-grant: prevent_status_history_mutation
+REVOKE EXECUTE ON FUNCTION public.fn_status_history_set_actor() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.fn_status_history_set_actor() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.fn_status_history_set_actor() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.fn_status_history_set_actor() FROM service_role;
+
+REVOKE EXECUTE ON FUNCTION public.prevent_status_history_mutation() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.prevent_status_history_mutation() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.prevent_status_history_mutation() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.prevent_status_history_mutation() FROM service_role;
+
+-- ── 6. Policies are deliberately UNCHANGED ──────────────────────────────────
 -- The RESTRICTIVE overlay from migration 22 stays exactly as it is, and no new
 -- permissive policy is added. See the header for why touching either would be a
 -- privilege expansion rather than hardening.

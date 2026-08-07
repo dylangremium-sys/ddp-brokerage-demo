@@ -63,10 +63,24 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Trigger functions are invoked by the trigger mechanism, which never checks
+  -- EXECUTE. Both are SECURITY DEFINER, so any direct grant is a definer-rights
+  -- entry point bought for nothing.
+  FOR v_path IN
+    SELECT p.proname
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('prevent_status_history_mutation', 'fn_status_history_set_actor')
+      AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+           OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+  LOOP
+    v_problems := v_problems || format('%s is directly EXECUTEable by anon or authenticated', v_path);
+  END LOOP;
+
   IF array_length(v_problems, 1) > 0 THEN
     RAISE EXCEPTION 'VERIFY A FAILED: %', array_to_string(v_problems, '; ');
   END IF;
-  RAISE NOTICE 'VERIFY A PASSED: 3 triggers present; both guard functions are SECURITY DEFINER and search_path-pinned.';
+  RAISE NOTICE 'VERIFY A PASSED: 3 triggers present; both guard functions are SECURITY DEFINER, search_path-pinned, and not directly EXECUTEable.';
 
   -- ── Fixture ───────────────────────────────────────────────────────────────
   INSERT INTO public.status_history (entity_type, entity_id, old_status, new_status, note)
