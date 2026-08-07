@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { validatePhotoFile } from '../../lib/db'
 import {
   addPhoto, removePhotoAt, fromStoredPreviews, toPreviews, toUploadFiles,
@@ -88,8 +88,14 @@ function initForm(item: InventoryItem | null | undefined) {
   }
 }
 
+/**
+ * A heading, not a styled div. The form had no heading structure at all, so a
+ * screen-reader user could not skim its sections or jump between them — on a
+ * form this long that is the difference between navigable and unusable. The
+ * class keeps the existing appearance unchanged.
+ */
 function SectionTitle({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div className="form-section-title" style={style}>{children}</div>
+  return <h2 className="form-section-title" style={style}>{children}</h2>
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -111,6 +117,7 @@ function PillRow<T extends string>({
         <button
           key={o.key}
           type="button"
+          aria-pressed={value === o.key}
           className={`role-btn${value === o.key ? ' role-btn-active' : ''}`}
           onClick={() => onChange(o.key)}
         >{o.label}</button>
@@ -141,7 +148,12 @@ export default function FarmerSubmitInventory({
   const [coaFileError, setCoaFileError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const coaInputRef = useRef<HTMLInputElement>(null)
+  const successHeadingRef = useRef<HTMLHeadingElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (submitted) successHeadingRef.current?.focus()
+  }, [submitted])
 
   const selectedFarm = farms.find(f => f.id === form.farmId) ?? farms[0] ?? null
 
@@ -299,9 +311,18 @@ export default function FarmerSubmitInventory({
           <circle cx="12" cy="12" r="9.5" stroke="var(--success)" strokeWidth="1.5"/>
           <path d="M7.5 12.5l2.8 2.8L16.5 9" stroke="var(--success)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
-        <h2 style={{ color: 'var(--text)', marginBottom: 8 }}>
+        {/* An h1, and focused on appearance. The form is replaced wholesale on
+            success, and without moving focus a screen-reader user is left on a
+            control that no longer exists, hearing nothing about what happened.
+            tabIndex={-1} makes it programmatically focusable without adding it
+            to the tab order. */}
+        <h1
+          ref={successHeadingRef}
+          tabIndex={-1}
+          style={{ color: 'var(--text)', marginBottom: 8, outline: 'none' }}
+        >
           {isTh ? 'ส่งเรียบร้อยแล้ว' : 'Submitted for Review'}
-        </h2>
+        </h1>
         <p style={{ color: 'var(--text-muted)', marginBottom: 28, maxWidth: 360, margin: '0 auto 28px', lineHeight: 1.6 }}>
           {isTh
             ? 'DDP จะตรวจสอบสินค้าของคุณ ดูสถานะได้ที่สต็อกของฉัน'
@@ -443,6 +464,7 @@ export default function FarmerSubmitInventory({
                   <button
                     key={u}
                     type="button"
+                    aria-pressed={form.unit === u}
                     className={`role-btn${form.unit === u ? ' role-btn-active' : ''}`}
                     onClick={() => set('unit', u)}
                   >{u}</button>
@@ -531,11 +553,13 @@ export default function FarmerSubmitInventory({
             <div className="role-selector">
               <button
                 type="button"
+                aria-pressed={form.coaAvailable}
                 className={`role-btn${form.coaAvailable ? ' role-btn-active' : ''}`}
                 onClick={() => set('coaAvailable', true)}
               >{isTh ? 'มี' : 'Yes'}</button>
               <button
                 type="button"
+                aria-pressed={!form.coaAvailable}
                 className={`role-btn${!form.coaAvailable ? ' role-btn-active' : ''}`}
                 onClick={() => set('coaAvailable', false)}
               >{isTh ? 'ยังไม่มี' : 'Not yet'}</button>
