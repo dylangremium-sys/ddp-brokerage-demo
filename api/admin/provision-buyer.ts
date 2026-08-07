@@ -41,8 +41,8 @@ function headerValue(v: string | string[] | undefined): string | null {
 function bearerToken(req: VercelRequestLike): string | null {
   const raw = headerValue(req.headers['authorization'] ?? req.headers['Authorization'])
   if (!raw) return null
-  const m = /^Bearer\s+(.+)$/i.exec(raw.trim())
-  return m ? m[1].trim() : null
+  const bearerMatch = /^Bearer\s+(.+)$/i.exec(raw.trim())
+  return bearerMatch ? bearerMatch[1].trim() : null
 }
 
 const ALREADY_EXISTS_RE = /already.*(registered|exists)|email.*exists|duplicate/i
