@@ -11,10 +11,21 @@
       description cannot assert a capability, certification or compliance
       status the product has not committed to elsewhere.
 
-      No <link rel="canonical"> here on purpose. The vercel.json SPA rewrite
-      serves this one document for every path, so a hardcoded canonical would
-      also apply to /farmer. Per-page canonical belongs with the per-page
-      metadata work, not in the static shell.
+      No <link rel="canonical"> here on purpose, and the reason has changed.
+
+      It used to be that the vercel.json SPA rewrite served this one document
+      for every path, so a hardcoded canonical would also have claimed /farmer.
+      That is no longer true: scripts/prerender-public-routes.mjs now writes a
+      separate document per public route at build time, each with its own
+      canonical, and /farmer has one of its own precisely so it keeps its own.
+
+      This file is the SOURCE TEMPLATE, not a served document. The prerender
+      reads the BUILT dist/index.html and writes the head into every output
+      file, including this one's, so a tag here would be a second place the
+      same decision is made — and the one place that no test reads.
+
+      crawlPolicyFiles.test.ts asserts this file stays canonical-free;
+      prerenderDocument.test.ts asserts every generated document has one.
     -->
     <meta
       name="description"

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "prebuild": "node scripts/validate-hosted-supabase-config.mjs && node scripts/generate-version.js",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run prerender",
+    "prerender": "vite build --ssr src/prerender/entry.tsx --outDir dist-ssr && node scripts/prerender-public-routes.mjs",
+    "verify:prerender": "node scripts/verify-prerender-deployed.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
