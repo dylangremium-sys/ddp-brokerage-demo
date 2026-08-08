@@ -87,6 +87,7 @@ import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import DDPBuyerProvisioning from './pages/admin/DDPBuyerProvisioning'
+import DDPDocumentReview from './pages/admin/DDPDocumentReview'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 import { initialLanguage, storeLanguage } from './lib/languagePreference'
@@ -98,7 +99,7 @@ import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
 // 'farmer-register', which silently made the "Supplier signup" button a no-op
 // for every signed-out visitor; navigationGuard.test.ts now asserts that every
 // target a public surface links to is actually reachable.
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk', 'ddp-access-requests', 'ddp-buyer-provisioning']
+const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk', 'ddp-access-requests', 'ddp-buyer-provisioning', 'ddp-document-review']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
@@ -1575,6 +1576,7 @@ export default function App() {
               real boundary (migration 34 `admin read` / `admin triage`). */}
           {page === 'ddp-access-requests' && isAdminRole && <DDPAccessRequests />}
           {page === 'ddp-buyer-provisioning' && isAdminRole && <DDPBuyerProvisioning />}
+          {page === 'ddp-document-review' && isAdminRole && <DDPDocumentReview />}
 
           {page === 'ddp-operations-desk' && isAdminRole && (
             <DDPOperationsDesk

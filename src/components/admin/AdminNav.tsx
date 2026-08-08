@@ -30,6 +30,7 @@ export default function AdminNav({ page, goTo, variant = 'sidebar' }: {
   const isOpsDesk = page === 'ddp-operations-desk'
   const isEnquiries = page === 'ddp-access-requests'
   const isBuyerOnboarding = page === 'ddp-buyer-provisioning'
+  const isEvidence = page === 'ddp-document-review'
 
   if (variant === 'topbar') {
     return (
@@ -55,6 +56,11 @@ export default function AdminNav({ page, goTo, variant = 'sidebar' }: {
           aria-current={isBuyerOnboarding ? 'page' : undefined}
           onClick={() => goTo('ddp-buyer-provisioning')}
         >Buyers</button>
+        <button
+          className={`nav-btn ddp-nav-btn${isEvidence ? ' nav-active' : ''}`}
+          aria-current={isEvidence ? 'page' : undefined}
+          onClick={() => goTo('ddp-document-review')}
+        >Evidence</button>
         <button
           className={`nav-btn ddp-nav-btn${isFarms ? ' nav-active' : ''}`}
           aria-current={isFarms ? 'page' : undefined}
@@ -97,6 +103,11 @@ export default function AdminNav({ page, goTo, variant = 'sidebar' }: {
         aria-current={isBuyerOnboarding ? 'page' : undefined}
         onClick={() => goTo('ddp-buyer-provisioning')}
       >Buyers</button>
+      <button
+        className={`eo-nav-item${isEvidence ? ' eo-nav-item--active' : ''}`}
+        aria-current={isEvidence ? 'page' : undefined}
+        onClick={() => goTo('ddp-document-review')}
+      >Evidence</button>
       <button
         className={`eo-nav-item${isFarms ? ' eo-nav-item--active' : ''}`}
         aria-current={isFarms ? 'page' : undefined}

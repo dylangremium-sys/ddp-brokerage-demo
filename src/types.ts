@@ -438,6 +438,10 @@ export type Page =
   // self-registration, so unlike a farmer there is no enquiry row to provision
   // FROM. Hence its own page rather than a control on 'ddp-access-requests'.
   | 'ddp-buyer-provisioning'
+  // The read-and-decide half of the evidence register. Separate from
+  // 'ddp-missing-documents', which reports what is ABSENT; this one reviews
+  // what has actually arrived.
+  | 'ddp-document-review'
 
 export type StockStatus =
   | 'draft'
@@ -588,6 +592,38 @@ export type BatchPhotoType = 'product' | 'packaging' | 'batch_label' | 'facility
  * time. Storing a signed URL would be wrong: they expire, so a persisted one is
  * a link that works today and silently breaks later.
  */
+/** `farmer_documents.review_status` — the CHECK admits exactly these three. */
+export type DocumentReviewStatus = 'pending' | 'accepted' | 'rejected'
+
+/** `farmer_documents.document_type` — likewise CHECK-constrained. */
+export type FarmerDocumentType = 'coa' | 'licence' | 'photo' | 'other'
+
+/**
+ * A row of the evidence register, public.farmer_documents.
+ *
+ * `sha256Hex` is integrity-since-upload and nothing more: it proves the stored
+ * bytes are the bytes DDP received. It does NOT establish that a certificate is
+ * authentic or that the laboratory named on it produced it. Any surface
+ * rendering this field must say so — it is the easiest false claim in the
+ * product to make by accident.
+ */
+export interface FarmerDocument {
+  id: string
+  farmId?: string
+  batchId?: string
+  documentType: FarmerDocumentType
+  fileName?: string
+  /** Storage PATH, never a signed URL — a persisted signed URL expires. */
+  storagePath?: string
+  sha256Hex?: string
+  sha256RecordedAt?: string
+  reviewStatus: DocumentReviewStatus
+  uploadedAt: string
+  reviewedAt?: string
+  /** Set by migration 64's trigger from auth.uid(); never chosen by the caller. */
+  reviewedBy?: string
+}
+
 export interface StoredPhoto {
   id: string
   batchId: string
