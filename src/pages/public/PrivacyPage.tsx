@@ -77,9 +77,20 @@ export default function PrivacyPage({ lang, setLang, onNavigate }: Props) {
         <p>{t.corpPrivacyControlsText}</p>
       </section>
 
+      {/* Three paragraphs, not one, because the honest version has three
+          distinct facts in it: no tracking scripts; fonts DO come from Google,
+          which sees the visitor's IP; and browser storage holds different
+          things before and after sign-in. The first draft of this section
+          collapsed all three into a single sentence and got two of them wrong
+          — it claimed the browser talks only to our backend (vercel.json's CSP
+          whitelists fonts.googleapis.com and fonts.gstatic.com, and index.html
+          preconnects to both), and it claimed storage holds only a session and
+          a language choice, which is true only while signed out. */}
       <section className="corp-section">
         <h2>{t.corpPrivacyCookiesHeading}</h2>
         <p>{t.corpPrivacyCookiesText}</p>
+        <p>{t.corpPrivacyFontsText}</p>
+        <p>{t.corpPrivacyStorageText}</p>
       </section>
 
       <section className="corp-section">

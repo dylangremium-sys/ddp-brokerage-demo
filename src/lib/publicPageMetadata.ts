@@ -119,9 +119,14 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
   //
   // /farmer is a real cold-loadable URL — farmers reach it from a QR code and a
   // WhatsApp share — so a crawler can be pointed at it by any external link,
-  // and robots.txt `Disallow` governs crawling rather than indexing. A
+  // and robots.txt `Disallow` governs crawling rather than indexing: a
   // disallowed URL that someone links to can still surface as a bare result.
-  // The noindex here is the control that robots.txt cannot provide.
+  //
+  // Be honest about what this noindex buys. A crawler that OBEYS the Disallow
+  // never fetches the page, so it never reads this tag — the two controls do
+  // not compose the way they appear to. It covers the cases the Disallow does
+  // not: crawlers that ignore robots.txt, and direct fetches. Real containment
+  // of onboarding and auth surfaces remains a search-exposure programme item.
   //
   // Its canonical points at the onboarding path itself, NOT at `/`. Claiming
   // `/` as canonical for an onboarding form asks a search engine to consolidate

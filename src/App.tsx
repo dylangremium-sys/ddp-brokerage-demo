@@ -92,7 +92,7 @@ import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import DDPBuyerProvisioning from './pages/admin/DDPBuyerProvisioning'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
-import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
+import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 import { initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
 import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
@@ -704,7 +704,13 @@ export default function App() {
   useEffect(() => {
     // Derived from PUBLIC_AUTH_PAGES rather than an inline page !== chain, so a
     // new auth screen cannot be added without picking up the cream treatment.
-    const isPublicAuthPage = PUBLIC_AUTH_PAGES.includes(page)
+    //
+    // The corporate pages need the same body paint for the same reason: their
+    // .corp-shell covers the layout, not the document, so on a rubber-band
+    // overscroll the navy body shows behind a cream page. The class name says
+    // "auth" for historical reasons — what it actually does is paint the
+    // document cream, which both families of public page want.
+    const isPublicAuthPage = PUBLIC_AUTH_PAGES.includes(page) || PUBLIC_CORPORATE_PAGES.includes(page)
     document.body.classList.toggle('public-auth-page', isPublicAuthPage)
     return () => document.body.classList.remove('public-auth-page')
   }, [page])
