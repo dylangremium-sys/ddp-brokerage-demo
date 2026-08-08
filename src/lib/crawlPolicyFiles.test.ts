@@ -165,16 +165,23 @@ describe('the X-Robots-Tag header that actually excludes /farmer', () => {
   /**
    * WHY THIS HEADER IS THE AUTHORITATIVE CONTROL, NOT THE META TAG.
    *
-   * `vercel.json` rewrites every non-API path to `/index.html`, so /farmer is
-   * served as the same client-rendered document as everything else. Its
-   * `<meta name="robots">` is injected by JavaScript after the bundle executes.
-   * A crawler that does not run JavaScript — or that runs it and gives up, or
-   * fetches with a budget — sees a document with no exclusion in it at all.
-   *
-   * An HTTP response header has none of those failure modes: it arrives with
-   * the response, before a single byte of script is parsed. That is why the
+   * An HTTP response header arrives with the response, before a single byte of
+   * script is parsed, and it cannot be lost to a crawler that does not run
+   * JavaScript, runs it and gives up, or fetches with a budget. That is why the
    * header is the control and the meta tag is defence in depth, rather than the
    * other way around.
+   *
+   * UPDATED 2026-08-08. This used to be the ONLY control that survived without
+   * JavaScript: `vercel.json` rewrote every non-API path to `/index.html`, so
+   * /farmer was served the same client-rendered document as everything else and
+   * its `<meta name="robots">` was injected by the bundle. That is no longer
+   * true — scripts/prerender-public-routes.mjs writes dist/farmer/index.html
+   * with the noindex tag in the served bytes, so both controls now arrive
+   * before any script runs.
+   *
+   * The ordering is unchanged and deliberate. A header cannot be stripped by a
+   * parser that only reads part of a document, so it stays the control; the
+   * meta tag being pre-rendered makes the defence deeper, not primary.
    *
    * These assertions are offline and check CONFIGURATION. Whether production
    * actually emits the header is a deployed-behaviour question for the
@@ -234,11 +241,19 @@ describe('the X-Robots-Tag header that actually excludes /farmer', () => {
     expect(keys).toContain('X-Content-Type-Options')
   })
 
-  it('still rewrites /farmer to the SPA shell, which is why the header is needed', () => {
-    // If this rewrite ever stopped applying, /farmer would 404 rather than
-    // render — and the reasoning above would need revisiting.
-    expect(vercelConfig.rewrites?.[0]?.destination).toBe('/index.html')
-    expect(vercelConfig.rewrites?.[0]?.source).toBe('/((?!api/).*)')
+  it('keeps the SPA rewrite as the fallback for every path without a file', () => {
+    // This used to be asserted as the reason /farmer needs the header: the
+    // rewrite served it the shared shell, and removing the rewrite would have
+    // 404ed it. Since the prerender, /farmer has dist/farmer/index.html and is
+    // resolved from the filesystem before this rewrite is consulted at all.
+    //
+    // The rewrite still matters, for everything else: an unmapped path has no
+    // file, and without this it would 404 instead of loading the app and
+    // rendering the landing page. Prerendering ADDED documents in front of the
+    // rewrite; it did not replace it, and this asserts it was not removed as
+    // though it had.
+    expect(vercelConfig.rewrites?.at(-1)?.destination).toBe('/index.html')
+    expect(vercelConfig.rewrites?.at(-1)?.source).toBe('/((?!api/).*)')
   })
 })
 
