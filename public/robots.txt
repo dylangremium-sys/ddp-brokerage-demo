@@ -27,12 +27,18 @@
 # delivered. It is excluded twice over, by two mechanisms a crawler can act on:
 #
 #   1. `X-Robots-Tag: noindex, nofollow` — an HTTP response header set for the
-#      /farmer path in vercel.json. This is the authoritative control. It does
-#      not depend on JavaScript running, which matters because every path here
-#      is served by the SPA rewrite as the same client-rendered document.
-#   2. `<meta name="robots" content="noindex,nofollow">` — injected on the page
-#      by src/lib/publicPageMetadata.ts, as defence in depth for anything that
-#      reads the rendered DOM rather than the response headers.
+#      /farmer path in vercel.json. This is the authoritative control, and it
+#      is unchanged. It does not depend on JavaScript running.
+#   2. `<meta name="robots" content="noindex,nofollow">` — as defence in depth
+#      for anything that reads the document rather than the response headers.
+#
+# NOTE, 2026-08-08: control 2 used to arrive only from JavaScript, because every
+# path was served by the SPA rewrite as the same client-rendered document. That
+# is no longer the case. scripts/prerender-public-routes.mjs writes a document
+# per public route at build time, and /farmer gets one whose served bytes carry
+# the noindex tag before any script runs. src/lib/publicPageMetadata.ts still
+# injects it at runtime, so the two now agree rather than the second waiting on
+# the first. This strengthens control 2; it does not demote control 1.
 #
 # Crawlable is NOT the same as indexable. /farmer must never appear in
 # sitemap.xml, and publicPageMetadata.ts must keep it out of the approved set;
@@ -41,9 +47,11 @@
 # /api/ stays disallowed. There is no exclusion directive to deliver there — it
 # is not a page, and nothing should be reading it.
 #
-# Assets are deliberately NOT disallowed. The landing page is client-rendered,
-# so a crawler that cannot fetch /assets/*.js and /assets/*.css sees an empty
-# document. Blocking them would hide the page it is trying to read.
+# Assets are deliberately NOT disallowed. The public documents now carry their
+# own markup, so a crawler no longer needs /assets/*.js to read the words — but
+# it still needs /assets/*.css to judge the layout, and Google treats a blocked
+# stylesheet as a page it could not render properly. Blocking them would hide
+# the page it is trying to read.
 
 User-agent: *
 Disallow: /api/

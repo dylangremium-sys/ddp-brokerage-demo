@@ -62,6 +62,27 @@ describe('deep-linkable paths stay inside the public surface', () => {
     expect(getInitialPageFromPath('/nope')).toBeNull()
     expect(getInitialPageFromPath('/')).toBeNull()
   })
+
+  /**
+   * A trailing slash used to fall through to null, and the landing page loaded
+   * instead. That was invisible while every path was served the same empty
+   * shell — the visitor saw the landing page either way.
+   *
+   * The prerender made it visible. `/about/` is served `about/index.html`: real
+   * About markup, the About title, the About canonical. The app would then have
+   * rendered the landing page over it and rewritten the address bar to "/", so
+   * the visitor would watch the correct page turn into the wrong one and a
+   * rendering crawler would record the two disagreeing.
+   */
+  it('accepts a trailing slash, which the prerendered documents make reachable', () => {
+    for (const { path, page } of mappedPaths) {
+      expect(getInitialPageFromPath(`${path}/`), `${path}/ must resolve like ${path}`).toBe(page)
+    }
+  })
+
+  it('still returns null for an unmapped path with a trailing slash', () => {
+    expect(getInitialPageFromPath('/nope/')).toBeNull()
+  })
 })
 
 describe('the set-password redirect still outranks any deep link', () => {

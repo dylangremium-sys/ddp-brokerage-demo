@@ -59,11 +59,34 @@ const PAGE_TO_PATH: Partial<Record<Page, string>> = {
 }
 
 /**
+ * Normalises a pathname before it is looked up.
+ *
+ * WHY A TRAILING SLASH HAS TO BE ACCEPTED
+ *   `/about` and `/about/` are the same page to every human who types one, but
+ *   they were not the same key in the map above, so `/about/` fell through to
+ *   null and cold-loaded the landing page instead.
+ *
+ *   That was survivable while every path was served the same empty shell. It
+ *   stopped being survivable when the public routes gained prerendered
+ *   documents: `/about/` is served `about/index.html` — real About markup, with
+ *   the About title and the About canonical — and the app would then have
+ *   replaced it with the landing page and rewritten the address bar to "/".
+ *   A visitor would watch the right page turn into the wrong one, and a crawler
+ *   that renders would record the disagreement.
+ *
+ *   Root is left alone: "/" IS the trailing slash, and stripping it would make
+ *   the pathname empty.
+ */
+function normalisePath(pathname: string): string {
+  return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+}
+
+/**
  * Returns the Page that should be shown for `pathname` on a fresh load,
  * or null if the path has no special mapping (caller uses its own default).
  */
 export function getInitialPageFromPath(pathname: string): Page | null {
-  return PATH_TO_PAGE[pathname] ?? null
+  return PATH_TO_PAGE[normalisePath(pathname)] ?? null
 }
 
 /**
