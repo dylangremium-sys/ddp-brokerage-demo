@@ -50,9 +50,18 @@ BEGIN
     (v_buyer,  'rb-buyer@probe.test',  'Probe Buyer',  'buyer')
   ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
 
-  INSERT INTO public.farms (name, status, created_by)
+  INSERT INTO public.farms (farm_name, status, created_by)
   VALUES ('Probe Farm', 'pending', v_farmer)
   RETURNING id INTO v_farm;
+
+  -- The farmer must be a REAL member of the farm, not merely its created_by.
+  -- has_farm_membership() reads farm_memberships; without this row the farmer
+  -- cannot even SELECT the document, and every RED check below that expects a
+  -- farmer to be refused would pass for the wrong reason — invisibility rather
+  -- than a guarded review path. Measured: without it, RED 1 is vacuous.
+  INSERT INTO public.farm_memberships (farm_id, user_id, role)
+  VALUES (v_farm, v_farmer, 'owner')
+  ON CONFLICT (farm_id, user_id) DO NOTHING;
 
   INSERT INTO public.farmer_documents (farm_id, document_type, file_name, review_status)
   VALUES (v_farm, 'coa', 'redblue-65.pdf', 'pending')
@@ -60,7 +69,28 @@ BEGIN
 
   RAISE NOTICE 'seeded: admin=% farmer=% buyer=% doc=%', v_admin, v_farmer, v_buyer, v_doc;
 
+  -- ── ATTRIBUTABILITY GATE ────────────────────────────────────────────────
+  -- Every farmer-side refusal below is only meaningful if the farmer can see
+  -- the row it is being refused on. Assert that FIRST, and fail loudly if not:
+  -- a probe that cannot see its own subject proves nothing about the guard.
+  BEGIN
+    SET LOCAL ROLE authenticated;
+    PERFORM set_config('request.jwt.claim.sub', v_farmer::text, true);
+    SELECT count(*) INTO v_n FROM public.farmer_documents WHERE id = v_doc;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM; RESET ROLE;
+    RAISE EXCEPTION 'ATTRIBUTABILITY GATE FAILED: the farmer cannot read the seeded document (%). Farmer-side refusals would be vacuous.', left(v_err, 80);
+  END;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'ATTRIBUTABILITY GATE FAILED: the farmer sees % of the 1 seeded document. Farmer-side refusals would be vacuous, not earned.', v_n;
+  END IF;
+  v_results := v_results || 'GATE farmer CAN read the document under test (refusals below are attributable)'::text;
+
   -- ── RED 1: the farmer reviews their OWN document ────────────────────────
+  -- The farmer is a real member and CAN read this row (asserted above), so a
+  -- 0-row UPDATE here is earned: farmer_documents carries no permissive UPDATE
+  -- policy for anyone but an admin, so there is no row for a farmer to write.
   BEGIN
     SET LOCAL ROLE authenticated;
     PERFORM set_config('request.jwt.claim.sub', v_farmer::text, true);
@@ -70,7 +100,7 @@ BEGIN
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RESET ROLE;
     IF v_n = 0 THEN
-      v_results := v_results || 'RED 1 farmer self-review: REFUSED (RLS filtered, 0 rows)';
+      v_results := v_results || 'RED 1 farmer self-review of a document they CAN read: REFUSED (0 rows, no farmer UPDATE policy)'::text;
     ELSE
       v_fails := v_fails || format('RED 1 farmer self-review SUCCEEDED (%s rows)', v_n);
     END IF;
@@ -89,7 +119,7 @@ BEGIN
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RESET ROLE;
     IF v_n = 0 THEN
-      v_results := v_results || 'RED 2 anonymous review: REFUSED (RLS filtered, 0 rows)';
+      v_results := v_results || 'RED 2 anonymous review: REFUSED (RLS filtered, 0 rows)'::text;
     ELSE
       v_fails := v_fails || format('RED 2 anonymous review SUCCEEDED (%s rows)', v_n);
     END IF;
@@ -110,14 +140,14 @@ BEGIN
 
   SELECT reviewed_by INTO v_ev FROM public.farmer_documents WHERE id = v_doc;
   IF v_ev = v_admin THEN
-    v_results := v_results || 'RED 3 forged reviewed_by: OVERWRITTEN with the real actor';
+    v_results := v_results || 'RED 3 forged reviewed_by: OVERWRITTEN with the real actor'::text;
   ELSE
     v_fails := v_fails || format('RED 3 forged reviewed_by STUCK (row says %s, actor was %s)', v_ev, v_admin);
   END IF;
 
   SELECT reviewed_by INTO v_ev FROM public.farmer_document_reviews WHERE farmer_document_id = v_doc;
   IF v_ev = v_admin THEN
-    v_results := v_results || 'RED 3b forged reviewed_by in the EVENT: also the real actor';
+    v_results := v_results || 'RED 3b forged reviewed_by in the EVENT: also the real actor'::text;
   ELSE
     v_fails := v_fails || format('RED 3b the history event names %s, not the actor %s', v_ev, v_admin);
   END IF;
@@ -130,7 +160,7 @@ BEGIN
   WHERE id = v_doc;
   SELECT count(*) INTO v_n FROM public.farmer_document_reviews WHERE farmer_document_id = v_doc;
   IF v_n = 1 THEN
-    v_results := v_results || 'RED 4 replayed transition: SAFE no-op, history still 1 event';
+    v_results := v_results || 'RED 4 replayed transition: SAFE no-op, history still 1 event'::text;
   ELSE
     v_fails := v_fails || format('RED 4 replayed transition appended: history now %s events', v_n);
   END IF;
@@ -140,9 +170,9 @@ BEGIN
     UPDATE public.farmer_documents
     SET review_status = 'buyer_approved', review_note = 'inventing a state'
     WHERE id = v_doc;
-    v_fails := v_fails || 'RED 5 invalid status ACCEPTED';
+    v_fails := v_fails || 'RED 5 invalid status ACCEPTED'::text;
   EXCEPTION WHEN OTHERS THEN
-    v_results := v_results || 'RED 5 invalid status: REFUSED (CHECK)';
+    v_results := v_results || 'RED 5 invalid status: REFUSED (CHECK)'::text;
   END;
 
   -- ── RED 6: a farmer inserts a review event directly ─────────────────────
@@ -153,7 +183,7 @@ BEGIN
       (farmer_document_id, previous_status, new_status, review_note, reviewed_by)
     VALUES (v_doc, 'pending', 'accepted', 'self-issued', v_farmer);
     RESET ROLE;
-    v_fails := v_fails || 'RED 6 farmer INSERT into the history SUCCEEDED';
+    v_fails := v_fails || 'RED 6 farmer INSERT into the history SUCCEEDED'::text;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM; RESET ROLE;
     v_results := v_results || format('RED 6 farmer writes history: REFUSED (%s)', left(v_err, 50));
@@ -167,7 +197,7 @@ BEGIN
     SELECT count(*) INTO v_n FROM public.farmer_document_reviews;
     RESET ROLE;
     IF v_n = 0 THEN
-      v_results := v_results || 'RED 7 farmer reads history: REFUSED (0 rows, admin-only policy)';
+      v_results := v_results || 'RED 7 farmer reads history: REFUSED (0 rows, admin-only policy)'::text;
     ELSE
       v_fails := v_fails || format('RED 7 farmer READ %s history rows', v_n);
     END IF;
@@ -183,7 +213,7 @@ BEGIN
     SELECT count(*) INTO v_n FROM public.farmer_documents WHERE review_status = 'awaiting_clarification';
     RESET ROLE;
     IF v_n = 0 THEN
-      v_results := v_results || 'RED 8 buyer reads clarification-state evidence: REFUSED (0 rows)';
+      v_results := v_results || 'RED 8 buyer reads clarification-state evidence: REFUSED (0 rows)'::text;
     ELSE
       v_fails := v_fails || format('RED 8 buyer READ %s awaiting-clarification documents', v_n);
     END IF;
@@ -202,7 +232,7 @@ BEGIN
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RESET ROLE;
     IF v_n = 0 THEN
-      v_results := v_results || 'RED 9 buyer review: REFUSED (RLS filtered, 0 rows)';
+      v_results := v_results || 'RED 9 buyer review: REFUSED (RLS filtered, 0 rows)'::text;
     ELSE
       v_fails := v_fails || format('RED 9 buyer review SUCCEEDED (%s rows)', v_n);
     END IF;
@@ -221,7 +251,7 @@ BEGIN
   WHERE id = v_doc;
   SELECT count(*) - v_n INTO v_n FROM public.farmer_document_reviews WHERE farmer_document_id = v_doc;
   IF v_n = 1 THEN
-    v_results := v_results || 'RED 10 status change without an event: IMPOSSIBLE (exactly 1 appended)';
+    v_results := v_results || 'RED 10 status change without an event: IMPOSSIBLE (exactly 1 appended)'::text;
   ELSE
     v_fails := v_fails || format('RED 10 a status change appended %s events, not 1', v_n);
   END IF;
