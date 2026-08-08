@@ -3,14 +3,16 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
+import { buildSitemapXml, sitemapEntries } from './sitemapDocument'
+
 /**
- * The crawl-policy files have to be STATIC files, and nothing else in the repo
- * would notice if they stopped being that.
+ * The crawl-policy files have to reach the BUILD OUTPUT as real files, and
+ * nothing else in the repo would notice if they stopped doing so.
  *
  * `vercel.json` rewrites `/((?!api/).*)` to `/index.html`. That rewrite is
- * correct for the application — it is what makes `/farmer` cold-load — but it
- * also swallows every well-known path that has no file behind it. Measured on
- * production before this guard existed:
+ * correct for the application — it is what makes an unmapped path load the app
+ * rather than 404 — but it also swallows every well-known path that has no file
+ * behind it. Measured on production before this guard existed:
  *
  *     GET https://ddpbrokerage.com/robots.txt   -> 200 text/html  (the SPA shell)
  *     GET https://ddpbrokerage.com/sitemap.xml  -> 200 text/html  (the SPA shell)
@@ -18,14 +20,29 @@ import { describe, expect, it } from 'vitest'
  * A 200 is the trap. A crawler asking for a directive file and receiving an
  * HTML document does not retry and does not warn; the file simply never takes
  * effect, and the failure looks identical to success from the outside. Vercel
- * serves static files ahead of rewrites, so a real file in `public/` is the
- * whole fix — deleting one silently restores the defect, which is why this is
- * asserted rather than trusted.
+ * serves static files ahead of rewrites, so a real file in the output is the
+ * whole fix.
+ *
+ * THE TWO FILES NOW GET THERE BY DIFFERENT ROUTES, and this file asserts them
+ * differently as a result:
+ *
+ *   robots.txt   is still a hand-written file in public/, copied to dist/. It
+ *                is prose and policy, and there is nothing to derive it from.
+ *                Deleting it silently restores the defect, so it is read from
+ *                disk and asserted below.
+ *
+ *   sitemap.xml  is GENERATED into dist/ by the same build step that writes the
+ *                prerendered documents, so a URL cannot be advertised without a
+ *                document existing to serve it. There is no file on disk to
+ *                read; the builder that produces it is asserted instead.
  *
  * These assertions are deliberately offline. Whether production actually serves
  * these bytes with the right content type is a deployed-behaviour question and
- * belongs in the post-deploy check, not in a unit suite that must pass in CI
- * without network.
+ * belongs in the post-deploy check — scripts/verify-prerender-deployed.mjs —
+ * not in a unit suite that must pass in CI without network. That check matters
+ * more for the generated file than it ever did for the static one: a build step
+ * that does not run leaves nothing behind, and /sitemap.xml goes back to
+ * returning the SPA shell with a 200.
  */
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -110,11 +127,28 @@ describe('robots.txt', () => {
   })
 })
 
+/**
+ * SITEMAP: NOW GENERATED, STILL THE SAME DECISION.
+ *
+ * This block used to read public/sitemap.xml. That file is gone: the sitemap is
+ * written into dist/ by scripts/prerender-public-routes.mjs, from the same
+ * route list that writes the prerendered documents, so a URL cannot be
+ * advertised without a document existing to serve it.
+ *
+ * What is asserted therefore moves from the file to the builder that produces
+ * it. What is NOT asserted here, because it cannot be proven offline, is that
+ * the build actually ran and Vercel actually serves the result as XML rather
+ * than swallowing /sitemap.xml into the SPA rewrite. That was the original
+ * reason this had to be a static file, and it is now checked against the
+ * deployment by scripts/verify-prerender-deployed.mjs.
+ *
+ * The hardcoded list below is kept deliberately — see the note on it.
+ */
 describe('sitemap.xml', () => {
-  const sitemap = read('public/sitemap.xml')
+  const sitemap = buildSitemapXml(sitemapEntries())
   const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1].trim())
 
-  it('exists as a static file and declares the sitemap namespace', () => {
+  it('declares the sitemap namespace', () => {
     expect(sitemap).toContain('http://www.sitemaps.org/schemas/sitemap/0.9')
   })
 
@@ -142,6 +176,12 @@ describe('sitemap.xml', () => {
    * derived their expectation from the same source, a page could be published
    * by editing that one source and nothing would object. One of the two has to
    * be a written-down list that a human decided on.
+   *
+   * That property matters MORE now the sitemap is generated, not less. When the
+   * file was written by hand it was itself a human artefact; now the register
+   * is the only human input, so this list is the only thing standing between
+   * "someone edited a map in a source file" and "the site advertises a new URL
+   * to search engines". Do not replace it with indexablePages().
    */
   it('publishes only URLs approved for public search', () => {
     expect(locations).toEqual([

@@ -15,6 +15,15 @@
 # The corporate pages are the approved public surface and are the only entries
 # in sitemap.xml.
 #
+# THIS FILE AND sitemap.xml NOW REACH THE OUTPUT BY DIFFERENT ROUTES.
+# robots.txt is still hand-written here and copied to dist/ — it is prose and
+# policy, and there is nothing to derive it from. sitemap.xml is no longer a
+# file in this directory: it is GENERATED into dist/ by the same build step
+# that writes the prerendered documents, from the same route list, so a URL
+# cannot be advertised without a document existing to serve it. The Sitemap:
+# line below is unchanged and still correct — the URL is what matters to a
+# crawler, not which part of the build produced the bytes behind it.
+#
 # WHY /farmer IS DELIBERATELY *NOT* DISALLOWED HERE
 # It used to be, and that was the bug. Disallow governs CRAWLING, not indexing:
 # a compliant crawler that obeys `Disallow: /farmer` never FETCHES the page, and

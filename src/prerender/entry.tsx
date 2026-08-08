@@ -67,6 +67,8 @@ import TermsPage from '../pages/public/TermsPage'
 // bundler compiles; a plain .mjs script cannot import them directly, and giving
 // it a second loader would be a second way for the two halves to disagree.
 export { buildPrerenderedDocument, outputPathForPage } from '../lib/prerenderDocument'
+export { buildSitemapXml, sitemapEntries, sourceFilesForPage } from '../lib/sitemapDocument'
+export { indexablePages } from '../lib/publicPageMetadata'
 
 /**
  * The language the prerendered bytes are written in.
