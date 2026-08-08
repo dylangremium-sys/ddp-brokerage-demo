@@ -37,6 +37,21 @@ export const PUBLIC_AUTH_PAGES: Page[] = [
 ]
 
 /**
+ * The public corporate pages: company information, contact details and the two
+ * legal notices.
+ *
+ * Kept OUT of PUBLIC_AUTH_PAGES on purpose. That list is not "the public pages"
+ * — it is the set that gets the cream `public-auth-shell` card treatment and
+ * the `public-auth-page` body class. A corporate page is a document, not an
+ * auth card: it draws its own full-width shell. Adding them to the auth list
+ * would have rendered a privacy policy inside a login-sized card.
+ *
+ * These are the only pages other than the landing page approved for public
+ * search indexing; lib/publicPageMetadata.ts is the register that says so.
+ */
+export const PUBLIC_CORPORATE_PAGES: Page[] = ['about', 'contact', 'privacy', 'terms']
+
+/**
  * Pages a signed-out visitor may reach.
  *
  * INVARIANT: every page an unauthenticated surface links to MUST appear here,
@@ -48,7 +63,7 @@ export const PUBLIC_AUTH_PAGES: Page[] = [
  * require a session — but it is the invite/recovery link that grants it, not a
  * prior login, so the navigation guard must not demand one.
  */
-export const PUBLIC_PAGES: Page[] = ['landing', ...PUBLIC_AUTH_PAGES]
+export const PUBLIC_PAGES: Page[] = ['landing', ...PUBLIC_AUTH_PAGES, ...PUBLIC_CORPORATE_PAGES]
 
 /** Farmer-scoped pages. An admin is steered away from the operational ones. */
 export const FARMER_PAGES: Page[] = [

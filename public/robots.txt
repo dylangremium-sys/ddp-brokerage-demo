@@ -9,8 +9,14 @@
 #
 # SCOPE OF THE PUBLIC SEARCH SURFACE TODAY
 # The application is state-routed, not URL-routed: src/lib/urlRouting.ts maps
-# exactly one deep link. So the public surface is the landing page at / plus
-# /farmer, and /farmer is farmer onboarding — not public corporate information.
+# the paths that accept a cold load. Those are the landing page at /, the four
+# public corporate pages (/about, /contact, /privacy, /terms), and /farmer.
+#
+# The corporate pages are the approved public surface and are listed in the
+# sitemap. /farmer is farmer onboarding, not public corporate information, so it
+# is disallowed below — and note that Disallow governs CRAWLING, not indexing:
+# the noindex that actually keeps it out of results lives in the register at
+# src/lib/publicPageMetadata.ts.
 #
 # Assets are deliberately NOT disallowed. The landing page is client-rendered,
 # so a crawler that cannot fetch /assets/*.js and /assets/*.css sees an empty

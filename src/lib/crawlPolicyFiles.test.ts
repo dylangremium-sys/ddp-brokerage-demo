@@ -114,9 +114,26 @@ describe('sitemap.xml', () => {
    * The register of what may be published. Adding a URL here is a policy
    * decision about public search exposure, so it should require editing a test
    * that says so — not just appending a line to an XML file.
+   *
+   * The list grew from one URL to five when the public corporate pages were
+   * added. That was the change the search-exposure programme was waiting on:
+   * with a single indexable URL its later phases had no subject matter.
+   *
+   * This assertion is deliberately a hardcoded list rather than a comparison
+   * against the application's own register. publicPageMetadata.test.ts does
+   * make that comparison, and it is the more useful check — but if BOTH tests
+   * derived their expectation from the same source, a page could be published
+   * by editing that one source and nothing would object. One of the two has to
+   * be a written-down list that a human decided on.
    */
   it('publishes only URLs approved for public search', () => {
-    expect(locations).toEqual([`${CANONICAL_ORIGIN}/`])
+    expect(locations).toEqual([
+      `${CANONICAL_ORIGIN}/`,
+      `${CANONICAL_ORIGIN}/about`,
+      `${CANONICAL_ORIGIN}/contact`,
+      `${CANONICAL_ORIGIN}/privacy`,
+      `${CANONICAL_ORIGIN}/terms`,
+    ])
   })
 
   it('does not advertise farmer, auth, admin or API paths', () => {

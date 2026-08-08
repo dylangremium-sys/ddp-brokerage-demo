@@ -54,6 +54,10 @@ import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatu
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
+import AboutPage from './pages/public/AboutPage'
+import ContactPage from './pages/public/ContactPage'
+import PrivacyPage from './pages/public/PrivacyPage'
+import TermsPage from './pages/public/TermsPage'
 import LoginPage from './pages/public/LoginPage'
 import SetPasswordPage from './pages/public/SetPasswordPage'
 import ForgotPasswordPage from './pages/public/ForgotPasswordPage'
@@ -92,6 +96,7 @@ import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_PAGES, resolveNavigationTarget 
 import { initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
 import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
+import { applyPublicPageMetadata } from './lib/publicPageMetadata'
 
 // FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
 // lib/navigationGuard.ts so they can be unit tested. PUBLIC_PAGES once omitted
@@ -710,6 +715,25 @@ export default function App() {
     document.documentElement.lang = lang
   }, [lang])
 
+  // Keep the document head describing the page actually on screen.
+  //
+  // index.html carries one title and one description, and vercel.json serves
+  // that one document for every path — so without this, /about, /privacy and
+  // /terms would all present a crawler with the landing page's metadata and no
+  // canonical of their own. Every value comes from the static register in
+  // lib/publicPageMetadata.ts, keyed only by `page`: no caller can pass a title
+  // in, so no farm name, batch id or buyer identity can reach the head, where a
+  // crawler and the browser history would both pick it up.
+  //
+  // It runs on EVERY page change, not only for the corporate pages. That is the
+  // "stale metadata must not survive navigation" rule: pages outside the
+  // register resolve to a fail-closed noindex entry, so navigating from a public
+  // page into the application replaces the indexable metadata rather than
+  // leaving it in place.
+  useEffect(() => {
+    applyPublicPageMetadata(document, page)
+  }, [page])
+
   function goTo(p: Page) {
     // The decision itself is pure and lives in lib/navigationGuard.ts; this
     // function keeps only the side effects.
@@ -1254,7 +1278,31 @@ export default function App() {
           setLang={setLang}
           onSecureLogin={() => goTo('login')}
           onSupplierSignup={() => goTo('farmer-register')}
+          onNavigate={goTo}
         />
+      )}
+
+      {/* ── Public corporate pages ──
+          The only pages besides the landing page approved for public search
+          indexing (lib/publicPageMetadata.ts is the register). They draw their
+          own full-width chrome via CorporatePageShell rather than the cream
+          auth card, which is why they are in PUBLIC_CORPORATE_PAGES and not in
+          PUBLIC_AUTH_PAGES.
+
+          `goTo` is passed whole as onNavigate: these pages link to each other,
+          to the landing page, to login and to supplier registration, and every
+          one of those links must still go through the navigation guard. */}
+      {page === 'about' && (
+        <AboutPage lang={lang} setLang={setLang} onNavigate={goTo} />
+      )}
+      {page === 'contact' && (
+        <ContactPage lang={lang} setLang={setLang} onNavigate={goTo} />
+      )}
+      {page === 'privacy' && (
+        <PrivacyPage lang={lang} setLang={setLang} onNavigate={goTo} />
+      )}
+      {page === 'terms' && (
+        <TermsPage lang={lang} setLang={setLang} onNavigate={goTo} />
       )}
 
       {/* ── Error banner ── */}

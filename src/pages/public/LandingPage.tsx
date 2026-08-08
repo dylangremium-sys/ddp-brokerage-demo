@@ -1,6 +1,7 @@
 import { T } from '../../translations'
-import type { Lang } from '../../types'
+import type { Lang, Page } from '../../types'
 import { DDPMonogramLogo } from '../../components/logos'
+import { pathForPage } from '../../lib/urlRouting'
 
 /* ────────────────────────────────────────────────────────────────────────────
    Homepage — implements the approved LandPage.png visual specification.
@@ -16,6 +17,16 @@ interface Props {
   onSecureLogin: () => void
   /** Routes to the supplier/farmer registration flow. */
   onSupplierSignup: () => void
+  /**
+   * In-app navigation for the public corporate pages linked from the footer.
+   *
+   * These links are how a crawler discovers /about, /contact, /privacy and
+   * /terms at all. The sitemap lists them, but a sitemap is a hint; an internal
+   * link from the site's only established page is the real discovery path, and
+   * it is also what tells a search engine the pages are part of this site
+   * rather than four orphans.
+   */
+  onNavigate: (page: Page) => void
 }
 
 function scrollToId(id: string) {
@@ -170,7 +181,32 @@ function PinGlyph() {
   )
 }
 
-export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSignup }: Props) {
+/**
+ * A footer link to a public corporate page.
+ *
+ * A real <a href> with the router's own path, not a <button>. The four controls
+ * this replaces were `<button type="button">` elements with no onClick at all:
+ * they rendered, they were focusable, they looked like links, and clicking one
+ * did nothing. A crawler cannot follow a button either, so the pages would have
+ * been unreachable from the site's front door.
+ *
+ * Declared at module scope, not inside LandingPage: a component defined during
+ * render is a new component type on every render, so React unmounts and
+ * remounts the subtree instead of updating it (react-hooks/static-components).
+ */
+function FooterLink({ target, label, onNavigate }: { target: Page; label: string; onNavigate: (page: Page) => void }) {
+  return (
+    <a
+      className="ln-footer-legal-link"
+      href={pathForPage(target)}
+      onClick={(e) => { e.preventDefault(); onNavigate(target) }}
+    >
+      {label}
+    </a>
+  )
+}
+
+export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSignup, onNavigate }: Props) {
   const t = T[lang]
 
   const navItems: Array<{ key: string; label: string; target?: string; caret?: boolean }> = [
@@ -464,9 +500,13 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
         <div className="ln-footer-bottom">
           <span className="ln-copyright">{t.homeFooterCopyright}</span>
           <span className="ln-footer-legal">
-            <button type="button" className="ln-footer-legal-link">{t.homeFooterPrivacy}</button>
+            <FooterLink target="about" label={t.homeFooterAbout} onNavigate={onNavigate} />
             <span className="ln-footer-legal-sep" aria-hidden="true">|</span>
-            <button type="button" className="ln-footer-legal-link">{t.homeFooterTerms}</button>
+            <FooterLink target="contact" label={t.homeFooterContact} onNavigate={onNavigate} />
+            <span className="ln-footer-legal-sep" aria-hidden="true">|</span>
+            <FooterLink target="privacy" label={t.homeFooterPrivacy} onNavigate={onNavigate} />
+            <span className="ln-footer-legal-sep" aria-hidden="true">|</span>
+            <FooterLink target="terms" label={t.homeFooterTerms} onNavigate={onNavigate} />
           </span>
         </div>
       </footer>
