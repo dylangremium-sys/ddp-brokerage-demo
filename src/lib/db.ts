@@ -8,7 +8,7 @@ import {
   saveFarms as lsSaveFarms,
   resetDemo as lsResetDemo,
 } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType, BatchPriceCurrency, FarmerDocument, FarmerDocumentType, DocumentReviewStatus } from '../types'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType, BatchPriceCurrency, FarmerDocument, FarmerDocumentType, DocumentReviewStatus, DocumentReviewEvent } from '../types'
 import { BATCH_PRICE_CURRENCIES, DEFAULT_BATCH_PRICE_CURRENCY } from '../types'
 
 export { isSupabaseConfigured }
@@ -953,7 +953,7 @@ export async function loadFarmerDocuments(): Promise<FarmerDocument[]> {
   if (!supabase) throw new Error('Supabase is not configured.')
   const { data, error } = await supabase
     .from('farmer_documents')
-    .select('id, farm_id, inventory_batch_id, document_type, file_name, file_url, sha256_hex, sha256_recorded_at, review_status, uploaded_at, reviewed_at, reviewed_by')
+    .select('id, farm_id, inventory_batch_id, document_type, file_name, file_url, sha256_hex, sha256_recorded_at, review_status, review_note, uploaded_at, reviewed_at, reviewed_by')
     .order('uploaded_at', { ascending: false })
 
   if (error) {
@@ -971,6 +971,7 @@ export async function loadFarmerDocuments(): Promise<FarmerDocument[]> {
     sha256Hex: (row.sha256_hex as string) ?? undefined,
     sha256RecordedAt: (row.sha256_recorded_at as string) ?? undefined,
     reviewStatus: ((row.review_status as DocumentReviewStatus) ?? 'pending'),
+    reviewNote: (row.review_note as string) ?? undefined,
     uploadedAt: (row.uploaded_at as string) ?? '',
     reviewedAt: (row.reviewed_at as string) ?? undefined,
     reviewedBy: (row.reviewed_by as string) ?? undefined,
@@ -980,24 +981,78 @@ export async function loadFarmerDocuments(): Promise<FarmerDocument[]> {
 /**
  * Record an administrator's decision on one document.
  *
- * Writes ONLY review_status. `reviewed_by` and `reviewed_at` are deliberately
- * not sent: migration 64's BEFORE UPDATE trigger takes the reviewer from
- * auth.uid() and overwrites anything supplied, so an administrator cannot
- * attribute their decision to a colleague. Sending them here would be dead
- * weight that reads as though the client chooses the reviewer.
+ * Writes review_status and review_note, and NOTHING ELSE. `reviewed_by` and
+ * `reviewed_at` are deliberately not sent: migration 64's BEFORE UPDATE trigger
+ * takes the reviewer from auth.uid() and overwrites anything supplied, so an
+ * administrator cannot attribute their decision to a colleague. Sending them
+ * here would be dead weight that reads as though the client chooses the
+ * reviewer.
  *
- * If migration 64 is absent the update still succeeds and simply records no
- * reviewer — so this function is safe against either schema, and the constraint
- * `review_decision_requires_reviewer` is what makes the attributed outcome the
- * only possible one once the migration is applied.
+ * THE NOTE IS REQUIRED FOR EVERY TRANSITION, return-to-queue included
+ * (migration 65). The blank check here is a courtesy that produces a decent
+ * error message — it is NOT the enforcement. The database refuses a blank note
+ * in a trigger and in `review_decision_requires_note`, and writes the
+ * append-only event, so a caller bypassing this function entirely gains
+ * nothing. Note that "blank" is tested against a whitespace character class
+ * rather than trim(): a tab-only note is blank, and a space-only test does not
+ * say so.
  */
 export async function setDocumentReviewStatus(
   documentId: string,
   status: DocumentReviewStatus,
+  reviewNote: string,
 ): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured.')
   if (!isValidUUID(documentId)) throw new Error('A document id must be a UUID.')
-  await sbUpdate('farmer_documents', { review_status: status }, 'id', documentId)
+  if (!/[^\s]/.test(reviewNote ?? '')) {
+    throw new Error('A review note is required, and cannot be only whitespace.')
+  }
+  await sbUpdate(
+    'farmer_documents',
+    { review_status: status, review_note: reviewNote.trim() },
+    'id',
+    documentId,
+  )
+}
+
+/**
+ * Load the append-only review history for one document.
+ *
+ * Reads public.farmer_document_reviews under the caller's own policies — the
+ * table carries a single admin-only SELECT policy, so this returns nothing for
+ * anyone else and adds no privilege of its own.
+ *
+ * THROWS on failure, for the same reason loadFarmerDocuments does: "this
+ * document has no review history" and "we could not read its history" are
+ * different statements, and on an audit trail the difference is the whole
+ * point. Oldest first — a history is read forwards.
+ */
+export async function loadDocumentReviewEvents(
+  documentId: string,
+): Promise<DocumentReviewEvent[]> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!isValidUUID(documentId)) throw new Error('A document id must be a UUID.')
+
+  const { data, error } = await supabase
+    .from('farmer_document_reviews')
+    .select('id, farmer_document_id, previous_status, new_status, review_note, reviewed_by, reviewed_at')
+    .eq('farmer_document_id', documentId)
+    .order('reviewed_at', { ascending: true })
+
+  if (error) {
+    console.error('Supabase error [farmer_document_reviews select]:', error)
+    throw new Error(error.message)
+  }
+
+  return (data ?? []).map((row): DocumentReviewEvent => ({
+    id: row.id as string,
+    documentId: row.farmer_document_id as string,
+    previousStatus: row.previous_status as DocumentReviewStatus,
+    newStatus: row.new_status as DocumentReviewStatus,
+    reviewNote: (row.review_note as string) ?? '',
+    reviewedBy: (row.reviewed_by as string) ?? '',
+    reviewedAt: (row.reviewed_at as string) ?? '',
+  }))
 }
 
 // Generate a 1-hour signed URL for a private COA file.

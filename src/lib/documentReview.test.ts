@@ -34,30 +34,39 @@ const DOC = 'c0f19f0e-a69a-4c3e-b3fe-0eed9af80eaa'
 beforeEach(() => { updateSpy.mockClear(); selectSpy.mockClear() })
 
 describe('setDocumentReviewStatus — the client never chooses the reviewer', () => {
-  it('sends ONLY review_status', async () => {
+  it('sends review_status and review_note, and nothing else', async () => {
     // reviewed_by and reviewed_at are written by migration 64's BEFORE UPDATE
     // trigger from auth.uid(). Sending them from here would be dead weight that
     // reads as though the client picks who decided — and the whole point of the
     // trigger is that it cannot.
-    await setDocumentReviewStatus(DOC, 'accepted')
+    //
+    // review_note IS sent, and is new in migration 65. Before it, this function
+    // sent review_status alone and a decision could carry no reason at all.
+    await setDocumentReviewStatus(DOC, 'accepted', 'Read in full; lab and batch agree.')
     expect(updateSpy).toHaveBeenCalledTimes(1)
     const [table, patch] = updateSpy.mock.calls[0]
     expect(table).toBe('farmer_documents')
-    expect(patch).toEqual({ review_status: 'accepted' })
+    expect(patch).toEqual({
+      review_status: 'accepted',
+      review_note: 'Read in full; lab and batch agree.',
+    })
     expect(patch).not.toHaveProperty('reviewed_by')
     expect(patch).not.toHaveProperty('reviewed_at')
   })
 
-  it('carries each of the three legal statuses through unchanged', async () => {
-    for (const status of ['accepted', 'rejected', 'pending'] as const) {
+  it('carries each of the four legal statuses through unchanged', async () => {
+    for (const status of ['accepted', 'rejected', 'awaiting_clarification', 'pending'] as const) {
       updateSpy.mockClear()
-      await setDocumentReviewStatus(DOC, status)
-      expect(updateSpy.mock.calls[0][1]).toEqual({ review_status: status })
+      await setDocumentReviewStatus(DOC, status, 'a stated reason')
+      expect(updateSpy.mock.calls[0][1]).toEqual({
+        review_status: status,
+        review_note: 'a stated reason',
+      })
     }
   })
 
   it('refuses an id that is not a UUID before touching the database', async () => {
-    await expect(setDocumentReviewStatus('not-a-uuid', 'accepted')).rejects.toThrow(/UUID/)
+    await expect(setDocumentReviewStatus('not-a-uuid', 'accepted', 'reason')).rejects.toThrow(/UUID/)
     expect(updateSpy).not.toHaveBeenCalled()
   })
 })

@@ -606,8 +606,44 @@ export type BatchPhotoType = 'product' | 'packaging' | 'batch_label' | 'facility
  * time. Storing a signed URL would be wrong: they expire, so a persisted one is
  * a link that works today and silently breaks later.
  */
-/** `farmer_documents.review_status` — the CHECK admits exactly these three. */
-export type DocumentReviewStatus = 'pending' | 'accepted' | 'rejected'
+/**
+ * `farmer_documents.review_status` — the CHECK admits exactly these four.
+ *
+ * `awaiting_clarification` (migration 65) is the reasoned non-decision: an
+ * administrator has examined the evidence and can responsibly neither accept
+ * nor reject it. It is NOT a weaker acceptance. Nothing in the product may
+ * treat it as verified, compliant, export-ready or buyer-visible.
+ */
+export type DocumentReviewStatus =
+  | 'pending'
+  | 'awaiting_clarification'
+  | 'accepted'
+  | 'rejected'
+
+/** The three states that are an actual decision, each requiring a human and a note. */
+export const DOCUMENT_REVIEW_DECISIONS = [
+  'awaiting_clarification',
+  'accepted',
+  'rejected',
+] as const satisfies readonly DocumentReviewStatus[]
+
+/**
+ * One row of public.farmer_document_reviews — the append-only history.
+ *
+ * The document row carries only the CURRENT status and note; the next decision
+ * overwrites both. This is the record that cannot be overwritten, and it is
+ * what makes a review defensible rather than merely displayed.
+ */
+export interface DocumentReviewEvent {
+  id: string
+  documentId: string
+  previousStatus: DocumentReviewStatus
+  newStatus: DocumentReviewStatus
+  reviewNote: string
+  /** Taken from auth.uid() by the database; never chosen by the caller. */
+  reviewedBy: string
+  reviewedAt: string
+}
 
 /** `farmer_documents.document_type` — likewise CHECK-constrained. */
 export type FarmerDocumentType = 'coa' | 'licence' | 'photo' | 'other'
@@ -632,6 +668,11 @@ export interface FarmerDocument {
   sha256Hex?: string
   sha256RecordedAt?: string
   reviewStatus: DocumentReviewStatus
+  /**
+   * The reason given for the CURRENT reviewStatus (migration 65). Overwritten by
+   * the next decision — `DocumentReviewEvent` is the authoritative history.
+   */
+  reviewNote?: string
   uploadedAt: string
   reviewedAt?: string
   /** Set by migration 64's trigger from auth.uid(); never chosen by the caller. */
