@@ -39,6 +39,17 @@ function IconInbox() {
   )
 }
 
+function IconCertificate() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="14" height="10" rx="1.5"/>
+      <path d="M6 6.5h8M6 9h5"/>
+      <circle cx="13.5" cy="14" r="2.5"/>
+      <path d="M12 16.2V19l1.5-1 1.5 1v-2.8"/>
+    </svg>
+  )
+}
+
 function IconDoc() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -58,6 +69,7 @@ interface Props {
   onMyActivity: () => void
   onAdvancedProfile: () => void
   onRequests: () => void
+  onEvidence: () => void
   openRequestsCount?: number
 }
 
@@ -70,6 +82,7 @@ export default function FarmerDashboard({
   onMyActivity,
   onAdvancedProfile,
   onRequests,
+  onEvidence,
   openRequestsCount = 0,
 }: Props) {
   const t = T[lang]
@@ -174,6 +187,16 @@ export default function FarmerDashboard({
               ? (lang === 'th' ? `${openRequestsCount} รายการรอดำเนินการ` : `${openRequestsCount} open`)
               : t.requestsDesc}
           </div>
+        </button>
+
+        {/* The way a farm learns that DDP asked it a question about a
+            certificate. Reachable from the hub, not only from a deep link: a
+            surface with no affordance is unreachable in production, which is
+            the class of defect navigationGuard.ts exists to document. */}
+        <button className="quick-action-card quick-action-advanced" onClick={onEvidence}>
+          <div className="quick-action-icon"><IconCertificate /></div>
+          <div className="quick-action-label">{t.evidenceLabel}</div>
+          <div className="quick-action-desc">{t.evidenceDesc}</div>
         </button>
 
         <button className="quick-action-card quick-action-advanced" onClick={onAdvancedProfile}>

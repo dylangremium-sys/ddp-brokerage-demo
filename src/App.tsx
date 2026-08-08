@@ -70,6 +70,7 @@ import FarmerSubmitInventory from './pages/farmer/FarmerSubmitInventory'
 import BuyerDashboard from './pages/buyer/BuyerDashboard'
 import FarmerRequests from './pages/farmer/FarmerRequests'
 import FarmerStatus from './pages/farmer/FarmerStatus'
+import FarmerEvidence from './pages/farmer/FarmerEvidence'
 import DDPOverview from './pages/admin/DDPOverview'
 import DDPFarmProfiles from './pages/admin/DDPFarmProfiles'
 import DDPFarmReview from './pages/admin/DDPFarmReview'
@@ -1408,6 +1409,7 @@ export default function App() {
                   onMyActivity={() => goTo('farmer-status')}
                   onAdvancedProfile={() => goTo('farmer-advanced-profile')}
                   onRequests={() => goTo('farmer-requests')}
+                  onEvidence={() => goTo('farmer-evidence')}
                   openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
                 />
           )}
@@ -1472,6 +1474,19 @@ export default function App() {
                   onEditStock={handleEditStock}
                   onGoMyStock={() => goTo('farmer-my-stock')}
                 />
+          )}
+
+          {/* No scopeLoading gate, and deliberately not one: FarmerEvidence
+              consumes no scoped array. It reads farmer_documents directly and
+              the RLS policy scopes the rows, so there is no window in which it
+              could render another farm's evidence — and gating it on
+              farmerScope would make it show a loading state waiting on data it
+              never uses. */}
+          {page === 'farmer-evidence' && (
+            <FarmerEvidence
+              lang={lang}
+              onGoMyStock={() => goTo('farmer-my-stock')}
+            />
           )}
 
           {page === 'farmer-onboarding' && (

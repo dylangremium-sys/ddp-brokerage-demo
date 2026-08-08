@@ -435,6 +435,9 @@ export type Page =
   | 'farmer-stock-form'
   | 'farmer-requests'
   | 'farmer-status'
+  // Where a farm reads DDP's decisions on the documents it uploaded — including
+  // the clarification a reviewer asked for (migration 65).
+  | 'farmer-evidence'
   | 'ddp-overview'
   | 'ddp-farms'
   | 'ddp-farm-review'
