@@ -256,6 +256,46 @@ BEGIN
     v_fails := v_fails || format('RED 10 a status change appended %s events, not 1', v_n);
   END IF;
 
+  -- ── BLUE 11: the legitimate path, as a REAL admin session ───────────────
+  -- Every positive control above ran as the connection owner, which bypasses
+  -- both grants and RLS — so they proved the trigger works for postgres and
+  -- said NOTHING about the role a production admin actually holds. That gap
+  -- matters here specifically: RED 6 established that `authenticated` has no
+  -- INSERT grant on farmer_document_reviews, so if the event trigger were not
+  -- SECURITY DEFINER, every Accept / Reject / Return would fail in production
+  -- for real administrators while every owner-run check stayed green.
+  --
+  -- A probe that only ever proves refusals cannot tell a guarded path from a
+  -- broken one. This is the check that distinguishes them.
+  BEGIN
+    SET LOCAL ROLE authenticated;
+    PERFORM set_config('request.jwt.claim.sub', v_admin::text, true);
+    SELECT count(*) INTO v_n FROM public.farmer_document_reviews WHERE farmer_document_id = v_doc;
+    UPDATE public.farmer_documents
+    SET review_status = 'accepted', review_note = 'certificate matches the batch on file'
+    WHERE id = v_doc;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    IF v_n = 1 THEN
+      v_results := v_results || 'BLUE 11 admin review as role authenticated: PERMITTED (1 row)'::text;
+    ELSE
+      v_fails := v_fails || format('BLUE 11 a real admin session updated %s rows, not 1 — the legitimate path is BROKEN', v_n);
+    END IF;
+
+    -- The trigger's INSERT is the privileged step. If it silently did nothing,
+    -- the decision would stand with no event behind it — the append-only trail
+    -- would be missing precisely the entry it exists to hold.
+    SELECT count(*) INTO v_n FROM public.farmer_document_reviews WHERE farmer_document_id = v_doc;
+    IF v_n >= 1 THEN
+      v_results := v_results || format('BLUE 11b the event trigger appended under authenticated, and the admin can READ it (%s events)', v_n)::text;
+    ELSE
+      v_fails := v_fails || 'BLUE 11b an admin session recorded a decision but can read NO event behind it'::text;
+    END IF;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM; RESET ROLE;
+    v_fails := v_fails || format('BLUE 11 the LEGITIMATE admin path FAILED as role authenticated: %s', left(v_err, 90));
+  END;
+
   -- ── Report ──────────────────────────────────────────────────────────────
   FOREACH v_err IN ARRAY v_results LOOP
     RAISE NOTICE 'BLUE  %', v_err;
