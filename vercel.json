@@ -18,6 +18,15 @@
   ],
   "headers": [
     {
+      "source": "/farmer",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
+    },
+    {
       "source": "/(.*)",
       "headers": [
         {

@@ -402,6 +402,20 @@ export interface RiskRegisterEntry {
 
 export type Page =
   | 'landing'
+  // ── Public corporate pages ────────────────────────────────────────────────
+  // The only pages besides the landing page that are approved for public search
+  // indexing. They exist because the search-exposure programme's binding entry
+  // condition was that at least two real corporate pages exist to index: until
+  // they did, the whole programme governed exactly one URL.
+  //
+  // They carry no operational data of any kind. Everything they state is either
+  // copy already approved on the landing page or a description of behaviour
+  // that can be read out of this repository — see lib/publicPageMetadata.ts for
+  // the indexability register and pages/public/* for the content.
+  | 'about'
+  | 'contact'
+  | 'privacy'
+  | 'terms'
   // The buyer's own surface. Production has admitted `buyer` as a profile role
   // since migration 39 and carries the organisation tables, but no page existed
   // for one to land on — so `resolvePostLoginDecision` fell a buyer through to

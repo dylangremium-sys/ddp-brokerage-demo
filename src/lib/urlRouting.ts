@@ -19,8 +19,16 @@
  *   - syncUrlToPage is called after every page transition. It either pushes or
  *     replaces the history entry so the address bar stays consistent. Navigating
  *     to a page with no URL mapping replaces with "/".
- *   - Only the farmer-register page is mapped for now. Further routes should be
- *     added here rather than scattered across App.tsx.
+ *   - The mapped set is farmer-register plus the public corporate pages.
+ *     Further routes should be added here rather than scattered across App.tsx.
+ *
+ * RELATIONSHIP TO SEARCH EXPOSURE
+ *   A path in PAGE_TO_PATH is a URL a crawler can be pointed at, so this map
+ *   and the indexability register in lib/publicPageMetadata.ts have to agree.
+ *   They are deliberately separate concerns — routable is not the same as
+ *   indexable, and /farmer is the case that proves it: it is routable, and it
+ *   is disallowed in robots.txt and marked noindex. publicPageMetadata.test.ts
+ *   asserts the two stay consistent.
  */
 
 import type { Page } from '../types'
@@ -28,11 +36,26 @@ import type { Page } from '../types'
 /** pathname → Page mappings that accept a cold load. */
 const PATH_TO_PAGE: Record<string, Page> = {
   '/farmer': 'farmer-register',
+  // The public corporate pages. Unlike /farmer these exist FOR the cold load:
+  // a search result, a link in someone's email, and the sitemap all deliver a
+  // visitor straight to the path with no in-app navigation beforehand. A
+  // corporate page that only worked via an in-app click would be listed in the
+  // sitemap and then render the landing page to everyone who arrived — the
+  // failure would look like success in exactly the way the crawl-policy files
+  // did before they were made static.
+  '/about': 'about',
+  '/contact': 'contact',
+  '/privacy': 'privacy',
+  '/terms': 'terms',
 }
 
 /** Page → canonical path. Pages not listed here revert to root. */
 const PAGE_TO_PATH: Partial<Record<Page, string>> = {
   'farmer-register': '/farmer',
+  about: '/about',
+  contact: '/contact',
+  privacy: '/privacy',
+  terms: '/terms',
 }
 
 /**
@@ -41,6 +64,19 @@ const PAGE_TO_PATH: Partial<Record<Page, string>> = {
  */
 export function getInitialPageFromPath(pathname: string): Page | null {
   return PATH_TO_PAGE[pathname] ?? null
+}
+
+/**
+ * The canonical path for `page`, for use as a real `href`.
+ *
+ * Exists so that a component rendering an in-app link cannot invent a path.
+ * The corporate pages are linked with genuine anchors — a crawler follows an
+ * `href`, and a `<button>` is invisible to one — and this is what guarantees
+ * the href a visitor sees is the same path the router will accept on a cold
+ * load. Unmapped pages fall back to "/", matching syncUrlToPage.
+ */
+export function pathForPage(page: Page): string {
+  return PAGE_TO_PATH[page] ?? '/'
 }
 
 /**

@@ -1553,6 +1553,10 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   font-size: 13px;
 }
 .ln-footer-legal { display: inline-flex; align-items: center; gap: 14px; }
+/* These are <a> elements now, not <button>s — a crawler cannot follow a button,
+   and as buttons they carried no handler at all, so they were inert for
+   visitors too. `text-decoration: none` restores the previous flat look now
+   that the browser supplies an underline by default. */
 .ln-footer-legal-link {
   background: none;
   border: none;
@@ -1561,6 +1565,7 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   font-family: inherit;
   font-size: 13px;
   color: #8FA091;
+  text-decoration: none;
   transition: color 0.15s;
 }
 .ln-footer-legal-link:hover { color: #C7D2C7; text-decoration: underline; }
@@ -5465,4 +5470,271 @@ a.ln-channel-value:hover { color: #FFFFFF; }
     min-height: 44px;
     padding-inline: 14px;
   }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Public corporate pages (/about, /contact, /privacy, /terms)
+
+   Reuses the landing page's warm green/gold/cream palette so the corporate
+   pages read as the same site, but declares its own tokens rather than nesting
+   under .landing-shell: these pages are documents, not the marketing homepage,
+   and they must not inherit the hero/section layout rules.
+
+   Type is set for reading — a measure around 68 characters, generous leading —
+   because these pages are the only ones on the site somebody reads top to
+   bottom rather than scans.
+──────────────────────────────────────────────────────────────────────────── */
+.corp-shell {
+  --lg-green-900: #0C2A1E;
+  --lg-gold: #C6A24C;
+  --lg-cream: #F7F3EA;
+  --lg-ink: #1E2A24;
+  --lg-ink-soft: #46524B;
+  --lg-line: #E7E0CF;
+  --lg-card: #FFFFFF;
+  /* Same reason as .landing-shell: the shared monogram fills its rect with
+     --bg, so it must be transparent to read as a gold cartouche on green. */
+  --bg: transparent;
+
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--lg-cream);
+  color: var(--lg-ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+}
+.corp-shell *, .corp-shell *::before, .corp-shell *::after { box-sizing: border-box; }
+
+/* ── Header ── */
+.corp-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--lg-green-900);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.corp-nav-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 10px 32px;
+}
+.corp-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.corp-brand-descriptor {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.corp-nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.corp-nav-link {
+  color: #C7D2C7;
+  font-size: 13.5px;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.corp-nav-link:hover { color: #FFFFFF; }
+/* The page you are already on: dimmed and not underlined on hover, so the nav
+   never looks like it offers a navigation that would do nothing. */
+.corp-nav-link[aria-current='page'] { color: var(--lg-gold); cursor: default; }
+.corp-nav-right { display: flex; align-items: center; gap: 14px; }
+.corp-lang { display: inline-flex; align-items: center; gap: 6px; }
+.corp-lang-btn {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.corp-lang-btn.is-active { color: var(--lg-gold); }
+.corp-lang-sep { color: rgba(255, 255, 255, 0.2); }
+.corp-login {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 1px solid rgba(198, 162, 76, 0.55);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--lg-gold);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.corp-login:hover { background: var(--lg-gold); color: var(--lg-green-900); }
+
+/* ── Document body ── */
+.corp-main { flex: 1; padding: 56px 32px 72px; }
+.corp-doc {
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--lg-card);
+  border: 1px solid var(--lg-line);
+  border-radius: 4px;
+  padding: 48px 56px 56px;
+}
+.corp-heading {
+  margin: 0 0 10px;
+  font-family: 'Noto Serif', Georgia, serif;
+  font-size: 34px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--lg-green-900);
+}
+/* Content owner + last-reviewed date. Required on every public corporate page
+   by the search-exposure master plan, and rendered as visible text rather than
+   a comment because its purpose is to tell a reader who stands behind the page
+   and how current it is. */
+.corp-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 36px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--lg-line);
+  color: var(--lg-ink-soft);
+  font-size: 13px;
+}
+.corp-provenance strong { font-weight: 600; color: var(--lg-ink); }
+.corp-provenance-sep { color: var(--lg-line); }
+
+.corp-section { margin-bottom: 34px; }
+.corp-section:last-child { margin-bottom: 0; }
+.corp-section h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--lg-green-900);
+}
+.corp-section p { margin: 0 0 14px; color: var(--lg-ink-soft); }
+.corp-section p:last-child { margin-bottom: 0; }
+.corp-lead { font-size: 17px; color: var(--lg-ink) !important; }
+
+/* Used for the sections a reader must not skim past: what DDP does not assess,
+   how to reach the company about their data, what reliance is being placed on
+   a review status. */
+.corp-section-emphasis {
+  padding: 22px 26px;
+  background: #FBF8F1;
+  border-left: 3px solid var(--lg-gold);
+  border-radius: 0 3px 3px 0;
+}
+.corp-section-emphasis h2 { margin-top: 0; }
+
+.corp-list { margin: 0; padding-left: 22px; color: var(--lg-ink-soft); }
+.corp-list li { margin-bottom: 12px; }
+.corp-list li:last-child { margin-bottom: 0; }
+
+.corp-steps { margin: 0 0 18px; padding: 0; list-style: none; counter-reset: none; }
+.corp-steps li { display: flex; gap: 14px; margin-bottom: 16px; }
+.corp-steps li:last-child { margin-bottom: 0; }
+.corp-steps p { margin: 2px 0 0; }
+.corp-step-num {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--lg-green-900);
+  color: var(--lg-gold);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.corp-address {
+  font-style: normal;
+  color: var(--lg-ink-soft);
+  line-height: 1.8;
+}
+.corp-contact-list { margin: 0; }
+.corp-contact-list > div { margin-bottom: 16px; }
+.corp-contact-list > div:last-child { margin-bottom: 0; }
+.corp-contact-list dt {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lg-ink);
+  margin-bottom: 2px;
+}
+.corp-contact-list dd { margin: 0; }
+.corp-contact-list a, .corp-section a:not(.corp-cta) { color: #2E5B3A; }
+.corp-cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 20px;
+  border-radius: 3px;
+  background: var(--lg-green-900);
+  color: var(--lg-gold);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.corp-cta:hover { background: #133A29; }
+
+/* ── Footer ── */
+.corp-footer {
+  background: var(--lg-green-900);
+  color: #8FA091;
+  padding: 36px 32px 30px;
+}
+.corp-footer-inner { max-width: 1180px; margin: 0 auto; }
+.corp-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.corp-footer-link {
+  color: #C7D2C7;
+  font-size: 13px;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.corp-footer-link:hover { color: #FFFFFF; text-decoration: underline; }
+.corp-footer-legalnote { padding: 20px 0; }
+.corp-footer-legalnote p {
+  margin: 0 0 10px;
+  max-width: 900px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.42);
+}
+.corp-footer-legalnote p:last-child { margin-bottom: 0; }
+.corp-copyright { margin: 0; font-size: 12.5px; }
+
+/* ── Responsive ── */
+@media (max-width: 860px) {
+  .corp-nav-inner { flex-wrap: wrap; gap: 12px; padding: 10px 20px; }
+  .corp-nav-menu { order: 3; width: 100%; margin-left: 0; gap: 16px; }
+  .corp-nav-right { margin-left: auto; }
+  .corp-main { padding: 32px 18px 48px; }
+  .corp-doc { padding: 30px 24px 36px; }
+  .corp-heading { font-size: 27px; }
+  .corp-section-emphasis { padding: 18px 18px; }
+  .corp-footer { padding: 28px 20px 24px; }
 }
