@@ -70,6 +70,8 @@ interface Props {
   onAdvancedProfile: () => void
   onRequests: () => void
   onEvidence: () => void
+  /** null = not known yet or the read failed. Renders no badge, never a zero. */
+  evidenceWaitingCount?: number | null
   openRequestsCount?: number
 }
 
@@ -83,6 +85,7 @@ export default function FarmerDashboard({
   onAdvancedProfile,
   onRequests,
   onEvidence,
+  evidenceWaitingCount = null,
   openRequestsCount = 0,
 }: Props) {
   const t = T[lang]
@@ -193,10 +196,24 @@ export default function FarmerDashboard({
             certificate. Reachable from the hub, not only from a deep link: a
             surface with no affordance is unreachable in production, which is
             the class of defect navigationGuard.ts exists to document. */}
-        <button className="quick-action-card quick-action-advanced" onClick={onEvidence}>
-          <div className="quick-action-icon"><IconCertificate /></div>
+        <button
+          className={`quick-action-card${(evidenceWaitingCount ?? 0) > 0 ? ' quick-action-requests' : ' quick-action-advanced'}`}
+          onClick={onEvidence}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="quick-action-icon"><IconCertificate /></div>
+            {evidenceWaitingCount !== null && evidenceWaitingCount > 0 && (
+              <span className="requests-badge">{evidenceWaitingCount}</span>
+            )}
+          </div>
           <div className="quick-action-label">{t.evidenceLabel}</div>
-          <div className="quick-action-desc">{t.evidenceDesc}</div>
+          <div className="quick-action-desc">
+            {evidenceWaitingCount !== null && evidenceWaitingCount > 0
+              ? (lang === 'th'
+                  ? `DDP รอข้อมูลจากคุณ ${evidenceWaitingCount} รายการ`
+                  : `DDP is waiting on you for ${evidenceWaitingCount}`)
+              : t.evidenceDesc}
+          </div>
         </button>
 
         <button className="quick-action-card quick-action-advanced" onClick={onAdvancedProfile}>

@@ -30,6 +30,7 @@ import {
   resetDemoData,
   isSupabaseConfigured,
   getFarmerScope,
+  loadFarmerDocuments,
   type FarmerScope,
 } from './lib/db'
 import { loadInventory, loadFarms, loadReviewRequests, saveReviewRequests, loadMarketBenchmarks } from './data'
@@ -187,6 +188,10 @@ export default function App() {
   // their first listing. The admin side already tracks this; the farmer side
   // did not.
   const [farmerLoadFailed, setFarmerLoadFailed] = useState(false)
+  // Documents DDP has handed back to this farmer (clarification or rejection).
+  // null = not known yet or the read failed — never rendered as "nothing waiting".
+  // Populated by the effect below isFarmerRole; see the comment there.
+  const [farmerEvidenceWaiting, setFarmerEvidenceWaiting] = useState<number | null>(null)
 
   // Review requests (owner → farmer messages) and stock edit tracking
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>(() => loadReviewRequests())
@@ -532,6 +537,53 @@ export default function App() {
   const isSignedIn = isDemo || currentProfile !== null
   const isAdminRole = isDemo || currentProfile?.role === 'ddp_admin'
   const isFarmerRole = !isDemo && currentProfile?.role === 'farmer'
+
+  // ── How many of the farmer's documents DDP has handed back to them ───────
+  //
+  // Loaded HERE rather than inside FarmerEvidence because the NAVBAR needs the
+  // number: a farmer working in My Stock — which is where they would go to fix a
+  // document — must be able to see that DDP is waiting without first visiting the
+  // page that would tell them. FarmerEvidence still loads its own rows; this is a
+  // count, not a shared row cache, so it introduces no window in which one farm's
+  // documents could be rendered to another.
+  //
+  // null means "not known yet, or the read failed", and is deliberately NOT 0.
+  // A failed read must render no badge rather than an absent one, because "DDP is
+  // waiting on nothing" is the one thing this must never say wrongly — the same
+  // rule FarmerEvidence and FarmerMyStock already follow for their empty states.
+  //
+  // Re-read on navigation (`page`) so acting on a document updates the badge
+  // without a reload, matching how the Operations Desk refreshes on entry.
+  useEffect(() => {
+    if (isDemo || !isSupabaseConfigured || !isFarmerRole) return
+    let active = true
+    runGuardedLoad(loadFarmerDocuments(), () => active, {
+      onSuccess: docs => setFarmerEvidenceWaiting(
+        docs.filter(d => d.reviewStatus === 'awaiting_clarification' || d.reviewStatus === 'rejected').length,
+      ),
+      // Silent by design: a badge is an affordance, not a report. FarmerEvidence
+      // itself states the failure loudly when the farmer opens it.
+      onError: () => setFarmerEvidenceWaiting(null),
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [isDemo, isFarmerRole, page])
+
+  /**
+   * Fail-closed projection of that count, and the reason it is derived rather
+   * than cleared inside the effect above.
+   *
+   * Outside a real farmer session this is null whatever a previous session left
+   * in state, so a number belonging to a farmer who has signed out — or to the
+   * farmer an admin just switched away from — can never reach the navbar. Same
+   * shape and same reason as the scopeReviewRequestsToFarmer projection below:
+   * farmer surfaces consume the guarded value, never the raw state.
+   *
+   * Clearing it with a setState in the effect body would have achieved this too,
+   * and would have cost a second render pass on every navigation to say nothing
+   * new. The lint rule that rejects that is right.
+   */
+  const farmerEvidenceWaitingSafe = isDemo || !isFarmerRole ? null : farmerEvidenceWaiting
+
   const isBuyerRole = !isDemo && currentProfile?.role === 'buyer'
   const isFarmerPage = FARMER_PAGES.includes(page)
   // Derived — true while a farmer's scope is being fetched from Supabase
@@ -1254,7 +1306,7 @@ export default function App() {
           <div className="navbar-links">
             {showFarmerNav && (
               <div className="farmer-nav-topbar">
-                <FarmerNav lang={lang} page={page} goTo={goTo} />
+                <FarmerNav lang={lang} page={page} goTo={goTo} evidenceWaiting={farmerEvidenceWaitingSafe} />
               </div>
             )}
 
@@ -1410,6 +1462,7 @@ export default function App() {
                   onAdvancedProfile={() => goTo('farmer-advanced-profile')}
                   onRequests={() => goTo('farmer-requests')}
                   onEvidence={() => goTo('farmer-evidence')}
+                  evidenceWaitingCount={farmerEvidenceWaitingSafe}
                   openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
                 />
           )}
