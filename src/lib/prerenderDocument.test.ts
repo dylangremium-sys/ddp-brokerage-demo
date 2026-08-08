@@ -1,9 +1,7 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { buildHeadTags, buildPrerenderedDocument, outputPathForPage } from './prerenderDocument'
+import { buildSitemapXml, sitemapEntries } from './sitemapDocument'
 import { CANONICAL_ORIGIN, indexablePages, metadataForPage } from './publicPageMetadata'
 import type { Page } from '../types'
 
@@ -30,8 +28,6 @@ import type { Page } from '../types'
  * scripts/prerender-public-routes.mjs for the one check that answers it, and
  * why a green suite here cannot.
  */
-
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /**
  * A stand-in for the built dist/index.html: the same shape Vite emits, with
@@ -230,15 +226,22 @@ describe('output paths follow the canonical the page claims', () => {
 })
 
 describe('the prerender and the crawl-policy files describe the same site', () => {
-  const sitemap = readFileSync(join(REPO_ROOT, 'public', 'sitemap.xml'), 'utf8')
-  const sitemapUrls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].trim())
+  // Reads the sitemap builder rather than a file on disk: the sitemap is now
+  // generated into dist/ by the same script that writes these documents.
+  const sitemapUrls = [...buildSitemapXml(sitemapEntries()).matchAll(/<loc>([^<]+)<\/loc>/g)].map(
+    (m) => m[1].trim(),
+  )
 
   /**
-   * A URL in the sitemap with no prerendered file behind it is the failure
+   * A URL in the sitemap with no prerendered document behind it is the failure
    * that looks most like success: the sitemap advertises it, Vercel falls
    * through to the SPA rewrite, and the crawler is handed the landing document
-   * under the landing canonical — which is the defect this change removes,
-   * reintroduced one page at a time.
+   * under the landing canonical — the defect this change removes, reintroduced
+   * one page at a time.
+   *
+   * The build script enforces the same rule against what it ACTUALLY rendered,
+   * and fails rather than writing a sitemap it cannot back with documents. This
+   * is the offline half.
    */
   it('prerenders a document for every URL the sitemap publishes', () => {
     const prerenderedUrls = indexablePages().map(

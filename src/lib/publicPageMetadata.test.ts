@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+
+import { buildSitemapXml, sitemapEntries } from './sitemapDocument'
 import {
   CANONICAL_ORIGIN,
   approvedSitemapUrls,
@@ -192,7 +194,11 @@ describe('everything else is fail-closed', () => {
 })
 
 describe('the register and the sitemap are one decision', () => {
-  const sitemap = read('public/sitemap.xml')
+  // The sitemap is generated into dist/ at build time rather than kept in
+  // public/, so this reads the builder that produces it. The decision it
+  // encodes is unchanged: the register says which pages are public, and the
+  // sitemap must say exactly that and nothing else.
+  const sitemap = buildSitemapXml(sitemapEntries())
   const sitemapUrls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].trim())
 
   /**

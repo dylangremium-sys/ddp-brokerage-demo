@@ -107,6 +107,70 @@ try {
   failures.push(`/farmer: request failed — ${error.message}`)
 }
 
+// ─── the crawl-policy files ─────────────────────────────────────────────────
+//
+// sitemap.xml is generated at build time rather than kept in public/, so it is
+// the file most exposed to a build step that did not run: nothing is left
+// behind, and /sitemap.xml goes back to returning the SPA shell with a 200.
+// A 200 is exactly the trap — a crawler handed HTML where XML belongs does not
+// retry and does not warn.
+for (const [path, wantType, wantContent] of [
+  ['/sitemap.xml', /xml/, '<urlset'],
+  ['/robots.txt', /text\/plain/, 'Sitemap:'],
+]) {
+  try {
+    const response = await fetch(`${origin}${path}`)
+    const type = response.headers.get('content-type') ?? ''
+    const body = await response.text()
+
+    if (response.status !== 200) failures.push(`${path}: HTTP ${response.status}`)
+    if (!wantType.test(type)) {
+      failures.push(`${path}: content-type is "${type}" — the SPA shell is being served in its place`)
+    }
+    if (!body.includes(wantContent)) failures.push(`${path}: body does not contain "${wantContent}"`)
+
+    if (path === '/sitemap.xml') {
+      const locs = [...body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].trim())
+      const wanted = [...EXPECTED.values()]
+
+      const missing = wanted.filter((url) => !locs.includes(url))
+      if (missing.length > 0) failures.push(`/sitemap.xml: missing ${missing.join(', ')}`)
+
+      const extra = locs.filter((url) => !wanted.includes(url))
+      if (extra.length > 0) failures.push(`/sitemap.xml: advertises unapproved URLs ${extra.join(', ')}`)
+
+      // Test the <loc> values, NOT the raw body. The generated file explains in
+      // prose that farmer onboarding is out of scope by policy, and a naive
+      // scan for "farmer" matches that sentence — failing on the documentation
+      // of the rule it is checking. The same trap crawlPolicyFiles.test.ts
+      // records for `rel="canonical"`.
+      const excluded = locs.filter((url) =>
+        /\/(farmer|admin|api|login|set-password|forgot-password)/i.test(url),
+      )
+      if (excluded.length > 0) {
+        failures.push(`/sitemap.xml: advertises excluded paths ${excluded.join(', ')}`)
+      }
+
+      // Dates are all-or-nothing by construction. A partial set means something
+      // wrote this file that was not the generator.
+      const dates = [...body.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1])
+      if (dates.length > 0 && dates.length !== locs.length) {
+        failures.push(`/sitemap.xml: ${dates.length} lastmod for ${locs.length} URLs — must be all or none`)
+      }
+      const malformed = dates.filter((d) => !/^\d{4}-\d{2}-\d{2}$/.test(d))
+      if (malformed.length > 0) failures.push(`/sitemap.xml: malformed lastmod ${malformed.join(', ')}`)
+
+      console.log(
+        `/sitemap.xml  ${response.status}  ${locs.length} URLs  ${dates.length ? `lastmod ${[...new Set(dates)].join(',')}` : 'no lastmod'}`,
+      )
+    } else {
+      console.log(`/robots.txt   ${response.status}  ${type}`)
+    }
+  } catch (error) {
+    failures.push(`${path}: request failed — ${error.message}`)
+  }
+}
+
 if (failures.length > 0) {
   console.error(`\n${failures.length} problem(s) against ${origin}:`)
   for (const failure of failures) console.error(`  ✗ ${failure}`)
