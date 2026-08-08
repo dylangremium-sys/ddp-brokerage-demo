@@ -1,0 +1,60 @@
+{
+  "id": "65_document_review_clarification",
+  "title": "Migration 65 — an administrator can record a reasoned non-decision, and every transition leaves an immutable attributed event",
+  "description": "Applies migration 65 to the bootstrap substrate, runs its VERIFY A-I, then rolls it back on a disposable PostgreSQL cluster. Production at 217cfe8 admitted exactly pending|accepted|rejected, had no review-note column anywhere, and had no document-review history table or writer -- and migration 64's trigger NULLs reviewed_by whenever a document returns to pending. The consequence is not a UI gap: the only non-accept, non-reject state is 'pending' and a pending row is forcibly unattributed, so an ATTRIBUTED NON-DECISION IS UNREPRESENTABLE. An administrator who has genuinely examined a certificate and cannot responsibly accept or reject it has no way to say so. 65 adds 'awaiting_clarification', a required nonblank note on every transition, and public.farmer_document_reviews -- one append-only row per transition, actor taken from auth.uid() and NOT NULL, which is what extends the human requirement to return-to-queue as well. Section B is the point and C is what stops it passing cheaply.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "PRE65-MIGRATION-64",
+      "file": "64_DOCUMENT_REVIEW_ATTRIBUTION_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-65",
+      "file": "65_DOCUMENT_REVIEW_CLARIFICATION_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "65_DOCUMENT_REVIEW_CLARIFICATION_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F", "G", "H", "I"],
+    "expectedPassCount": 9,
+    "note": "B drives a real awaiting_clarification transition as an authenticated actor and requires EXACTLY ONE event naming them -- zero would mean the trail is silent, more than one that it is unreliable. C runs with auth.uid() NULL and the full rights of the migration role and requires all three decisions to be refused; the return-to-queue arm of it is new, because under migration 64 alone that was the one transition needing no human. D refuses empty and whitespace-only notes for each decision. E is the subtle one: a return to the queue must carry its own reason, name who did it, clear the CURRENT attribution and leave every earlier event byte-identical -- a trail a later action can rewrite is not a trail. F attempts UPDATE, DELETE and TRUNCATE on the history as a superuser, plus deleting the document itself, since deleting the subject is a delete path through an append-only table. G guards the same subtlety migration 64's B guarded: the trigger fires only when review_status actually changes. H stops current state diverging from the history that explains it. The fixture is NOT cleaned up by deletion -- it cannot be, because that is exactly what F proves impossible -- so the behavioural half runs inside a plpgsql subtransaction aborted by a sentinel exception; NOTICEs are not transactional and survive it.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "65_DOCUMENT_REVIEW_CLARIFICATION_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.farmer_documents",
+      "public.is_ddp_admin"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": ["public.farmer_document_reviews"],
+      "functions": [
+        "public.fn_farmer_document_review_event",
+        "public.prevent_farmer_document_review_mutation"
+      ],
+      "policies": []
+    },
+    "intact": {
+      "tables": ["public.farmer_documents"],
+      "functions": [
+        "auth.uid",
+        "public.fn_farmer_documents_set_reviewer"
+      ]
+    }
+  }
+}

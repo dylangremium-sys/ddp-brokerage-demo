@@ -70,6 +70,7 @@ export const FARMER_PAGES: Page[] = [
   ...PUBLIC_PAGES,
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
+  'farmer-evidence',
 ]
 
 /**
