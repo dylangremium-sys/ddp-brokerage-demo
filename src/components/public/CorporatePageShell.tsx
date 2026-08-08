@@ -13,9 +13,9 @@ import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
      it, and a crawler discovers pages by following `href` attributes. The
      landing page's own Privacy and Terms controls were `<button>` elements with
      no handler — invisible to a crawler and inert to a visitor. Rendering an
-     anchor with the real path and calling preventDefault keeps the SPA from
-     hard-reloading on an in-app click while leaving something for a crawler,
-     a bookmark, a middle-click and "open in new tab" to act on.
+     anchor with the real path and guarding the interception keeps the SPA from
+     hard-reloading on an ordinary click while leaving a bookmark, a Cmd-click
+     and "open in new tab" working exactly as the browser promises.
 
      The paths are read from lib/urlRouting rather than written out here, so a
      link cannot point at a path the router does not accept.
@@ -25,6 +25,13 @@ import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
      policy is a document, not a card, so these pages carry their own full-width
      chrome — see navigationGuard.ts, where PUBLIC_CORPORATE_PAGES is kept
      deliberately separate for this reason.
+
+   WHY THE CHROME IS SPLIT INTO SMALL COMPONENTS
+     Header, language switch, provenance line and footer are separate components
+     rather than one deep tree. Written inline it reached six levels of JSX
+     nesting, which is both a DeepSource finding and genuinely hard to read —
+     the language toggle sat four levels inside the header markup. Each piece
+     now has a name that says what it is.
 ──────────────────────────────────────────────────────────────────────────── */
 
 interface Props {
@@ -39,8 +46,11 @@ interface Props {
   children: ReactNode
 }
 
-/** The corporate pages, in the order they appear in the footer. */
-const CORPORATE_LINKS: Array<{ page: Page; labelKey: 'homeFooterAbout' | 'homeFooterContact' | 'homeFooterPrivacy' | 'homeFooterTerms' }> = [
+/** The corporate pages, in the order they appear in the navigation. */
+const CORPORATE_LINKS: Array<{
+  page: Page
+  labelKey: 'homeFooterAbout' | 'homeFooterContact' | 'homeFooterPrivacy' | 'homeFooterTerms'
+}> = [
   { page: 'about', labelKey: 'homeFooterAbout' },
   { page: 'contact', labelKey: 'homeFooterContact' },
   { page: 'privacy', labelKey: 'homeFooterPrivacy' },
@@ -88,91 +98,136 @@ function InternalLink({
   )
 }
 
-export default function CorporatePageShell({ lang, setLang, page, onNavigate, heading, children }: Props) {
-  const t = T[lang]
+/** EN / ไทย switch. */
+function LangSwitch({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void }) {
+  return (
+    <div className="corp-lang" role="group" aria-label="Language">
+      <button
+        type="button"
+        className={`corp-lang-btn${lang === 'en' ? ' is-active' : ''}`}
+        aria-pressed={lang === 'en'}
+        onClick={() => setLang('en')}
+      >
+        EN
+      </button>
+      <span className="corp-lang-sep" aria-hidden="true">|</span>
+      <button
+        type="button"
+        className={`corp-lang-btn${lang === 'th' ? ' is-active' : ''}`}
+        aria-pressed={lang === 'th'}
+        onClick={() => setLang('th')}
+      >
+        ไทย
+      </button>
+    </div>
+  )
+}
+
+/** Brand, cross-links to the other corporate pages, language and sign-in. */
+function CorporateHeader({
+  lang, setLang, page, onNavigate,
+}: {
+  lang: Lang
+  setLang: (l: Lang) => void
+  page: Page
+  onNavigate: (page: Page) => void
+}) {
+  const copy = T[lang]
 
   return (
-    <div className="corp-shell">
-      <header className="corp-nav">
-        <div className="corp-nav-inner">
-          <InternalLink target="landing" currentPage={page} onNavigate={onNavigate} className="corp-brand">
-            <DDPMonogramLogo height={44} color="#C6A24C" />
-            <span className="corp-brand-descriptor">{t.navBrandDescriptor}</span>
-          </InternalLink>
+    <header className="corp-nav">
+      <div className="corp-nav-inner">
+        <InternalLink target="landing" currentPage={page} onNavigate={onNavigate} className="corp-brand">
+          <DDPMonogramLogo height={44} color="#C6A24C" />
+          <span className="corp-brand-descriptor">{copy.navBrandDescriptor}</span>
+        </InternalLink>
 
-          <nav className="corp-nav-menu" aria-label={t.corpRelatedHeading}>
-            <InternalLink target="landing" currentPage={page} onNavigate={onNavigate} className="corp-nav-link">{t.corpNavHome}</InternalLink>
-            {CORPORATE_LINKS.map(({ page: target, labelKey }) => (
-              <InternalLink key={target} target={target} currentPage={page} onNavigate={onNavigate} className="corp-nav-link">{t[labelKey]}</InternalLink>
-            ))}
-          </nav>
+        <nav className="corp-nav-menu" aria-label={copy.corpRelatedHeading}>
+          <InternalLink target="landing" currentPage={page} onNavigate={onNavigate} className="corp-nav-link">{copy.corpNavHome}</InternalLink>
+          {CORPORATE_LINKS.map(({ page: target, labelKey }) => (
+            <InternalLink key={target} target={target} currentPage={page} onNavigate={onNavigate} className="corp-nav-link">{copy[labelKey]}</InternalLink>
+          ))}
+        </nav>
 
-          <div className="corp-nav-right">
-            <div className="corp-lang" role="group" aria-label="Language">
-              <button
-                type="button"
-                className={`corp-lang-btn${lang === 'en' ? ' is-active' : ''}`}
-                aria-pressed={lang === 'en'}
-                onClick={() => setLang('en')}
-              >
-                EN
-              </button>
-              <span className="corp-lang-sep" aria-hidden="true">|</span>
-              <button
-                type="button"
-                className={`corp-lang-btn${lang === 'th' ? ' is-active' : ''}`}
-                aria-pressed={lang === 'th'}
-                onClick={() => setLang('th')}
-              >
-                ไทย
-              </button>
-            </div>
-            <button type="button" className="corp-login" onClick={() => onNavigate('login')}>
-              <LockIcon />
-              {t.navSecureLogin}
-            </button>
-          </div>
+        <div className="corp-nav-right">
+          <LangSwitch lang={lang} setLang={setLang} />
+          <button type="button" className="corp-login" onClick={() => onNavigate('login')}>
+            <LockIcon />
+            {copy.navSecureLogin}
+          </button>
         </div>
-      </header>
+      </div>
+    </header>
+  )
+}
+
+/**
+ * Named content owner and last-reviewed date.
+ *
+ * The search-exposure master plan requires both on every public corporate page.
+ * Rendered as visible text rather than a comment because its purpose is to tell
+ * a reader who stands behind the page and how current it is.
+ */
+function PageProvenance({ lang }: { lang: Lang }) {
+  const copy = T[lang]
+
+  return (
+    <p className="corp-provenance">
+      <span>{copy.corpOwnerLabel}: <strong>{copy.corpOwnerValue}</strong></span>
+      <span className="corp-provenance-sep" aria-hidden="true">·</span>
+      <span>{copy.corpReviewedLabel}: <time dateTime="2026-08-08">{copy.corpReviewedValue}</time></span>
+    </p>
+  )
+}
+
+/** Cross-links, the two approved legal notices, and the copyright line. */
+function CorporateFooter({
+  lang, page, onNavigate,
+}: {
+  lang: Lang
+  page: Page
+  onNavigate: (page: Page) => void
+}) {
+  const copy = T[lang]
+
+  return (
+    <footer className="corp-footer">
+      <div className="corp-footer-inner">
+        <nav className="corp-footer-links" aria-label={copy.corpRelatedHeading}>
+          <InternalLink target="landing" currentPage={page} onNavigate={onNavigate} className="corp-footer-link">{copy.corpBackHome}</InternalLink>
+          {CORPORATE_LINKS.filter(({ page: target }) => target !== page).map(({ page: target, labelKey }) => (
+            <InternalLink key={target} target={target} currentPage={page} onNavigate={onNavigate} className="corp-footer-link">{copy[labelKey]}</InternalLink>
+          ))}
+        </nav>
+
+        {/* The same two notices the landing page carries, reused by key. They
+            are the company's approved statement of what it does and does not
+            assess, and they belong on any page that describes the service. */}
+        <div className="corp-footer-legalnote">
+          <p>{copy.landingAuthorityNote}</p>
+          <p>{copy.landingDisclaimer}</p>
+        </div>
+
+        <p className="corp-copyright">{copy.homeFooterCopyright}</p>
+      </div>
+    </footer>
+  )
+}
+
+export default function CorporatePageShell({ lang, setLang, page, onNavigate, heading, children }: Props) {
+  return (
+    <div className="corp-shell">
+      <CorporateHeader lang={lang} setLang={setLang} page={page} onNavigate={onNavigate} />
 
       <main className="corp-main" id="main">
         <article className="corp-doc">
           <h1 className="corp-heading">{heading}</h1>
-
-          {/* The master plan requires a named content owner and a last-reviewed
-              date on every public corporate page. Rendered as real text rather
-              than a comment so the requirement is visible to a reader, which is
-              the point of it. */}
-          <p className="corp-provenance">
-            <span>{t.corpOwnerLabel}: <strong>{t.corpOwnerValue}</strong></span>
-            <span className="corp-provenance-sep" aria-hidden="true">·</span>
-            <span>{t.corpReviewedLabel}: <time dateTime="2026-08-08">{t.corpReviewedValue}</time></span>
-          </p>
-
+          <PageProvenance lang={lang} />
           {children}
         </article>
       </main>
 
-      <footer className="corp-footer">
-        <div className="corp-footer-inner">
-          <nav className="corp-footer-links" aria-label={t.corpRelatedHeading}>
-            <InternalLink target="landing" currentPage={page} onNavigate={onNavigate} className="corp-footer-link">{t.corpBackHome}</InternalLink>
-            {CORPORATE_LINKS.filter(({ page: target }) => target !== page).map(({ page: target, labelKey }) => (
-              <InternalLink key={target} target={target} currentPage={page} onNavigate={onNavigate} className="corp-footer-link">{t[labelKey]}</InternalLink>
-            ))}
-          </nav>
-
-          {/* The same two notices the landing page carries, reused by key. They
-              are the company's approved statement of what it does and does not
-              assess, and they belong on any page that describes the service. */}
-          <div className="corp-footer-legalnote">
-            <p>{t.landingAuthorityNote}</p>
-            <p>{t.landingDisclaimer}</p>
-          </div>
-
-          <p className="corp-copyright">{t.homeFooterCopyright}</p>
-        </div>
-      </footer>
+      <CorporateFooter lang={lang} page={page} onNavigate={onNavigate} />
     </div>
   )
 }

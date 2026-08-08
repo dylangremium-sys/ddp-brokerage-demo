@@ -113,40 +113,52 @@ describe('everything else is fail-closed', () => {
   })
 
   /**
-   * P0.4 IS PARTIAL — AND THIS TEST EXISTS TO KEEP IT HONEST.
+   * P0.4 — THE THREE CONDITIONS THAT MAKE THE EXCLUSION REACHABLE.
    *
-   * `Disallow: /farmer` stops a compliant crawler FETCHING the page, so it
-   * never READS the noindex the page carries. The two controls are stacked, not
-   * composed: against a well-behaved crawler the noindex is unreachable, and a
-   * Disallow alone does not prevent an externally linked URL appearing as a
-   * bare result.
+   * The defect was that /farmer's exclusion could not be delivered: robots.txt
+   * disallowed the path, so a compliant crawler never fetched the page and
+   * never read the noindex on it. Two controls, stacked, and the weaker won.
    *
-   * This asserts the contradiction is STILL THERE, deliberately. It is the
-   * inverse of a normal test — it fails when someone resolves the conflict,
-   * which is the moment the PARTIAL status must be revisited rather than
-   * inherited. Whoever makes that change gets pointed at the decision instead
-   * of silently shipping a status nobody re-checked.
+   * Containment now requires all three of these to hold together. Any one of
+   * them alone is insufficient, and breaking any one reopens the hole, so they
+   * are asserted as a set rather than as three unrelated facts:
+   *
+   *   1. the crawler is ALLOWED to fetch /farmer          (robots.txt)
+   *   2. the response carries X-Robots-Tag: noindex       (vercel.json)
+   *   3. the rendered page carries meta robots: noindex   (this register)
+   *
+   * The reason (2) is not redundant with (3): the SPA rewrite serves /farmer as
+   * a client-rendered document, so (3) exists only after JavaScript runs, while
+   * (2) is on the response itself.
    */
-  it('records that the /farmer noindex is unreachable behind its own Disallow', () => {
+  it('makes the /farmer exclusion reachable: crawlable, header-excluded, meta-excluded', () => {
     const directives = read('public/robots.txt')
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.length > 0 && !line.startsWith('#'))
 
-    const farmerIsDisallowed = directives.includes('Disallow: /farmer')
-    const farmerIsNoindex = metadataForPage('farmer-register').robots === 'noindex,nofollow'
-
+    // 1. Not disallowed — otherwise (2) and (3) are both unreachable.
     expect(
-      farmerIsDisallowed && farmerIsNoindex,
-      'The /farmer crawl controls have changed. If `Disallow: /farmer` was removed so that ' +
-        'crawlers can now read the noindex, P0.4 may finally be DONE — verify it and update ' +
-        'the status. If the noindex was removed instead, containment got WEAKER. Either way ' +
-        'this is a policy decision that must be re-scored, not a test to delete.',
-    ).toBe(true)
+      directives.some((line) => /^Disallow:\s*\/farmer/i.test(line)),
+      'robots.txt disallows /farmer again. That makes both the X-Robots-Tag header and the ' +
+        'meta robots tag unreachable to every compliant crawler — the original defect.',
+    ).toBe(false)
 
-    // And the consequence, stated so it is not rediscovered: the robots file
-    // must keep explaining this, or the next reader will assume it composes.
-    expect(read('public/robots.txt')).toMatch(/never fetches the page and therefore never\s*#?\s*reads/i)
+    // 2. The authoritative control, independent of JavaScript.
+    const vercelConfig = JSON.parse(read('vercel.json')) as {
+      headers?: Array<{ source: string; headers: Array<{ key: string; value: string }> }>
+    }
+    const header = (vercelConfig.headers ?? [])
+      .find((rule) => rule.source === '/farmer')
+      ?.headers.find((entry) => entry.key.toLowerCase() === 'x-robots-tag')
+    expect(header?.value.replace(/\s+/g, ''), 'no X-Robots-Tag: noindex on /farmer').toBe('noindex,nofollow')
+
+    // 3. Defence in depth for anything reading the rendered DOM.
+    expect(metadataForPage('farmer-register').robots).toBe('noindex,nofollow')
+
+    // And crawlable must not have become indexable.
+    expect(isIndexable('farmer-register')).toBe(false)
+    expect(approvedSitemapUrls().some((url) => url.includes('/farmer'))).toBe(false)
   })
 
   /**

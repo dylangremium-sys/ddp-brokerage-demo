@@ -117,36 +117,35 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
 
   // ── Routable but deliberately NOT indexable ───────────────────────────────
   //
-  // ⚠️ P0.4 IS **PARTIAL**, NOT DONE. Read this before scoring it.
-  //
   // /farmer is a real cold-loadable URL — farmers reach it from a QR code and a
-  // WhatsApp share — so any external link can point a crawler at it. Two
-  // controls are present and they DO NOT COMPOSE:
+  // WhatsApp share — so any external link can point a crawler at it.
   //
-  //   robots.txt  `Disallow: /farmer`  → a compliant crawler never FETCHES it
-  //   this entry   noindex,nofollow    → …and therefore never READS this
+  // THIS ENTRY IS THE SECOND OF THREE CONTROLS, NOT THE ONLY ONE.
   //
-  // The second is delivered by the page it is forbidden to request. So against
-  // a compliant crawler the effective control is the Disallow alone, and a
-  // Disallow governs crawling, not indexing: an externally linked /farmer can
-  // still surface as a bare URL with no snippet. The noindex only bites where
-  // the Disallow does not — crawlers that ignore robots.txt, and direct fetches.
+  // The exclusion used to be undeliverable: robots.txt disallowed /farmer, so a
+  // compliant crawler never fetched the page and never read this tag. The two
+  // controls stacked instead of composing, and the weaker one won, while an
+  // externally linked /farmer could still be indexed as a bare URL.
   //
-  // Fixing it properly is a crawl-policy DECISION, not a code change, and it is
-  // deliberately not taken here:
+  // Containment now depends on three things holding together:
   //
-  //   Option A — drop `Disallow: /farmer` so crawlers may fetch the page and
-  //     actually read the noindex. This is the mechanism search engines
-  //     document for de-indexing, and it is the likely right answer. It also
-  //     means deliberately inviting crawlers into onboarding, so it is the
-  //     owner's call, not a tidy-up.
-  //   Option B — serve `X-Robots-Tag: noindex` from vercel.json. Note this does
-  //     NOT solve it either while the Disallow stands: a header still has to be
-  //     fetched to be read.
+  //   1. robots.txt ALLOWS /farmer to be crawled — otherwise 2 and 3 are both
+  //      unreachable. Counter-intuitive, and the whole fix.
+  //   2. vercel.json returns `X-Robots-Tag: noindex, nofollow` for the /farmer
+  //      path. This is the AUTHORITATIVE control: the SPA rewrite serves this
+  //      route as a client-rendered document, so a header on the response is
+  //      the only exclusion that exists before JavaScript runs.
+  //   3. this entry, which puts `noindex,nofollow` in the rendered DOM as
+  //      defence in depth for anything that reads the page rather than the
+  //      headers.
   //
-  // Until one is chosen, the honest status is PARTIAL. publicPageMetadata.test.ts
-  // asserts this contradiction is still present, so nobody can mark P0.4 done
-  // by deleting a comment.
+  // Crawlable is NOT indexable: `robots` stays noindex here, `isIndexable`
+  // returns false, and /farmer must never enter the sitemap.
+  // publicPageMetadata.test.ts asserts all three conditions as a set.
+  //
+  // The canonical points at /farmer itself, not "/". Canonicalising onboarding
+  // to the landing page would ask a search engine to consolidate them, which is
+  // the opposite of keeping them apart.
   //
   // Its canonical points at the onboarding path itself, NOT at `/`. Claiming
   // `/` as canonical for an onboarding form asks a search engine to consolidate

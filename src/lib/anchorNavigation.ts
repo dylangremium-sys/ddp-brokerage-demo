@@ -62,7 +62,5 @@ export function shouldInterceptAnchorClick(event: AnchorClickLike): boolean {
   // target="_blank" (or a named frame) is an explicit request for another
   // browsing context, which in-app routing cannot honour.
   const target = event.currentTarget?.target
-  if (target && target !== '_self') return false
-
-  return true
+  return !target || target === '_self'
 }

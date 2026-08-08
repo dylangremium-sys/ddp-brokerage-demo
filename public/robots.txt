@@ -12,25 +12,40 @@
 # the paths that accept a cold load. Those are the landing page at /, the four
 # public corporate pages (/about, /contact, /privacy, /terms), and /farmer.
 #
-# The corporate pages are the approved public surface and are listed in the
-# sitemap. /farmer is farmer onboarding, not public corporate information, so it
-# stays disallowed below.
+# The corporate pages are the approved public surface and are the only entries
+# in sitemap.xml.
 #
-# Note what that does and does not achieve. Disallow governs CRAWLING, not
-# indexing, so an externally linked /farmer can still surface as a bare URL. The
-# register at src/lib/publicPageMetadata.ts also marks it noindex — but a
-# crawler that obeys the Disallow never fetches the page and therefore never
-# reads that noindex. The noindex is defence in depth (crawlers that ignore
-# robots.txt, and direct fetches), not the operative control. Genuine
-# containment of onboarding and auth surfaces stays with the search-exposure
-# programme, exactly as crawlPolicyFiles.test.ts already says.
+# WHY /farmer IS DELIBERATELY *NOT* DISALLOWED HERE
+# It used to be, and that was the bug. Disallow governs CRAWLING, not indexing:
+# a compliant crawler that obeys `Disallow: /farmer` never FETCHES the page, and
+# therefore never READS the noindex the page carries. The two controls did not
+# compose — they stacked, and the weaker one won. Meanwhile an externally linked
+# /farmer could still surface as a bare URL with no snippet, because nothing had
+# ever told a search engine to exclude it in a way it could receive.
+#
+# So /farmer is now crawlable ON PURPOSE, precisely so that the exclusion can be
+# delivered. It is excluded twice over, by two mechanisms a crawler can act on:
+#
+#   1. `X-Robots-Tag: noindex, nofollow` — an HTTP response header set for the
+#      /farmer path in vercel.json. This is the authoritative control. It does
+#      not depend on JavaScript running, which matters because every path here
+#      is served by the SPA rewrite as the same client-rendered document.
+#   2. `<meta name="robots" content="noindex,nofollow">` — injected on the page
+#      by src/lib/publicPageMetadata.ts, as defence in depth for anything that
+#      reads the rendered DOM rather than the response headers.
+#
+# Crawlable is NOT the same as indexable. /farmer must never appear in
+# sitemap.xml, and publicPageMetadata.ts must keep it out of the approved set;
+# both are asserted in crawlPolicyFiles.test.ts and publicPageMetadata.test.ts.
+#
+# /api/ stays disallowed. There is no exclusion directive to deliver there — it
+# is not a page, and nothing should be reading it.
 #
 # Assets are deliberately NOT disallowed. The landing page is client-rendered,
 # so a crawler that cannot fetch /assets/*.js and /assets/*.css sees an empty
 # document. Blocking them would hide the page it is trying to read.
 
 User-agent: *
-Disallow: /farmer
 Disallow: /api/
 
 Sitemap: https://www.ddpbrokerage.com/sitemap.xml

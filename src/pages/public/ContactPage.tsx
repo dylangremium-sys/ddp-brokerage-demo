@@ -25,8 +25,24 @@ interface Props {
   onNavigate: (page: Page) => void
 }
 
+/**
+ * One labelled email channel.
+ *
+ * Extracted rather than written inline: the definition list nested the anchor
+ * six levels deep, which DeepSource flags and which reads badly. Each channel
+ * is one idea, so it gets one component.
+ */
+function EmailChannel({ label, address }: { label: string; address: string }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd><a href={`mailto:${address}`}>{address}</a></dd>
+    </div>
+  )
+}
+
 export default function ContactPage({ lang, setLang, onNavigate }: Props) {
-  const t = T[lang]
+  const copy = T[lang]
 
   return (
     <CorporatePageShell
@@ -34,47 +50,41 @@ export default function ContactPage({ lang, setLang, onNavigate }: Props) {
       setLang={setLang}
       page="contact"
       onNavigate={onNavigate}
-      heading={t.corpContactHeading}
+      heading={copy.corpContactHeading}
     >
       <section className="corp-section">
-        <p className="corp-lead">{t.corpContactLead}</p>
+        <p className="corp-lead">{copy.corpContactLead}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpContactEmailHeading}</h2>
+        <h2>{copy.corpContactEmailHeading}</h2>
         <dl className="corp-contact-list">
-          <div>
-            <dt>{t.corpContactGeneralLabel}</dt>
-            <dd><a href={`mailto:${t.homeFooterEmail1}`}>{t.homeFooterEmail1}</a></dd>
-          </div>
-          <div>
-            <dt>{t.corpContactPartnershipsLabel}</dt>
-            <dd><a href={`mailto:${t.homeFooterEmail2}`}>{t.homeFooterEmail2}</a></dd>
-          </div>
+          <EmailChannel label={copy.corpContactGeneralLabel} address={copy.homeFooterEmail1} />
+          <EmailChannel label={copy.corpContactPartnershipsLabel} address={copy.homeFooterEmail2} />
         </dl>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpContactOfficeHeading}</h2>
+        <h2>{copy.corpContactOfficeHeading}</h2>
         <address className="corp-address">
           <strong>DDP Brokerage Co., Ltd.</strong><br />
-          {t.homeFooterOfficeLine1}<br />
-          {t.homeFooterOfficeLine2}<br />
-          {t.homeFooterOfficeLine3}<br />
-          {t.homeFooterOfficeTel}
+          {copy.homeFooterOfficeLine1}<br />
+          {copy.homeFooterOfficeLine2}<br />
+          {copy.homeFooterOfficeLine3}<br />
+          {copy.homeFooterOfficeTel}
         </address>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpContactSupplierHeading}</h2>
-        <p>{t.corpContactSupplierText}</p>
+        <h2>{copy.corpContactSupplierHeading}</h2>
+        <p>{copy.corpContactSupplierText}</p>
         <p>
           <a
             className="corp-cta"
             href={pathForPage('farmer-register')}
             onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate('farmer-register') }}
           >
-            {t.corpContactSupplierCta}
+            {copy.corpContactSupplierCta}
           </a>
         </p>
       </section>
@@ -83,7 +93,7 @@ export default function ContactPage({ lang, setLang, onNavigate }: Props) {
           supplier documents belong, and the platform's own storage controls are
           described on the privacy page. */}
       <section className="corp-section corp-section-emphasis">
-        <p>{t.corpContactDocumentsNote}</p>
+        <p>{copy.corpContactDocumentsNote}</p>
       </section>
     </CorporatePageShell>
   )

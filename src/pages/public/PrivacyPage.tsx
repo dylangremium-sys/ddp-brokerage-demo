@@ -38,7 +38,7 @@ interface Props {
 }
 
 export default function PrivacyPage({ lang, setLang, onNavigate }: Props) {
-  const t = T[lang]
+  const copy = T[lang]
 
   return (
     <CorporatePageShell
@@ -46,35 +46,35 @@ export default function PrivacyPage({ lang, setLang, onNavigate }: Props) {
       setLang={setLang}
       page="privacy"
       onNavigate={onNavigate}
-      heading={t.corpPrivacyHeading}
+      heading={copy.corpPrivacyHeading}
     >
       <section className="corp-section">
-        <p className="corp-lead">{t.corpPrivacyIntro}</p>
+        <p className="corp-lead">{copy.corpPrivacyIntro}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpPrivacyCollectHeading}</h2>
+        <h2>{copy.corpPrivacyCollectHeading}</h2>
         <ul className="corp-list">
-          <li>{t.corpPrivacyCollectRequest}</li>
-          <li>{t.corpPrivacyCollectProfile}</li>
-          <li>{t.corpPrivacyCollectDocuments}</li>
-          <li>{t.corpPrivacyCollectAccount}</li>
+          <li>{copy.corpPrivacyCollectRequest}</li>
+          <li>{copy.corpPrivacyCollectProfile}</li>
+          <li>{copy.corpPrivacyCollectDocuments}</li>
+          <li>{copy.corpPrivacyCollectAccount}</li>
         </ul>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpPrivacyWhyHeading}</h2>
-        <p>{t.corpPrivacyWhyText}</p>
+        <h2>{copy.corpPrivacyWhyHeading}</h2>
+        <p>{copy.corpPrivacyWhyText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpPrivacyProcessorsHeading}</h2>
-        <p>{t.corpPrivacyProcessorsText}</p>
+        <h2>{copy.corpPrivacyProcessorsHeading}</h2>
+        <p>{copy.corpPrivacyProcessorsText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpPrivacyControlsHeading}</h2>
-        <p>{t.corpPrivacyControlsText}</p>
+        <h2>{copy.corpPrivacyControlsHeading}</h2>
+        <p>{copy.corpPrivacyControlsText}</p>
       </section>
 
       {/* Several paragraphs, not one, because the honest version has several
@@ -95,27 +95,27 @@ export default function PrivacyPage({ lang, setLang, onNavigate }: Props) {
           Each is now its own paragraph, because each is a separate thing a
           reader might need to act on. */}
       <section className="corp-section">
-        <h2>{t.corpPrivacyCookiesHeading}</h2>
-        <p>{t.corpPrivacyCookiesText}</p>
-        <p>{t.corpPrivacyNetworkText}</p>
-        <p>{t.corpPrivacyFontsText}</p>
-        <p>{t.corpPrivacyStorageText}</p>
-        <p>{t.corpPrivacyDemoText}</p>
+        <h2>{copy.corpPrivacyCookiesHeading}</h2>
+        <p>{copy.corpPrivacyCookiesText}</p>
+        <p>{copy.corpPrivacyNetworkText}</p>
+        <p>{copy.corpPrivacyFontsText}</p>
+        <p>{copy.corpPrivacyStorageText}</p>
+        <p>{copy.corpPrivacyDemoText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpPrivacyRetentionHeading}</h2>
-        <p>{t.corpPrivacyRetentionText}</p>
+        <h2>{copy.corpPrivacyRetentionHeading}</h2>
+        <p>{copy.corpPrivacyRetentionText}</p>
       </section>
 
       <section className="corp-section corp-section-emphasis">
-        <h2>{t.corpPrivacyContactHeading}</h2>
-        <p>{t.corpPrivacyContactText}</p>
+        <h2>{copy.corpPrivacyContactHeading}</h2>
+        <p>{copy.corpPrivacyContactText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpPrivacyChangesHeading}</h2>
-        <p>{t.corpPrivacyChangesText}</p>
+        <h2>{copy.corpPrivacyChangesHeading}</h2>
+        <p>{copy.corpPrivacyChangesText}</p>
       </section>
     </CorporatePageShell>
   )

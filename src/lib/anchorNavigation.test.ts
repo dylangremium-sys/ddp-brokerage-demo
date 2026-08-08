@@ -92,6 +92,21 @@ describe('every intercepting anchor in the codebase uses the guard', () => {
     { query: '?raw', import: 'default', eager: true },
   ) as Record<string, string>
 
+  /**
+   * The rule is about NAVIGATION, not about preventDefault in general.
+   *
+   * The landing page also has fragment anchors (href="#process") whose handlers
+   * call preventDefault to smooth-scroll. Those are correct as they are: there
+   * is no cross-document navigation to preserve, and the first version of this
+   * scan flagged them, which would have pushed a pointless guard into
+   * scroll-only code.
+   *
+   * So the trigger is a handler that both suppresses the default AND routes the
+   * application somewhere. That is exactly the combination that steals a
+   * Cmd-click.
+   */
+  const ROUTES_THE_APP = /\b(onNavigate|goTo|onSupplierSignup|onSecureLogin|onForgotPassword|onBackToLogin)\s*\(/
+
   const navigatingHandlersIn = (source: string) =>
     [...source.matchAll(/onClick=\{([\s\S]*?)\}\s*\n/g)]
       .map((match) => match[1])
@@ -116,21 +131,6 @@ describe('every intercepting anchor in the codebase uses the guard', () => {
     ).toBeGreaterThanOrEqual(3)
   })
 
-  /**
-   * The rule is about NAVIGATION, not about preventDefault in general.
-   *
-   * The landing page also has fragment anchors (href="#process") whose handlers
-   * call preventDefault to smooth-scroll. Those are correct as they are: there
-   * is no cross-document navigation to preserve, and the first version of this
-   * scan flagged them, which would have pushed a pointless guard into
-   * scroll-only code.
-   *
-   * So the trigger is a handler that both suppresses the default AND routes the
-   * application somewhere. That is exactly the combination that steals a
-   * Cmd-click.
-   */
-  const ROUTES_THE_APP = /\b(onNavigate|goTo|onSupplierSignup|onSecureLogin|onForgotPassword|onBackToLogin)\s*\(/
-
   it.each(Object.entries(SOURCES))('%s guards every navigating anchor', (path, source) => {
     const handlers = [...source.matchAll(/onClick=\{([\s\S]*?)\}\s*\n/g)].map((match) => match[1])
 
@@ -142,7 +142,7 @@ describe('every intercepting anchor in the codebase uses the guard', () => {
       expect(
         handler.replace(/\s+/g, ' ').trim(),
         `${path}: a handler suppresses the default click AND navigates, without ` +
-          `shouldInterceptAnchorClick() — so Cmd/Ctrl-click cannot open it in a new tab.`,
+          'shouldInterceptAnchorClick() — so Cmd/Ctrl-click cannot open it in a new tab.',
       ).toMatch(/shouldInterceptAnchorClick/)
     }
   })

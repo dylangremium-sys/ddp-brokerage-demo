@@ -31,7 +31,7 @@ interface Props {
 }
 
 export default function TermsPage({ lang, setLang, onNavigate }: Props) {
-  const t = T[lang]
+  const copy = T[lang]
 
   return (
     <CorporatePageShell
@@ -39,64 +39,64 @@ export default function TermsPage({ lang, setLang, onNavigate }: Props) {
       setLang={setLang}
       page="terms"
       onNavigate={onNavigate}
-      heading={t.corpTermsHeading}
+      heading={copy.corpTermsHeading}
     >
       <section className="corp-section">
-        <p className="corp-lead">{t.corpTermsIntro}</p>
+        <p className="corp-lead">{copy.corpTermsIntro}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpTermsEligibilityHeading}</h2>
-        <p>{t.landingDisclaimer}</p>
+        <h2>{copy.corpTermsEligibilityHeading}</h2>
+        <p>{copy.landingDisclaimer}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpTermsAccessHeading}</h2>
-        <p>{t.corpTermsAccessText}</p>
+        <h2>{copy.corpTermsAccessHeading}</h2>
+        <p>{copy.corpTermsAccessText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpTermsServiceHeading}</h2>
-        <p>{t.corpTermsServiceText}</p>
+        <h2>{copy.corpTermsServiceHeading}</h2>
+        <p>{copy.corpTermsServiceText}</p>
       </section>
 
       {/* The reliance section carries the landing page's authority note in
           full. On a terms page this is the operative sentence, not a footnote:
           it is what a buyer is told before relying on a status shown here. */}
       <section className="corp-section corp-section-emphasis">
-        <h2>{t.corpTermsRelianceHeading}</h2>
-        <p>{t.corpTermsRelianceText}</p>
-        <p>{t.landingAuthorityNote}</p>
+        <h2>{copy.corpTermsRelianceHeading}</h2>
+        <p>{copy.corpTermsRelianceText}</p>
+        <p>{copy.landingAuthorityNote}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpTermsSupplierHeading}</h2>
-        <p>{t.corpTermsSupplierText}</p>
+        <h2>{copy.corpTermsSupplierHeading}</h2>
+        <p>{copy.corpTermsSupplierText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpTermsConfidentialityHeading}</h2>
-        <p>{t.corpTermsConfidentialityText}</p>
+        <h2>{copy.corpTermsConfidentialityHeading}</h2>
+        <p>{copy.corpTermsConfidentialityText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpTermsAcceptableHeading}</h2>
-        <p>{t.corpTermsAcceptableText}</p>
+        <h2>{copy.corpTermsAcceptableHeading}</h2>
+        <p>{copy.corpTermsAcceptableText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpTermsIpHeading}</h2>
-        <p>{t.corpTermsIpText}</p>
+        <h2>{copy.corpTermsIpHeading}</h2>
+        <p>{copy.corpTermsIpText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpTermsChangesHeading}</h2>
-        <p>{t.corpTermsChangesText}</p>
+        <h2>{copy.corpTermsChangesHeading}</h2>
+        <p>{copy.corpTermsChangesText}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpTermsContactHeading}</h2>
-        <p>{t.corpTermsContactText}</p>
+        <h2>{copy.corpTermsContactHeading}</h2>
+        <p>{copy.corpTermsContactText}</p>
       </section>
     </CorporatePageShell>
   )

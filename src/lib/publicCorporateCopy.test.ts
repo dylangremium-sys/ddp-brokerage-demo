@@ -199,7 +199,7 @@ describe('the privacy policy matches the network behaviour it describes', () => 
     expect(
       undisclosed,
       `vercel.json permits ${undisclosed.join(', ')} but the privacy policy has no disclosure ` +
-        `rule for it. Add the host to the policy copy and to DISCLOSURE, or remove it from the CSP.`,
+        'rule for it. Add the host to the policy copy and to DISCLOSURE, or remove it from the CSP.',
     ).toEqual([])
   })
 

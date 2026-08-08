@@ -25,13 +25,13 @@ interface Props {
 }
 
 export default function AboutPage({ lang, setLang, onNavigate }: Props) {
-  const t = T[lang]
+  const copy = T[lang]
 
   const steps = [
-    { title: t.homeProcessStep1Title, desc: t.homeProcessStep1Desc },
-    { title: t.homeProcessStep2Title, desc: t.homeProcessStep2Desc },
-    { title: t.homeProcessStep3Title, desc: t.homeProcessStep3Desc },
-    { title: t.homeProcessStep4Title, desc: t.homeProcessStep4Desc },
+    { title: copy.homeProcessStep1Title, desc: copy.homeProcessStep1Desc },
+    { title: copy.homeProcessStep2Title, desc: copy.homeProcessStep2Desc },
+    { title: copy.homeProcessStep3Title, desc: copy.homeProcessStep3Desc },
+    { title: copy.homeProcessStep4Title, desc: copy.homeProcessStep4Desc },
   ]
 
   return (
@@ -40,16 +40,16 @@ export default function AboutPage({ lang, setLang, onNavigate }: Props) {
       setLang={setLang}
       page="about"
       onNavigate={onNavigate}
-      heading={t.corpAboutHeading}
+      heading={copy.corpAboutHeading}
     >
       <section className="corp-section">
-        <h2>{t.corpAboutWhatHeading}</h2>
-        <p className="corp-lead">{t.landingAboutText1}</p>
-        <p>{t.homeHeroBody}</p>
+        <h2>{copy.corpAboutWhatHeading}</h2>
+        <p className="corp-lead">{copy.landingAboutText1}</p>
+        <p>{copy.homeHeroBody}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpAboutProcessHeading}</h2>
+        <h2>{copy.corpAboutProcessHeading}</h2>
         <ol className="corp-steps">
           {/* Keyed by title, not by index: the step titles are distinct and
               stable, and an index key makes React reuse the wrong node if the
@@ -64,30 +64,30 @@ export default function AboutPage({ lang, setLang, onNavigate }: Props) {
             </li>
           ))}
         </ol>
-        <p>{t.corpAboutReviewNote}</p>
+        <p>{copy.corpAboutReviewNote}</p>
       </section>
 
       {/* The limits are stated on their own, under their own heading, rather
           than tucked into a footnote. They are the part of this page a buyer is
           most entitled to see before relying on anything else on it. */}
       <section className="corp-section corp-section-emphasis">
-        <h2>{t.corpAboutLimitsHeading}</h2>
-        <p>{t.landingAuthorityNote}</p>
+        <h2>{copy.corpAboutLimitsHeading}</h2>
+        <p>{copy.landingAuthorityNote}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpAboutAccessHeading}</h2>
-        <p>{t.landingDisclaimer}</p>
+        <h2>{copy.corpAboutAccessHeading}</h2>
+        <p>{copy.landingDisclaimer}</p>
       </section>
 
       <section className="corp-section">
-        <h2>{t.corpAboutCompanyHeading}</h2>
-        <p>{t.corpAboutCompanyIntro}</p>
+        <h2>{copy.corpAboutCompanyHeading}</h2>
+        <p>{copy.corpAboutCompanyIntro}</p>
         <address className="corp-address">
-          {t.homeFooterOfficeLine1}<br />
-          {t.homeFooterOfficeLine2}<br />
-          {t.homeFooterOfficeLine3}<br />
-          {t.homeFooterOfficeTel}
+          {copy.homeFooterOfficeLine1}<br />
+          {copy.homeFooterOfficeLine2}<br />
+          {copy.homeFooterOfficeLine3}<br />
+          {copy.homeFooterOfficeTel}
         </address>
       </section>
     </CorporatePageShell>

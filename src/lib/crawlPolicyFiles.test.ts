@@ -58,14 +58,31 @@ describe('robots.txt', () => {
   })
 
   /**
-   * `Disallow` controls CRAWLING, not indexing. An externally linked `/farmer`
-   * can still surface in results as a bare URL, and disallowing it is in fact
-   * what would stop a crawler ever reading a `noindex` placed there later. So
-   * this is hygiene, not the containment P0.4 asks for; genuine `noindex` for
-   * onboarding and auth surfaces stays with the search-exposure programme.
+   * /farmer IS DELIBERATELY CRAWLABLE. This assertion is the inverse of the one
+   * it replaces, and the reversal is the point.
+   *
+   * `Disallow: /farmer` looked like containment and was the opposite. Disallow
+   * governs CRAWLING; a compliant crawler that obeys it never fetches the page
+   * and therefore never reads the `noindex` the page carries. The exclusion sat
+   * behind the rule that was supposed to enforce it, unreachable — while an
+   * externally linked /farmer could still be indexed as a bare URL, because
+   * nothing had ever delivered an exclusion a search engine could act on.
+   *
+   * Allowing the crawl is what makes the exclusion deliverable. The exclusion
+   * itself is asserted below and in publicPageMetadata.test.ts:
+   *   - `X-Robots-Tag: noindex, nofollow` on the /farmer path (vercel.json)
+   *   - `<meta name="robots" content="noindex,nofollow">` (the register)
    */
-  it('keeps farmer onboarding out of crawling', () => {
-    expect(directives).toContain('Disallow: /farmer')
+  it('does NOT disallow farmer onboarding — the noindex must be fetchable', () => {
+    expect(directives).not.toContain('Disallow: /farmer')
+    const blocksFarmer = directives.some(
+      (line) => /^Disallow:\s*\/farmer/i.test(line),
+    )
+    expect(
+      blocksFarmer,
+      'Disallowing /farmer makes its noindex unreachable to every compliant crawler, ' +
+        'which is the exact defect this policy was changed to fix.',
+    ).toBe(false)
   })
 
   it('keeps the API surface out of crawling', () => {
@@ -141,6 +158,87 @@ describe('sitemap.xml', () => {
       /\/(farmer|admin|api|login|set-password|forgot-password)/i.test(location),
     )
     expect(leaked).toEqual([])
+  })
+})
+
+describe('the X-Robots-Tag header that actually excludes /farmer', () => {
+  /**
+   * WHY THIS HEADER IS THE AUTHORITATIVE CONTROL, NOT THE META TAG.
+   *
+   * `vercel.json` rewrites every non-API path to `/index.html`, so /farmer is
+   * served as the same client-rendered document as everything else. Its
+   * `<meta name="robots">` is injected by JavaScript after the bundle executes.
+   * A crawler that does not run JavaScript — or that runs it and gives up, or
+   * fetches with a budget — sees a document with no exclusion in it at all.
+   *
+   * An HTTP response header has none of those failure modes: it arrives with
+   * the response, before a single byte of script is parsed. That is why the
+   * header is the control and the meta tag is defence in depth, rather than the
+   * other way around.
+   *
+   * These assertions are offline and check CONFIGURATION. Whether production
+   * actually emits the header is a deployed-behaviour question for the
+   * post-deploy check — it cannot be proven from the repository, and this file
+   * deliberately does not pretend otherwise.
+   */
+  const vercelConfig = JSON.parse(read('vercel.json')) as {
+    headers?: Array<{ source: string; headers: Array<{ key: string; value: string }> }>
+    rewrites?: Array<{ source: string; destination: string }>
+  }
+
+  const farmerRules = (vercelConfig.headers ?? []).filter((rule) => rule.source === '/farmer')
+
+  it('sets X-Robots-Tag for the /farmer path', () => {
+    expect(farmerRules.length, 'no header rule targets /farmer in vercel.json').toBe(1)
+
+    const robotsHeader = farmerRules[0].headers.find(
+      (header) => header.key.toLowerCase() === 'x-robots-tag',
+    )
+    expect(robotsHeader, '/farmer has a header rule but no X-Robots-Tag in it').toBeDefined()
+    expect(robotsHeader?.value.replace(/\s+/g, '')).toBe('noindex,nofollow')
+  })
+
+  /**
+   * Scope. A header rule written as `/(.*)` or `/farmer(.*)` would apply
+   * noindex far beyond onboarding — in the worst case to the whole site,
+   * silently de-indexing the corporate pages this PR exists to publish. The
+   * blast radius of getting this wrong is the entire public surface, so the
+   * source is pinned to the exact path.
+   */
+  it('scopes the header to exactly /farmer and nothing else', () => {
+    for (const rule of vercelConfig.headers ?? []) {
+      const setsRobots = rule.headers.some((header) => header.key.toLowerCase() === 'x-robots-tag')
+      if (!setsRobots) continue
+      expect(
+        rule.source,
+        `an X-Robots-Tag rule matches "${rule.source}". Anything broader than the exact ` +
+          `/farmer path risks marking the approved public pages noindex.`,
+      ).toBe('/farmer')
+    }
+  })
+
+  it('does not put X-Robots-Tag on the site-wide header block', () => {
+    const siteWide = (vercelConfig.headers ?? []).find((rule) => rule.source === '/(.*)')
+    expect(siteWide).toBeDefined()
+    expect(
+      siteWide?.headers.map((header) => header.key.toLowerCase()),
+    ).not.toContain('x-robots-tag')
+  })
+
+  it('leaves the site-wide security headers intact', () => {
+    // Adding a rule ahead of the existing block must not displace it.
+    const siteWide = (vercelConfig.headers ?? []).find((rule) => rule.source === '/(.*)')
+    const keys = siteWide?.headers.map((header) => header.key) ?? []
+    expect(keys).toContain('Content-Security-Policy')
+    expect(keys).toContain('X-Frame-Options')
+    expect(keys).toContain('X-Content-Type-Options')
+  })
+
+  it('still rewrites /farmer to the SPA shell, which is why the header is needed', () => {
+    // If this rewrite ever stopped applying, /farmer would 404 rather than
+    // render — and the reasoning above would need revisiting.
+    expect(vercelConfig.rewrites?.[0]?.destination).toBe('/index.html')
+    expect(vercelConfig.rewrites?.[0]?.source).toBe('/((?!api/).*)')
   })
 })
 
