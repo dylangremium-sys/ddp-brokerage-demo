@@ -13,10 +13,15 @@ import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
 
    The supplier route is a real <a href="/farmer"> for the same reason the
    landing page's is: it survives a copy-paste, a QR scan and a WhatsApp share.
-   Note that /farmer is disallowed in robots.txt and marked noindex in the
-   metadata register — linking to it from an indexable page is fine and is not
-   a contradiction. The link is for people; the crawl controls are about whether
-   the onboarding form itself belongs in a search result, and it does not.
+
+   Linking to /farmer from an indexable page is not a contradiction. /farmer is
+   deliberately CRAWLABLE — robots.txt does not disallow it — and excluded from
+   results by an `X-Robots-Tag: noindex, nofollow` response header set for that
+   path in vercel.json, backed by the page-level noindex in the metadata
+   register. Allowing the crawl is what lets a search engine receive the
+   exclusion at all; disallowing it previously meant the noindex was never
+   fetched. The link is for people; the exclusion decides whether the onboarding
+   form belongs in a search result, and it does not.
 ──────────────────────────────────────────────────────────────────────────── */
 
 interface Props {

@@ -146,10 +146,6 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
   // The canonical points at /farmer itself, not "/". Canonicalising onboarding
   // to the landing page would ask a search engine to consolidate them, which is
   // the opposite of keeping them apart.
-  //
-  // Its canonical points at the onboarding path itself, NOT at `/`. Claiming
-  // `/` as canonical for an onboarding form asks a search engine to consolidate
-  // the two, which is the opposite of keeping them apart.
   'farmer-register': {
     title: 'Supplier registration — DDP Brokerage',
     description: 'Licensed supplier registration for the DDP Brokerage platform.',
