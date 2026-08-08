@@ -117,16 +117,36 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
 
   // ── Routable but deliberately NOT indexable ───────────────────────────────
   //
-  // /farmer is a real cold-loadable URL — farmers reach it from a QR code and a
-  // WhatsApp share — so a crawler can be pointed at it by any external link,
-  // and robots.txt `Disallow` governs crawling rather than indexing: a
-  // disallowed URL that someone links to can still surface as a bare result.
+  // ⚠️ P0.4 IS **PARTIAL**, NOT DONE. Read this before scoring it.
   //
-  // Be honest about what this noindex buys. A crawler that OBEYS the Disallow
-  // never fetches the page, so it never reads this tag — the two controls do
-  // not compose the way they appear to. It covers the cases the Disallow does
-  // not: crawlers that ignore robots.txt, and direct fetches. Real containment
-  // of onboarding and auth surfaces remains a search-exposure programme item.
+  // /farmer is a real cold-loadable URL — farmers reach it from a QR code and a
+  // WhatsApp share — so any external link can point a crawler at it. Two
+  // controls are present and they DO NOT COMPOSE:
+  //
+  //   robots.txt  `Disallow: /farmer`  → a compliant crawler never FETCHES it
+  //   this entry   noindex,nofollow    → …and therefore never READS this
+  //
+  // The second is delivered by the page it is forbidden to request. So against
+  // a compliant crawler the effective control is the Disallow alone, and a
+  // Disallow governs crawling, not indexing: an externally linked /farmer can
+  // still surface as a bare URL with no snippet. The noindex only bites where
+  // the Disallow does not — crawlers that ignore robots.txt, and direct fetches.
+  //
+  // Fixing it properly is a crawl-policy DECISION, not a code change, and it is
+  // deliberately not taken here:
+  //
+  //   Option A — drop `Disallow: /farmer` so crawlers may fetch the page and
+  //     actually read the noindex. This is the mechanism search engines
+  //     document for de-indexing, and it is the likely right answer. It also
+  //     means deliberately inviting crawlers into onboarding, so it is the
+  //     owner's call, not a tidy-up.
+  //   Option B — serve `X-Robots-Tag: noindex` from vercel.json. Note this does
+  //     NOT solve it either while the Disallow stands: a header still has to be
+  //     fetched to be read.
+  //
+  // Until one is chosen, the honest status is PARTIAL. publicPageMetadata.test.ts
+  // asserts this contradiction is still present, so nobody can mark P0.4 done
+  // by deleting a comment.
   //
   // Its canonical points at the onboarding path itself, NOT at `/`. Claiming
   // `/` as canonical for an onboarding form asks a search engine to consolidate

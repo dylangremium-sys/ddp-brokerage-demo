@@ -3,6 +3,7 @@ import { T } from '../../translations'
 import type { Lang, Page } from '../../types'
 import { DDPMonogramLogo } from '../logos'
 import { pathForPage } from '../../lib/urlRouting'
+import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
 
 /* ────────────────────────────────────────────────────────────────────────────
    Shell for the public corporate pages (/about, /contact, /privacy, /terms).
@@ -78,7 +79,9 @@ function InternalLink({
       className={className}
       // aria-current marks the page you are already on, for screen readers.
       aria-current={target === currentPage ? 'page' : undefined}
-      onClick={(e) => { e.preventDefault(); onNavigate(target) }}
+      // Guarded, not unconditional: a Cmd/Ctrl-click is the browser's own
+      // "open in a new tab" and must reach the browser. See lib/anchorNavigation.
+      onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate(target) }}
     >
       {children}
     </a>

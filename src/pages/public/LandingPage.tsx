@@ -2,6 +2,7 @@ import { T } from '../../translations'
 import type { Lang, Page } from '../../types'
 import { DDPMonogramLogo } from '../../components/logos'
 import { pathForPage } from '../../lib/urlRouting'
+import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
 
 /* ────────────────────────────────────────────────────────────────────────────
    Homepage — implements the approved LandPage.png visual specification.
@@ -199,7 +200,7 @@ function FooterLink({ target, label, onNavigate }: { target: Page; label: string
     <a
       className="ln-footer-legal-link"
       href={pathForPage(target)}
-      onClick={(e) => { e.preventDefault(); onNavigate(target) }}
+      onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate(target) }}
     >
       {label}
     </a>
@@ -318,7 +319,10 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
             <a
               href="/farmer"
               className="ln-secure-login"
-              onClick={(e) => { e.preventDefault(); onSupplierSignup() }}
+              // Pre-existing anchor, same defect as the footer links had: an
+              // unconditional preventDefault meant a farmer could not Cmd-click
+              // the signup link into a new tab. Guarded now for the same reason.
+              onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onSupplierSignup() }}
             >
               <UserGlyph />
               {lang === 'th' ? 'สมัครเป็นผู้จัดหาสินค้า' : 'Supplier signup'}

@@ -2,6 +2,7 @@ import { T } from '../../translations'
 import type { Lang, Page } from '../../types'
 import CorporatePageShell from '../../components/public/CorporatePageShell'
 import { pathForPage } from '../../lib/urlRouting'
+import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
 
 /* ────────────────────────────────────────────────────────────────────────────
    /contact — public contact information.
@@ -71,7 +72,7 @@ export default function ContactPage({ lang, setLang, onNavigate }: Props) {
           <a
             className="corp-cta"
             href={pathForPage('farmer-register')}
-            onClick={(e) => { e.preventDefault(); onNavigate('farmer-register') }}
+            onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate('farmer-register') }}
           >
             {t.corpContactSupplierCta}
           </a>

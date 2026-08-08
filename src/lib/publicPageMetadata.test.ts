@@ -101,16 +101,52 @@ describe('everything else is fail-closed', () => {
   })
 
   /**
-   * /farmer is the case that shows Disallow and noindex are different controls.
-   * It is routable and crawl-disallowed, and it still needs noindex: robots.txt
-   * governs crawling, so an externally linked disallowed URL can surface in
-   * results as a bare link. Its canonical must point at itself rather than at
-   * "/", or the two get consolidated — the opposite of keeping them apart.
+   * /farmer is routable and marked noindex, and its canonical points at itself
+   * rather than at "/" — canonicalising onboarding to the landing page would
+   * ask a search engine to consolidate the two, the opposite of keeping them
+   * apart.
    */
   it('keeps farmer onboarding routable but out of search', () => {
     const meta = metadataForPage('farmer-register')
     expect(meta.robots).toBe('noindex,nofollow')
     expect(meta.canonicalPath).toBe('/farmer')
+  })
+
+  /**
+   * P0.4 IS PARTIAL — AND THIS TEST EXISTS TO KEEP IT HONEST.
+   *
+   * `Disallow: /farmer` stops a compliant crawler FETCHING the page, so it
+   * never READS the noindex the page carries. The two controls are stacked, not
+   * composed: against a well-behaved crawler the noindex is unreachable, and a
+   * Disallow alone does not prevent an externally linked URL appearing as a
+   * bare result.
+   *
+   * This asserts the contradiction is STILL THERE, deliberately. It is the
+   * inverse of a normal test — it fails when someone resolves the conflict,
+   * which is the moment the PARTIAL status must be revisited rather than
+   * inherited. Whoever makes that change gets pointed at the decision instead
+   * of silently shipping a status nobody re-checked.
+   */
+  it('records that the /farmer noindex is unreachable behind its own Disallow', () => {
+    const directives = read('public/robots.txt')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('#'))
+
+    const farmerIsDisallowed = directives.includes('Disallow: /farmer')
+    const farmerIsNoindex = metadataForPage('farmer-register').robots === 'noindex,nofollow'
+
+    expect(
+      farmerIsDisallowed && farmerIsNoindex,
+      'The /farmer crawl controls have changed. If `Disallow: /farmer` was removed so that ' +
+        'crawlers can now read the noindex, P0.4 may finally be DONE — verify it and update ' +
+        'the status. If the noindex was removed instead, containment got WEAKER. Either way ' +
+        'this is a policy decision that must be re-scored, not a test to delete.',
+    ).toBe(true)
+
+    // And the consequence, stated so it is not rediscovered: the robots file
+    // must keep explaining this, or the next reader will assume it composes.
+    expect(read('public/robots.txt')).toMatch(/never fetches the page and therefore never\s*#?\s*reads/i)
   })
 
   /**

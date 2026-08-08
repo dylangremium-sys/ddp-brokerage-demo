@@ -51,8 +51,11 @@ export default function AboutPage({ lang, setLang, onNavigate }: Props) {
       <section className="corp-section">
         <h2>{t.corpAboutProcessHeading}</h2>
         <ol className="corp-steps">
+          {/* Keyed by title, not by index: the step titles are distinct and
+              stable, and an index key makes React reuse the wrong node if the
+              list is ever reordered. */}
           {steps.map((step, i) => (
-            <li key={i}>
+            <li key={step.title}>
               <span className="corp-step-num" aria-hidden="true">{i + 1}</span>
               <div>
                 <strong>{step.title}</strong>
