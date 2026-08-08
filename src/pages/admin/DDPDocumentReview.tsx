@@ -45,8 +45,8 @@ const TYPE_LABEL: Record<string, string> = {
 
 function formatWhen(iso?: string): string {
   if (!iso) return '—'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+  const parsed = new Date(iso)
+  return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString()
 }
 
 export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<string, string> }) {
@@ -63,7 +63,10 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
 
   useEffect(() => {
     let active = true
-    void runGuardedLoad(
+    // NOT the `void` idiom: runGuardedLoad catches internally and cannot
+    // reject, so an explicit no-op catch states that rather than suppressing an
+    // unknown. Same choice, and same reason, as DDPAccessRequests.tsx.
+    runGuardedLoad(
       loadFarmerDocuments(),
       () => active,
       {
@@ -77,7 +80,7 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
           setLoadError(err instanceof Error ? err.message : 'The evidence register could not be loaded.')
         },
       },
-    )
+    ).catch(() => undefined)
     return () => { active = false }
   }, [reloadToken])
 
@@ -228,7 +231,7 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
                   type="button"
                   className="btn btn-ghost"
                   disabled={!doc.storagePath}
-                  onClick={() => { void openDocument(doc) }}
+                  onClick={() => { openDocument(doc).catch(() => undefined) }}
                 >
                   Open document
                 </button>
@@ -238,7 +241,7 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
                     type="button"
                     className="btn btn-primary"
                     disabled={busyId === doc.id}
-                    onClick={() => { void decide(doc, 'accepted') }}
+                    onClick={() => { decide(doc, 'accepted').catch(() => undefined) }}
                   >
                     {busyId === doc.id ? 'Recording…' : 'Accept'}
                   </button>
@@ -249,7 +252,7 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
                     type="button"
                     className="btn btn-ghost"
                     disabled={busyId === doc.id}
-                    onClick={() => { void decide(doc, 'rejected') }}
+                    onClick={() => { decide(doc, 'rejected').catch(() => undefined) }}
                   >
                     {busyId === doc.id ? 'Recording…' : 'Reject'}
                   </button>
@@ -263,7 +266,7 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
                     // Returning a document to the queue clears its reviewer, so
                     // nobody stays named as responsible for a decision that no
                     // longer stands. Migration 64's trigger does that clearing.
-                    onClick={() => { void decide(doc, 'pending') }}
+                    onClick={() => { decide(doc, 'pending').catch(() => undefined) }}
                   >
                     Return to queue
                   </button>
