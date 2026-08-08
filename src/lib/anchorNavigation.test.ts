@@ -15,6 +15,21 @@ import { shouldInterceptAnchorClick, type AnchorClickLike } from './anchorNaviga
  * catches it, which is why the decision is a pure function.
  */
 
+/**
+ * The rule is about NAVIGATION, not about preventDefault in general.
+ *
+ * The landing page also has fragment anchors (href="#process") whose handlers
+ * call preventDefault to smooth-scroll. Those are correct as they are: there
+ * is no cross-document navigation to preserve, and the first version of this
+ * scan flagged them, which would have pushed a pointless guard into
+ * scroll-only code.
+ *
+ * So the trigger is a handler that both suppresses the default AND routes the
+ * application somewhere. That is exactly the combination that steals a
+ * Cmd-click.
+ */
+const ROUTES_THE_APP = /\b(onNavigate|goTo|onSupplierSignup|onSecureLogin|onForgotPassword|onBackToLogin)\s*\(/
+
 const plainClick: AnchorClickLike = {
   button: 0,
   metaKey: false,
@@ -91,21 +106,6 @@ describe('every intercepting anchor in the codebase uses the guard', () => {
     ['../components/public/*.tsx', '../pages/public/*.tsx'],
     { query: '?raw', import: 'default', eager: true },
   ) as Record<string, string>
-
-  /**
-   * The rule is about NAVIGATION, not about preventDefault in general.
-   *
-   * The landing page also has fragment anchors (href="#process") whose handlers
-   * call preventDefault to smooth-scroll. Those are correct as they are: there
-   * is no cross-document navigation to preserve, and the first version of this
-   * scan flagged them, which would have pushed a pointless guard into
-   * scroll-only code.
-   *
-   * So the trigger is a handler that both suppresses the default AND routes the
-   * application somewhere. That is exactly the combination that steals a
-   * Cmd-click.
-   */
-  const ROUTES_THE_APP = /\b(onNavigate|goTo|onSupplierSignup|onSecureLogin|onForgotPassword|onBackToLogin)\s*\(/
 
   const navigatingHandlersIn = (source: string) =>
     [...source.matchAll(/onClick=\{([\s\S]*?)\}\s*\n/g)]

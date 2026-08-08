@@ -66,27 +66,13 @@ export default function ContactPage({ lang, setLang, onNavigate }: Props) {
 
       <section className="corp-section">
         <h2>{copy.corpContactOfficeHeading}</h2>
-        <address className="corp-address">
-          <strong>DDP Brokerage Co., Ltd.</strong><br />
-          {copy.homeFooterOfficeLine1}<br />
-          {copy.homeFooterOfficeLine2}<br />
-          {copy.homeFooterOfficeLine3}<br />
-          {copy.homeFooterOfficeTel}
-        </address>
+        <OfficeAddress lang={lang} />
       </section>
 
       <section className="corp-section">
         <h2>{copy.corpContactSupplierHeading}</h2>
         <p>{copy.corpContactSupplierText}</p>
-        <p>
-          <a
-            className="corp-cta"
-            href={pathForPage('farmer-register')}
-            onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate('farmer-register') }}
-          >
-            {copy.corpContactSupplierCta}
-          </a>
-        </p>
+        <SupplierCta lang={lang} onNavigate={onNavigate} />
       </section>
 
       {/* Practical, and also the honest security position: email is not where
@@ -96,5 +82,46 @@ export default function ContactPage({ lang, setLang, onNavigate }: Props) {
         <p>{copy.corpContactDocumentsNote}</p>
       </section>
     </CorporatePageShell>
+  )
+}
+
+/** Registered office, as published in the landing page footer. */
+function OfficeAddress({ lang }: { lang: Lang }) {
+  const copy = T[lang]
+
+  return (
+    <address className="corp-address">
+      <strong>DDP Brokerage Co., Ltd.</strong><br />
+      {copy.homeFooterOfficeLine1}<br />
+      {copy.homeFooterOfficeLine2}<br />
+      {copy.homeFooterOfficeLine3}<br />
+      {copy.homeFooterOfficeTel}
+    </address>
+  )
+}
+
+/**
+ * The route into supplier onboarding.
+ *
+ * A real <a href="/farmer"> so it survives a copy-paste, a QR scan and a
+ * WhatsApp share — the ways farmers actually receive it — and guarded so a
+ * Cmd-click still opens a new tab. Note /farmer is deliberately crawlable and
+ * carries noindex via an X-Robots-Tag header plus a meta tag; linking to it
+ * from an indexable page is not a contradiction. The link is for people, and
+ * the exclusion controls decide whether the form itself belongs in a result.
+ */
+function SupplierCta({ lang, onNavigate }: { lang: Lang; onNavigate: (page: Page) => void }) {
+  const copy = T[lang]
+
+  return (
+    <p>
+      <a
+        className="corp-cta"
+        href={pathForPage('farmer-register')}
+        onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate('farmer-register') }}
+      >
+        {copy.corpContactSupplierCta}
+      </a>
+    </p>
   )
 }

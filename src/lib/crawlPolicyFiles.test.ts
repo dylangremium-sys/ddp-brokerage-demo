@@ -212,7 +212,7 @@ describe('the X-Robots-Tag header that actually excludes /farmer', () => {
       expect(
         rule.source,
         `an X-Robots-Tag rule matches "${rule.source}". Anything broader than the exact ` +
-          `/farmer path risks marking the approved public pages noindex.`,
+          '/farmer path risks marking the approved public pages noindex.',
       ).toBe('/farmer')
     }
   })
