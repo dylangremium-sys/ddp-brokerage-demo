@@ -8,7 +8,7 @@ import {
   saveFarms as lsSaveFarms,
   resetDemo as lsResetDemo,
 } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType, BatchPriceCurrency } from '../types'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType, BatchPriceCurrency, FarmerDocument, FarmerDocumentType, DocumentReviewStatus } from '../types'
 import { BATCH_PRICE_CURRENCIES, DEFAULT_BATCH_PRICE_CURRENCY } from '../types'
 
 export { isSupabaseConfigured }
@@ -934,6 +934,70 @@ export async function recordCoaDocument(input: {
     // manufacture a review that no person performed.
   })
   return { id }
+}
+
+/**
+ * Load the evidence register for administrator review.
+ *
+ * Reads under the caller's own policies — "farmer_documents: admin all" is what
+ * returns every row here, and a farmer running the same query sees only their
+ * own. This function adds no privilege.
+ *
+ * THROWS on failure rather than degrading to an empty array. An empty register
+ * and an unreadable one look identical on screen, and "no documents are waiting
+ * for review" is a very different statement from "we could not find out". The
+ * caller renders a failed state; loadBatchPhotosFromDB degrades quietly because
+ * a missing thumbnail is cosmetic, and a missing review queue is not.
+ */
+export async function loadFarmerDocuments(): Promise<FarmerDocument[]> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  const { data, error } = await supabase
+    .from('farmer_documents')
+    .select('id, farm_id, inventory_batch_id, document_type, file_name, file_url, sha256_hex, sha256_recorded_at, review_status, uploaded_at, reviewed_at, reviewed_by')
+    .order('uploaded_at', { ascending: false })
+
+  if (error) {
+    console.error('Supabase error [farmer_documents select]:', error)
+    throw new Error(error.message)
+  }
+
+  return (data ?? []).map((row): FarmerDocument => ({
+    id: row.id as string,
+    farmId: (row.farm_id as string) ?? undefined,
+    batchId: (row.inventory_batch_id as string) ?? undefined,
+    documentType: ((row.document_type as FarmerDocumentType) ?? 'other'),
+    fileName: (row.file_name as string) ?? undefined,
+    storagePath: (row.file_url as string) ?? undefined,
+    sha256Hex: (row.sha256_hex as string) ?? undefined,
+    sha256RecordedAt: (row.sha256_recorded_at as string) ?? undefined,
+    reviewStatus: ((row.review_status as DocumentReviewStatus) ?? 'pending'),
+    uploadedAt: (row.uploaded_at as string) ?? '',
+    reviewedAt: (row.reviewed_at as string) ?? undefined,
+    reviewedBy: (row.reviewed_by as string) ?? undefined,
+  }))
+}
+
+/**
+ * Record an administrator's decision on one document.
+ *
+ * Writes ONLY review_status. `reviewed_by` and `reviewed_at` are deliberately
+ * not sent: migration 64's BEFORE UPDATE trigger takes the reviewer from
+ * auth.uid() and overwrites anything supplied, so an administrator cannot
+ * attribute their decision to a colleague. Sending them here would be dead
+ * weight that reads as though the client chooses the reviewer.
+ *
+ * If migration 64 is absent the update still succeeds and simply records no
+ * reviewer — so this function is safe against either schema, and the constraint
+ * `review_decision_requires_reviewer` is what makes the attributed outcome the
+ * only possible one once the migration is applied.
+ */
+export async function setDocumentReviewStatus(
+  documentId: string,
+  status: DocumentReviewStatus,
+): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!isValidUUID(documentId)) throw new Error('A document id must be a UUID.')
+  await sbUpdate('farmer_documents', { review_status: status }, 'id', documentId)
 }
 
 // Generate a 1-hour signed URL for a private COA file.
