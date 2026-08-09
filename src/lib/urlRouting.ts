@@ -43,6 +43,9 @@ const PATH_TO_PAGE: Record<string, Page> = {
   // sitemap and then render the landing page to everyone who arrived — the
   // failure would look like success in exactly the way the crawl-policy files
   // did before they were made static.
+  // The German buyer page. Its whole purpose is the cold load: a German buyer
+  // arrives from a search result, never from an in-app click.
+  '/de': 'de-buyer',
   '/about': 'about',
   '/contact': 'contact',
   '/privacy': 'privacy',
@@ -52,6 +55,7 @@ const PATH_TO_PAGE: Record<string, Page> = {
 /** Page → canonical path. Pages not listed here revert to root. */
 const PAGE_TO_PATH: Partial<Record<Page, string>> = {
   'farmer-register': '/farmer',
+  'de-buyer': '/de',
   about: '/about',
   contact: '/contact',
   privacy: '/privacy',

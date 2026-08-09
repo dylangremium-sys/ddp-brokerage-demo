@@ -61,6 +61,7 @@ import AboutPage from '../pages/public/AboutPage'
 import ContactPage from '../pages/public/ContactPage'
 import PrivacyPage from '../pages/public/PrivacyPage'
 import TermsPage from '../pages/public/TermsPage'
+import GermanBuyerPage from '../pages/public/GermanBuyerPage'
 
 // Re-exported so scripts/prerender-public-routes.mjs has exactly one module to
 // load. The document builder and the path rule are TypeScript that only the
@@ -129,6 +130,10 @@ export function renderPublicRoutes(): PrerenderedRoute[] {
     {
       page: 'terms',
       bodyHtml: renderToStaticMarkup(<TermsPage lang={lang} setLang={noop} onNavigate={noop} />),
+    },
+    {
+      page: 'de-buyer',
+      bodyHtml: renderToStaticMarkup(<GermanBuyerPage onNavigate={noop} />),
     },
     // Head-only. See the /farmer note in this file's header.
     { page: 'farmer-register', bodyHtml: '' },

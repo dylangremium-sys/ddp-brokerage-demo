@@ -48,6 +48,15 @@ export interface PublicPageMetadata {
   description: string
   canonicalPath: string
   robots: 'index,follow' | 'noindex,nofollow'
+  /**
+   * The document language, written into `<html lang>` on the prerendered page.
+   *
+   * Absent means English, which is what index.html declares and what every page
+   * but /de is written in. A wrong `lang` is not cosmetic: it is what a screen
+   * reader uses to choose a voice, and what a search engine uses to decide
+   * which country's results a page belongs in.
+   */
+  lang?: 'en' | 'de'
 }
 
 /**
@@ -115,6 +124,34 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
     robots: 'index,follow',
   },
 
+  /**
+   * The German-language buyer page.
+   *
+   * WHY GERMAN AND NOT ANOTHER LANGUAGE
+   *   The site publishes English and Thai. Thai serves the SUPPLY side — Thai
+   *   farms, reached by QR code and WhatsApp. Germany and Czechia are the two
+   *   demand-side markets the company names, and neither had any language on
+   *   the site. A German buyer searches in German and would not have reached an
+   *   English page for any query they were likely to type.
+   *
+   * WHAT IT MAY SAY
+   *   Nothing that is not already published in English on the landing page. The
+   *   page is a translation of approved copy — the hero, the four process steps
+   *   and BOTH legal notices — and adds no assertion of its own. That rule is
+   *   not stylistic: no wording here has been through a compliance review in any
+   *   of the six jurisdictions this company operates across, so translation of
+   *   language already standing publicly is the only safe construction
+   *   available. germanBuyerPage.test.ts asserts the notices are present.
+   */
+  'de-buyer': {
+    title: 'DDP Brokerage — Cannabis-Beschaffung für lizenzierte Einkäufer',
+    description:
+      'DDP strukturiert Chargenunterlagen, COAs und Preise lizenzierter Produzenten zu klaren Prüfpaketen. Keine Zertifizierung — nur geprüfte Dokumente.',
+    canonicalPath: '/de',
+    robots: 'index,follow',
+    lang: 'de',
+  },
+
   // ── Routable but deliberately NOT indexable ───────────────────────────────
   //
   // /farmer is a real cold-loadable URL — farmers reach it from a QR code and a
@@ -178,6 +215,47 @@ export function metadataForPage(page: Page): PublicPageMetadata {
 /** The absolute canonical URL for `page`, always on the canonical host. */
 export function canonicalUrlFor(page: Page): string {
   return `${CANONICAL_ORIGIN}${metadataForPage(page).canonicalPath}`
+}
+
+/**
+ * Pages that are the same content in different languages.
+ *
+ * WHY THIS HAS TO BE DECLARED
+ *   Without it, `/` and `/de` are two pages saying the same things in two
+ *   languages, and a search engine is entitled to read that as duplication and
+ *   pick one. `hreflang` is how you say "these are alternates, serve the right
+ *   one to the right reader" instead of leaving it to be guessed.
+ *
+ *   The declaration must be RECIPROCAL — every page in a group must point at
+ *   every other, itself included. A one-way hreflang is ignored outright, which
+ *   is the most common way this is got wrong, so the alternates are generated
+ *   from one group rather than written per page.
+ */
+const TRANSLATION_GROUPS: readonly (readonly Page[])[] = [['landing', 'de-buyer']]
+
+export interface LanguageAlternate {
+  hreflang: string
+  href: string
+}
+
+/**
+ * The `hreflang` alternates for `page`, or none if it has no translations.
+ *
+ * `x-default` names the page served to a reader whose language matches nothing
+ * in the group. English is the site's own default and the language every other
+ * public page is written in.
+ */
+export function languageAlternatesFor(page: Page): LanguageAlternate[] {
+  const group = TRANSLATION_GROUPS.find((pages) => pages.includes(page))
+  if (!group) return []
+
+  const alternates = group.map((member) => ({
+    hreflang: metadataForPage(member).lang ?? 'en',
+    href: canonicalUrlFor(member),
+  }))
+
+  const english = alternates.find((alternate) => alternate.hreflang === 'en')
+  return english ? [...alternates, { hreflang: 'x-default', href: english.href }] : alternates
 }
 
 /** True when the register approves `page` for public search indexing. */

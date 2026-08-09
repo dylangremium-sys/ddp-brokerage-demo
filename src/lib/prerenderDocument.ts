@@ -54,7 +54,7 @@
 //   changes WHEN the approved copy is available, never WHAT it says.
 
 import type { Page } from '../types'
-import { CANONICAL_ORIGIN, metadataForPage } from './publicPageMetadata'
+import { CANONICAL_ORIGIN, languageAlternatesFor, metadataForPage } from './publicPageMetadata'
 
 /** Where a page's prerendered document is written, relative to `dist/`. */
 export function outputPathForPage(page: Page): string {
@@ -93,6 +93,7 @@ const MANAGED_HEAD_PATTERNS: RegExp[] = [
   /<meta\b[^>]*\bproperty=["']og:[^"']*["'][^>]*>\s*/gi,
   /<meta\b[^>]*\bname=["']twitter:[^"']*["'][^>]*>\s*/gi,
   /<link\b[^>]*\brel=["']canonical["'][^>]*>\s*/gi,
+  /<link\b[^>]*\brel=["']alternate["'][^>]*\bhreflang=[^>]*>\s*/gi,
 ]
 
 /**
@@ -132,6 +133,15 @@ export function buildHeadTags(page: Page): string {
   }
   tags.push(`<meta name="twitter:card" content="summary" />`)
 
+  // Reciprocal by construction — languageAlternatesFor returns every member of
+  // the translation group including this page, because a one-way hreflang is
+  // ignored outright.
+  for (const alternate of languageAlternatesFor(page)) {
+    tags.push(
+      `<link rel="alternate" hreflang="${escapeAttribute(alternate.hreflang)}" href="${escapeAttribute(alternate.href)}" />`,
+    )
+  }
+
   return tags.join('\n    ')
 }
 
@@ -161,6 +171,13 @@ export function buildPrerenderedDocument(shellHtml: string, page: Page, bodyHtml
   for (const pattern of MANAGED_HEAD_PATTERNS) {
     doc = doc.replace(pattern, '')
   }
+
+  // The shell is built from index.html, which declares lang="en". A German
+  // document that still claims English is not cosmetic: it is what a screen
+  // reader uses to choose a voice and what a search engine uses to decide whose
+  // results the page belongs in.
+  const lang = metadataForPage(page).lang ?? 'en'
+  doc = doc.replace(/<html\b[^>]*\blang=["'][^"']*["']/i, `<html lang="${escapeAttribute(lang)}"`)
 
   doc = doc.replace('</head>', `  ${buildHeadTags(page)}\n  </head>`)
 
