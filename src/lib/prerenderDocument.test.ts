@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildHeadTags, buildPrerenderedDocument, outputPathForPage } from './prerenderDocument'
+import {
+  buildHeadTags,
+  buildPrerenderedDocument,
+  outputPathFor,
+  outputPathForPage,
+  targetForPage,
+} from './prerenderDocument'
 import { buildSitemapXml, sitemapEntries } from './sitemapDocument'
 import { CANONICAL_ORIGIN, indexablePages, metadataForPage } from './publicPageMetadata'
 import type { Page } from '../types'
@@ -64,7 +70,7 @@ const descriptionOf = (doc: string) => attr(doc, /<meta name="description" conte
 
 describe('every prerendered document carries its own head', () => {
   it.each(indexablePages())('%s gets the register’s title, canonical and robots', (page) => {
-    const doc = buildPrerenderedDocument(SHELL, page, '<main>body</main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage(page), '<main>body</main>')
     const meta = metadataForPage(page)
 
     expect(titleOf(doc)).toBe(meta.title)
@@ -79,7 +85,7 @@ describe('every prerendered document carries its own head', () => {
    */
   it('produces a distinct document for every indexable page', () => {
     const documents = indexablePages().map((page) =>
-      buildPrerenderedDocument(SHELL, page, `<main>${page}</main>`),
+      buildPrerenderedDocument(SHELL, targetForPage(page), `<main>${page}</main>`),
     )
 
     expect(new Set(documents).size).toBe(documents.length)
@@ -88,21 +94,21 @@ describe('every prerendered document carries its own head', () => {
   })
 
   it('replaces the shell’s title rather than leaving two in the document', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'about', '<main>body</main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('about'), '<main>body</main>')
 
     expect(doc.match(/<title>/g)).toHaveLength(1)
     expect(doc).not.toContain('DDP Brokerage — Procurement Intelligence')
   })
 
   it('replaces the shell’s description rather than publishing both', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'privacy', '<main>body</main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('privacy'), '<main>body</main>')
 
     expect(doc.match(/name="description"/g)).toHaveLength(1)
     expect(descriptionOf(doc)).toBe(metadataForPage('privacy').description)
   })
 
   it('emits exactly one canonical, and does not match the one named in a comment', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'terms', '<main>body</main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('terms'), '<main>body</main>')
 
     expect(doc.match(/rel="canonical"/g)).toHaveLength(1)
     expect(doc).not.toContain('a decision record that mentions')
@@ -111,29 +117,29 @@ describe('every prerendered document carries its own head', () => {
 
 describe('the served document contains the page, not an empty root', () => {
   it('renders the body inside #root instead of leaving it empty', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'about', '<main><h1>About DDP Brokerage</h1></main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('about'), '<main><h1>About DDP Brokerage</h1></main>')
 
     expect(doc).toContain('<div id="root"><main><h1>About DDP Brokerage</h1></main></div>')
     expect(doc).not.toContain('<div id="root"></div>')
   })
 
   it('keeps the hashed script and stylesheet the build emitted', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'contact', '<main>body</main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('contact'), '<main>body</main>')
 
     expect(doc).toContain('/assets/index-BGbLJgAg.js')
     expect(doc).toContain('/assets/index-7OWnoBY2.css')
   })
 
   it('refuses a shell that is not the SPA document, rather than writing a broken page', () => {
-    expect(() => buildPrerenderedDocument('<html><body></body></html>', 'about', '<p>x</p>')).toThrow(
-      /root/,
-    )
+    expect(() =>
+      buildPrerenderedDocument('<html><body></body></html>', targetForPage('about'), '<p>x</p>'),
+    ).toThrow(/root/)
   })
 })
 
 describe('/farmer stays excluded, and the exclusion no longer needs JavaScript', () => {
   it('is written with noindex in the served bytes', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'farmer-register', '')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('farmer-register'), '')
 
     expect(robotsOf(doc)).toBe('noindex,nofollow')
   })
@@ -145,14 +151,14 @@ describe('/farmer stays excluded, and the exclusion no longer needs JavaScript',
    * consolidation by accident.
    */
   it('keeps its own canonical rather than pointing at the landing page', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'farmer-register', '')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('farmer-register'), '')
 
     expect(canonicalOf(doc)).toBe(`${CANONICAL_ORIGIN}/farmer`)
     expect(canonicalOf(doc)).not.toBe(`${CANONICAL_ORIGIN}/`)
   })
 
   it('is head-only: the registration flow is not rendered into the page', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'farmer-register', '')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('farmer-register'), '')
 
     expect(doc).toContain('<div id="root"></div>')
   })
@@ -160,7 +166,11 @@ describe('/farmer stays excluded, and the exclusion no longer needs JavaScript',
 
 describe('a page with no register entry cannot become indexable by being prerendered', () => {
   it('falls closed to noindex, exactly as metadataForPage does', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'admin-dashboard' as Page, '<main>secrets</main>')
+    const doc = buildPrerenderedDocument(
+      SHELL,
+      targetForPage('admin-dashboard' as Page),
+      '<main>secrets</main>',
+    )
 
     expect(robotsOf(doc)).toBe('noindex,nofollow')
     expect(descriptionOf(doc)).toBeUndefined()
@@ -169,7 +179,7 @@ describe('a page with no register entry cannot become indexable by being prerend
 
 describe('link previews stop rendering bare', () => {
   it('publishes Open Graph tags for an indexable page', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'about', '<main>body</main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('about'), '<main>body</main>')
     const meta = metadataForPage('about')
 
     expect(doc).toContain(`<meta property="og:title" content="${meta.title}" />`)
@@ -185,7 +195,7 @@ describe('link previews stop rendering bare', () => {
    */
   it('says nothing the register does not already say', () => {
     for (const page of indexablePages()) {
-      const head = buildHeadTags(page)
+      const head = buildHeadTags(targetForPage(page))
       const meta = metadataForPage(page)
 
       expect(head).toContain(`content="${meta.title}"`)
@@ -200,10 +210,65 @@ describe('link previews stop rendering bare', () => {
    * company's officers and not a side effect of a rendering change.
    */
   it('publishes no og:image and no structured data', () => {
-    const doc = buildPrerenderedDocument(SHELL, 'about', '<main>body</main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage('about'), '<main>body</main>')
 
     expect(doc).not.toContain('og:image')
     expect(doc).not.toContain('application/ld+json')
+  })
+})
+
+describe('a document can be built without a Page enum member at all', () => {
+  /**
+   * THIS IS WHAT THE REFACTOR WAS FOR.
+   *
+   * Regulatory updates are published one or two a week from files on disk.
+   * There cannot be an enum member per entry, and inventing one would put
+   * publishing back into a hand-edited route map — the thing the generated
+   * sitemap exists to prevent.
+   *
+   * So a target constructed from content, touching neither the register nor the
+   * Page union, must produce a correct document. If this stops being true, the
+   * content pipeline has no way in.
+   */
+  const contentTarget = {
+    metadata: {
+      title: 'Example regulatory update',
+      description: 'A published entry, built from content rather than the register.',
+      canonicalPath: '/regulatory-updates/2026-08-14-example',
+      robots: 'index,follow' as const,
+    },
+    alternates: [],
+  }
+
+  it('writes the head from content-supplied metadata', () => {
+    const doc = buildPrerenderedDocument(SHELL, contentTarget, '<article><h1>Example</h1></article>')
+
+    expect(doc).toContain('<title>Example regulatory update</title>')
+    expect(doc).toContain(
+      `<link rel="canonical" href="${CANONICAL_ORIGIN}/regulatory-updates/2026-08-14-example" />`,
+    )
+    expect(doc).toContain('<meta name="robots" content="index,follow" />')
+    expect(doc).toContain('<article><h1>Example</h1></article>')
+  })
+
+  it('resolves its output path from the canonical path alone', () => {
+    expect(outputPathFor(contentTarget.metadata.canonicalPath)).toBe(
+      'regulatory-updates/2026-08-14-example/index.html',
+    )
+  })
+
+  it('emits no hreflang when the content declares no alternates', () => {
+    expect(buildPrerenderedDocument(SHELL, contentTarget, '<p>x</p>')).not.toContain('hreflang')
+  })
+
+  /**
+   * The enum path must keep behaving exactly as before — the five corporate
+   * pages legitimately have register entries and must go on using them.
+   */
+  it('leaves the registered pages going through the register', () => {
+    for (const page of indexablePages()) {
+      expect(targetForPage(page).metadata).toEqual(metadataForPage(page))
+    }
   })
 })
 

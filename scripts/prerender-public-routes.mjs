@@ -53,7 +53,8 @@ if (!existsSync(SSR_ENTRY)) {
 const {
   renderPublicRoutes,
   buildPrerenderedDocument,
-  outputPathForPage,
+  outputPathFor,
+  targetForPage,
   buildSitemapXml,
   sitemapEntries,
   sourceFilesForPage,
@@ -134,9 +135,10 @@ if (routes.length === 0) fail('the render entry produced no routes')
 const digests = new Map()
 
 for (const { page, bodyHtml } of routes) {
-  const relativePath = outputPathForPage(page)
+  const target = targetForPage(page)
+  const relativePath = outputPathFor(target.metadata.canonicalPath)
   const absolutePath = join(DIST, relativePath)
-  const document = buildPrerenderedDocument(shellHtml, page, bodyHtml)
+  const document = buildPrerenderedDocument(shellHtml, target, bodyHtml)
 
   mkdirSync(dirname(absolutePath), { recursive: true })
   writeFileSync(absolutePath, document, 'utf8')
