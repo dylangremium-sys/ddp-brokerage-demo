@@ -91,7 +91,18 @@ const isRealDate = (value: string) => {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
 }
 
-/** The markdown sources, read at build time. Filesystem only — see the header. */
+/**
+ * The markdown sources, read at build time. Filesystem only — see the header.
+ *
+ * EVERY .md IN THAT DIRECTORY IS AN ENTRY. That invariant is why the glob is
+ * unfiltered: a file that does not parse fails the build by name rather than
+ * being skipped, so a malformed or misnamed entry can never be silently
+ * unpublished.
+ *
+ * It also means documentation cannot live there. A README.md alongside the
+ * entries was parsed as one and broke the build — correctly. The guide is at
+ * content/README.md, one directory up.
+ */
 const SOURCES = import.meta.glob('/content/regulatory/*.md', {
   query: '?raw',
   import: 'default',
