@@ -62,16 +62,16 @@ export default function ContactPage({ lang, setLang, onNavigate }: Props) {
       </section>
 
       <section className="corp-section">
+        <h2>{copy.corpContactOfficeHeading}</h2>
+        <OfficeAddress lang={lang} />
+      </section>
+
+      <section className="corp-section">
         <h2>{copy.corpContactEmailHeading}</h2>
         <dl className="corp-contact-list">
           <EmailChannel label={copy.corpContactGeneralLabel} address={copy.homeFooterEmail1} />
           <EmailChannel label={copy.corpContactPartnershipsLabel} address={copy.homeFooterEmail2} />
         </dl>
-      </section>
-
-      <section className="corp-section">
-        <h2>{copy.corpContactOfficeHeading}</h2>
-        <OfficeAddress lang={lang} />
       </section>
 
       <section className="corp-section">

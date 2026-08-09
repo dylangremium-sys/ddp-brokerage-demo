@@ -501,15 +501,6 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
 
           <div className="ln-footer-channels">
             <div className="ln-channel">
-              <span className="ln-channel-ico ln-channel-mail" aria-hidden="true"><MailGlyph /></span>
-              <div className="ln-channel-body">
-                <div className="ln-channel-label">{t.homeFooterEmailLabel}</div>
-                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail1}`}>{t.homeFooterEmail1}</a>
-                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail2}`}>{t.homeFooterEmail2}</a>
-              </div>
-            </div>
-
-            <div className="ln-channel">
               <span className="ln-channel-ico ln-channel-pin" aria-hidden="true"><PinGlyph /></span>
               <div className="ln-channel-body">
                 <div className="ln-channel-label">{t.homeFooterOfficeLabel}</div>
@@ -521,6 +512,15 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
                 <span className="ln-channel-tel">{t.homeFooterOfficeTel}</span>
               </div>
             </div>
+            <div className="ln-channel">
+              <span className="ln-channel-ico ln-channel-mail" aria-hidden="true"><MailGlyph /></span>
+              <div className="ln-channel-body">
+                <div className="ln-channel-label">{t.homeFooterEmailLabel}</div>
+                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail1}`}>{t.homeFooterEmail1}</a>
+                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail2}`}>{t.homeFooterEmail2}</a>
+              </div>
+            </div>
+
           </div>
         </div>
 

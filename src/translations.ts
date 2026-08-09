@@ -20,6 +20,9 @@ export const INVENTORY_STATUS_LABEL: Record<InventoryStatus, Record<Lang, string
 
 export const T = {
   en: {
+    // Added while the domain's mailboxes are unreachable: every page that asks
+    // somebody to make contact must offer a channel that currently works.
+    contactByPhone: 'You can also reach us by telephone.',
     // ── Supplier acquisition block (homepage) ─────────────────────────────
     // Cleared copy, 2026-08-09. The buyer may be referenced unnamed as
     // "a certified pharmaceutical buyer in Central Europe" — that exact
@@ -784,6 +787,8 @@ export const T = {
     scopeLoadingSubmissions: 'Loading your submissions…',
   },
   th: {
+    // See the English note on this key.
+    contactByPhone: 'คุณสามารถติดต่อเราทางโทรศัพท์ได้เช่นกัน',
     // ── Supplier acquisition block (homepage) ─────────────────────────────
     // NEWLY DRAFTED THAI — awaiting a Thai reader. Listed in the PR.
     landingSupplierHeading: 'ผู้ผลิตที่ได้รับใบอนุญาตในประเทศไทย',
