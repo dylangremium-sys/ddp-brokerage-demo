@@ -62,8 +62,30 @@ describe('the landing page keeps the metadata it already publishes', () => {
   })
 })
 
+/**
+ * PUBLIC_CORPORATE_PAGES is "a signed-out visitor may see this", which is not
+ * the same as "a search engine may list it". /th/suppliers is the case that
+ * separated the two: it is a real public page, prerendered and linkable, whose
+ * drafted Thai has not yet been read by a Thai speaker and whose brief has
+ * sections with no cleared wording. It is public and deliberately not indexed.
+ *
+ * So the indexing assertions below run over the pages the REGISTER approves,
+ * and the reachability assertions run over every public page. Conflating them
+ * would either force an unready page into the index or stop asserting that a
+ * published page is reachable.
+ */
+const PUBLISHED_CORPORATE_PAGES = PUBLIC_CORPORATE_PAGES.filter(isIndexable)
+
 describe('the corporate pages are approved for indexing', () => {
-  it.each(PUBLIC_CORPORATE_PAGES)('%s is index,follow with its own canonical', (page) => {
+  it('separates published pages from merely-public ones', () => {
+    // If this ever equals PUBLIC_CORPORATE_PAGES again, the distinction has
+    // been lost and an unready page may have been published by accident.
+    expect(PUBLISHED_CORPORATE_PAGES.length).toBeGreaterThan(0)
+    expect(PUBLIC_CORPORATE_PAGES).toContain('th-supplier')
+    expect(PUBLISHED_CORPORATE_PAGES).not.toContain('th-supplier')
+  })
+
+  it.each(PUBLISHED_CORPORATE_PAGES)('%s is index,follow with its own canonical', (page) => {
     const meta = metadataForPage(page)
     expect(meta.robots).toBe('index,follow')
     expect(meta.canonicalPath).toBe(pathForPage(page))
@@ -73,7 +95,7 @@ describe('the corporate pages are approved for indexing', () => {
     expect(meta.canonicalPath).not.toBe('/')
   })
 
-  it.each(PUBLIC_CORPORATE_PAGES)('%s has a title and a snippet-length description', (page) => {
+  it.each(PUBLISHED_CORPORATE_PAGES)('%s has a title and a snippet-length description', (page) => {
     const meta = metadataForPage(page)
     expect(meta.title.trim().length).toBeGreaterThan(10)
     expect(meta.description.trim().length).toBeGreaterThan(40)
@@ -82,7 +104,7 @@ describe('the corporate pages are approved for indexing', () => {
     expect(meta.description.length).toBeLessThanOrEqual(160)
   })
 
-  it.each(PUBLIC_CORPORATE_PAGES)('%s cold-loads on its own URL', (page) => {
+  it.each(PUBLISHED_CORPORATE_PAGES)('%s cold-loads on its own URL', (page) => {
     // The sitemap sends visitors straight to these paths with no in-app
     // navigation first. A path the router does not accept would render the
     // landing page to every one of them.

@@ -56,7 +56,7 @@ export interface PublicPageMetadata {
    * reader uses to choose a voice, and what a search engine uses to decide
    * which country's results a page belongs in.
    */
-  lang?: 'en' | 'de' | 'cs'
+  lang?: 'en' | 'de' | 'cs' | 'th'
   /**
    * The date this page's content was last reviewed, as YYYY-MM-DD.
    *
@@ -189,6 +189,37 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
     canonicalPath: '/cs',
     robots: 'index,follow',
     lang: 'cs',
+    lastReviewed: '2026-08-09',
+  },
+
+  /**
+   * The Thai supplier page. INDEXABLE ONLY ONCE A THAI SPEAKER HAS READ IT.
+   *
+   * Supply acquisition is the commercial focus and this is the page that serves
+   * it, so it will matter more than /de or /cs. It ships `noindex` all the
+   * same, for two reasons that are both temporary:
+   *
+   *   Several sections the brief asked for have no cleared wording in any
+   *   language and are absent from the page — see PENDING_SECTIONS in
+   *   pages/public/thaiSupplierCopy.ts.
+   *
+   *   Its five headings and its document list were drafted by machine. Every
+   *   other sentence on the page is human-written Thai referenced from
+   *   translations.ts, including both legal notices, but "most of it is fine"
+   *   is not the standard for the audience judging it.
+   *
+   * The sitemap generator excludes it automatically while robots says noindex.
+   * Publishing it means changing this value AND the hand-written URL list in
+   * crawlPolicyFiles.test.ts — two deliberate edits by a person, which is the
+   * point.
+   */
+  'th-supplier': {
+    title: 'สมัครเป็นผู้จัดหาสินค้า — DDP Brokerage',
+    description:
+      'เอกสารที่ผู้ผลิตที่ได้รับใบอนุญาตต้องเตรียมก่อนยื่นคำขอกับ DDP Brokerage: ใบอนุญาต COA เฉพาะแบทช์ และบันทึกแบทช์',
+    canonicalPath: '/th/suppliers',
+    robots: 'noindex,nofollow',
+    lang: 'th',
     lastReviewed: '2026-08-09',
   },
 

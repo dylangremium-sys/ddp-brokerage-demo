@@ -20,6 +20,44 @@ export const INVENTORY_STATUS_LABEL: Record<InventoryStatus, Record<Lang, string
 
 export const T = {
   en: {
+    // ── Supplier registration (/farmer) ──────────────────────────────────
+    // Moved here from inline `isTh ? … : …` ternaries in
+    // pages/farmer/FarmerRegister.tsx. The Thai is the original human-written
+    // wording, carried across unchanged — nothing here was translated by
+    // machine. It lived in the component because that page predates the
+    // register; keeping it there meant the one page written FOR Thai suppliers
+    // was the one page whose Thai nobody could find.
+    farmerRegErrNameRequired: 'Name is required.',
+    farmerRegErrEmailRequired: 'Email is required.',
+    farmerRegErrPhoneRequired: 'Phone number is required.',
+    farmerRegErrIntakeClosed: 'The request form is not available yet. Please contact the DDP team directly.',
+    farmerRegErrRetry: 'The request could not be sent. Please try again.',
+    farmerRegErrGeneric: 'The request could not be sent.',
+    farmerRegReviewNote: 'The DDP team will review your request. If accepted, we will email you an invitation to create your account.',
+    farmerRegAdminOnlyNote: 'Supplier accounts are issued by an administrator only. You do not have an account yet.',
+    farmerRegTwoMinutes: 'It takes 2 minutes. Our team reviews each request and sends an invitation by email.',
+    farmerRegQrHint: 'Scan the QR code or share the /farmer link to open this form directly.',
+    farmerRegSubmittedTitle: 'We have your request',
+    farmerRegContactAt: 'We will contact you at: ',
+    farmerRegBackHome: 'Back to home',
+    farmerRegHeading: 'Join as a Supplier',
+    farmerRegShareLink: 'Share this link with farmers',
+    farmerRegNameLabel: 'Your name or farm nickname',
+    farmerRegNamePlaceholder: 'e.g. Green Valley Farm',
+    farmerRegEmailLabel: 'Email address',
+    farmerRegEmailPlaceholder: 'e.g. somchai@example.com',
+    farmerRegEmailHint: 'Your invitation will be sent to this address.',
+    farmerRegPhoneLabel: 'Phone number',
+    farmerRegPhonePlaceholder: 'e.g. 0812345678',
+    farmerRegProvinceLabel: 'Province',
+    farmerRegProvincePlaceholder: 'Select your province',
+    farmerRegRoleLabel: 'Your role',
+    farmerRegRoleFarmer: 'Farmer',
+    farmerRegRoleManager: 'Farm Manager',
+    farmerRegRoleBroker: 'Broker',
+    farmerRegPreferredLang: 'Preferred language',
+    farmerRegSending: 'Sending…',
+    farmerRegSubmit: 'Request access',
     // Nav
     farmerGroupLabel: 'FARMER',
     ddpGroupLabel: 'DDP',
@@ -726,6 +764,44 @@ export const T = {
     scopeLoadingSubmissions: 'Loading your submissions…',
   },
   th: {
+    // ── Supplier registration (/farmer) ──────────────────────────────────
+    // Moved here from inline `isTh ? … : …` ternaries in
+    // pages/farmer/FarmerRegister.tsx. The Thai is the original human-written
+    // wording, carried across unchanged — nothing here was translated by
+    // machine. It lived in the component because that page predates the
+    // register; keeping it there meant the one page written FOR Thai suppliers
+    // was the one page whose Thai nobody could find.
+    farmerRegErrNameRequired: 'กรุณากรอกชื่อ',
+    farmerRegErrEmailRequired: 'กรุณากรอกอีเมล',
+    farmerRegErrPhoneRequired: 'กรุณากรอกเบอร์โทรศัพท์',
+    farmerRegErrIntakeClosed: 'ขณะนี้ยังไม่เปิดรับคำขอผ่านแบบฟอร์ม กรุณาติดต่อทีมงาน DDP โดยตรง',
+    farmerRegErrRetry: 'ส่งคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+    farmerRegErrGeneric: 'ส่งคำขอไม่สำเร็จ',
+    farmerRegReviewNote: 'ทีมงาน DDP จะตรวจสอบคำขอของคุณ และหากผ่านการพิจารณา เราจะส่งคำเชิญไปยังอีเมลของคุณเพื่อสร้างบัญชี',
+    farmerRegAdminOnlyNote: 'บัญชีผู้จัดหาสินค้าออกให้โดยผู้ดูแลระบบเท่านั้น คุณยังไม่มีบัญชีในขั้นตอนนี้',
+    farmerRegTwoMinutes: 'ใช้เวลาแค่ 2 นาที ทีมงานจะตรวจสอบและส่งคำเชิญทางอีเมล',
+    farmerRegQrHint: 'สแกน QR หรือส่งลิงก์ /farmer เพื่อเปิดฟอร์มนี้โดยตรง',
+    farmerRegSubmittedTitle: 'ได้รับคำขอของคุณแล้ว',
+    farmerRegContactAt: 'อีเมลที่ใช้ติดต่อ: ',
+    farmerRegBackHome: 'กลับสู่หน้าแรก',
+    farmerRegHeading: 'สมัครเป็นผู้จัดหาสินค้า',
+    farmerRegShareLink: 'แชร์ลิงก์นี้ให้เกษตรกร',
+    farmerRegNameLabel: 'ชื่อ หรือชื่อฟาร์ม',
+    farmerRegNamePlaceholder: 'เช่น สวนพฤกษา',
+    farmerRegEmailLabel: 'อีเมล',
+    farmerRegEmailPlaceholder: 'เช่น somchai@example.com',
+    farmerRegEmailHint: 'เราจะส่งคำเชิญไปยังอีเมลนี้',
+    farmerRegPhoneLabel: 'เบอร์โทรศัพท์',
+    farmerRegPhonePlaceholder: 'เช่น 0812345678',
+    farmerRegProvinceLabel: 'จังหวัด',
+    farmerRegProvincePlaceholder: 'เลือกจังหวัด',
+    farmerRegRoleLabel: 'บทบาทของคุณ',
+    farmerRegRoleFarmer: 'เกษตรกร',
+    farmerRegRoleManager: 'ผู้จัดการฟาร์ม',
+    farmerRegRoleBroker: 'นายหน้า',
+    farmerRegPreferredLang: 'ภาษาที่ต้องการ',
+    farmerRegSending: 'กำลังส่ง…',
+    farmerRegSubmit: 'ขอเข้าใช้งาน',
     // Nav
     farmerGroupLabel: 'เกษตรกร',
     ddpGroupLabel: 'DDP',

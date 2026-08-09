@@ -60,6 +60,7 @@ import ContactPage from './pages/public/ContactPage'
 import PrivacyPage from './pages/public/PrivacyPage'
 import TermsPage from './pages/public/TermsPage'
 import LocalisedBuyerPage from './pages/public/LocalisedBuyerPage'
+import ThaiSupplierPage from './pages/public/ThaiSupplierPage'
 import LoginPage from './pages/public/LoginPage'
 import SetPasswordPage from './pages/public/SetPasswordPage'
 import ForgotPasswordPage from './pages/public/ForgotPasswordPage'
@@ -1377,6 +1378,8 @@ export default function App() {
       {page === 'de-buyer' && <LocalisedBuyerPage page="de-buyer" onNavigate={goTo} />}
 
       {page === 'cs-buyer' && <LocalisedBuyerPage page="cs-buyer" onNavigate={goTo} />}
+
+      {page === 'th-supplier' && <ThaiSupplierPage onNavigate={goTo} />}
 
       {/* ── Error banner ── */}
       {dbError && (

@@ -431,6 +431,11 @@ export type Page =
   // The Czech-language buyer page at /cs. Same construction as /de: a
   // standalone public document, not a third app language.
   | 'cs-buyer'
+  // The Thai-language supplier page at /th/suppliers. Unlike /de and /cs this
+  // is the acquisition side: it is content a Thai producer searches for, and it
+  // links to /farmer, which stays a noindexed form because a form has nothing
+  // to rank.
+  | 'th-supplier'
   // The buyer's own surface. Production has admitted `buyer` as a profile role
   // since migration 39 and carries the organisation tables, but no page existed
   // for one to land on — so `resolvePostLoginDecision` fell a buyer through to
