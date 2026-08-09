@@ -167,6 +167,12 @@ export default function ThaiSupplierPage({ onNavigate }: Props) {
           </ol>
           {/* EXISTING Thai, unchanged. */}
           <p>{copy.farmerRegAdminOnlyNote}</p>
+          {/* This page makes the same promise of an emailed invitation, so it
+              carries the same working channel. */}
+          <p>
+            {copy.contactByPhone}{' '}
+            <strong><a href="tel:+6622108888">{copy.homeFooterOfficeTel}</a></strong>
+          </p>
           <p>
             <InternalLink target="farmer-register" onNavigate={onNavigate}>
               {copy.farmerRegHeading}

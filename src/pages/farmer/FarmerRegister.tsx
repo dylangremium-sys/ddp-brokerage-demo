@@ -126,6 +126,18 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
             {copy.farmerRegContactAt}
             <strong>{email.trim()}</strong>
           </p>
+          {/* A producer who has just submitted this form is told an invitation
+              will arrive by email. Until the domain's mailboxes are reachable
+              that promise cannot be kept, and this screen was the last thing
+              they saw before a dead end. The telephone number is published on
+              the homepage and on /contact already — it is repeated here so the
+              person most likely to need it does not have to go looking. */}
+          <p className="td-muted" style={{ fontSize: 13 }}>
+            {copy.contactByPhone}{' '}
+            <strong>
+              <a href="tel:+6622108888">{copy.homeFooterOfficeTel}</a>
+            </strong>
+          </p>
           <button
             type="button"
             className="btn btn-review btn-lg"
