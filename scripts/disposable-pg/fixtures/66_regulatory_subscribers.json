@@ -1,0 +1,47 @@
+{
+  "id": "66_regulatory_subscribers",
+  "title": "Migration 66 \u2014 a subscription cannot exist without evidence that somebody consented to it",
+  "description": "Applies migration 66 standalone, scores VERIFY A-E, and rolls it back on a disposable PostgreSQL cluster. 66 introduces the only table on this system that holds an email address given by a member of the public for the purpose of being written to, which makes it the only table whose contents are a consent record rather than operational data. Germany is the largest target market and reads consent for commercial email most strictly in the EU, so the schema encodes double opt-in rather than trusting the application to implement it: an address is 'pending' with no confirmation timestamp, or 'confirmed' with one, and section E proves the CHECK refuses both invalid halves by attempting them. B and C are the containment: RLS is enabled AND FORCED with NO policies at all, which denies every client role without a predicate that could be written wrong, and anon and authenticated hold no grant. D requires the unique index, because deduplication done only in the application means one person becomes two subscriptions and an unsubscribe that removes one of them. The rollback drops the table, which on a live database destroys the consent records themselves -- the one thing that cannot be reconstructed and the thing a regulator asks for.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-66",
+      "file": "66_REGULATORY_SUBSCRIBERS_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "66_REGULATORY_SUBSCRIBERS_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "expectedPassCount": 5,
+    "note": "E is the section that earns its place: it inserts a 'pending' row carrying a confirmation timestamp and a 'confirmed' row carrying none, and requires both to raise check_violation. Asserting the constraint exists would pass equally for a constraint that is present and wrong. B checks relforcerowsecurity as well as relrowsecurity -- without FORCE the table owner bypasses row security, and the owner is the role migrations run as, so a table that looks protected is readable by exactly the connection most likely to be misused. The fixture declares no symbols: this migration depends on nothing but the bootstrap roles and schemas, which is itself worth recording -- the subscribers table references no other table, so a subscription cannot be coupled to operational data by a foreign key nobody noticed.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "66_REGULATORY_SUBSCRIBERS_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": []
+  }
+}

@@ -106,8 +106,18 @@ COMMENT ON COLUMN public.regulatory_subscribers.confirmed_ip_hash IS
 -- anon and authenticated alike — is denied, and only the service role used by
 -- the serverless endpoint can read or write. That is stricter than a policy
 -- that happens to evaluate false, because there is no predicate to get wrong.
+--
+-- NO FORCE ROW LEVEL SECURITY. That is owner decision K-10(e), and the harness
+-- refuses any migration that introduces it. This table was written with FORCE
+-- first and the harness rejected it, which is the decision working: FORCE makes
+-- the table OWNER subject to row security, and the owner is the role migrations
+-- and admin tooling run as. Turning it on here would make this one table behave
+-- unlike every other table in the system for the connection most likely to need
+-- it, in exchange for protection against a role that already has to be trusted.
+--
+-- The containment that matters is below: no client role holds any privilege at
+-- all, so there is nothing for a policy to be lenient about.
 ALTER TABLE public.regulatory_subscribers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.regulatory_subscribers FORCE ROW LEVEL SECURITY;
 
 REVOKE ALL ON public.regulatory_subscribers FROM anon, authenticated;
 

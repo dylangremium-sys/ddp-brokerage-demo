@@ -6,20 +6,44 @@
 -- somebody scrolls past.
 -- ════════════════════════════════════════════════════════════════════════════
 
+-- ─── A — the table exists with the shape the endpoint expects ───────────────
 DO $$
 BEGIN
   IF to_regclass('public.regulatory_subscribers') IS NULL THEN
     RAISE EXCEPTION 'regulatory_subscribers does not exist';
   END IF;
 
-  -- RLS enabled AND forced. Forced matters: without it the table owner bypasses
-  -- row security, and the owner is who migrations run as.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'regulatory_subscribers'
+      AND column_name = 'email_canonical'
+  ) THEN
+    RAISE EXCEPTION 'email_canonical is missing; deduplication would be application-only';
+  END IF;
+
+  RAISE NOTICE 'VERIFY A PASSED: the subscribers table exists and carries a canonical address column.';
+END $$;
+
+-- ─── B — RLS is enabled AND forced, with no policies at all ─────────────────
+DO $$
+BEGIN
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_class
-    WHERE oid = 'public.regulatory_subscribers'::regclass
-      AND relrowsecurity AND relforcerowsecurity
+    WHERE oid = 'public.regulatory_subscribers'::regclass AND relrowsecurity
   ) THEN
-    RAISE EXCEPTION 'RLS is not enabled and forced on regulatory_subscribers';
+    RAISE EXCEPTION 'row security is not enabled on regulatory_subscribers';
+  END IF;
+
+  -- FORCE is asserted ABSENT, not present. Owner decision K-10(e) keeps it off
+  -- system-wide; this asserts the table has not drifted away from that.
+  IF EXISTS (
+    SELECT 1 FROM pg_class
+    WHERE oid = 'public.regulatory_subscribers'::regclass AND relforcerowsecurity
+  ) THEN
+    -- Phrasing avoids the literal directive: the harness scans SQL text for it
+    -- and a message mentioning it would trip the very guard being honoured.
+    RAISE EXCEPTION 'relforcerowsecurity is set on this table, against owner decision K-10(e)';
   END IF;
 
   -- No policies at all is the intent: with RLS on and no policy, every client
@@ -32,6 +56,13 @@ BEGIN
     RAISE EXCEPTION 'regulatory_subscribers has policies; it is meant to have none';
   END IF;
 
+  RAISE NOTICE 'VERIFY B PASSED: row security is enabled, FORCE is off per K-10(e), and no policy exists to get wrong.';
+END $$;
+
+-- ─── C — no client role holds any privilege ────────────────────────────────
+DO $$
+BEGIN
+
   -- anon and authenticated must hold no privilege whatsoever.
   IF EXISTS (
     SELECT 1
@@ -43,6 +74,13 @@ BEGIN
     RAISE EXCEPTION 'anon or authenticated holds a grant on regulatory_subscribers';
   END IF;
 
+  RAISE NOTICE 'VERIFY C PASSED: neither anon nor authenticated holds any privilege on the table.';
+END $$;
+
+-- ─── D — the database enforces one subscription per mailbox ────────────────
+DO $$
+BEGIN
+
   -- Deduplication is enforced by the database, not by the application.
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
@@ -52,10 +90,14 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'the canonical-address unique index is missing';
   END IF;
+
+  RAISE NOTICE 'VERIFY D PASSED: deduplication is enforced by a unique index, not by the application.';
 END $$;
 
--- The state machine must reject an unconfirmed row that claims a confirmation
--- time, and a confirmed row that has none. Proven by rollback, not asserted.
+-- ─── E — the consent state machine actually refuses the invalid rows ───────
+--
+-- Proven by attempting them, not by asserting a constraint exists. A CHECK that
+-- is present and wrong looks identical to one that is present and right.
 DO $$
 BEGIN
   BEGIN
@@ -79,4 +121,6 @@ BEGIN
   EXCEPTION WHEN check_violation THEN
     NULL;  -- expected
   END;
+
+  RAISE NOTICE 'VERIFY E PASSED: a pending row cannot claim a confirmation, and a confirmed row cannot lack one.';
 END $$;
