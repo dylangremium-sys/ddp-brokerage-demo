@@ -46,6 +46,7 @@ const PATH_TO_PAGE: Record<string, Page> = {
   // The German buyer page. Its whole purpose is the cold load: a German buyer
   // arrives from a search result, never from an in-app click.
   '/de': 'de-buyer',
+  '/cs': 'cs-buyer',
   '/about': 'about',
   '/contact': 'contact',
   '/privacy': 'privacy',
@@ -56,6 +57,7 @@ const PATH_TO_PAGE: Record<string, Page> = {
 const PAGE_TO_PATH: Partial<Record<Page, string>> = {
   'farmer-register': '/farmer',
   'de-buyer': '/de',
+  'cs-buyer': '/cs',
   about: '/about',
   contact: '/contact',
   privacy: '/privacy',

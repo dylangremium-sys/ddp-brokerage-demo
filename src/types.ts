@@ -428,6 +428,9 @@ export type Page =
   // public page that stands on its own, and it states nothing that is not
   // already published in English on the landing page.
   | 'de-buyer'
+  // The Czech-language buyer page at /cs. Same construction as /de: a
+  // standalone public document, not a third app language.
+  | 'cs-buyer'
   // The buyer's own surface. Production has admitted `buyer` as a profile role
   // since migration 39 and carries the organisation tables, but no page existed
   // for one to land on — so `resolvePostLoginDecision` fell a buyer through to

@@ -59,7 +59,7 @@ import AboutPage from './pages/public/AboutPage'
 import ContactPage from './pages/public/ContactPage'
 import PrivacyPage from './pages/public/PrivacyPage'
 import TermsPage from './pages/public/TermsPage'
-import GermanBuyerPage from './pages/public/GermanBuyerPage'
+import LocalisedBuyerPage from './pages/public/LocalisedBuyerPage'
 import LoginPage from './pages/public/LoginPage'
 import SetPasswordPage from './pages/public/SetPasswordPage'
 import ForgotPasswordPage from './pages/public/ForgotPasswordPage'
@@ -1374,7 +1374,9 @@ export default function App() {
         <TermsPage lang={lang} setLang={setLang} onNavigate={goTo} />
       )}
 
-      {page === 'de-buyer' && <GermanBuyerPage onNavigate={goTo} />}
+      {page === 'de-buyer' && <LocalisedBuyerPage page="de-buyer" onNavigate={goTo} />}
+
+      {page === 'cs-buyer' && <LocalisedBuyerPage page="cs-buyer" onNavigate={goTo} />}
 
       {/* ── Error banner ── */}
       {dbError && (

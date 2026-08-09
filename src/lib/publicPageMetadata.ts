@@ -56,7 +56,7 @@ export interface PublicPageMetadata {
    * reader uses to choose a voice, and what a search engine uses to decide
    * which country's results a page belongs in.
    */
-  lang?: 'en' | 'de'
+  lang?: 'en' | 'de' | 'cs'
 }
 
 /**
@@ -152,6 +152,23 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
     lang: 'de',
   },
 
+  /**
+   * The Czech-language buyer page.
+   *
+   * Czechia is the second demand-side market the company names. Smaller than
+   * Germany, and reached the same way: a buyer searching in their own language
+   * would not have found an English page. Same rule on what it may say — see
+   * the /de entry above and pages/public/localisedBuyerContent.ts.
+   */
+  'cs-buyer': {
+    title: 'DDP Brokerage — nákup konopí pro licencované kupující',
+    description:
+      'DDP strukturuje šaržní záznamy, COA a ceny licencovaných producentů do přehledných podkladů. Žádná certifikace — pouze zkontrolované dokumenty.',
+    canonicalPath: '/cs',
+    robots: 'index,follow',
+    lang: 'cs',
+  },
+
   // ── Routable but deliberately NOT indexable ───────────────────────────────
   //
   // /farmer is a real cold-loadable URL — farmers reach it from a QR code and a
@@ -231,7 +248,7 @@ export function canonicalUrlFor(page: Page): string {
  *   is the most common way this is got wrong, so the alternates are generated
  *   from one group rather than written per page.
  */
-const TRANSLATION_GROUPS: readonly (readonly Page[])[] = [['landing', 'de-buyer']]
+const TRANSLATION_GROUPS: readonly (readonly Page[])[] = [['landing', 'de-buyer', 'cs-buyer']]
 
 export interface LanguageAlternate {
   hreflang: string
