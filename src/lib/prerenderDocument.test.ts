@@ -236,6 +236,10 @@ describe('a document can be built without a Page enum member at all', () => {
       description: 'A published entry, built from content rather than the register.',
       canonicalPath: '/regulatory-updates/2026-08-14-example',
       robots: 'index,follow' as const,
+      // Content entries carry their own authored review date, exactly as
+      // register pages do. TypeScript refuses a target without one, which is
+      // the point: a published entry with no reviewed date is not publishable.
+      lastReviewed: '2026-08-14',
     },
     alternates: [],
   }

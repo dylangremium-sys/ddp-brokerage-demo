@@ -22,59 +22,7 @@
 //   decides what the XML SAYS lives here, so it is asserted in the default node
 //   suite with no build, no git and no filesystem.
 
-import type { Page } from '../types'
 import { CANONICAL_ORIGIN, indexablePages, metadataForPage } from './publicPageMetadata'
-
-/**
- * The sources whose history dates a page.
- *
- * WHY A DECLARED LIST AND NOT THE MODULE GRAPH
- *   The honest question a `lastmod` answers is "did the words on this page
- *   change". The bundler's import graph would answer a different one — it
- *   reaches every shared utility a component happens to touch, so a change to
- *   an unrelated helper would date the page as freshly edited.
- *
- * WHY translations.ts IS IN EVERY LIST
- *   It holds the words. A page's component is mostly structure; the sentences a
- *   reader and a crawler actually see are keys in that file, so a copy edit that
- *   did not touch the component is still a change to the page.
- *
- *   The cost is an over-claim: editing a Thai string for one page moves the date
- *   on all five. That is an approximation and worth being plain about. It errs
- *   toward "look at this again", where the alternative — omitting translations
- *   and dating a page as unchanged after its text was rewritten — errs toward
- *   "do not bother", which is the stale timestamp the previous decision refused
- *   to hand-maintain.
- *
- * WHY publicPageMetadata.ts IS IN EVERY LIST
- *   It holds the title and description. Those are the page as it appears in a
- *   result, so editing one is editing the page.
- */
-const SHARED_SOURCES = ['src/translations.ts', 'src/lib/publicPageMetadata.ts'] as const
-
-/** Chrome shared by the four corporate pages: header, footer, provenance line. */
-const CORPORATE_SHELL = 'src/components/public/CorporatePageShell.tsx'
-
-const PAGE_SOURCES: Partial<Record<Page, readonly string[]>> = {
-  landing: ['src/pages/public/LandingPage.tsx'],
-  about: ['src/pages/public/AboutPage.tsx', CORPORATE_SHELL],
-  contact: ['src/pages/public/ContactPage.tsx', CORPORATE_SHELL],
-  privacy: ['src/pages/public/PrivacyPage.tsx', CORPORATE_SHELL],
-  terms: ['src/pages/public/TermsPage.tsx', CORPORATE_SHELL],
-  // Standalone: it carries its own chrome and its own German copy, so neither
-  // the corporate shell nor translations.ts changes what it says.
-  // Both localised buyer pages are rendered by one component from one content
-  // file, so both are dated by the same pair.
-  'de-buyer': ['src/pages/public/LocalisedBuyerPage.tsx', 'src/pages/public/localisedBuyerContent.ts'],
-  'cs-buyer': ['src/pages/public/LocalisedBuyerPage.tsx', 'src/pages/public/localisedBuyerContent.ts'],
-}
-
-/** Every file whose last commit dates `page`, shared sources included. */
-export function sourceFilesForPage(page: Page): string[] {
-  const own = PAGE_SOURCES[page]
-  if (!own) return []
-  return [...own, ...SHARED_SOURCES]
-}
 
 export interface SitemapEntry {
   loc: string
@@ -85,16 +33,15 @@ export interface SitemapEntry {
 /**
  * The entries the sitemap may contain, in register order.
  *
- * `lastmodByPage` is supplied by the build script from git. A page missing from
- * it simply gets no date — see buildSitemapXml for why that is all-or-nothing
- * in practice.
+ * Every date comes from the register, where a person wrote it. There is no
+ * derivation and therefore no way for a build environment to change what the
+ * sitemap claims — which is what happened when dates came from git and a
+ * shallow CI clone silently reported the wrong ones.
  */
-export function sitemapEntries(lastmodByPage: Partial<Record<Page, string>> = {}): SitemapEntry[] {
+export function sitemapEntries(): SitemapEntry[] {
   return indexablePages().map((page) => {
-    const entry: SitemapEntry = { loc: `${CANONICAL_ORIGIN}${metadataForPage(page).canonicalPath}` }
-    const lastmod = lastmodByPage[page]
-    if (lastmod) entry.lastmod = lastmod
-    return entry
+    const meta = metadataForPage(page)
+    return { loc: `${CANONICAL_ORIGIN}${meta.canonicalPath}`, lastmod: meta.lastReviewed }
   })
 }
 
@@ -160,11 +107,12 @@ export function buildSitemapXml(entries: SitemapEntry[]): string {
   The host is www.ddpbrokerage.com. The apex 308-redirects to www, so every
   <loc> must use www or a crawler is pointed at a redirect.
 
-  lastmod is the date of the last commit touching the page's own component, the
-  corporate shell where it applies, translations.ts and the metadata register —
-  never a build timestamp, which would claim every page changed on every deploy.
-  Dates are all-or-nothing: if any could not be derived from git, none are
-  written. See src/lib/sitemapDocument.ts.
+  lastmod is the authored lastReviewed date from the register in
+  src/lib/publicPageMetadata.ts — the same date the page itself displays, so a
+  visitor and a search engine are told the same thing. It is never derived from
+  git and never a build timestamp: one would report "a file changed" rather than
+  "a person checked this", and the other would claim every page changed on every
+  deploy.
 
   Farmer onboarding, authentication, operational and evidence surfaces are out
   of scope by policy, not by omission.
