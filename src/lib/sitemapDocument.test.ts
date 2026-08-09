@@ -8,6 +8,10 @@ import {
 } from './sitemapDocument'
 import { CANONICAL_ORIGIN, approvedSitemapUrls, indexablePages } from './publicPageMetadata'
 import type { Page } from '../types'
+import { LOCALISED_BUYER_CONTENT } from '../pages/public/localisedBuyerContent'
+
+/** The buyer pages rendered from one shared component — see the note below. */
+const LOCALISED_PAGES: Page[] = LOCALISED_BUYER_CONTENT.map((c) => c.page)
 
 const locsOf = (xml: string) => [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1])
 const lastmodsOf = (xml: string) => [...xml.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1])
@@ -129,14 +133,45 @@ describe('every indexable page can actually be dated', () => {
     expect(sources).toContain('src/lib/publicPageMetadata.ts')
   })
 
-  it('gives each page a source list of its own, not one shared list', () => {
-    const ownSources = indexablePages().map((page) =>
-      sourceFilesForPage(page)
-        .filter((f) => !f.startsWith('src/translations') && !f.includes('publicPageMetadata'))
-        .join(','),
-    )
+  /** The sources unique to a page, with the ones every page shares removed. */
+  const ownSourcesOf = (page: Page) =>
+    sourceFilesForPage(page)
+      .filter((f) => !f.startsWith('src/translations') && !f.includes('publicPageMetadata'))
+      .join(',')
 
-    expect(new Set(ownSources).size).toBe(ownSources.length)
+  /**
+   * Pages that have a component to themselves must have a source list to
+   * themselves, or one of them is silently dated by another's history.
+   */
+  it('gives each single-component page a source list of its own', () => {
+    const solo = indexablePages().filter((page) => !LOCALISED_PAGES.includes(page))
+    const own = solo.map(ownSourcesOf)
+
+    expect(new Set(own).size).toBe(own.length)
+  })
+
+  /**
+   * The localised buyer pages are the deliberate exception, and the exception
+   * has a cost worth writing down rather than discovering later.
+   *
+   * /de and /cs are rendered by ONE component from ONE content file, so they
+   * share a source list and therefore always share a lastmod: editing the
+   * German copy moves the Czech date too. That is an over-claim, in the same
+   * direction and for the same reason as including translations.ts — it errs
+   * toward "look at this again" rather than toward a date that says a page is
+   * unchanged when its words were rewritten.
+   *
+   * Splitting the content per language would make the dates exact. It would
+   * also fragment the one file that keeps the two legal notices in step across
+   * languages, which is the more valuable property.
+   */
+  it('dates the localised buyer pages together, because they share a component', () => {
+    const [first, ...rest] = LOCALISED_PAGES
+
+    for (const page of rest) {
+      expect(ownSourcesOf(page)).toBe(ownSourcesOf(first))
+    }
+    expect(ownSourcesOf(first)).toContain('LocalisedBuyerPage')
   })
 
   it('declares no sources for a page the register does not approve', () => {

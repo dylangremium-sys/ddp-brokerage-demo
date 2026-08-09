@@ -63,7 +63,10 @@ const PAGE_SOURCES: Partial<Record<Page, readonly string[]>> = {
   terms: ['src/pages/public/TermsPage.tsx', CORPORATE_SHELL],
   // Standalone: it carries its own chrome and its own German copy, so neither
   // the corporate shell nor translations.ts changes what it says.
-  'de-buyer': ['src/pages/public/GermanBuyerPage.tsx'],
+  // Both localised buyer pages are rendered by one component from one content
+  // file, so both are dated by the same pair.
+  'de-buyer': ['src/pages/public/LocalisedBuyerPage.tsx', 'src/pages/public/localisedBuyerContent.ts'],
+  'cs-buyer': ['src/pages/public/LocalisedBuyerPage.tsx', 'src/pages/public/localisedBuyerContent.ts'],
 }
 
 /** Every file whose last commit dates `page`, shared sources included. */

@@ -200,6 +200,11 @@ describe('sitemap.xml', () => {
       // in English and carries both legal notices, because no wording on this
       // site has had a compliance review in any jurisdiction it operates in.
       `${CANONICAL_ORIGIN}/de`,
+      // /cs — the Czech-language buyer page. Czechia is the second demand-side
+      // market the company names. Added deliberately, same bar as /de: a
+      // translation of already-published English copy, both legal notices
+      // carried, asserted in localisedBuyerPage.test.ts.
+      `${CANONICAL_ORIGIN}/cs`,
     ])
   })
 
