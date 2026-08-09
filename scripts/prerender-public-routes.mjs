@@ -52,6 +52,8 @@ if (!existsSync(SSR_ENTRY)) {
 const {
   renderPublicRoutes,
   renderRegulatoryEntryRoutes,
+  renderRegulatoryFeed,
+  FEED_PATH,
   buildPrerenderedDocument,
   outputPathFor,
   targetForPage,
@@ -70,8 +72,8 @@ if (routes.length === 0) fail('the render entry produced no routes')
 
 const digests = new Map()
 
-for (const { page, bodyHtml } of routes) {
-  const target = targetForPage(page)
+for (const { page, bodyHtml, feedUrl } of routes) {
+  const target = targetForPage(page, feedUrl ? { feedUrl } : {})
   const relativePath = outputPathFor(target.metadata.canonicalPath)
   const absolutePath = join(DIST, relativePath)
   const document = buildPrerenderedDocument(shellHtml, target, bodyHtml)
@@ -120,6 +122,18 @@ for (const { label, target, bodyHtml } of contentRoutes) {
     `entry:     ${relativePath.padEnd(46)} ${String(document.length).padStart(6)} bytes  ${digest.slice(0, 8)}  ${label}`,
   )
 }
+
+// ─── the feed ───────────────────────────────────────────────────────────────
+//
+// Built from the same entries as the documents above. An entry appears here
+// because it exists, not because anyone remembered to add it.
+const feedPath = join(DIST, FEED_PATH.replace(/^\//, ''))
+const feed = renderRegulatoryFeed()
+mkdirSync(dirname(feedPath), { recursive: true })
+writeFileSync(feedPath, feed, 'utf8')
+console.log(
+  `feed:      ${FEED_PATH.padEnd(46)} ${String(feed.length).padStart(6)} bytes  ${(feed.match(/<item>/g) ?? []).length} items`,
+)
 
 console.log(`prerender: ${digests.size} documents written, all distinct`)
 

@@ -65,6 +65,7 @@ import LocalisedBuyerPage from '../pages/public/LocalisedBuyerPage'
 import ThaiSupplierPage from '../pages/public/ThaiSupplierPage'
 import { RegulatoryHubPage, RegulatoryEntryPage } from '../pages/public/RegulatoryUpdatesPage'
 import { regulatoryEntries } from '../content/regulatoryEntries'
+import { articleStructuredData, buildRssFeed } from '../content/rssFeed'
 
 // Re-exported so scripts/prerender-public-routes.mjs has exactly one module to
 // load. The document builder and the path rule are TypeScript that only the
@@ -83,6 +84,21 @@ export { indexablePages } from '../lib/publicPageMetadata'
  * document claims to be.
  */
 const PRERENDER_LANG = 'en' as const
+
+/** Where the feed is served from. Referenced by the hub and by every entry. */
+export const FEED_PATH = '/regulatory-updates/feed.xml'
+const FEED_URL = `https://www.ddpbrokerage.com${FEED_PATH}`
+
+/** The feed itself, built from the same entries as the pages and the sitemap. */
+export function renderRegulatoryFeed(): string {
+  return buildRssFeed(regulatoryEntries(), {
+    title: 'DDP Brokerage — Regulatory updates',
+    description:
+      'Notes on regulatory developments affecting licensed cannabis supply. Each entry carries the date it was last verified and the reviewer responsible.',
+    link: 'https://www.ddpbrokerage.com/regulatory-updates',
+    feedUrl: FEED_URL,
+  })
+}
 
 /** Prop stubs. Nothing below is invoked during a render. */
 const noop = () => {}
@@ -106,6 +122,8 @@ export interface PrerenderedRoute {
   page: Page
   /** Static markup for `<div id="root">`, or '' for a head-only document. */
   bodyHtml: string
+  /** An RSS feed this page is the human view of, if one exists. */
+  feedUrl?: string
 }
 
 /**
@@ -167,6 +185,9 @@ export function renderPublicRoutes(): PrerenderedRoute[] {
     {
       page: 'regulatory-hub',
       bodyHtml: renderToStaticMarkup(<RegulatoryHubPage onNavigate={noop} />),
+      // The hub is the human view of the feed, so it advertises it. A reader
+      // subscribing from a feed-reader browser extension finds it here.
+      feedUrl: FEED_PATH,
     },
     // Head-only. See the /farmer note in this file's header.
     { page: 'farmer-register', bodyHtml: '' },
@@ -193,6 +214,9 @@ export function renderRegulatoryEntryRoutes(): ContentRoute[] {
         lastReviewed: entry.lastVerified,
       },
       alternates: [],
+      // Describes the document, never the company. See rssFeed.ts.
+      structuredData: articleStructuredData(entry),
+      feedUrl: FEED_URL,
     },
     bodyHtml: renderToStaticMarkup(<RegulatoryEntryPage entry={entry} onNavigate={noop} />),
   }))
