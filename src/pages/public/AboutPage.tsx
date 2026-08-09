@@ -77,7 +77,7 @@ export default function AboutPage({ lang, setLang, onNavigate }: Props) {
 
       <section className="corp-section">
         <h2>{copy.corpAboutAccessHeading}</h2>
-        <p>{copy.landingDisclaimer}</p>
+        <p>{copy.landingDisclaimer} {copy.landingDisclaimerAccess}</p>
       </section>
 
       <section className="corp-section">

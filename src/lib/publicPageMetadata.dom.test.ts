@@ -30,7 +30,7 @@ describe('applying metadata for a page', () => {
   it('writes the landing page title, description and canonical', () => {
     applyPublicPageMetadata(document, 'landing')
     const head = headOf()
-    expect(head.title).toBe('DDP Brokerage — Procurement Intelligence')
+    expect(head.title).toBe('DDP Brokerage — Buying Thai Cannabis Supply for EU Buyers')
     expect(head.description).toBe(metadataForPage('landing').description)
     expect(head.robots).toBe('index,follow')
     expect(head.canonical).toBe(`${CANONICAL_ORIGIN}/`)
@@ -71,7 +71,7 @@ describe('stale metadata does not survive navigation', () => {
     const head = headOf()
     expect(head.robots).toBe('index,follow')
     expect(head.canonical).toBe(`${CANONICAL_ORIGIN}/`)
-    expect(head.title).toBe('DDP Brokerage — Procurement Intelligence')
+    expect(head.title).toBe('DDP Brokerage — Buying Thai Cannabis Supply for EU Buyers')
     expect(head.description).toBe(metadataForPage('landing').description)
   })
 

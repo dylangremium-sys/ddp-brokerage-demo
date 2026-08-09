@@ -47,6 +47,7 @@ const PATH_TO_PAGE: Record<string, Page> = {
   // arrives from a search result, never from an in-app click.
   '/de': 'de-buyer',
   '/cs': 'cs-buyer',
+  '/th/suppliers': 'th-supplier',
   '/regulatory-updates': 'regulatory-hub',
   '/about': 'about',
   '/contact': 'contact',
@@ -59,6 +60,7 @@ const PAGE_TO_PATH: Partial<Record<Page, string>> = {
   'farmer-register': '/farmer',
   'de-buyer': '/de',
   'cs-buyer': '/cs',
+  'th-supplier': '/th/suppliers',
   'regulatory-hub': '/regulatory-updates',
   about: '/about',
   contact: '/contact',

@@ -60,6 +60,7 @@ import ContactPage from './pages/public/ContactPage'
 import PrivacyPage from './pages/public/PrivacyPage'
 import TermsPage from './pages/public/TermsPage'
 import LocalisedBuyerPage from './pages/public/LocalisedBuyerPage'
+import ThaiSupplierPage from './pages/public/ThaiSupplierPage'
 import { RegulatoryHubPage, RegulatoryEntryPage } from './pages/public/RegulatoryUpdatesPage'
 import { entryForPath } from './content/regulatoryEntries'
 import LoginPage from './pages/public/LoginPage'
@@ -1379,6 +1380,8 @@ export default function App() {
       {page === 'de-buyer' && <LocalisedBuyerPage page="de-buyer" onNavigate={goTo} />}
 
       {page === 'cs-buyer' && <LocalisedBuyerPage page="cs-buyer" onNavigate={goTo} />}
+
+      {page === 'th-supplier' && <ThaiSupplierPage onNavigate={goTo} />}
 
       {page === 'regulatory-hub' && <RegulatoryHubPage onNavigate={goTo} />}
 

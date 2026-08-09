@@ -20,6 +20,53 @@ export const INVENTORY_STATUS_LABEL: Record<InventoryStatus, Record<Lang, string
 
 export const T = {
   en: {
+    // ── Supplier acquisition block (homepage) ─────────────────────────────
+    // Cleared copy, 2026-08-09. The buyer may be referenced unnamed as
+    // "a certified pharmaceutical buyer in Central Europe" — that exact
+    // phrasing, not a variation of it.
+    landingSupplierHeading: 'Licensed producers in Thailand',
+    landingSupplierDemand: 'We are buying now, for a certified pharmaceutical buyer in Central Europe.',
+    landingSupplierForms: 'Every form — flower, biomass, trim, fresh frozen, crude, distillate, isolate. If it is documented, legal and exportable, we want to see it.',
+    landingSupplierSend: 'Send us your documentation as it is. Licences are verified, laboratory accreditation is confirmed, and documents are checked against the material offered. You do not need a perfect document set to start a conversation. You need a licence and material to sell.',
+    landingSupplierCta: 'Join as a supplier',
+    // ── Supplier registration (/farmer) ──────────────────────────────────
+    // Moved here from inline `isTh ? … : …` ternaries in
+    // pages/farmer/FarmerRegister.tsx. The Thai is the original human-written
+    // wording, carried across unchanged — nothing here was machine-translated.
+    // It lived in the component because that page predates the register, which
+    // meant the one page written FOR Thai suppliers was the one page whose Thai
+    // nobody could find.
+    farmerRegErrNameRequired: 'Name is required.',
+    farmerRegErrEmailRequired: 'Email is required.',
+    farmerRegErrPhoneRequired: 'Phone number is required.',
+    farmerRegErrIntakeClosed: 'The request form is not available yet. Please contact the DDP team directly.',
+    farmerRegErrRetry: 'The request could not be sent. Please try again.',
+    farmerRegErrGeneric: 'The request could not be sent.',
+    farmerRegReviewNote: 'The DDP team will review your request. If accepted, we will email you an invitation to create your account.',
+    farmerRegAdminOnlyNote: 'Supplier accounts are issued by an administrator only. You do not have an account yet.',
+    farmerRegTwoMinutes: 'It takes 2 minutes. We are buying now for a certified pharmaceutical buyer in Central Europe, and our team reviews every request.',
+    farmerRegQrHint: 'Scan the QR code or share the /farmer link to open this form directly.',
+    farmerRegSubmittedTitle: 'We have your request',
+    farmerRegContactAt: 'We will contact you at: ',
+    farmerRegBackHome: 'Back to home',
+    farmerRegHeading: 'Join as a Supplier',
+    farmerRegShareLink: 'Share this link with farmers',
+    farmerRegNameLabel: 'Your name or farm nickname',
+    farmerRegNamePlaceholder: 'e.g. Green Valley Farm',
+    farmerRegEmailLabel: 'Email address',
+    farmerRegEmailPlaceholder: 'e.g. somchai@example.com',
+    farmerRegEmailHint: 'Your invitation will be sent to this address.',
+    farmerRegPhoneLabel: 'Phone number',
+    farmerRegPhonePlaceholder: 'e.g. 0812345678',
+    farmerRegProvinceLabel: 'Province',
+    farmerRegProvincePlaceholder: 'Select your province',
+    farmerRegRoleLabel: 'Your role',
+    farmerRegRoleFarmer: 'Farmer',
+    farmerRegRoleManager: 'Farm Manager',
+    farmerRegRoleBroker: 'Broker',
+    farmerRegPreferredLang: 'Preferred language',
+    farmerRegSending: 'Sending…',
+    farmerRegSubmit: 'Request access',
     // Nav
     farmerGroupLabel: 'FARMER',
     ddpGroupLabel: 'DDP',
@@ -121,7 +168,18 @@ export const T = {
     landingAboutTitle: 'About Us',
     landingAboutText1: 'DDP turns Thai farm supply, batch records, COAs, and pricing into a clear buyer-discussion review pack — helping serious buyers understand what is claimed, what is documented, and what is ready to progress.',
 
-    landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted. Access is limited to onboarded partners during the current onboarding phase.',
+    // ── The licensed-operators notice, in two parts ──────────────────────
+    // Sentence ① is unchanged and its Thai, German and Czech translations are
+    // reused byte-for-byte — publicCorporateCopy tests assert that. Sentence ②
+    // used to read "Access is limited to onboarded partners during the current
+    // onboarding phase", which a producer reads as "the door is closed". On a
+    // business whose current need is supply acquisition that was the wrong
+    // signal on every page. The restriction is unchanged; only the signal is.
+    //
+    // They must always render together as one notice — asserted, because two
+    // keys are two things that can drift apart or be used singly.
+    landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted.',
+    landingDisclaimerAccess: 'Platform accounts are issued by invitation. Licensed producers may request access at any time.',
     landingAuthorityNote: 'DDP organizes, consolidates, and reviews supplier documentation. DDP does not certify export readiness, pharmaceutical readiness, or legal compliance in any jurisdiction. Buyer decisions should rely only on reviewed documents and confirmation from a qualified party.',
 
     // ── Homepage (approved LandPage.png redesign) ──
@@ -726,6 +784,51 @@ export const T = {
     scopeLoadingSubmissions: 'Loading your submissions…',
   },
   th: {
+    // ── Supplier acquisition block (homepage) ─────────────────────────────
+    // NEWLY DRAFTED THAI — awaiting a Thai reader. Listed in the PR.
+    landingSupplierHeading: 'ผู้ผลิตที่ได้รับใบอนุญาตในประเทศไทย',
+    landingSupplierDemand: 'ขณะนี้เรากำลังรับซื้อ เพื่อผู้ซื้อภาคเภสัชกรรมที่ได้รับการรับรองในยุโรปกลาง',
+    landingSupplierForms: 'ทุกรูปแบบ — ดอก ไบโอแมส ทริม ฟรีชฟโรเซน ครูด ดิสทิลเลท ไอโซเลท หากมีเอกสารครบ ถูกกฎหมาย และส่งออกได้ เราต้องการดู',
+    landingSupplierSend: 'ส่งเอกสารของคุณมาตามที่มีอยู่ เราตรวจสอบใบอนุญาต ยืนยันการรับรองห้องปฏิบัติการ และตรวจสอบเอกสารเทียบกับสินค้าที่เสนอ คุณไม่จำเป็นต้องมีชุดเอกสารที่สมบูรณ์เพื่อเริ่มพูดคุย คุณต้องมีใบอนุญาตและสินค้าที่จะขาย',
+    landingSupplierCta: 'สมัครเป็นผู้จัดหาสินค้า',
+    // ── Supplier registration (/farmer) ──────────────────────────────────
+    // Moved here from inline `isTh ? … : …` ternaries in
+    // pages/farmer/FarmerRegister.tsx. The Thai is the original human-written
+    // wording, carried across unchanged — nothing here was machine-translated.
+    // It lived in the component because that page predates the register, which
+    // meant the one page written FOR Thai suppliers was the one page whose Thai
+    // nobody could find.
+    farmerRegErrNameRequired: 'กรุณากรอกชื่อ',
+    farmerRegErrEmailRequired: 'กรุณากรอกอีเมล',
+    farmerRegErrPhoneRequired: 'กรุณากรอกเบอร์โทรศัพท์',
+    farmerRegErrIntakeClosed: 'ขณะนี้ยังไม่เปิดรับคำขอผ่านแบบฟอร์ม กรุณาติดต่อทีมงาน DDP โดยตรง',
+    farmerRegErrRetry: 'ส่งคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+    farmerRegErrGeneric: 'ส่งคำขอไม่สำเร็จ',
+    farmerRegReviewNote: 'ทีมงาน DDP จะตรวจสอบคำขอของคุณ และหากผ่านการพิจารณา เราจะส่งคำเชิญไปยังอีเมลของคุณเพื่อสร้างบัญชี',
+    farmerRegAdminOnlyNote: 'บัญชีผู้จัดหาสินค้าออกให้โดยผู้ดูแลระบบเท่านั้น คุณยังไม่มีบัญชีในขั้นตอนนี้',
+    farmerRegTwoMinutes: 'ใช้เวลาแค่ 2 นาที ขณะนี้เรากำลังรับซื้อเพื่อผู้ซื้อภาคเภสัชกรรมที่ได้รับการรับรองในยุโรปกลาง และทีมงานจะตรวจสอบทุกคำขอ',
+    farmerRegQrHint: 'สแกน QR หรือส่งลิงก์ /farmer เพื่อเปิดฟอร์มนี้โดยตรง',
+    farmerRegSubmittedTitle: 'ได้รับคำขอของคุณแล้ว',
+    farmerRegContactAt: 'อีเมลที่ใช้ติดต่อ: ',
+    farmerRegBackHome: 'กลับสู่หน้าแรก',
+    farmerRegHeading: 'สมัครเป็นผู้จัดหาสินค้า',
+    farmerRegShareLink: 'แชร์ลิงก์นี้ให้เกษตรกร',
+    farmerRegNameLabel: 'ชื่อ หรือชื่อฟาร์ม',
+    farmerRegNamePlaceholder: 'เช่น สวนพฤกษา',
+    farmerRegEmailLabel: 'อีเมล',
+    farmerRegEmailPlaceholder: 'เช่น somchai@example.com',
+    farmerRegEmailHint: 'เราจะส่งคำเชิญไปยังอีเมลนี้',
+    farmerRegPhoneLabel: 'เบอร์โทรศัพท์',
+    farmerRegPhonePlaceholder: 'เช่น 0812345678',
+    farmerRegProvinceLabel: 'จังหวัด',
+    farmerRegProvincePlaceholder: 'เลือกจังหวัด',
+    farmerRegRoleLabel: 'บทบาทของคุณ',
+    farmerRegRoleFarmer: 'เกษตรกร',
+    farmerRegRoleManager: 'ผู้จัดการฟาร์ม',
+    farmerRegRoleBroker: 'นายหน้า',
+    farmerRegPreferredLang: 'ภาษาที่ต้องการ',
+    farmerRegSending: 'กำลังส่ง…',
+    farmerRegSubmit: 'ขอเข้าใช้งาน',
     // Nav
     farmerGroupLabel: 'เกษตรกร',
     ddpGroupLabel: 'DDP',
@@ -821,7 +924,8 @@ export const T = {
     landingAboutTitle: 'เกี่ยวกับเรา',
     landingAboutText1: 'DDP เปลี่ยนข้อมูลอุปทานฟาร์มไทย บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลสำหรับการหารือกับผู้ซื้อที่ชัดเจน — ช่วยให้ผู้ซื้อจริงจังเข้าใจว่าอะไรคือข้อมูลที่แจ้งเอง อะไรมีเอกสารรองรับ และอะไรพร้อมดำเนินการต่อ',
 
-    landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย การเข้าถึงจำกัดเฉพาะพันธมิตรที่เข้าร่วมโครงการในระยะเริ่มต้นนี้',
+    landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย',
+    landingDisclaimerAccess: 'บัญชีผู้ใช้งานแพลตฟอร์มออกให้โดยการเชิญเท่านั้น ผู้ผลิตที่ได้รับใบอนุญาตสามารถขอเข้าใช้งานได้ตลอดเวลา',
     landingAuthorityNote: 'DDP จัดระเบียบ รวบรวม และตรวจทานเอกสารของซัพพลายเออร์ DDP ไม่รับรองความพร้อมด้านการส่งออก ความพร้อมด้านเภสัชกรรม หรือความถูกต้องตามกฎหมายในเขตอำนาจใดๆ การตัดสินใจของผู้ซื้อควรอ้างอิงจากเอกสารที่ตรวจทานแล้วและการยืนยันจากผู้ที่มีคุณสมบัติเท่านั้น',
 
     // ── Homepage (approved LandPage.png redesign) ──

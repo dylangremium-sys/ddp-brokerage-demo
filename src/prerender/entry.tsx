@@ -62,6 +62,7 @@ import ContactPage from '../pages/public/ContactPage'
 import PrivacyPage from '../pages/public/PrivacyPage'
 import TermsPage from '../pages/public/TermsPage'
 import LocalisedBuyerPage from '../pages/public/LocalisedBuyerPage'
+import ThaiSupplierPage from '../pages/public/ThaiSupplierPage'
 import { RegulatoryHubPage, RegulatoryEntryPage } from '../pages/public/RegulatoryUpdatesPage'
 import { regulatoryEntries } from '../content/regulatoryEntries'
 
@@ -156,6 +157,12 @@ export function renderPublicRoutes(): PrerenderedRoute[] {
     {
       page: 'cs-buyer',
       bodyHtml: renderToStaticMarkup(<LocalisedBuyerPage page="cs-buyer" onNavigate={noop} />),
+    },
+    // Prerendered although noindex: it is shared directly with producers, and
+    // the served bytes are what a link preview reads.
+    {
+      page: 'th-supplier',
+      bodyHtml: renderToStaticMarkup(<ThaiSupplierPage onNavigate={noop} />),
     },
     {
       page: 'regulatory-hub',

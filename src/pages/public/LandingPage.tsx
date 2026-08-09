@@ -450,6 +450,34 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
       </section>
 
       {/* ── Assurance strip (dark) ── */}
+      {/* ── Supplier acquisition ──────────────────────────────────────────
+          Placed after the process steps and before the assurance strip, which
+          is where a producer reaches after reading how supply is handled.
+
+          Every other positioning line on this page is buyer-facing — "helps
+          qualified buyers assess supply" — so a Thai producer reading it
+          concluded the site was for somebody else. The two things most likely
+          to move a producer, that there is a real buyer and that imperfect
+          paperwork is not a blocker, appeared nowhere.
+
+          Copy cleared 2026-08-09. The buyer is referenced unnamed, in the
+          exact cleared phrasing; publicCopyConstraints.test.ts pins it. */}
+      <section className="ln-supplier" id="suppliers">
+        <div className="ln-supplier-inner">
+          <h2 className="ln-section-title">{t.landingSupplierHeading}</h2>
+          <p className="ln-supplier-lead">{t.landingSupplierDemand}</p>
+          <p className="ln-supplier-body">{t.landingSupplierForms}</p>
+          <p className="ln-supplier-body">{t.landingSupplierSend}</p>
+          <a
+            href={pathForPage('farmer-register')}
+            className="ln-btn ln-btn-primary"
+            onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onSupplierSignup() }}
+          >
+            {t.landingSupplierCta}
+          </a>
+        </div>
+      </section>
+
       <section className="ln-assurance" id="governance">
         <div className="ln-assurance-inner">
           {assurance.map((a, i) => (
@@ -498,7 +526,7 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
 
         <div className="ln-footer-legalnote">
           <p className="ln-legalnote-line">{t.landingAuthorityNote}</p>
-          <p className="ln-legalnote-line">{t.landingDisclaimer}</p>
+          <p className="ln-legalnote-line">{t.landingDisclaimer} {t.landingDisclaimerAccess}</p>
         </div>
 
         <div className="ln-footer-bottom">
