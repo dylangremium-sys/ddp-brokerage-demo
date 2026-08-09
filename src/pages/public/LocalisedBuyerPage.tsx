@@ -128,7 +128,7 @@ export default function LocalisedBuyerPage({ page, onNavigate }: Props) {
 
           {/* landingDisclaimer. */}
           <h2>{copy.eligibilityHeading}</h2>
-          <p>{copy.eligibility}</p>
+          <p>{copy.eligibility} {copy.eligibilityAccess}</p>
 
           <h2>{copy.contactHeading}</h2>
           <p>

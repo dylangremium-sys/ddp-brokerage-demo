@@ -22,7 +22,7 @@ describe('the public pages render without a browser', () => {
     // entries) and the head-only /farmer. Published entries are NOT here —
     // they carry targets rather than Page members, and come from
     // renderRegulatoryEntryRoutes().
-    expect(routes.length).toBe(indexablePages().length + 2)
+    expect(routes.length).toBe(indexablePages().length + 3) // + /farmer, the hub, /th/suppliers
   })
 
   it.each(indexablePages())('%s produces real markup with a single heading', (page) => {
@@ -92,7 +92,14 @@ describe('the public pages render without a browser', () => {
    * sitemap until it has entries to list.
    */
   it('renders no page that is neither approved nor a named exception', () => {
-    const approved = new Set<string>([...indexablePages(), 'farmer-register', 'regulatory-hub'])
+    const approved = new Set<string>([
+      ...indexablePages(),
+      'farmer-register',
+      'regulatory-hub',
+      // Public and prerendered, deliberately not indexed until a Thai speaker
+      // has read its newly drafted strings.
+      'th-supplier',
+    ])
 
     for (const route of routes) {
       expect(approved.has(route.page), `${route.page} is prerendered but not in the register`).toBe(

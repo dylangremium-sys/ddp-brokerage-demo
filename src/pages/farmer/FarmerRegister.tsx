@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Lang } from '../../types'
+import { T } from '../../translations'
 import { submitAccessRequest, AccessRequestError } from '../../lib/accessRequestClient'
 import FarmerQRCode from '../../components/shared/FarmerQRCode'
 import LangToggle from '../../components/shared/LangToggle'
@@ -51,18 +52,17 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const isThai = lang === 'th'
 
     if (!name.trim()) {
-      setError(isThai ? 'กรุณากรอกชื่อ' : 'Name is required.')
+      setError(copy.farmerRegErrNameRequired)
       return
     }
     if (!email.trim()) {
-      setError(isThai ? 'กรุณากรอกอีเมล' : 'Email is required.')
+      setError(copy.farmerRegErrEmailRequired)
       return
     }
     if (!phone.trim()) {
-      setError(isThai ? 'กรุณากรอกเบอร์โทรศัพท์' : 'Phone number is required.')
+      setError(copy.farmerRegErrPhoneRequired)
       return
     }
 
@@ -84,16 +84,17 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
       if (err instanceof AccessRequestError && err.code === 'backend_unavailable') {
         // The intake table is not in this environment yet. Do not tell the
         // visitor to retry — it cannot succeed. Give them another route.
-        setError(
-          isThai
-            ? 'ขณะนี้ยังไม่เปิดรับคำขอผ่านแบบฟอร์ม กรุณาติดต่อทีมงาน DDP โดยตรง'
-            : 'The request form is not available yet. Please contact the DDP team directly.',
-        )
+        setError(copy.farmerRegErrIntakeClosed)
       } else {
+        // DELIBERATE CHANGE, worth naming: the English path used to show
+        // err.message here — the raw message from the server — while the Thai
+        // path showed a fixed sentence. So an English visitor could be handed
+        // an untranslated internal string, and a Thai visitor never could.
+        // Both now get the same reviewed wording. The specific error is still
+        // available to whoever is debugging; it is just not shown to a supplier
+        // who cannot act on it.
         setError(
-          err instanceof AccessRequestError
-            ? (isThai ? 'ส่งคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : err.message)
-            : (isThai ? 'ส่งคำขอไม่สำเร็จ' : 'The request could not be sent.'),
+          err instanceof AccessRequestError ? copy.farmerRegErrRetry : copy.farmerRegErrGeneric,
         )
       }
     } finally {
@@ -101,7 +102,7 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
     }
   }
 
-  const isTh = lang === 'th'
+  const copy = T[lang]
 
   // Truthful confirmation. Previously this routed straight to a farmer dashboard
   // that requires a session the form never created, so the visitor hit a dead end.
@@ -111,22 +112,18 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
         <div className="page-header farmer-header" style={{ maxWidth: 480, margin: '0 auto 24px' }}>
           <div className="page-eyebrow">DDP Brokerage</div>
           <h1 className="page-title">
-            {isTh ? 'ได้รับคำขอของคุณแล้ว' : 'We have your request'}
+            {copy.farmerRegSubmittedTitle}
           </h1>
         </div>
         <div className="card form-card auth-card">
           <p>
-            {isTh
-              ? 'ทีมงาน DDP จะตรวจสอบคำขอของคุณ และหากผ่านการพิจารณา เราจะส่งคำเชิญไปยังอีเมลของคุณเพื่อสร้างบัญชี'
-              : 'The DDP team will review your request. If accepted, we will email you an invitation to create your account.'}
+            {copy.farmerRegReviewNote}
           </p>
           <p className="td-muted" style={{ fontSize: 13 }}>
-            {isTh
-              ? 'บัญชีผู้จัดหาสินค้าออกให้โดยผู้ดูแลระบบเท่านั้น คุณยังไม่มีบัญชีในขั้นตอนนี้'
-              : 'Supplier accounts are issued by an administrator only. You do not have an account yet.'}
+            {copy.farmerRegAdminOnlyNote}
           </p>
           <p className="td-muted" style={{ fontSize: 13 }}>
-            {isTh ? 'อีเมลที่ใช้ติดต่อ: ' : 'We will contact you at: '}
+            {copy.farmerRegContactAt}
             <strong>{email.trim()}</strong>
           </p>
           <button
@@ -135,7 +132,7 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
             style={{ width: '100%', marginTop: 16 }}
             onClick={onComplete}
           >
-            {isTh ? 'กลับสู่หน้าแรก' : 'Back to home'}
+            {copy.farmerRegBackHome}
           </button>
         </div>
       </div>
@@ -152,25 +149,21 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
       <div className="page-header farmer-header" style={{ maxWidth: 480, margin: '0 auto 24px' }}>
         <div className="page-eyebrow">DDP Brokerage</div>
         <h1 className="page-title">
-          {isTh ? 'สมัครเป็นผู้จัดหาสินค้า' : 'Join as a Supplier'}
+          {copy.farmerRegHeading}
         </h1>
         <p className="page-desc">
-          {isTh
-            ? 'ใช้เวลาแค่ 2 นาที ทีมงานจะตรวจสอบและส่งคำเชิญทางอีเมล'
-            : 'It takes 2 minutes. Our team reviews each request and sends an invitation by email.'}
+          {copy.farmerRegTwoMinutes}
         </p>
       </div>
 
       {/* QR code share card — lets administrators print or forward the link */}
       <div className="card form-card auth-card" style={{ maxWidth: 480, margin: '0 auto 24px', textAlign: 'center' }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#444' }}>
-          {isTh ? 'แชร์ลิงก์นี้ให้เกษตรกร' : 'Share this link with farmers'}
+          {copy.farmerRegShareLink}
         </div>
         <FarmerQRCode size={180} />
         <p className="td-muted" style={{ fontSize: 12, marginTop: 8 }}>
-          {isTh
-            ? 'สแกน QR หรือส่งลิงก์ /farmer เพื่อเปิดฟอร์มนี้โดยตรง'
-            : 'Scan the QR code or share the /farmer link to open this form directly.'}
+          {copy.farmerRegQrHint}
         </p>
       </div>
 
@@ -183,47 +176,47 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
 
         <form onSubmit={e => { void handleSubmit(e) }}>
           <label className="field">
-            <span>{isTh ? 'ชื่อ หรือชื่อฟาร์ม' : 'Your name or farm nickname'}</span>
+            <span>{copy.farmerRegNameLabel}</span>
             <input
               value={name}
               onChange={e => setName(e.target.value)}
               required
-              placeholder={isTh ? 'เช่น สวนพฤกษา' : 'e.g. Green Valley Farm'}
+              placeholder={copy.farmerRegNamePlaceholder}
               autoComplete="name"
             />
           </label>
 
           <label className="field" style={{ marginTop: 14 }}>
-            <span>{isTh ? 'อีเมล' : 'Email address'}</span>
+            <span>{copy.farmerRegEmailLabel}</span>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
-              placeholder={isTh ? 'เช่น somchai@example.com' : 'e.g. somchai@example.com'}
+              placeholder={copy.farmerRegEmailPlaceholder}
               autoComplete="email"
             />
             <span className="td-muted" style={{ fontSize: 12 }}>
-              {isTh ? 'เราจะส่งคำเชิญไปยังอีเมลนี้' : 'Your invitation will be sent to this address.'}
+              {copy.farmerRegEmailHint}
             </span>
           </label>
 
           <label className="field" style={{ marginTop: 14 }}>
-            <span>{isTh ? 'เบอร์โทรศัพท์' : 'Phone number'}</span>
+            <span>{copy.farmerRegPhoneLabel}</span>
             <input
               type="tel"
               value={phone}
               onChange={e => setPhone(e.target.value)}
               required
-              placeholder={isTh ? 'เช่น 0812345678' : 'e.g. 0812345678'}
+              placeholder={copy.farmerRegPhonePlaceholder}
               autoComplete="tel"
             />
           </label>
 
           <label className="field" style={{ marginTop: 14 }}>
-            <span>{isTh ? 'จังหวัด' : 'Province'}</span>
+            <span>{copy.farmerRegProvinceLabel}</span>
             <select value={province} onChange={e => setProvince(e.target.value)}>
-              <option value="">{isTh ? 'เลือกจังหวัด' : 'Select your province'}</option>
+              <option value="">{copy.farmerRegProvincePlaceholder}</option>
               {THAI_PROVINCES.map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
@@ -231,7 +224,7 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
           </label>
 
           <div className="field" style={{ marginTop: 14 }}>
-            <span className="field-label">{isTh ? 'บทบาทของคุณ' : 'Your role'}</span>
+            <span className="field-label">{copy.farmerRegRoleLabel}</span>
             <div className="role-selector">
               {(['Farmer', 'Farm Manager', 'Broker'] as SubRole[]).map(r => (
                 <button
@@ -242,17 +235,17 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
                   onClick={() => setRole(r)}
                 >
                   {r === 'Farmer'
-                    ? (isTh ? 'เกษตรกร' : 'Farmer')
+                    ? (copy.farmerRegRoleFarmer)
                     : r === 'Farm Manager'
-                      ? (isTh ? 'ผู้จัดการฟาร์ม' : 'Farm Manager')
-                      : (isTh ? 'นายหน้า' : 'Broker')}
+                      ? (copy.farmerRegRoleManager)
+                      : (copy.farmerRegRoleBroker)}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="field" style={{ marginTop: 14 }}>
-            <span className="field-label">{isTh ? 'ภาษาที่ต้องการ' : 'Preferred language'}</span>
+            <span className="field-label">{copy.farmerRegPreferredLang}</span>
             <div className="role-selector">
               <button
                 type="button"
@@ -276,8 +269,8 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
             style={{ width: '100%', marginTop: 24 }}
           >
             {submitting
-              ? (isTh ? 'กำลังส่ง…' : 'Sending…')
-              : (isTh ? 'ขอเข้าใช้งาน' : 'Request access')}
+              ? (copy.farmerRegSending)
+              : (copy.farmerRegSubmit)}
           </button>
         </form>
       </div>

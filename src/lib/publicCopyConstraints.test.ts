@@ -108,6 +108,55 @@ describe('public copy never describes how the checking is done', () => {
    * are reworded and the clause disappears, this file notices and the exemption
    * can be removed instead of sitting here forever protecting nothing.
    */
+  /**
+   * The buyer reference is cleared in ONE exact phrasing. A variation is not a
+   * smaller version of a cleared claim — it is an uncleared one, and this is
+   * the kind of string that gets "tidied" by someone improving the copy.
+   */
+  it('references the buyer only in the cleared phrasing', () => {
+    // The cleared phrasing, exactly. Anything else is not a smaller version of
+    // a cleared claim — it is an uncleared one.
+    const CLEARED = 'a certified pharmaceutical buyer in Central Europe'
+
+    for (const lang of languages) {
+      for (const [key, value] of Object.entries(T[lang])) {
+        if (typeof value !== 'string') continue
+        if (!/pharmaceutical buyer/i.test(value)) continue
+        expect(
+          value.includes(CLEARED),
+          `${lang}.${key} references the buyer without the cleared phrasing: ${value}`,
+        ).toBe(true)
+      }
+    }
+  })
+
+  /**
+   * The licensed-operators notice is two keys so that sentence ① keeps its
+   * approved translations byte-for-byte. Two keys are two things that can be
+   * used singly, so this asserts they are always rendered together.
+   */
+  it('renders both halves of the licensed-operators notice together', () => {
+    const sources = import.meta.glob(
+      ['../pages/public/*.tsx', '../components/public/*.tsx'],
+      { query: '?raw', import: 'default', eager: true },
+    ) as Record<string, string>
+
+    // Matches a RENDER — {copy.x} or {t.x} — not a mention in a comment, which
+    // is what a looser check matched the first time this was written.
+    const renders = (source: string, key: string) =>
+      new RegExp(`\\{(?:copy|t)\\.${key}\\}`).test(source)
+
+    for (const [path, source] of Object.entries(sources)) {
+      for (const key of ['landingDisclaimer', 'eligibility']) {
+        if (!renders(source, key)) continue
+        expect(
+          renders(source, `${key}Access`),
+          `${path} renders ${key} without ${key}Access — the notice must never appear as half of itself`,
+        ).toBe(true)
+      }
+    }
+  })
+
   it('still needs its one exemption', () => {
     expect(T.en.corpTermsAcceptableText).toMatch(/automated means/i)
   })

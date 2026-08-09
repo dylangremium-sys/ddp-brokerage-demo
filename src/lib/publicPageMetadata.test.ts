@@ -42,7 +42,7 @@ const OPERATIONAL_PAGES: Page[] = [
 describe('the landing page keeps the metadata it already publishes', () => {
   it('has its expected title, description and canonical', () => {
     const meta = metadataForPage('landing')
-    expect(meta.title).toBe('DDP Brokerage — Procurement Intelligence')
+    expect(meta.title).toBe('DDP Brokerage — Buying Thai Cannabis Supply for EU Buyers')
     expect(meta.canonicalPath).toBe('/')
     expect(meta.robots).toBe('index,follow')
     expect(canonicalUrlFor('landing')).toBe(`${CANONICAL_ORIGIN}/`)

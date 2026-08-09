@@ -49,7 +49,7 @@ export const PUBLIC_AUTH_PAGES: Page[] = [
  * These are the only pages other than the landing page approved for public
  * search indexing; lib/publicPageMetadata.ts is the register that says so.
  */
-export const PUBLIC_CORPORATE_PAGES: Page[] = ['about', 'contact', 'privacy', 'terms', 'de-buyer', 'cs-buyer', 'regulatory-hub', 'regulatory-entry']
+export const PUBLIC_CORPORATE_PAGES: Page[] = ['about', 'contact', 'privacy', 'terms', 'de-buyer', 'cs-buyer', 'th-supplier', 'regulatory-hub', 'regulatory-entry']
 
 /**
  * Pages a signed-out visitor may reach.

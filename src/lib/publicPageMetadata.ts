@@ -56,7 +56,7 @@ export interface PublicPageMetadata {
    * reader uses to choose a voice, and what a search engine uses to decide
    * which country's results a page belongs in.
    */
-  lang?: 'en' | 'de' | 'cs'
+  lang?: 'en' | 'de' | 'cs' | 'th'
   /**
    * The date this page's content was last reviewed, as YYYY-MM-DD.
    *
@@ -96,14 +96,17 @@ export interface PublicPageMetadata {
  */
 const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
   landing: {
-    title: 'DDP Brokerage — Procurement Intelligence',
+    // Retitled for supplier acquisition. "Procurement Intelligence" is owned by
+    // market-research publishers and its searchers want reports, not a broker —
+    // it described the company to nobody who was looking for it.
+    title: 'DDP Brokerage — Buying Thai Cannabis Supply for EU Buyers',
     // Identical to the <meta name="description"> in index.html. The static tag
     // is what a crawler that does not execute JavaScript sees; this entry is
     // what restores the landing description after the visitor navigates to a
     // corporate page and back. They must not drift apart, and
     // publicPageMetadata.test.ts reads index.html to check that they have not.
     description:
-      'DDP turns farm stock, batch records, COAs, and pricing into clear review packs for serious buyers.',
+      'DDP Brokerage buys from licensed Thai producers for a certified pharmaceutical buyer in Central Europe. Send your documentation as it is — our team reviews it.',
     canonicalPath: '/',
     robots: 'index,follow',
     lastReviewed: '2026-08-08',
@@ -189,6 +192,27 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
     canonicalPath: '/cs',
     robots: 'index,follow',
     lang: 'cs',
+    lastReviewed: '2026-08-09',
+  },
+
+  /**
+   * The Thai supplier page. INDEXABLE ONLY ONCE A THAI SPEAKER HAS READ IT.
+   *
+   * Supply acquisition is the commercial focus and this is the page that serves
+   * it. It ships noindex because its newly drafted Thai has not been read by a
+   * Thai speaker — the audience is licensed operators and their compliance
+   * staff, and this audience gives one first impression.
+   *
+   * Lifting it is a one-line change here plus the hand-written URL list in
+   * crawlPolicyFiles.test.ts — two deliberate edits, which is the point.
+   */
+  'th-supplier': {
+    title: 'สมัครเป็นผู้จัดหาสินค้า — DDP Brokerage',
+    description:
+      'เอกสารที่ผู้ผลิตที่ได้รับใบอนุญาตต้องเตรียมก่อนยื่นคำขอกับ DDP Brokerage: ใบอนุญาต COA เฉพาะแบทช์ และบันทึกแบทช์',
+    canonicalPath: '/th/suppliers',
+    robots: 'noindex,nofollow',
+    lang: 'th',
     lastReviewed: '2026-08-09',
   },
 

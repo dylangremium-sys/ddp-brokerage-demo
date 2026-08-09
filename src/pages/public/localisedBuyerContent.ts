@@ -53,8 +53,10 @@ export interface LocalisedBuyerContent {
   limits: string
   /** Heading above landingDisclaimer. */
   eligibilityHeading: string
-  /** landingDisclaimer — licensed operators, lawful jurisdictions only. */
+  /** landingDisclaimer sentence ① — licensed operators, lawful jurisdictions. */
   eligibility: string
+  /** landingDisclaimerAccess — sentence ②. Always renders with eligibility. */
+  eligibilityAccess: string
   /** Heading above the contact paragraph. */
   contactHeading: string
   /** Contact paragraph, split so the two links can be placed inside it. */
@@ -93,7 +95,8 @@ export const LOCALISED_BUYER_CONTENT: LocalisedBuyerContent[] = [
       'DDP organisiert, konsolidiert und prüft Lieferantenunterlagen. DDP zertifiziert weder die Exportfähigkeit noch die pharmazeutische Eignung noch die Einhaltung gesetzlicher Vorgaben in irgendeiner Rechtsordnung. Einkaufsentscheidungen sollten sich ausschließlich auf geprüfte Dokumente und die Bestätigung einer qualifizierten Stelle stützen.',
     eligibilityHeading: 'Wer diese Plattform nutzen darf',
     eligibility:
-      'Diese Plattform richtet sich ausschließlich an lizenzierte Cannabis-Unternehmen in Rechtsordnungen, in denen Anbau, Verarbeitung und Lieferung von Cannabis rechtlich zulässig sind. Der Zugang ist während der laufenden Onboarding-Phase auf aufgenommene Partner beschränkt.',
+      'Diese Plattform richtet sich ausschließlich an lizenzierte Cannabis-Unternehmen in Rechtsordnungen, in denen Anbau, Verarbeitung und Lieferung von Cannabis rechtlich zulässig sind.',
+    eligibilityAccess: 'Plattformkonten werden nur auf Einladung vergeben. Lizenzierte Produzenten können jederzeit Zugang anfragen.',
     contactHeading: 'Kontakt',
     contactBefore: 'Anfragen von lizenzierten Einkäufern nimmt das Unternehmen über die ',
     contactLinkLabel: 'Kontaktseite',
@@ -126,7 +129,8 @@ export const LOCALISED_BUYER_CONTENT: LocalisedBuyerContent[] = [
       'DDP organizuje, konsoliduje a kontroluje dodavatelskou dokumentaci. DDP necertifikuje připravenost k exportu, farmaceutickou způsobilost ani soulad s právními předpisy v žádné jurisdikci. Nákupní rozhodnutí by se měla opírat výhradně o zkontrolované dokumenty a potvrzení kvalifikované strany.',
     eligibilityHeading: 'Kdo může platformu používat',
     eligibility:
-      'Tato platforma je určena výhradně licencovaným subjektům v oblasti konopí, a to v jurisdikcích, kde je pěstování, zpracování a dodávka konopí právně povolena. Přístup je během probíhající fáze onboardingu omezen na přijaté partnery.',
+      'Tato platforma je určena výhradně licencovaným subjektům v oblasti konopí, a to v jurisdikcích, kde je pěstování, zpracování a dodávka konopí právně povolena.',
+    eligibilityAccess: 'Účty na platformě se vydávají pouze na pozvání. Licencovaní producenti mohou o přístup požádat kdykoli.',
     contactHeading: 'Kontakt',
     contactBefore: 'Poptávky licencovaných kupujících přijímá společnost prostřednictvím ',
     contactLinkLabel: 'kontaktní stránky',

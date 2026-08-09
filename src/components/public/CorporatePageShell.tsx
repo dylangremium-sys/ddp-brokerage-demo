@@ -206,7 +206,7 @@ function CorporateFooter({
             assess, and they belong on any page that describes the service. */}
         <div className="corp-footer-legalnote">
           <p>{copy.landingAuthorityNote}</p>
-          <p>{copy.landingDisclaimer}</p>
+          <p>{copy.landingDisclaimer} {copy.landingDisclaimerAccess}</p>
         </div>
 
         <p className="corp-copyright">{copy.homeFooterCopyright}</p>

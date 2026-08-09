@@ -432,6 +432,10 @@ export type Page =
   // standalone public document, not a third app language.
   | 'cs-buyer'
   // The regulatory-updates hub at /regulatory-updates.
+  // The Thai-language supplier page at /th/suppliers. Acquisition side: content
+  // a Thai producer searches for, linking to /farmer, which stays a noindexed
+  // form because a form has nothing to rank.
+  | 'th-supplier'
   | 'regulatory-hub'
   // One published entry. Unlike every other member here, this does NOT identify
   // a single URL: entries are files on disk, one or two new ones a week, so the

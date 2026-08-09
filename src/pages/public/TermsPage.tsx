@@ -47,7 +47,7 @@ export default function TermsPage({ lang, setLang, onNavigate }: Props) {
 
       <section className="corp-section">
         <h2>{copy.corpTermsEligibilityHeading}</h2>
-        <p>{copy.landingDisclaimer}</p>
+        <p>{copy.landingDisclaimer} {copy.landingDisclaimerAccess}</p>
       </section>
 
       <section className="corp-section">

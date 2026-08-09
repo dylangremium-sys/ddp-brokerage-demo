@@ -5738,3 +5738,21 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   .corp-section-emphasis { padding: 18px 18px; }
   .corp-footer { padding: 28px 20px 24px; }
 }
+
+/* ── Supplier acquisition block (landing) ──────────────────────────────────
+   Reuses the landing palette. Sits between the process steps and the
+   assurance strip; see the comment at its render site for why it is there. */
+.landing-shell .ln-supplier {
+  background: #f3efe4;
+  border-top: 1px solid rgba(46, 91, 58, 0.12);
+  border-bottom: 1px solid rgba(46, 91, 58, 0.12);
+  padding: 56px 24px;
+}
+.landing-shell .ln-supplier-inner { max-width: 780px; margin: 0 auto; }
+.landing-shell .ln-supplier-lead {
+  font-size: 19px; font-weight: 600; color: #1d2b21; margin: 0 0 18px; line-height: 1.5;
+}
+.landing-shell .ln-supplier-body {
+  font-size: 16px; color: #3c4a41; margin: 0 0 16px; line-height: 1.65;
+}
+.landing-shell .ln-supplier .ln-btn { margin-top: 8px; display: inline-flex; }
