@@ -8,7 +8,7 @@ import {
   languageAlternatesFor,
   metadataForPage,
 } from './publicPageMetadata'
-import { buildPrerenderedDocument, outputPathForPage } from './prerenderDocument'
+import { buildPrerenderedDocument, outputPathForPage, targetForPage } from './prerenderDocument'
 import { getInitialPageFromPath, pathForPage } from './urlRouting'
 import { PUBLIC_PAGES } from './navigationGuard'
 import { LOCALISED_BUYER_CONTENT, localisedBuyerContentFor } from '../pages/public/localisedBuyerContent'
@@ -132,7 +132,7 @@ describe('the localised pages are reachable, indexable and served in their own l
    */
   it.each(LOCALISED)('%s declares its own lang in the served document', (page) => {
     const lang = metadataForPage(page).lang!
-    const doc = buildPrerenderedDocument(SHELL, page, '<main>x</main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage(page), '<main>x</main>')
 
     expect(doc).toContain(`<html lang="${lang}"`)
     expect(doc).not.toContain('<html lang="en"')
@@ -140,7 +140,7 @@ describe('the localised pages are reachable, indexable and served in their own l
 
   it('leaves every non-localised page in English', () => {
     for (const page of indexablePages().filter((p) => !LOCALISED.includes(p))) {
-      expect(buildPrerenderedDocument(SHELL, page, '<main>x</main>')).toContain('<html lang="en"')
+      expect(buildPrerenderedDocument(SHELL, targetForPage(page), '<main>x</main>')).toContain('<html lang="en"')
     }
   })
 
@@ -184,7 +184,7 @@ describe('hreflang tells search engines these are alternates, not duplicates', (
 
   it('writes every alternate into every document in the group', () => {
     for (const page of ['landing', ...LOCALISED] as Page[]) {
-      const doc = buildPrerenderedDocument(SHELL, page, '<main>x</main>')
+      const doc = buildPrerenderedDocument(SHELL, targetForPage(page), '<main>x</main>')
 
       for (const member of ['landing', ...LOCALISED] as Page[]) {
         const lang = metadataForPage(member).lang ?? 'en'
@@ -198,7 +198,7 @@ describe('hreflang tells search engines these are alternates, not duplicates', (
 
   /** Each page still canonicalises to ITSELF. hreflang groups; it does not merge. */
   it.each(LOCALISED)('%s canonicalises to itself, not onto the English page', (page) => {
-    const doc = buildPrerenderedDocument(SHELL, page, '<main>x</main>')
+    const doc = buildPrerenderedDocument(SHELL, targetForPage(page), '<main>x</main>')
 
     expect(doc).toContain(`<link rel="canonical" href="${canonicalUrlFor(page)}" />`)
     expect(doc).not.toContain(`<link rel="canonical" href="${canonicalUrlFor('landing')}" />`)
@@ -219,6 +219,6 @@ describe('hreflang tells search engines these are alternates, not duplicates', (
 
   it('adds no alternates to a page that has no translation', () => {
     expect(languageAlternatesFor('about')).toEqual([])
-    expect(buildPrerenderedDocument(SHELL, 'about', '<main>x</main>')).not.toContain('hreflang')
+    expect(buildPrerenderedDocument(SHELL, targetForPage('about'), '<main>x</main>')).not.toContain('hreflang')
   })
 })

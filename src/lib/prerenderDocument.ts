@@ -54,15 +54,51 @@
 //   changes WHEN the approved copy is available, never WHAT it says.
 
 import type { Page } from '../types'
-import { CANONICAL_ORIGIN, languageAlternatesFor, metadataForPage } from './publicPageMetadata'
+import {
+  CANONICAL_ORIGIN,
+  languageAlternatesFor,
+  metadataForPage,
+  type LanguageAlternate,
+  type PublicPageMetadata,
+} from './publicPageMetadata'
+
+/**
+ * Everything the builder needs to write one document.
+ *
+ * WHY THIS EXISTS RATHER THAN A `Page`
+ *   The five corporate pages are enum members because there are five of them
+ *   and a human decided on each. Regulatory updates are published one or two a
+ *   week from files on disk; there cannot be an enum member per entry, and
+ *   inventing one would put publishing back into a hand-edited route map — the
+ *   thing the generated sitemap exists to prevent.
+ *
+ *   So the builder takes the metadata itself. `targetForPage` keeps the enum
+ *   path working unchanged for the pages that legitimately have one, and
+ *   content-derived pages construct a target directly without touching the
+ *   register.
+ */
+export interface PrerenderTarget {
+  metadata: PublicPageMetadata
+  /** hreflang alternates. Empty for a page with no translations. */
+  alternates: LanguageAlternate[]
+}
+
+/** The target for a registered page. The enum path, unchanged in behaviour. */
+export function targetForPage(page: Page): PrerenderTarget {
+  return { metadata: metadataForPage(page), alternates: languageAlternatesFor(page) }
+}
 
 /** Where a page's prerendered document is written, relative to `dist/`. */
 export function outputPathForPage(page: Page): string {
-  const { canonicalPath } = metadataForPage(page)
-  // Derived from the register's own canonicalPath rather than a second list, so
-  // a file can never be written to a path the canonical tag does not claim.
-  // `/` is the SPA entry document Vite emits; everything else gets a directory
-  // index, which is how Vercel resolves `/about` to `about/index.html`.
+  return outputPathFor(metadataForPage(page).canonicalPath)
+}
+
+/** Where the document for `canonicalPath` is written, relative to `dist/`. */
+export function outputPathFor(canonicalPath: string): string {
+  // Derived from the canonical path rather than a second list, so a file can
+  // never be written to a path the canonical tag does not claim. `/` is the SPA
+  // entry document Vite emits; everything else gets a directory index, which is
+  // how Vercel resolves `/about` to `about/index.html`.
   return canonicalPath === '/' ? 'index.html' : `${canonicalPath.replace(/^\//, '')}/index.html`
 }
 
@@ -107,8 +143,8 @@ const MANAGED_HEAD_PATTERNS: RegExp[] = [
  * address, affiliations — and what this company may assert about itself is a
  * decision for its officers, not a side effect of a rendering fix.
  */
-export function buildHeadTags(page: Page): string {
-  const meta = metadataForPage(page)
+export function buildHeadTags(target: PrerenderTarget): string {
+  const meta = target.metadata
   const canonicalUrl = `${CANONICAL_ORIGIN}${meta.canonicalPath}`
 
   const tags = [
@@ -136,7 +172,7 @@ export function buildHeadTags(page: Page): string {
   // Reciprocal by construction — languageAlternatesFor returns every member of
   // the translation group including this page, because a one-way hreflang is
   // ignored outright.
-  for (const alternate of languageAlternatesFor(page)) {
+  for (const alternate of target.alternates) {
     tags.push(
       `<link rel="alternate" hreflang="${escapeAttribute(alternate.hreflang)}" href="${escapeAttribute(alternate.href)}" />`,
     )
@@ -155,7 +191,11 @@ export function buildHeadTags(page: Page): string {
  * `bodyHtml` is the page rendered to static markup, or '' for a route that is
  * prerendered for its head alone (see the /farmer note in the entry module).
  */
-export function buildPrerenderedDocument(shellHtml: string, page: Page, bodyHtml: string): string {
+export function buildPrerenderedDocument(
+  shellHtml: string,
+  target: PrerenderTarget,
+  bodyHtml: string,
+): string {
   if (!shellHtml.includes('<div id="root">')) {
     throw new Error(
       'shell HTML has no <div id="root"> to render into — the build output is not the SPA shell this expects',
@@ -176,10 +216,10 @@ export function buildPrerenderedDocument(shellHtml: string, page: Page, bodyHtml
   // document that still claims English is not cosmetic: it is what a screen
   // reader uses to choose a voice and what a search engine uses to decide whose
   // results the page belongs in.
-  const lang = metadataForPage(page).lang ?? 'en'
+  const lang = target.metadata.lang ?? 'en'
   doc = doc.replace(/<html\b[^>]*\blang=["'][^"']*["']/i, `<html lang="${escapeAttribute(lang)}"`)
 
-  doc = doc.replace('</head>', `  ${buildHeadTags(page)}\n  </head>`)
+  doc = doc.replace('</head>', `  ${buildHeadTags(target)}\n  </head>`)
 
   if (bodyHtml) {
     doc = doc.replace('<div id="root"></div>', `<div id="root">${bodyHtml}</div>`)

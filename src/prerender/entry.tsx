@@ -67,7 +67,7 @@ import LocalisedBuyerPage from '../pages/public/LocalisedBuyerPage'
 // load. The document builder and the path rule are TypeScript that only the
 // bundler compiles; a plain .mjs script cannot import them directly, and giving
 // it a second loader would be a second way for the two halves to disagree.
-export { buildPrerenderedDocument, outputPathForPage } from '../lib/prerenderDocument'
+export { buildPrerenderedDocument, outputPathFor, targetForPage } from '../lib/prerenderDocument'
 export { buildSitemapXml, sitemapEntries, sourceFilesForPage } from '../lib/sitemapDocument'
 export { indexablePages } from '../lib/publicPageMetadata'
 
@@ -84,6 +84,13 @@ const PRERENDER_LANG = 'en' as const
 const noop = () => {}
 
 export interface PrerenderedRoute {
+  /**
+   * The registered page this route renders.
+   *
+   * Content-derived routes (regulatory updates) will carry a target rather than
+   * a Page — see PrerenderTarget in lib/prerenderDocument.ts. `page` stays on
+   * this interface for the routes that legitimately have an enum member.
+   */
   page: Page
   /** Static markup for `<div id="root">`, or '' for a head-only document. */
   bodyHtml: string
