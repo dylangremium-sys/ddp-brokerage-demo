@@ -51,6 +51,7 @@ if (!existsSync(SSR_ENTRY)) {
 
 const {
   renderPublicRoutes,
+  renderRegulatoryEntryRoutes,
   buildPrerenderedDocument,
   outputPathFor,
   targetForPage,
@@ -95,6 +96,28 @@ if (unique.size !== digests.size) {
   fail(
     `prerendered documents are not distinct (${unique.size} unique of ${digests.size}) — ` +
       'this is the duplicate-document defect the step exists to remove',
+  )
+}
+
+// ─── content-derived documents ──────────────────────────────────────────────
+//
+// These carry a target rather than a Page. Publishing an entry is adding a
+// markdown file; nothing here or in any route map is edited to make it appear.
+const contentRoutes = renderRegulatoryEntryRoutes()
+
+for (const { label, target, bodyHtml } of contentRoutes) {
+  const relativePath = outputPathFor(target.metadata.canonicalPath)
+  const absolutePath = join(DIST, relativePath)
+  const document = buildPrerenderedDocument(shellHtml, target, bodyHtml)
+
+  mkdirSync(dirname(absolutePath), { recursive: true })
+  writeFileSync(absolutePath, document, 'utf8')
+
+  const digest = createHash('md5').update(document).digest('hex')
+  digests.set(relativePath, digest)
+
+  console.log(
+    `entry:     ${relativePath.padEnd(46)} ${String(document.length).padStart(6)} bytes  ${digest.slice(0, 8)}  ${label}`,
   )
 }
 

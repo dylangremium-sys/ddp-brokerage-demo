@@ -192,6 +192,25 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
     lastReviewed: '2026-08-09',
   },
 
+  /**
+   * The regulatory-updates hub.
+   *
+   * INDEXABLE ONLY ONCE ENTRIES EXIST. A hub that lists nothing is a thin page,
+   * and publishing one to search engines spends crawl attention on a promise
+   * rather than content. regulatoryUpdates.test.ts asserts the rule directly —
+   * indexable if and only if at least one entry is published — so the day the
+   * first entry lands the suite fails and says to flip this value. That is the
+   * same deliberate-human-edit mechanism the sitemap's URL list uses.
+   */
+  'regulatory-hub': {
+    title: 'Regulatory updates — DDP Brokerage',
+    description:
+      'Notes on regulatory developments affecting licensed cannabis supply. Each entry carries the date it was last verified and the reviewer responsible.',
+    canonicalPath: '/regulatory-updates',
+    robots: 'noindex,nofollow',
+    lastReviewed: '2026-08-09',
+  },
+
   // ── Routable but deliberately NOT indexable ───────────────────────────────
   //
   // /farmer is a real cold-loadable URL — farmers reach it from a QR code and a
