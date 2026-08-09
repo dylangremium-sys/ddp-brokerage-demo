@@ -28,7 +28,6 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { pathToFileURL } from 'node:url'
@@ -57,73 +56,9 @@ const {
   targetForPage,
   buildSitemapXml,
   sitemapEntries,
-  sourceFilesForPage,
   indexablePages,
 } = await import(pathToFileURL(SSR_ENTRY).href)
 
-/**
- * The date of the last commit touching any of `files`, as YYYY-MM-DD.
- *
- * Returns null rather than guessing. `%cs` is the committer date already in
- * short ISO form, so nothing here parses or formats a date.
- */
-function lastCommitDate(files) {
-  try {
-    const out = execFileSync('git', ['log', '-1', '--format=%cs', '--', ...files], {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim()
-    return /^\d{4}-\d{2}-\d{2}$/.test(out) ? out : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Whether git history here is complete enough to date a file.
- *
- * A SHALLOW CLONE IS THE DANGEROUS CASE, and it is the normal case on a CI
- * host. `git log -1 -- some/old/file` in a depth-limited clone does not fail —
- * it returns the boundary commit, so a file untouched for months is reported as
- * changed on the day of the last few commits. That is a confidently wrong date,
- * which is precisely what the previous decision refused to publish. Detect it
- * and publish no dates at all.
- */
-function git(args, timeout = 10_000) {
-  return execFileSync('git', args, {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-    timeout,
-  }).trim()
-}
-
-function isShallow() {
-  return git(['rev-parse', '--is-shallow-repository']) === 'true'
-}
-
-function gitHistoryIsComplete() {
-  try {
-    if (git(['rev-parse', '--is-inside-work-tree']) !== 'true') return false
-    if (!isShallow()) return true
-
-    // A shallow clone is the NORMAL state on a CI host, so try to fix it rather
-    // than giving up. Measured on a depth-1 clone of this repo: files last
-    // touched in June reported as changed on the day of the clone boundary —
-    // 2026-06-28 became 2026-08-04. Deriving dates from that is worse than
-    // publishing none.
-    //
-    // The fetch needs network and credentials, both of which a build host may
-    // or may not give us. If it cannot, we fall back to no dates, which is
-    // exactly the behaviour before this change — degraded, never wrong.
-    console.log('prerender: git history is shallow, attempting to deepen it for lastmod…')
-    git(['fetch', '--unshallow', '--quiet'], 60_000)
-    return !isShallow()
-  } catch {
-    return false
-  }
-}
 
 // Read once. Every document is built from the SAME built shell, so all of them
 // carry the same hashed script and stylesheet the SPA would have loaded.
@@ -187,28 +122,7 @@ if (undocumented.length > 0) {
   )
 }
 
-const historyIsComplete = gitHistoryIsComplete()
-const lastmodByPage = {}
-
-if (historyIsComplete) {
-  for (const page of indexable) {
-    const date = lastCommitDate(sourceFilesForPage(page))
-    if (date) lastmodByPage[page] = date
-  }
-} else {
-  console.log('prerender: git history is shallow or unavailable — publishing no lastmod dates')
-}
-
-const entries = sitemapEntries(lastmodByPage)
-const undated = entries.filter((entry) => !entry.lastmod)
-if (historyIsComplete && undated.length > 0) {
-  // buildSitemapXml drops every date when any is missing; say so rather than
-  // letting a sitemap quietly lose its dates between one build and the next.
-  console.log(
-    `prerender: ${undated.length} of ${entries.length} pages had no derivable date — omitting lastmod from all`,
-  )
-}
-
+const entries = sitemapEntries()
 const sitemapPath = join(DIST, 'sitemap.xml')
 writeFileSync(sitemapPath, buildSitemapXml(entries), 'utf8')
 

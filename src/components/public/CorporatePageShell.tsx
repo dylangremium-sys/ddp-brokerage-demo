@@ -3,6 +3,7 @@ import { T } from '../../translations'
 import type { Lang, Page } from '../../types'
 import { DDPMonogramLogo } from '../logos'
 import { pathForPage } from '../../lib/urlRouting'
+import { metadataForPage } from '../../lib/publicPageMetadata'
 import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -168,14 +169,14 @@ function CorporateHeader({
  * Rendered as visible text rather than a comment because its purpose is to tell
  * a reader who stands behind the page and how current it is.
  */
-function PageProvenance({ lang }: { lang: Lang }) {
+function PageProvenance({ lang, page }: { lang: Lang; page: Page }) {
   const copy = T[lang]
 
   return (
     <p className="corp-provenance">
       <span>{copy.corpOwnerLabel}: <strong>{copy.corpOwnerValue}</strong></span>
       <span className="corp-provenance-sep" aria-hidden="true">·</span>
-      <span>{copy.corpReviewedLabel}: <time dateTime="2026-08-08">{copy.corpReviewedValue}</time></span>
+      <span>{copy.corpReviewedLabel}: <time dateTime={metadataForPage(page).lastReviewed}>{copy.corpReviewedValue}</time></span>
     </p>
   )
 }
@@ -222,7 +223,7 @@ export default function CorporatePageShell({ lang, setLang, page, onNavigate, he
       <main className="corp-main" id="main">
         <article className="corp-doc">
           <h1 className="corp-heading">{heading}</h1>
-          <PageProvenance lang={lang} />
+          <PageProvenance lang={lang} page={page} />
           {children}
         </article>
       </main>

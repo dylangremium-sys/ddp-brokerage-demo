@@ -4,6 +4,7 @@ import { DDPMonogramLogo } from '../../components/logos'
 import { pathForPage } from '../../lib/urlRouting'
 import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
 import { localisedBuyerContentFor } from './localisedBuyerContent'
+import { metadataForPage } from '../../lib/publicPageMetadata'
 
 /* ────────────────────────────────────────────────────────────────────────────
    One buyer page, rendered in whichever language the content record names.
@@ -105,7 +106,7 @@ export default function LocalisedBuyerPage({ page, onNavigate }: Props) {
           <p className="corp-provenance">
             <span>{copy.ownerLabel}: <strong>DDP Brokerage — Compliance &amp; Operations</strong></span>
             <span className="corp-provenance-sep" aria-hidden="true">·</span>
-            <span>{copy.reviewedLabel}: <time dateTime="2026-08-09">{copy.reviewedValue}</time></span>
+            <span>{copy.reviewedLabel}: <time dateTime={metadataForPage(page).lastReviewed}>{copy.reviewedValue}</time></span>
           </p>
 
           <p>{copy.lead}</p>

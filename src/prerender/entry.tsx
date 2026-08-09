@@ -68,7 +68,7 @@ import LocalisedBuyerPage from '../pages/public/LocalisedBuyerPage'
 // bundler compiles; a plain .mjs script cannot import them directly, and giving
 // it a second loader would be a second way for the two halves to disagree.
 export { buildPrerenderedDocument, outputPathFor, targetForPage } from '../lib/prerenderDocument'
-export { buildSitemapXml, sitemapEntries, sourceFilesForPage } from '../lib/sitemapDocument'
+export { buildSitemapXml, sitemapEntries } from '../lib/sitemapDocument'
 export { indexablePages } from '../lib/publicPageMetadata'
 
 /**

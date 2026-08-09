@@ -57,6 +57,22 @@ export interface PublicPageMetadata {
    * which country's results a page belongs in.
    */
   lang?: 'en' | 'de' | 'cs'
+  /**
+   * The date this page's content was last reviewed, as YYYY-MM-DD.
+   *
+   * AUTHORED, NEVER DERIVED. It was briefly derived from git — the date of the
+   * last commit touching a page's sources — and that had two faults. It said
+   * "this file changed", which is not the same claim as "a person checked this
+   * page is still true"; and it could not be trusted on a CI host, because
+   * `git log -1` in a shallow clone returns the boundary commit rather than
+   * failing, reporting files untouched for months as changed that week.
+   *
+   * This is the ONE place the date lives. The sitemap's <lastmod> reads it, and
+   * so does the "last reviewed" line the page itself displays — so a visitor
+   * and a search engine cannot be told different things, which is what happened
+   * while the shells hardcoded their own copy of it.
+   */
+  lastReviewed: string
 }
 
 /**
@@ -90,6 +106,7 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
       'DDP turns farm stock, batch records, COAs, and pricing into clear review packs for serious buyers.',
     canonicalPath: '/',
     robots: 'index,follow',
+    lastReviewed: '2026-08-08',
   },
 
   about: {
@@ -98,6 +115,7 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
       'Who DDP Brokerage is, how supplier documentation is reviewed, and the limits of what the company does and does not assess.',
     canonicalPath: '/about',
     robots: 'index,follow',
+    lastReviewed: '2026-08-08',
   },
 
   contact: {
@@ -106,6 +124,7 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
       'Head office address, telephone number and email channels for DDP Brokerage Co., Ltd., and how licensed suppliers request access.',
     canonicalPath: '/contact',
     robots: 'index,follow',
+    lastReviewed: '2026-08-08',
   },
 
   privacy: {
@@ -114,6 +133,7 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
       'What personal information the DDP Brokerage platform collects, why it is held, who processes it, and how to reach the company about it.',
     canonicalPath: '/privacy',
     robots: 'index,follow',
+    lastReviewed: '2026-08-08',
   },
 
   terms: {
@@ -122,6 +142,7 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
       'The conditions for using the DDP Brokerage platform: who may hold access, how information may be relied on, and the limits of the service.',
     canonicalPath: '/terms',
     robots: 'index,follow',
+    lastReviewed: '2026-08-08',
   },
 
   /**
@@ -150,6 +171,7 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
     canonicalPath: '/de',
     robots: 'index,follow',
     lang: 'de',
+    lastReviewed: '2026-08-09',
   },
 
   /**
@@ -167,6 +189,7 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
     canonicalPath: '/cs',
     robots: 'index,follow',
     lang: 'cs',
+    lastReviewed: '2026-08-09',
   },
 
   // ── Routable but deliberately NOT indexable ───────────────────────────────
@@ -205,6 +228,7 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
     description: 'Licensed supplier registration for the DDP Brokerage platform.',
     canonicalPath: '/farmer',
     robots: 'noindex,nofollow',
+    lastReviewed: '2026-08-08',
   },
 }
 
@@ -222,6 +246,9 @@ const NOT_FOR_SEARCH: PublicPageMetadata = {
   description: '',
   canonicalPath: '/',
   robots: 'noindex,nofollow',
+  // Never published, so never reviewed. A real date here would imply a page
+  // somebody checked; this is the fall-closed default for everything else.
+  lastReviewed: '2026-08-08',
 }
 
 /** The metadata for `page`, or the fail-closed default. Pure. */
