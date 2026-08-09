@@ -416,6 +416,18 @@ export type Page =
   | 'contact'
   | 'privacy'
   | 'terms'
+  // The German-language buyer page at /de.
+  //
+  // The site speaks English and Thai. Thai serves the SUPPLY side — Thai farms
+  // reached by QR code and WhatsApp. Both demand-side markets the company names
+  // (Germany, Czechia) had no language on the site at all, while a German buyer
+  // searches in German.
+  //
+  // It is deliberately NOT a third app language. Adding 'de' to Lang would mean
+  // translating every authenticated screen in the application; this is one
+  // public page that stands on its own, and it states nothing that is not
+  // already published in English on the landing page.
+  | 'de-buyer'
   // The buyer's own surface. Production has admitted `buyer` as a profile role
   // since migration 39 and carries the organisation tables, but no page existed
   // for one to land on — so `resolvePostLoginDecision` fell a buyer through to

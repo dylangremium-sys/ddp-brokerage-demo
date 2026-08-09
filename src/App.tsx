@@ -59,6 +59,7 @@ import AboutPage from './pages/public/AboutPage'
 import ContactPage from './pages/public/ContactPage'
 import PrivacyPage from './pages/public/PrivacyPage'
 import TermsPage from './pages/public/TermsPage'
+import GermanBuyerPage from './pages/public/GermanBuyerPage'
 import LoginPage from './pages/public/LoginPage'
 import SetPasswordPage from './pages/public/SetPasswordPage'
 import ForgotPasswordPage from './pages/public/ForgotPasswordPage'
@@ -99,7 +100,7 @@ import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, 
 import { initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
 import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
-import { applyPublicPageMetadata } from './lib/publicPageMetadata'
+import { applyPublicPageMetadata, metadataForPage } from './lib/publicPageMetadata'
 
 // FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
 // lib/navigationGuard.ts so they can be unit tested. PUBLIC_PAGES once omitted
@@ -771,9 +772,17 @@ export default function App() {
 
   // Sync the HTML lang attribute so CSS :lang(th) selectors work and
   // screen readers announce the correct language.
+  //
+  // A PAGE THAT DECLARES ITS OWN LANGUAGE OUTRANKS THE EN/TH TOGGLE. /de is
+  // written in German and is not a translation of the app — 'de' is not a Lang
+  // — so before this, the prerendered document arrived correctly as
+  // <html lang="de"> and this effect immediately overwrote it with 'en'. The
+  // served bytes and the rendered DOM then disagreed about what language the
+  // page was in, which is precisely the disagreement a rendering crawler
+  // resolves against the DOM.
   useEffect(() => {
-    document.documentElement.lang = lang
-  }, [lang])
+    document.documentElement.lang = metadataForPage(page).lang ?? lang
+  }, [lang, page])
 
   // Keep the document head describing the page actually on screen.
   //
@@ -1364,6 +1373,8 @@ export default function App() {
       {page === 'terms' && (
         <TermsPage lang={lang} setLang={setLang} onNavigate={goTo} />
       )}
+
+      {page === 'de-buyer' && <GermanBuyerPage onNavigate={goTo} />}
 
       {/* ── Error banner ── */}
       {dbError && (

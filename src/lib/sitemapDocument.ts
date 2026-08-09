@@ -61,6 +61,9 @@ const PAGE_SOURCES: Partial<Record<Page, readonly string[]>> = {
   contact: ['src/pages/public/ContactPage.tsx', CORPORATE_SHELL],
   privacy: ['src/pages/public/PrivacyPage.tsx', CORPORATE_SHELL],
   terms: ['src/pages/public/TermsPage.tsx', CORPORATE_SHELL],
+  // Standalone: it carries its own chrome and its own German copy, so neither
+  // the corporate shell nor translations.ts changes what it says.
+  'de-buyer': ['src/pages/public/GermanBuyerPage.tsx'],
 }
 
 /** Every file whose last commit dates `page`, shared sources included. */

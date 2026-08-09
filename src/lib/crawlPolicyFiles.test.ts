@@ -190,6 +190,16 @@ describe('sitemap.xml', () => {
       `${CANONICAL_ORIGIN}/contact`,
       `${CANONICAL_ORIGIN}/privacy`,
       `${CANONICAL_ORIGIN}/terms`,
+      // /de — the German-language buyer page. Added deliberately: this list
+      // failing was the intended consequence of publishing a sixth URL, and
+      // editing it is the human decision the assertion exists to require.
+      //
+      // It is the first URL here whose content is not in English. What it may
+      // say is bounded in publicPageMetadata.ts and asserted in
+      // germanBuyerPage.test.ts — it is a translation of copy already published
+      // in English and carries both legal notices, because no wording on this
+      // site has had a compliance review in any jurisdiction it operates in.
+      `${CANONICAL_ORIGIN}/de`,
     ])
   })
 
