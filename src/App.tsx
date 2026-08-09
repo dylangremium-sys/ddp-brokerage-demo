@@ -60,6 +60,8 @@ import ContactPage from './pages/public/ContactPage'
 import PrivacyPage from './pages/public/PrivacyPage'
 import TermsPage from './pages/public/TermsPage'
 import LocalisedBuyerPage from './pages/public/LocalisedBuyerPage'
+import { RegulatoryHubPage, RegulatoryEntryPage } from './pages/public/RegulatoryUpdatesPage'
+import { entryForPath } from './content/regulatoryEntries'
 import LoginPage from './pages/public/LoginPage'
 import SetPasswordPage from './pages/public/SetPasswordPage'
 import ForgotPasswordPage from './pages/public/ForgotPasswordPage'
@@ -1377,6 +1379,19 @@ export default function App() {
       {page === 'de-buyer' && <LocalisedBuyerPage page="de-buyer" onNavigate={goTo} />}
 
       {page === 'cs-buyer' && <LocalisedBuyerPage page="cs-buyer" onNavigate={goTo} />}
+
+      {page === 'regulatory-hub' && <RegulatoryHubPage onNavigate={goTo} />}
+
+      {/* The slug comes from the address bar, not from state: there is no enum
+          member per entry. An unknown slug falls back to the hub, which is the
+          honest answer — though vercel.json keeps /regulatory-updates/ out of
+          the SPA rewrite, so a wrong URL 404s before reaching this. */}
+      {page === 'regulatory-entry' && (() => {
+        const entry = typeof window === 'undefined' ? undefined : entryForPath(window.location.pathname)
+        return entry
+          ? <RegulatoryEntryPage entry={entry} onNavigate={goTo} />
+          : <RegulatoryHubPage onNavigate={goTo} />
+      })()}
 
       {/* ── Error banner ── */}
       {dbError && (

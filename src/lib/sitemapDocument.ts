@@ -23,6 +23,7 @@
 //   suite with no build, no git and no filesystem.
 
 import { CANONICAL_ORIGIN, indexablePages, metadataForPage } from './publicPageMetadata'
+import { regulatoryEntries } from '../content/regulatoryEntries'
 
 export interface SitemapEntry {
   loc: string
@@ -39,10 +40,22 @@ export interface SitemapEntry {
  * shallow CI clone silently reported the wrong ones.
  */
 export function sitemapEntries(): SitemapEntry[] {
-  return indexablePages().map((page) => {
+  const registered = indexablePages().map((page) => {
     const meta = metadataForPage(page)
     return { loc: `${CANONICAL_ORIGIN}${meta.canonicalPath}`, lastmod: meta.lastReviewed }
   })
+
+  // Published entries join automatically. This is the point of generating the
+  // sitemap rather than maintaining it: publishing is adding a markdown file,
+  // and a file that parses is a URL that is advertised. Their lastmod is the
+  // date a person last VERIFIED the entry, not the date it was published —
+  // on regulatory content, "still true as of" is the useful claim.
+  const published = regulatoryEntries().map((entry) => ({
+    loc: `${CANONICAL_ORIGIN}${entry.canonicalPath}`,
+    lastmod: entry.lastVerified,
+  }))
+
+  return [...registered, ...published]
 }
 
 /** True for a W3C date of the form YYYY-MM-DD that is also a real calendar date. */

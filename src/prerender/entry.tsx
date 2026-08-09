@@ -62,12 +62,15 @@ import ContactPage from '../pages/public/ContactPage'
 import PrivacyPage from '../pages/public/PrivacyPage'
 import TermsPage from '../pages/public/TermsPage'
 import LocalisedBuyerPage from '../pages/public/LocalisedBuyerPage'
+import { RegulatoryHubPage, RegulatoryEntryPage } from '../pages/public/RegulatoryUpdatesPage'
+import { regulatoryEntries } from '../content/regulatoryEntries'
 
 // Re-exported so scripts/prerender-public-routes.mjs has exactly one module to
 // load. The document builder and the path rule are TypeScript that only the
 // bundler compiles; a plain .mjs script cannot import them directly, and giving
 // it a second loader would be a second way for the two halves to disagree.
 export { buildPrerenderedDocument, outputPathFor, targetForPage } from '../lib/prerenderDocument'
+import type { PrerenderTarget } from '../lib/prerenderDocument'
 export { buildSitemapXml, sitemapEntries } from '../lib/sitemapDocument'
 export { indexablePages } from '../lib/publicPageMetadata'
 
@@ -82,6 +85,14 @@ const PRERENDER_LANG = 'en' as const
 
 /** Prop stubs. Nothing below is invoked during a render. */
 const noop = () => {}
+
+/** A route whose metadata comes from content rather than the register. */
+export interface ContentRoute {
+  /** For build output only. */
+  label: string
+  target: PrerenderTarget
+  bodyHtml: string
+}
 
 export interface PrerenderedRoute {
   /**
@@ -146,7 +157,36 @@ export function renderPublicRoutes(): PrerenderedRoute[] {
       page: 'cs-buyer',
       bodyHtml: renderToStaticMarkup(<LocalisedBuyerPage page="cs-buyer" onNavigate={noop} />),
     },
+    {
+      page: 'regulatory-hub',
+      bodyHtml: renderToStaticMarkup(<RegulatoryHubPage onNavigate={noop} />),
+    },
     // Head-only. See the /farmer note in this file's header.
     { page: 'farmer-register', bodyHtml: '' },
   ]
+}
+
+/**
+ * One route per published entry.
+ *
+ * These carry a TARGET rather than a Page: there is no enum member per entry,
+ * which is the whole reason buildPrerenderedDocument was decoupled from the
+ * register. The metadata is built from the entry's own frontmatter, so
+ * publishing is adding a file — not editing a route map.
+ */
+export function renderRegulatoryEntryRoutes(): ContentRoute[] {
+  return regulatoryEntries().map((entry) => ({
+    label: entry.canonicalPath,
+    target: {
+      metadata: {
+        title: entry.title,
+        description: entry.description,
+        canonicalPath: entry.canonicalPath,
+        robots: 'index,follow' as const,
+        lastReviewed: entry.lastVerified,
+      },
+      alternates: [],
+    },
+    bodyHtml: renderToStaticMarkup(<RegulatoryEntryPage entry={entry} onNavigate={noop} />),
+  }))
 }

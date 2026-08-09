@@ -18,7 +18,11 @@ describe('the public pages render without a browser', () => {
   const routes = renderPublicRoutes()
 
   it('renders every route the build will write a file for', () => {
-    expect(routes.length).toBe(indexablePages().length + 1) // + the head-only /farmer
+    // Indexable pages, plus the hub (public, prerendered, noindex until it has
+    // entries) and the head-only /farmer. Published entries are NOT here —
+    // they carry targets rather than Page members, and come from
+    // renderRegulatoryEntryRoutes().
+    expect(routes.length).toBe(indexablePages().length + 2)
   })
 
   it.each(indexablePages())('%s produces real markup with a single heading', (page) => {
@@ -78,8 +82,17 @@ describe('the public pages render without a browser', () => {
    * into a file unless the register already approves it for indexing, so the
    * prerender can never publish a surface the register has not.
    */
-  it('renders no page the register has not approved, except the excluded /farmer', () => {
-    const approved = new Set<string>([...indexablePages(), 'farmer-register'])
+  /**
+   * Fail-closed: the prerender can never write a file for a surface nobody
+   * approved. The exceptions are named rather than inferred.
+   *
+   * /farmer is head-only and excluded from search on purpose. regulatory-hub is
+   * public and prerendered but not yet indexed — writing its file is what makes
+   * a shared link preview correctly, and the register keeps it out of the
+   * sitemap until it has entries to list.
+   */
+  it('renders no page that is neither approved nor a named exception', () => {
+    const approved = new Set<string>([...indexablePages(), 'farmer-register', 'regulatory-hub'])
 
     for (const route of routes) {
       expect(approved.has(route.page), `${route.page} is prerendered but not in the register`).toBe(

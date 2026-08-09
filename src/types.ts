@@ -431,6 +431,13 @@ export type Page =
   // The Czech-language buyer page at /cs. Same construction as /de: a
   // standalone public document, not a third app language.
   | 'cs-buyer'
+  // The regulatory-updates hub at /regulatory-updates.
+  | 'regulatory-hub'
+  // One published entry. Unlike every other member here, this does NOT identify
+  // a single URL: entries are files on disk, one or two new ones a week, so the
+  // slug comes from the path rather than the enum. The member says "render an
+  // entry"; content/regulatoryEntries.entryForPath says which one.
+  | 'regulatory-entry'
   // The buyer's own surface. Production has admitted `buyer` as a profile role
   // since migration 39 and carries the organisation tables, but no page existed
   // for one to land on — so `resolvePostLoginDecision` fell a buyer through to

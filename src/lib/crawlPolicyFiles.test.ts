@@ -308,7 +308,28 @@ describe('the X-Robots-Tag header that actually excludes /farmer', () => {
     // rewrite; it did not replace it, and this asserts it was not removed as
     // though it had.
     expect(vercelConfig.rewrites?.at(-1)?.destination).toBe('/index.html')
-    expect(vercelConfig.rewrites?.at(-1)?.source).toBe('/((?!api/).*)')
+
+    // /regulatory-updates/ IS EXCLUDED ON PURPOSE, and this is the assertion
+    // that records why.
+    //
+    // The rewrite returns 200 with the homepage for every path that matches no
+    // file. Measured on production: /nonexistent, /foo/bar and /wp-admin all
+    // returned 22,218 bytes of the landing page. Google logs those as soft 404s
+    // and keeps crawling phantom URLs, which costs most on a new domain with no
+    // authority to spare.
+    //
+    // Entries are real files, so they still serve. Anything else under the hub
+    // path now matches no file AND no rewrite, so Vercel returns a genuine 404
+    // and serves public/404.html. Once entries exist, wrong URLs under this
+    // path are the common case — a mistyped slug, a stale link — which is why
+    // this path was taken first rather than narrowing the rewrite site-wide.
+    //
+    // Site-wide narrowing is deliberately NOT done here: an invite redirect can
+    // land on an arbitrary path (APP_PUBLIC_URL is a Vercel "sensitive"
+    // variable and cannot be read back), and 404ing an invited user is worse
+    // than a soft 404. Nothing about auth lands under /regulatory-updates/,
+    // which is what makes this exclusion safe on its own.
+    expect(vercelConfig.rewrites?.at(-1)?.source).toBe('/((?!api/|regulatory-updates/).*)')
   })
 })
 

@@ -47,6 +47,7 @@ const PATH_TO_PAGE: Record<string, Page> = {
   // arrives from a search result, never from an in-app click.
   '/de': 'de-buyer',
   '/cs': 'cs-buyer',
+  '/regulatory-updates': 'regulatory-hub',
   '/about': 'about',
   '/contact': 'contact',
   '/privacy': 'privacy',
@@ -58,6 +59,7 @@ const PAGE_TO_PATH: Partial<Record<Page, string>> = {
   'farmer-register': '/farmer',
   'de-buyer': '/de',
   'cs-buyer': '/cs',
+  'regulatory-hub': '/regulatory-updates',
   about: '/about',
   contact: '/contact',
   privacy: '/privacy',
@@ -92,7 +94,21 @@ function normalisePath(pathname: string): string {
  * or null if the path has no special mapping (caller uses its own default).
  */
 export function getInitialPageFromPath(pathname: string): Page | null {
-  return PATH_TO_PAGE[normalisePath(pathname)] ?? null
+  const path = normalisePath(pathname)
+  const mapped = PATH_TO_PAGE[path]
+  if (mapped) return mapped
+
+  // Published entries are files, not enum members — one or two new ones a week,
+  // so they cannot be listed above. A single segment under the hub resolves to
+  // 'regulatory-entry', and the renderer asks entryForPath which entry it is.
+  //
+  // This deliberately matches slugs that may not exist. An unknown one renders
+  // the entry page's own "not found" rather than the landing page, which is the
+  // honest answer — and vercel.json keeps /regulatory-updates/ out of the SPA
+  // rewrite, so a wrong URL gets a real 404 before it ever reaches the app.
+  if (/^\/regulatory-updates\/[^/]+$/.test(path)) return 'regulatory-entry'
+
+  return null
 }
 
 /**
