@@ -81,11 +81,22 @@ export interface PrerenderTarget {
   metadata: PublicPageMetadata
   /** hreflang alternates. Empty for a page with no translations. */
   alternates: LanguageAlternate[]
+  /**
+   * JSON-LD for this document, if it has any.
+   *
+   * Describes the DOCUMENT — headline, dates, language, reviewer. Deliberately
+   * never an Organization block with a legal name or address: what the company
+   * asserts about itself is a decision for its officers, not something that
+   * arrives by default in markup nobody reads.
+   */
+  structuredData?: Record<string, unknown>
+  /** An RSS feed this page is the human view of, if one exists. */
+  feedUrl?: string
 }
 
 /** The target for a registered page. The enum path, unchanged in behaviour. */
-export function targetForPage(page: Page): PrerenderTarget {
-  return { metadata: metadataForPage(page), alternates: languageAlternatesFor(page) }
+export function targetForPage(page: Page, extra: Partial<PrerenderTarget> = {}): PrerenderTarget {
+  return { metadata: metadataForPage(page), alternates: languageAlternatesFor(page), ...extra }
 }
 
 /** Where a page's prerendered document is written, relative to `dist/`. */
@@ -130,6 +141,8 @@ const MANAGED_HEAD_PATTERNS: RegExp[] = [
   /<meta\b[^>]*\bname=["']twitter:[^"']*["'][^>]*>\s*/gi,
   /<link\b[^>]*\brel=["']canonical["'][^>]*>\s*/gi,
   /<link\b[^>]*\brel=["']alternate["'][^>]*\bhreflang=[^>]*>\s*/gi,
+  /<link\b[^>]*\btype=["']application\/rss\+xml["'][^>]*>\s*/gi,
+  /<script\b[^>]*\btype=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>\s*/gi,
 ]
 
 /**
@@ -168,6 +181,20 @@ export function buildHeadTags(target: PrerenderTarget): string {
     tags.push(`<meta property="og:description" content="${escapeAttribute(meta.description)}" />`)
   }
   tags.push(`<meta name="twitter:card" content="summary" />`)
+
+  if (target.feedUrl) {
+    tags.push(
+      `<link rel="alternate" type="application/rss+xml" title="${escapeAttribute(meta.title)}" href="${escapeAttribute(target.feedUrl)}" />`,
+    )
+  }
+
+  if (target.structuredData) {
+    // `<` is escaped so a value can never close the script element early. This
+    // is the one place authored content reaches a <script>, and JSON.stringify
+    // alone does not protect against `</script>` appearing inside a string.
+    const json = JSON.stringify(target.structuredData, null, 2).replace(/</g, '\\u003c')
+    tags.push(`<script type="application/ld+json">\n${json}\n    </script>`)
+  }
 
   // Reciprocal by construction — languageAlternatesFor returns every member of
   // the translation group including this page, because a one-way hreflang is
