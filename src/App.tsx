@@ -755,6 +755,12 @@ export default function App() {
     setDbError(reportDbError(err, page))
   }
 
+  // Passed as onBegin to commitMutation: clears any stale error banner the
+  // instant an action is attempted, so the banner survives any navigation that
+  // action triggers while still being cleared before the new attempt's outcome
+  // is known.
+  function onBeginAction() { setDbError(null) }
+
   // ── Navigation ───────────────────────────────────────────────────────────
   // The public pages are cream; the app shell is navy. .public-auth-shell only
   // covers <main>, so body kept painting navy behind it — visible during route
@@ -901,6 +907,7 @@ export default function App() {
     const created = await commitMutation(
       () => createInventoryBatch(item, currentProfile?.id),
       {
+        onBegin: onBeginAction,
         onCommitted: () => {
           setInventory(prev => {
             const exists = prev.some(i => i.id === item.id)
@@ -964,6 +971,7 @@ export default function App() {
           return storagePath
         },
         {
+          onBegin: onBeginAction,
           onCommitted: (storagePath) => {
             setInventory(prev => prev.map(i =>
               i.id === item.id
@@ -1022,6 +1030,7 @@ export default function App() {
           return stored
         },
         {
+          onBegin: onBeginAction,
           onCommitted: (stored) => {
             setInventory(prev => prev.map(i =>
               i.id === item.id
@@ -1081,6 +1090,7 @@ export default function App() {
     const created = await commitMutation(
       () => createReviewRequest(req, currentProfile?.id),
       {
+        onBegin: onBeginAction,
         onCommitted: () => { setReviewRequests(prev => [newReq, ...prev]) },
         onError: onDbError,
       },
@@ -1094,6 +1104,7 @@ export default function App() {
     await commitMutation(
       () => patchInventoryBatch(stockItemId, { stock_status: 'needs_changes' }),
       {
+        onBegin: onBeginAction,
         onCommitted: () => {
           setInventory(prev => prev.map(i =>
             i.id === stockItemId ? { ...i, stockStatus: 'needs_changes' as const } : i
@@ -1108,6 +1119,7 @@ export default function App() {
     await commitMutation(
       () => resolveReviewRequest(requestId),
       {
+        onBegin: onBeginAction,
         onCommitted: () => {
           setReviewRequests(prev => prev.map(r =>
             r.id === requestId ? { ...r, status: 'resolved' as const, resolvedAt: new Date().toISOString() } : r
@@ -1128,6 +1140,7 @@ export default function App() {
         stock_status: newStockStatus,
       }),
       {
+        onBegin: onBeginAction,
         onCommitted: () => {
           setInventory(prev => prev.map(i =>
             i.id === itemId ? { ...i, clientVisible: visible, stockStatus: newStockStatus } : i
@@ -1142,6 +1155,7 @@ export default function App() {
     await commitMutation(
       () => saveBatchInternalNote(itemId, note),
       {
+        onBegin: onBeginAction,
         onCommitted: () => {
           setInventory(prev => prev.map(i =>
             i.id === itemId ? { ...i, ownerNotes: note.trim() || undefined } : i
@@ -1164,6 +1178,7 @@ export default function App() {
     await commitMutation(
       () => createFarmProfile(farm, currentProfile?.id),
       {
+        onBegin: onBeginAction,
         onCommitted: () => {
           setFarms(prev => {
             // If a farm with this ID already exists (e.g. advanced profile update), replace it
@@ -1201,6 +1216,7 @@ export default function App() {
     await commitMutation(
       () => updateFarmProfileStatus(farmId, newStatus, oldStatus, currentProfile?.id),
       {
+        onBegin: onBeginAction,
         onCommitted: () => {
           setFarms(prev => prev.map(f => f.id === farmId ? { ...f, status: newStatus } : f))
           goTo('ddp-farms')
@@ -1239,6 +1255,7 @@ export default function App() {
     await commitMutation(
       () => updateInventoryStatus(itemId, newStatus, oldStatus, currentProfile?.id),
       {
+        onBegin: onBeginAction,
         onCommitted: () => {
           setInventory(prev => prev.map(i => i.id === itemId ? { ...i, status: newStatus } : i))
           goTo('ddp-inventory')

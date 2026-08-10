@@ -24,8 +24,9 @@
  */
 export async function commitMutation<T>(
   persist: () => Promise<T>,
-  handlers: { onCommitted: (value: T) => void; onError: (err: unknown) => void },
+  handlers: { onBegin?: () => void; onCommitted: (value: T) => void; onError: (err: unknown) => void },
 ): Promise<boolean> {
+  handlers.onBegin?.()
   let value: T
   try {
     value = await persist()
