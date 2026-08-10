@@ -2,6 +2,8 @@
 
 **Single source of truth for the full DDP Brokerage product plan.**
 
+> **Immediate execution programme (adopted 2026-08-10):** [`CONTROLLED_PILOT_EXECUTION_PLAN_2026-08-10.md`](CONTROLLED_PILOT_EXECUTION_PLAN_2026-08-10.md) defines the sequential gates, evidence requirements, stop conditions, and explicit production-cleanup approval checkpoint for the first genuine-farm pilot. It is subordinate to this product roadmap but supersedes Section 13 wherever the older sequence conflicts with its controlled pilot order. Adoption of that plan does **not** authorise production deletion, deployment, migration application, or publication of private supplier evidence.
+
 **Status of this document:** Documentation only. No application code, SQL, migration, test, environment file, branch, commit, deployment, or external setting was created or changed to produce it. Nothing here was applied, migrated, pushed, or deployed.
 
 **Audited baseline:** `origin/main` @ **`afbe59e1ba19cf2c2799f83c90add134ae0923d0`** — *"Add DDP-controlled farmer provisioning (#22)"*, merged 2026-07-20. Reconciliation performed 2026-07-21.
