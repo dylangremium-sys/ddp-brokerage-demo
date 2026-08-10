@@ -1,6 +1,7 @@
 import { T } from '../../translations'
 import type { Lang, Page } from '../../types'
 import CorporatePageShell from '../../components/public/CorporatePageShell'
+import { OFFICE_TEL_HREF } from '../../lib/publicPhone'
 
 /* ────────────────────────────────────────────────────────────────────────────
    /about — public corporate information.
@@ -87,7 +88,7 @@ export default function AboutPage({ lang, setLang, onNavigate }: Props) {
           {copy.homeFooterOfficeLine1}<br />
           {copy.homeFooterOfficeLine2}<br />
           {copy.homeFooterOfficeLine3}<br />
-          {copy.homeFooterOfficeTel}
+          <a href={OFFICE_TEL_HREF}>{copy.homeFooterOfficeTel}</a>
         </address>
       </section>
     </CorporatePageShell>

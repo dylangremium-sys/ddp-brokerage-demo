@@ -4,6 +4,7 @@ import { T } from '../../translations'
 import { submitAccessRequest, AccessRequestError } from '../../lib/accessRequestClient'
 import FarmerQRCode from '../../components/shared/FarmerQRCode'
 import LangToggle from '../../components/shared/LangToggle'
+import { OFFICE_TEL_HREF } from '../../lib/publicPhone'
 
 const THAI_PROVINCES = [
   'Amnat Charoen', 'Ang Thong', 'Bangkok', 'Bueng Kan', 'Buri Ram',
@@ -135,7 +136,7 @@ export default function FarmerRegister({ lang, setLang, onComplete }: Props) {
           <p className="td-muted" style={{ fontSize: 13 }}>
             {copy.contactByPhone}{' '}
             <strong>
-              <a href="tel:+6622108888">{copy.homeFooterOfficeTel}</a>
+              <a href={OFFICE_TEL_HREF}>{copy.homeFooterOfficeTel}</a>
             </strong>
           </p>
           <button

@@ -5,6 +5,7 @@ import { pathForPage } from '../../lib/urlRouting'
 import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
 import { metadataForPage } from '../../lib/publicPageMetadata'
 import { DRAFTED } from './thaiSupplierCopy'
+import { OFFICE_TEL_HREF } from '../../lib/publicPhone'
 
 /* ────────────────────────────────────────────────────────────────────────────
    /th/suppliers — the Thai-language page for producers.
@@ -171,7 +172,7 @@ export default function ThaiSupplierPage({ onNavigate }: Props) {
               carries the same working channel. */}
           <p>
             {copy.contactByPhone}{' '}
-            <strong><a href="tel:+6622108888">{copy.homeFooterOfficeTel}</a></strong>
+            <strong><a href={OFFICE_TEL_HREF}>{copy.homeFooterOfficeTel}</a></strong>
           </p>
           <p>
             <InternalLink target="farmer-register" onNavigate={onNavigate}>
