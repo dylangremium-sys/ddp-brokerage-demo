@@ -37,6 +37,21 @@ export const PUBLIC_AUTH_PAGES: Page[] = [
 ]
 
 /**
+ * The public corporate pages: company information, contact details and the two
+ * legal notices.
+ *
+ * Kept OUT of PUBLIC_AUTH_PAGES on purpose. That list is not "the public pages"
+ * — it is the set that gets the cream `public-auth-shell` card treatment and
+ * the `public-auth-page` body class. A corporate page is a document, not an
+ * auth card: it draws its own full-width shell. Adding them to the auth list
+ * would have rendered a privacy policy inside a login-sized card.
+ *
+ * These are the only pages other than the landing page approved for public
+ * search indexing; lib/publicPageMetadata.ts is the register that says so.
+ */
+export const PUBLIC_CORPORATE_PAGES: Page[] = ['about', 'contact', 'privacy', 'terms', 'de-buyer', 'cs-buyer', 'th-supplier', 'regulatory-hub', 'regulatory-entry']
+
+/**
  * Pages a signed-out visitor may reach.
  *
  * INVARIANT: every page an unauthenticated surface links to MUST appear here,
@@ -48,20 +63,36 @@ export const PUBLIC_AUTH_PAGES: Page[] = [
  * require a session — but it is the invite/recovery link that grants it, not a
  * prior login, so the navigation guard must not demand one.
  */
-export const PUBLIC_PAGES: Page[] = ['landing', ...PUBLIC_AUTH_PAGES]
+export const PUBLIC_PAGES: Page[] = ['landing', ...PUBLIC_AUTH_PAGES, ...PUBLIC_CORPORATE_PAGES]
 
 /** Farmer-scoped pages. An admin is steered away from the operational ones. */
 export const FARMER_PAGES: Page[] = [
   ...PUBLIC_PAGES,
   'farmer-dashboard', 'farmer-onboarding', 'farmer-advanced-profile',
   'farmer-my-stock', 'farmer-stock-form', 'farmer-requests', 'farmer-status',
+  'farmer-evidence',
 ]
+
+/**
+ * Buyer-scoped pages.
+ *
+ * A buyer sees the public surfaces and their own dashboard, and nothing else.
+ * They must never reach a farmer or admin page: the farmer screens carry other
+ * farms' identities, and the admin screens carry review decisions and internal
+ * notes. RLS is the real boundary — this list keeps the client from asking.
+ */
+export const BUYER_PAGES: Page[] = [...PUBLIC_PAGES, 'buyer-dashboard']
 
 export interface NavigationContext {
   /** Demo mode has no backend and no real identity; guards do not apply. */
   isDemo: boolean
   isSignedIn: boolean
   isAdminRole: boolean
+  /**
+   * Optional so existing callers keep working. Absent means "not a buyer",
+   * which is the safe default: the buyer rules below only ever RESTRICT.
+   */
+  isBuyerRole?: boolean
 }
 
 /**
@@ -75,6 +106,21 @@ export function resolveNavigationTarget(requested: Page, ctx: NavigationContext)
 
   // A signed-out caller may only reach a public page.
   if (!ctx.isSignedIn && !PUBLIC_PAGES.includes(requested)) return 'login'
+
+  // A buyer may reach their own surface and the public ones, nothing else.
+  // Checked BEFORE the admin rule: a buyer is not an admin, and leaving this
+  // until later would let a buyer request an admin page and be returned it.
+  if (ctx.isBuyerRole) {
+    return BUYER_PAGES.includes(requested) ? requested : 'buyer-dashboard'
+  }
+
+  // Conversely, nobody but a buyer lands on the buyer surface. An admin has
+  // their own buyer PREVIEW for seeing what a buyer would see; sending them to
+  // the real one would show them a surface scoped to an identity they do not
+  // hold.
+  if (requested === 'buyer-dashboard') {
+    return ctx.isAdminRole ? 'ddp-overview' : 'farmer-dashboard'
+  }
 
   // An admin has no farmer dashboard; steer them to their own overview. Public
   // pages are exempt so an admin can still view the landing and auth screens.

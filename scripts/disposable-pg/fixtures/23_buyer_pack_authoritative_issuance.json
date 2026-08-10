@@ -1,0 +1,81 @@
+{
+  "id": "23_buyer_pack_authoritative_issuance",
+  "title": "Migration 23 \u2014 server-authoritative buyer-pack issuance (first execution of its rollback)",
+  "description": "Applies the base schema, the farmer MVP, migrations 9, 10 and 17, then migration 23, runs 23's VERIFY section A, and rolls 23 back. 23 does not create or drop anything: it REPLACES public.issue_buyer_pack_snapshot in place so issuance is authorised by the server \u2014 admin role, a recorded 'progress' decision, and a named human approver \u2014 instead of by whatever the client asserted. Its rollback restores the previous body under the SAME signature, which means object names and counts are identical before and after and every presence-based check passes vacuously. The only thing that can distinguish a correct rollback here from one that left the new body in place is the definition digest in the catalog snapshot, so this fixture is a direct test of that. Its ROLLBACK had never been executed anywhere before now (defect D6). A PRE-23-WORLD stage installs migration 10's original client-trusting definition, because migration 10 deliberately deleted it from its own file: without that stage the baseline has no such function at all and 23's rollback correctly appears to conjure one. That is a real statement about replaying today's repo, but not about production, where 10 was applied while it still carried the function.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "FARMER-MVP",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "HARDENING-9",
+      "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql"
+    },
+    {
+      "label": "MVP-10",
+      "file": "10_BUYER_PACK_SNAPSHOTS_MVP.sql"
+    },
+    {
+      "label": "MVP-17",
+      "file": "17_PROCUREMENT_DECISIONS_MVP.sql"
+    },
+    {
+      "label": "PRE-23-WORLD",
+      "file": "scripts/disposable-pg/fixtures/sql/98_pre23_world.sql"
+    },
+    {
+      "label": "HARDENING-23",
+      "file": "23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE.sql"
+    }
+  ],
+  "verify": {
+    "file": "23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE_VERIFY.sql",
+    "expectedSections": [
+      "A"
+    ],
+    "expectedPassCount": 1
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "23_BUYER_PACK_SERVER_AUTHORITATIVE_ISSUANCE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "postRollback": {
+    "intact": {
+      "tables": [
+        "public.buyer_pack_snapshots",
+        "public.buyer_pack_audit_log",
+        "public.procurement_decisions"
+      ],
+      "functions": [
+        "public.issue_buyer_pack_snapshot",
+        "public.is_ddp_admin"
+      ]
+    }
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  }
+}

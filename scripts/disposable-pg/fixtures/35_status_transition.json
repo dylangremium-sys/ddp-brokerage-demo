@@ -2,7 +2,7 @@
   "id": "35_status_transition",
   "title": "Migration 35 — Atomic status transition RPC",
   "description": "Applies migration 35, runs VERIFY A-J (object state, ACL, both happy paths, the atomicity guarantee, every authorisation branch, and the server-authoritative old_status/reviewer rules), then rolls back on a disposable PostgreSQL 18 cluster. Migration 35 owns no data, so there is no destructive-rollback guard to exercise.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     { "label": "HARDENING", "file": "35_STATUS_TRANSITION_ATOMIC_HARDENING.sql" }

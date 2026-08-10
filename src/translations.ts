@@ -20,6 +20,56 @@ export const INVENTORY_STATUS_LABEL: Record<InventoryStatus, Record<Lang, string
 
 export const T = {
   en: {
+    // Added while the domain's mailboxes are unreachable: every page that asks
+    // somebody to make contact must offer a channel that currently works.
+    contactByPhone: 'You can also reach us by telephone.',
+    // ── Supplier acquisition block (homepage) ─────────────────────────────
+    // Cleared copy, 2026-08-09. The buyer may be referenced unnamed as
+    // "a certified pharmaceutical buyer in Central Europe" — that exact
+    // phrasing, not a variation of it.
+    landingSupplierHeading: 'Licensed producers in Thailand',
+    landingSupplierDemand: 'We are buying now, for a certified pharmaceutical buyer in Central Europe.',
+    landingSupplierForms: 'Every form — flower, biomass, trim, fresh frozen, crude, distillate, isolate. If it is documented, legal and exportable, we want to see it.',
+    landingSupplierSend: 'Send us your documentation as it is. Licences are verified, laboratory accreditation is confirmed, and documents are checked against the material offered. You do not need a perfect document set to start a conversation. You need a licence and material to sell.',
+    landingSupplierCta: 'Join as a supplier',
+    // ── Supplier registration (/farmer) ──────────────────────────────────
+    // Moved here from inline `isTh ? … : …` ternaries in
+    // pages/farmer/FarmerRegister.tsx. The Thai is the original human-written
+    // wording, carried across unchanged — nothing here was machine-translated.
+    // It lived in the component because that page predates the register, which
+    // meant the one page written FOR Thai suppliers was the one page whose Thai
+    // nobody could find.
+    farmerRegErrNameRequired: 'Name is required.',
+    farmerRegErrEmailRequired: 'Email is required.',
+    farmerRegErrPhoneRequired: 'Phone number is required.',
+    farmerRegErrIntakeClosed: 'The request form is not available yet. Please contact the DDP team directly.',
+    farmerRegErrRetry: 'The request could not be sent. Please try again.',
+    farmerRegErrGeneric: 'The request could not be sent.',
+    farmerRegReviewNote: 'The DDP team will review your request. If accepted, we will email you an invitation to create your account.',
+    farmerRegAdminOnlyNote: 'Supplier accounts are issued by an administrator only. You do not have an account yet.',
+    farmerRegTwoMinutes: 'It takes 2 minutes. We are buying now for a certified pharmaceutical buyer in Central Europe, and our team reviews every request.',
+    farmerRegQrHint: 'Scan the QR code or share the /farmer link to open this form directly.',
+    farmerRegSubmittedTitle: 'We have your request',
+    farmerRegContactAt: 'We will contact you at: ',
+    farmerRegBackHome: 'Back to home',
+    farmerRegHeading: 'Join as a Supplier',
+    farmerRegShareLink: 'Share this link with farmers',
+    farmerRegNameLabel: 'Your name or farm nickname',
+    farmerRegNamePlaceholder: 'e.g. Green Valley Farm',
+    farmerRegEmailLabel: 'Email address',
+    farmerRegEmailPlaceholder: 'e.g. somchai@example.com',
+    farmerRegEmailHint: 'Your invitation will be sent to this address.',
+    farmerRegPhoneLabel: 'Phone number',
+    farmerRegPhonePlaceholder: 'e.g. 0812345678',
+    farmerRegProvinceLabel: 'Province',
+    farmerRegProvincePlaceholder: 'Select your province',
+    farmerRegRoleLabel: 'Your role',
+    farmerRegRoleFarmer: 'Farmer',
+    farmerRegRoleManager: 'Farm Manager',
+    farmerRegRoleBroker: 'Broker',
+    farmerRegPreferredLang: 'Preferred language',
+    farmerRegSending: 'Sending…',
+    farmerRegSubmit: 'Request access',
     // Nav
     farmerGroupLabel: 'FARMER',
     ddpGroupLabel: 'DDP',
@@ -121,7 +171,18 @@ export const T = {
     landingAboutTitle: 'About Us',
     landingAboutText1: 'DDP turns Thai farm supply, batch records, COAs, and pricing into a clear buyer-discussion review pack — helping serious buyers understand what is claimed, what is documented, and what is ready to progress.',
 
-    landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted. Access is limited to onboarded partners during the current onboarding phase.',
+    // ── The licensed-operators notice, in two parts ──────────────────────
+    // Sentence ① is unchanged and its Thai, German and Czech translations are
+    // reused byte-for-byte — publicCorporateCopy tests assert that. Sentence ②
+    // used to read "Access is limited to onboarded partners during the current
+    // onboarding phase", which a producer reads as "the door is closed". On a
+    // business whose current need is supply acquisition that was the wrong
+    // signal on every page. The restriction is unchanged; only the signal is.
+    //
+    // They must always render together as one notice — asserted, because two
+    // keys are two things that can drift apart or be used singly.
+    landingDisclaimer: 'This platform is for licensed cannabis operators only, in jurisdictions where cultivation, processing, and supply of cannabis are lawfully permitted.',
+    landingDisclaimerAccess: 'Platform accounts are issued by invitation. Licensed producers may request access at any time.',
     landingAuthorityNote: 'DDP organizes, consolidates, and reviews supplier documentation. DDP does not certify export readiness, pharmaceutical readiness, or legal compliance in any jurisdiction. Buyer decisions should rely only on reviewed documents and confirmation from a qualified party.',
 
     // ── Homepage (approved LandPage.png redesign) ──
@@ -191,8 +252,8 @@ export const T = {
     homeFooterHeading: 'Let’s work together.',
     homeFooterSub: 'Get in touch with our team.',
     homeFooterEmailLabel: 'Email',
-    homeFooterEmail1: 'info@ddp-brokerage.com',
-    homeFooterEmail2: 'partnerships@ddp-brokerage.com',
+    homeFooterEmail1: 'info@ddpbrokerage.com',
+    homeFooterEmail2: 'partnerships@ddpbrokerage.com',
     homeFooterOfficeLabel: 'Head Office',
     homeFooterOfficeLine1: '1 Charoen Aksorn Building, 5th Floor',
     homeFooterOfficeLine2: 'Charoenrat Road, Sathorn,',
@@ -201,6 +262,112 @@ export const T = {
     homeFooterCopyright: '© 2026 DDP Brokerage Co., Ltd. All rights reserved.',
     homeFooterPrivacy: 'Privacy Policy',
     homeFooterTerms: 'Terms of Use',
+    homeFooterAbout: 'About',
+    homeFooterContact: 'Contact',
+
+    // ── Public corporate pages (/about, /contact, /privacy, /terms) ──────────
+    //
+    // SOURCING RULE FOR EVERYTHING BELOW
+    // These pages are indexable, so a claim made here is a claim made publicly
+    // by the company. Every statement is therefore one of exactly two things:
+    //
+    //   (a) copy already approved on `main` — reused BY KEY from the landing
+    //       page rather than re-typed, so it cannot drift into a stronger claim
+    //       than the one the landing page makes; or
+    //   (b) a description of behaviour that can be read out of this repository
+    //       — what the registration form collects, where documents are stored,
+    //       what the client is permitted to talk to.
+    //
+    // Nothing here asserts a certification, an approval, an export or
+    // pharmaceutical status, or a compliance outcome. The master plan's Gate 5
+    // banned-claim list is asserted against this file by
+    // publicCorporateCopy.test.ts, so a future edit cannot quietly reintroduce
+    // one.
+    //
+    // Facts NOT stated because the repository does not evidence them: company
+    // registration number, data-protection officer, specific retention periods,
+    // and governing law. They are omitted rather than guessed.
+
+    // Shared page furniture
+    corpOwnerLabel: 'Content owner',
+    corpOwnerValue: 'DDP Brokerage — Compliance & Operations',
+    corpReviewedLabel: 'Last reviewed',
+    corpReviewedValue: '8 August 2026',
+    corpBackHome: 'Back to home',
+    corpNavHome: 'Home',
+    corpRelatedHeading: 'Related pages',
+
+    // About
+    corpAboutHeading: 'About DDP Brokerage',
+    corpAboutWhatHeading: 'What we do',
+    corpAboutProcessHeading: 'How supply is reviewed',
+    corpAboutReviewNote: 'Every review ends with a named reviewer. The platform organises evidence and shows what is present, what is outstanding and what is still under review — the decision to progress a batch is made by a reviewer and recorded against that batch.',
+    corpAboutLimitsHeading: 'What we do not do',
+    corpAboutAccessHeading: 'Who can use this platform',
+    corpAboutCompanyHeading: 'The company',
+    corpAboutCompanyIntro: 'DDP Brokerage Co., Ltd. is registered in Thailand and operates from Bangkok.',
+
+    // Contact
+    corpContactHeading: 'Contact DDP Brokerage',
+    corpContactLead: 'For enquiries about supply, partnerships or this platform, use the channels below. We reply from the same addresses.',
+    corpContactEmailHeading: 'Email',
+    corpContactGeneralLabel: 'General enquiries',
+    corpContactPartnershipsLabel: 'Supply and buyer partnerships',
+    corpContactOfficeHeading: 'Head office',
+    corpContactSupplierHeading: 'Licensed suppliers',
+    corpContactSupplierText: 'Licensed producers who want to supply through DDP can request access using the supplier registration form. A DDP administrator reviews each request before any account is created.',
+    corpContactSupplierCta: 'Supplier registration',
+    corpContactDocumentsNote: 'Please do not send certificates of analysis, licences or other supplier documents by email. Onboarded partners upload documents through the platform, where each file is recorded against the batch it belongs to and access is restricted to the people entitled to see it.',
+
+    // Privacy
+    corpPrivacyHeading: 'Privacy Policy',
+    corpPrivacyIntro: 'This policy describes the personal information the DDP Brokerage platform handles, why it is held, and who processes it. It describes the platform as operated on the review date shown above.',
+    corpPrivacyCollectHeading: 'What the platform collects',
+    corpPrivacyCollectRequest: 'Access requests. When someone asks for access using the supplier registration form, the platform records the name, email address and telephone number entered on that form.',
+    corpPrivacyCollectProfile: 'Supplier profiles. An onboarded supplier completes a farm profile containing business details — legal and trading name, registered and operational addresses, and registration and tax numbers — together with named contacts, their positions and their contact details.',
+    corpPrivacyCollectDocuments: 'Documents and records. Supplier documents such as certificates of analysis, licences and batch photographs are stored against the batch they belong to, along with the batch, stock and pricing information a supplier submits.',
+    corpPrivacyCollectAccount: 'Account information. Accounts are identified by email address. Sign-in, password-reset and invitation handling are performed by our authentication provider.',
+    corpPrivacyWhyHeading: 'Why it is held',
+    corpPrivacyWhyText: 'To operate the review process the platform exists for: to identify who submitted a record, to let reviewers ask a supplier for missing evidence, to keep an audit trail of review decisions, and to prepare review packs for buyers. Supplier information is not sold, and it is not shared for advertising.',
+    corpPrivacyProcessorsHeading: 'Who processes it',
+    corpPrivacyProcessorsText: 'The application, its database, its file storage and its authentication run on Supabase, which acts as our hosting and infrastructure processor. The site is served by Vercel. Email we send and receive is handled by our email provider. Staff of DDP Brokerage access records in the course of reviewing them.',
+    corpPrivacyControlsHeading: 'How access is restricted',
+    corpPrivacyControlsText: 'Uploaded documents are held in private storage: they have no public address, and are reached only through short-lived links issued to a signed-in user who is entitled to that record. Database access is restricted per account by row-level security rules enforced by the database itself rather than by the browser, so a signed-out visitor reads nothing. Suppliers see their own records; reviewers see the records they review.',
+    corpPrivacyCookiesHeading: 'Cookies and tracking',
+    corpPrivacyCookiesText: 'This site runs no third-party analytics, advertising or tracking scripts. Its content security policy allows the browser to execute code only from this site itself, which is what prevents such a script from being added.',
+    corpPrivacyNetworkText: 'When you use this site your browser contacts exactly three places. It requests pages and code from this site. It sends and receives your data — over both ordinary requests and a live connection — with our Supabase project, which is the database and file storage described above. And it requests a stylesheet and typefaces from Google Fonts, which means Google receives your IP address and basic request information each time a page loads. No other outside service is contacted, and no data about you is sent to Google beyond what making that font request necessarily reveals.',
+    corpPrivacyFontsText: 'If you would rather not make that request to Google, blocking those two addresses in your browser leaves the site fully usable; only the typefaces change.',
+    corpPrivacyStorageText: 'Browser storage is used in place of tracking cookies. For a visitor who is not signed in, the only thing kept is whether you chose English or Thai. Once you sign in it also holds your session, so you stay signed in between pages, and some operational screens keep working notes — such as a record of which buyer packs have been downloaded — in your own browser.',
+    corpPrivacyDemoText: 'One case works differently and is worth stating plainly. If this application is run as an offline demonstration, with no database configured, then browser storage IS the database: farm profiles, stock records, review requests and similar entries you type in are held only in your own browser and are never sent anywhere. The hosted service at this address is not run that way — it is configured against the database described above — but anyone running their own copy should know which of the two they are using.',
+    corpPrivacyRetentionHeading: 'How long records are kept',
+    corpPrivacyRetentionText: 'Supplier records, review decisions and the documents attached to them are retained while the account is active and afterwards where they form part of an audit trail of a decision already taken. To ask how long a specific record will be held, or to ask that a record be corrected or removed, contact us at the address below and we will tell you what applies to it.',
+    corpPrivacyContactHeading: 'Asking about your information',
+    corpPrivacyContactText: 'Write to info@ddpbrokerage.com, or to the head office address on our contact page. Tell us what you are asking about and we will explain what is held and what can be changed.',
+    corpPrivacyChangesHeading: 'Changes to this policy',
+    corpPrivacyChangesText: 'If the platform changes what it collects or who processes it, this page is updated and the review date above changes with it.',
+
+    // Terms
+    corpTermsHeading: 'Terms of Use',
+    corpTermsIntro: 'These terms cover use of the DDP Brokerage platform and this website. They describe the service as operated on the review date shown above.',
+    corpTermsEligibilityHeading: 'Who may use the platform',
+    corpTermsAccessHeading: 'Accounts and access',
+    corpTermsAccessText: 'Accounts are created by DDP administrators after a request is reviewed; there is no open self-service account creation for operational access. You are responsible for the security of your credentials and for activity carried out under your account. Tell us immediately if you believe an account has been compromised. Access may be suspended or withdrawn — including where a licence lapses or a term below is breached.',
+    corpTermsServiceHeading: 'What the platform provides',
+    corpTermsServiceText: 'The platform organises supplier documentation and presents it, with its review status, to the people entitled to see it. It is decision support: it shows what has been submitted, what has been reviewed and what is outstanding.',
+    corpTermsRelianceHeading: 'Reliance on information',
+    corpTermsRelianceText: 'Information shown on the platform reflects what suppliers have submitted and what reviewers have recorded. It is not legal, regulatory or professional advice, and it is not a substitute for your own due diligence. A record marked as reviewed means a DDP reviewer has assessed the documents supplied — it is not a warranty of the underlying goods, and status shown at one moment may change as further evidence arrives.',
+    corpTermsSupplierHeading: 'Information you submit',
+    corpTermsSupplierText: 'If you submit information or documents, you confirm you are entitled to provide them and that they are accurate and not misleading as far as you are aware. Submitting falsified documents is grounds for immediate withdrawal of access.',
+    corpTermsConfidentialityHeading: 'Confidentiality',
+    corpTermsConfidentialityText: 'Supplier and batch information reached through the platform is confidential. Do not copy, publish or pass it to anyone outside the purpose for which access was granted.',
+    corpTermsAcceptableHeading: 'Acceptable use',
+    corpTermsAcceptableText: 'Do not attempt to access records that are not yours, to probe or interfere with the platform’s security controls, or to extract data by automated means. Do not use the platform for any purpose unlawful in the jurisdiction you operate in.',
+    corpTermsIpHeading: 'Intellectual property',
+    corpTermsIpText: 'The platform, its interface and its content are owned by DDP Brokerage Co., Ltd. or its licensors, except for documents and records submitted by suppliers, which remain theirs.',
+    corpTermsChangesHeading: 'Changes to these terms',
+    corpTermsChangesText: 'These terms may be updated as the service changes. The review date above shows when this version was published.',
+    corpTermsContactHeading: 'Questions about these terms',
+    corpTermsContactText: 'Contact info@ddpbrokerage.com or write to the head office address on our contact page.',
 
     // Onboarding
     eyebrow: 'SUPPLIER & FARMER PORTAL',
@@ -504,6 +671,8 @@ export const T = {
     myActivityDesc: 'Track your farm registrations and inventory submissions.',
     requestsLabel: 'DDP Requests',
     requestsDesc: 'View and respond to requests from the DDP team.',
+    evidenceLabel: 'My Evidence',
+    evidenceDesc: 'See DDP’s decision on each document you uploaded.',
     advancedProfile: 'Advanced Details',
     advancedProfileDesc: 'Add legal, ownership, and export information for DDP due diligence.',
     needHelp: 'Need help?',
@@ -618,6 +787,53 @@ export const T = {
     scopeLoadingSubmissions: 'Loading your submissions…',
   },
   th: {
+    // See the English note on this key.
+    contactByPhone: 'คุณสามารถติดต่อเราทางโทรศัพท์ได้เช่นกัน',
+    // ── Supplier acquisition block (homepage) ─────────────────────────────
+    // NEWLY DRAFTED THAI — awaiting a Thai reader. Listed in the PR.
+    landingSupplierHeading: 'ผู้ผลิตที่ได้รับใบอนุญาตในประเทศไทย',
+    landingSupplierDemand: 'ขณะนี้เรากำลังรับซื้อ เพื่อผู้ซื้อภาคเภสัชกรรมที่ได้รับการรับรองในยุโรปกลาง',
+    landingSupplierForms: 'ทุกรูปแบบ — ดอก ไบโอแมส ทริม ฟรีชฟโรเซน ครูด ดิสทิลเลท ไอโซเลท หากมีเอกสารครบ ถูกกฎหมาย และส่งออกได้ เราต้องการดู',
+    landingSupplierSend: 'ส่งเอกสารของคุณมาตามที่มีอยู่ เราตรวจสอบใบอนุญาต ยืนยันการรับรองห้องปฏิบัติการ และตรวจสอบเอกสารเทียบกับสินค้าที่เสนอ คุณไม่จำเป็นต้องมีชุดเอกสารที่สมบูรณ์เพื่อเริ่มพูดคุย คุณต้องมีใบอนุญาตและสินค้าที่จะขาย',
+    landingSupplierCta: 'สมัครเป็นผู้จัดหาสินค้า',
+    // ── Supplier registration (/farmer) ──────────────────────────────────
+    // Moved here from inline `isTh ? … : …` ternaries in
+    // pages/farmer/FarmerRegister.tsx. The Thai is the original human-written
+    // wording, carried across unchanged — nothing here was machine-translated.
+    // It lived in the component because that page predates the register, which
+    // meant the one page written FOR Thai suppliers was the one page whose Thai
+    // nobody could find.
+    farmerRegErrNameRequired: 'กรุณากรอกชื่อ',
+    farmerRegErrEmailRequired: 'กรุณากรอกอีเมล',
+    farmerRegErrPhoneRequired: 'กรุณากรอกเบอร์โทรศัพท์',
+    farmerRegErrIntakeClosed: 'ขณะนี้ยังไม่เปิดรับคำขอผ่านแบบฟอร์ม กรุณาติดต่อทีมงาน DDP โดยตรง',
+    farmerRegErrRetry: 'ส่งคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+    farmerRegErrGeneric: 'ส่งคำขอไม่สำเร็จ',
+    farmerRegReviewNote: 'ทีมงาน DDP จะตรวจสอบคำขอของคุณ และหากผ่านการพิจารณา เราจะส่งคำเชิญไปยังอีเมลของคุณเพื่อสร้างบัญชี',
+    farmerRegAdminOnlyNote: 'บัญชีผู้จัดหาสินค้าออกให้โดยผู้ดูแลระบบเท่านั้น คุณยังไม่มีบัญชีในขั้นตอนนี้',
+    farmerRegTwoMinutes: 'ใช้เวลาแค่ 2 นาที ขณะนี้เรากำลังรับซื้อเพื่อผู้ซื้อภาคเภสัชกรรมที่ได้รับการรับรองในยุโรปกลาง และทีมงานจะตรวจสอบทุกคำขอ',
+    farmerRegQrHint: 'สแกน QR หรือส่งลิงก์ /farmer เพื่อเปิดฟอร์มนี้โดยตรง',
+    farmerRegSubmittedTitle: 'ได้รับคำขอของคุณแล้ว',
+    farmerRegContactAt: 'อีเมลที่ใช้ติดต่อ: ',
+    farmerRegBackHome: 'กลับสู่หน้าแรก',
+    farmerRegHeading: 'สมัครเป็นผู้จัดหาสินค้า',
+    farmerRegShareLink: 'แชร์ลิงก์นี้ให้เกษตรกร',
+    farmerRegNameLabel: 'ชื่อ หรือชื่อฟาร์ม',
+    farmerRegNamePlaceholder: 'เช่น สวนพฤกษา',
+    farmerRegEmailLabel: 'อีเมล',
+    farmerRegEmailPlaceholder: 'เช่น somchai@example.com',
+    farmerRegEmailHint: 'เราจะส่งคำเชิญไปยังอีเมลนี้',
+    farmerRegPhoneLabel: 'เบอร์โทรศัพท์',
+    farmerRegPhonePlaceholder: 'เช่น 0812345678',
+    farmerRegProvinceLabel: 'จังหวัด',
+    farmerRegProvincePlaceholder: 'เลือกจังหวัด',
+    farmerRegRoleLabel: 'บทบาทของคุณ',
+    farmerRegRoleFarmer: 'เกษตรกร',
+    farmerRegRoleManager: 'ผู้จัดการฟาร์ม',
+    farmerRegRoleBroker: 'นายหน้า',
+    farmerRegPreferredLang: 'ภาษาที่ต้องการ',
+    farmerRegSending: 'กำลังส่ง…',
+    farmerRegSubmit: 'ขอเข้าใช้งาน',
     // Nav
     farmerGroupLabel: 'เกษตรกร',
     ddpGroupLabel: 'DDP',
@@ -713,7 +929,8 @@ export const T = {
     landingAboutTitle: 'เกี่ยวกับเรา',
     landingAboutText1: 'DDP เปลี่ยนข้อมูลอุปทานฟาร์มไทย บันทึกแบทช์ เอกสาร COA และราคา ให้เป็นแพ็กข้อมูลสำหรับการหารือกับผู้ซื้อที่ชัดเจน — ช่วยให้ผู้ซื้อจริงจังเข้าใจว่าอะไรคือข้อมูลที่แจ้งเอง อะไรมีเอกสารรองรับ และอะไรพร้อมดำเนินการต่อ',
 
-    landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย การเข้าถึงจำกัดเฉพาะพันธมิตรที่เข้าร่วมโครงการในระยะเริ่มต้นนี้',
+    landingDisclaimer: 'แพลตฟอร์มนี้สำหรับผู้ประกอบการกัญชาที่ได้รับใบอนุญาตเท่านั้น ในเขตอำนาจที่การเพาะปลูก การแปรรูป และการจัดหากัญชาเป็นสิ่งถูกกฎหมาย',
+    landingDisclaimerAccess: 'บัญชีผู้ใช้งานแพลตฟอร์มออกให้โดยการเชิญเท่านั้น ผู้ผลิตที่ได้รับใบอนุญาตสามารถขอเข้าใช้งานได้ตลอดเวลา',
     landingAuthorityNote: 'DDP จัดระเบียบ รวบรวม และตรวจทานเอกสารของซัพพลายเออร์ DDP ไม่รับรองความพร้อมด้านการส่งออก ความพร้อมด้านเภสัชกรรม หรือความถูกต้องตามกฎหมายในเขตอำนาจใดๆ การตัดสินใจของผู้ซื้อควรอ้างอิงจากเอกสารที่ตรวจทานแล้วและการยืนยันจากผู้ที่มีคุณสมบัติเท่านั้น',
 
     // ── Homepage (approved LandPage.png redesign) ──
@@ -783,8 +1000,8 @@ export const T = {
     homeFooterHeading: 'มาร่วมงานกัน',
     homeFooterSub: 'ติดต่อทีมงานของเรา',
     homeFooterEmailLabel: 'อีเมล',
-    homeFooterEmail1: 'info@ddp-brokerage.com',
-    homeFooterEmail2: 'partnerships@ddp-brokerage.com',
+    homeFooterEmail1: 'info@ddpbrokerage.com',
+    homeFooterEmail2: 'partnerships@ddpbrokerage.com',
     homeFooterOfficeLabel: 'สำนักงานใหญ่',
     homeFooterOfficeLine1: 'เลขที่ 1 อาคารเจริญอักษร ชั้น 5',
     homeFooterOfficeLine2: 'ถนนเจริญราษฎร์ เขตสาทร',
@@ -793,6 +1010,99 @@ export const T = {
     homeFooterCopyright: '© 2026 บริษัท ดีดีพี โบรกเกอเรจ จำกัด สงวนลิขสิทธิ์',
     homeFooterPrivacy: 'นโยบายความเป็นส่วนตัว',
     homeFooterTerms: 'ข้อกำหนดการใช้งาน',
+    homeFooterAbout: 'เกี่ยวกับเรา',
+    homeFooterContact: 'ติดต่อเรา',
+
+    // ── Public corporate pages ───────────────────────────────────────────────
+    // Same sourcing rule as the English block above: approved copy reused by
+    // key, or behaviour readable from this repository. Nothing asserts a
+    // certification or compliance outcome.
+    //
+    // TRANSLATION PROVENANCE: this Thai copy was authored alongside the English
+    // and has NOT yet been reviewed by a native speaker. These are public legal
+    // and corporate pages, so the wording — particularly in the privacy and
+    // terms text — should be confirmed by the owner before it is relied on.
+
+    // Shared page furniture
+    corpOwnerLabel: 'ผู้ดูแลเนื้อหา',
+    corpOwnerValue: 'DDP Brokerage — ฝ่ายกำกับดูแลและปฏิบัติการ',
+    corpReviewedLabel: 'ตรวจทานล่าสุด',
+    corpReviewedValue: '8 สิงหาคม 2569',
+    corpBackHome: 'กลับสู่หน้าแรก',
+    corpNavHome: 'หน้าแรก',
+    corpRelatedHeading: 'หน้าที่เกี่ยวข้อง',
+
+    // About
+    corpAboutHeading: 'เกี่ยวกับ DDP Brokerage',
+    corpAboutWhatHeading: 'สิ่งที่เราทำ',
+    corpAboutProcessHeading: 'กระบวนการตรวจทานอุปทาน',
+    corpAboutReviewNote: 'การตรวจทานทุกครั้งจบลงด้วยการตัดสินใจของบุคคล ระบบจะจัดระเบียบหลักฐานและแสดงว่ามีเอกสารใดครบ ใดยังขาด และใดอยู่ระหว่างการตรวจสอบ ส่วนการตัดสินใจว่าจะดำเนินการกับล็อตสินค้าต่อหรือไม่นั้นทำโดยผู้ตรวจทานและถูกบันทึกไว้กับล็อตนั้น',
+    corpAboutLimitsHeading: 'สิ่งที่เราไม่ได้ทำ',
+    corpAboutAccessHeading: 'ผู้ที่สามารถใช้แพลตฟอร์มนี้ได้',
+    corpAboutCompanyHeading: 'เกี่ยวกับบริษัท',
+    corpAboutCompanyIntro: 'บริษัท ดีดีพี โบรกเกอเรจ จำกัด จดทะเบียนในประเทศไทย และดำเนินงานจากกรุงเทพมหานคร',
+
+    // Contact
+    corpContactHeading: 'ติดต่อ DDP Brokerage',
+    corpContactLead: 'สำหรับการสอบถามเรื่องอุปทาน ความร่วมมือ หรือแพลตฟอร์มนี้ กรุณาใช้ช่องทางด้านล่าง เราตอบกลับจากที่อยู่อีเมลเดียวกัน',
+    corpContactEmailHeading: 'อีเมล',
+    corpContactGeneralLabel: 'สอบถามทั่วไป',
+    corpContactPartnershipsLabel: 'ความร่วมมือด้านอุปทานและผู้ซื้อ',
+    corpContactOfficeHeading: 'สำนักงานใหญ่',
+    corpContactSupplierHeading: 'ผู้ผลิตที่ได้รับใบอนุญาต',
+    corpContactSupplierText: 'ผู้ผลิตที่ได้รับใบอนุญาตซึ่งต้องการจัดหาสินค้าผ่าน DDP สามารถขอสิทธิ์เข้าใช้งานผ่านแบบฟอร์มลงทะเบียนผู้จัดหาสินค้า ผู้ดูแลระบบของ DDP จะตรวจสอบทุกคำขอก่อนสร้างบัญชีผู้ใช้',
+    corpContactSupplierCta: 'ลงทะเบียนผู้จัดหาสินค้า',
+    corpContactDocumentsNote: 'กรุณาอย่าส่งใบรับรองผลการวิเคราะห์ ใบอนุญาต หรือเอกสารอื่นของผู้จัดหาสินค้าทางอีเมล พันธมิตรที่เข้าร่วมระบบแล้วจะอัปโหลดเอกสารผ่านแพลตฟอร์ม ซึ่งไฟล์แต่ละไฟล์จะถูกบันทึกไว้กับล็อตสินค้าที่เกี่ยวข้อง และจำกัดการเข้าถึงเฉพาะผู้ที่มีสิทธิ์เท่านั้น',
+
+    // Privacy
+    corpPrivacyHeading: 'นโยบายความเป็นส่วนตัว',
+    corpPrivacyIntro: 'นโยบายนี้อธิบายข้อมูลส่วนบุคคลที่แพลตฟอร์ม DDP Brokerage จัดเก็บ เหตุผลในการจัดเก็บ และผู้ที่ประมวลผลข้อมูลดังกล่าว โดยอธิบายตามการดำเนินงานของแพลตฟอร์ม ณ วันที่ตรวจทานที่ระบุไว้ด้านบน',
+    corpPrivacyCollectHeading: 'ข้อมูลที่แพลตฟอร์มจัดเก็บ',
+    corpPrivacyCollectRequest: 'คำขอเข้าใช้งาน เมื่อมีผู้ขอสิทธิ์เข้าใช้งานผ่านแบบฟอร์มลงทะเบียนผู้จัดหาสินค้า ระบบจะบันทึกชื่อ ที่อยู่อีเมล และหมายเลขโทรศัพท์ที่กรอกไว้ในแบบฟอร์มนั้น',
+    corpPrivacyCollectProfile: 'ข้อมูลผู้จัดหาสินค้า ผู้จัดหาสินค้าที่เข้าร่วมระบบแล้วจะกรอกข้อมูลฟาร์ม ซึ่งประกอบด้วยรายละเอียดธุรกิจ ได้แก่ ชื่อนิติบุคคลและชื่อทางการค้า ที่อยู่จดทะเบียนและที่อยู่ดำเนินงาน เลขทะเบียนนิติบุคคลและเลขประจำตัวผู้เสียภาษี พร้อมทั้งชื่อผู้ติดต่อ ตำแหน่ง และข้อมูลติดต่อของบุคคลเหล่านั้น',
+    corpPrivacyCollectDocuments: 'เอกสารและบันทึก เอกสารของผู้จัดหาสินค้า เช่น ใบรับรองผลการวิเคราะห์ ใบอนุญาต และภาพถ่ายล็อตสินค้า จะถูกจัดเก็บไว้กับล็อตสินค้าที่เกี่ยวข้อง พร้อมกับข้อมูลล็อตสินค้า สต็อก และราคาที่ผู้จัดหาสินค้าส่งเข้ามา',
+    corpPrivacyCollectAccount: 'ข้อมูลบัญชีผู้ใช้ บัญชีผู้ใช้ระบุตัวตนด้วยที่อยู่อีเมล การเข้าสู่ระบบ การตั้งรหัสผ่านใหม่ และการเชิญเข้าใช้งานดำเนินการโดยผู้ให้บริการยืนยันตัวตนของเรา',
+    corpPrivacyWhyHeading: 'เหตุผลในการจัดเก็บ',
+    corpPrivacyWhyText: 'เพื่อดำเนินกระบวนการตรวจทานอันเป็นวัตถุประสงค์ของแพลตฟอร์มนี้ ได้แก่ การระบุว่าผู้ใดเป็นผู้ส่งข้อมูล การให้ผู้ตรวจทานสามารถขอหลักฐานที่ยังขาดจากผู้จัดหาสินค้า การเก็บร่องรอยการตรวจสอบของการตัดสินใจ และการจัดทำชุดเอกสารสำหรับผู้ซื้อ ข้อมูลของผู้จัดหาสินค้าจะไม่ถูกจำหน่าย และไม่ถูกเปิดเผยเพื่อการโฆษณา',
+    corpPrivacyProcessorsHeading: 'ผู้ประมวลผลข้อมูล',
+    corpPrivacyProcessorsText: 'ตัวแอปพลิเคชัน ฐานข้อมูล ที่จัดเก็บไฟล์ และระบบยืนยันตัวตน ทำงานบน Supabase ซึ่งทำหน้าที่เป็นผู้ประมวลผลด้านโครงสร้างพื้นฐานและการโฮสต์ของเรา เว็บไซต์ให้บริการผ่าน Vercel อีเมลที่เรารับและส่งดำเนินการโดยผู้ให้บริการอีเมลของเรา และเจ้าหน้าที่ของ DDP Brokerage เข้าถึงข้อมูลเพื่อการตรวจทาน',
+    corpPrivacyControlsHeading: 'การจำกัดการเข้าถึง',
+    corpPrivacyControlsText: 'เอกสารที่อัปโหลดถูกเก็บไว้ในพื้นที่จัดเก็บแบบส่วนตัว ไม่มีที่อยู่สาธารณะ และเข้าถึงได้ผ่านลิงก์ชั่วคราวที่ออกให้แก่ผู้ใช้ที่เข้าสู่ระบบและมีสิทธิ์ในข้อมูลนั้นเท่านั้น การเข้าถึงฐานข้อมูลถูกจำกัดตามบัญชีผู้ใช้ด้วยกฎความปลอดภัยระดับแถวข้อมูลซึ่งบังคับใช้โดยฐานข้อมูลเอง ไม่ใช่โดยเบราว์เซอร์ ผู้ที่ไม่ได้เข้าสู่ระบบจึงไม่สามารถอ่านข้อมูลใดได้ ผู้จัดหาสินค้าเห็นเฉพาะข้อมูลของตน ส่วนผู้ตรวจทานเห็นข้อมูลที่ตนตรวจทาน',
+    corpPrivacyCookiesHeading: 'คุกกี้และการติดตาม',
+    corpPrivacyCookiesText: 'เว็บไซต์นี้ไม่ใช้สคริปต์วิเคราะห์ข้อมูล โฆษณา หรือการติดตามจากบุคคลที่สาม นโยบายความปลอดภัยของเนื้อหาอนุญาตให้เบราว์เซอร์เรียกใช้โค้ดจากเว็บไซต์นี้เท่านั้น ซึ่งเป็นกลไกที่ป้องกันไม่ให้มีการเพิ่มสคริปต์ดังกล่าว',
+    corpPrivacyNetworkText: 'เมื่อคุณใช้งานเว็บไซต์นี้ เบราว์เซอร์ของคุณจะติดต่อกับสามแห่งเท่านั้น หนึ่งคือเว็บไซต์นี้ ซึ่งเป็นแหล่งของหน้าเว็บและโค้ด สองคือโปรเจกต์ Supabase ของเรา ซึ่งเป็นฐานข้อมูลและที่จัดเก็บไฟล์ตามที่อธิบายไว้ข้างต้น โดยรับส่งข้อมูลทั้งผ่านคำขอปกติและผ่านการเชื่อมต่อแบบต่อเนื่อง และสามคือ Google Fonts ซึ่งเป็นแหล่งของไฟล์สไตล์และแบบอักษร ทำให้ Google ได้รับที่อยู่ไอพีและข้อมูลพื้นฐานของคำขอทุกครั้งที่คุณเปิดหน้าเว็บ ไม่มีการติดต่อบริการภายนอกอื่นใด และไม่มีการส่งข้อมูลเกี่ยวกับคุณไปยัง Google เกินกว่าที่การเรียกแบบอักษรนั้นจำเป็นต้องเปิดเผย',
+    corpPrivacyFontsText: 'หากคุณไม่ประสงค์จะให้มีการเรียกข้อมูลไปยัง Google การบล็อกที่อยู่ทั้งสองดังกล่าวในเบราว์เซอร์จะยังคงใช้งานเว็บไซต์ได้ตามปกติ เพียงแต่แบบอักษรจะเปลี่ยนไปเท่านั้น',
+    corpPrivacyStorageText: 'เราใช้พื้นที่จัดเก็บในเบราว์เซอร์แทนคุกกี้ติดตาม สำหรับผู้เข้าชมที่ยังไม่ได้เข้าสู่ระบบ จะมีการจัดเก็บเพียงว่าคุณเลือกภาษาอังกฤษหรือภาษาไทยเท่านั้น เมื่อคุณเข้าสู่ระบบแล้ว ระบบจะเก็บสถานะการเข้าสู่ระบบไว้ด้วยเพื่อให้คุณยังคงเข้าสู่ระบบอยู่ขณะเปลี่ยนหน้า และหน้าจอการปฏิบัติงานบางส่วนจะเก็บบันทึกการทำงาน เช่น รายการชุดเอกสารสำหรับผู้ซื้อที่ถูกดาวน์โหลด ไว้ในเบราว์เซอร์ของคุณเอง',
+    corpPrivacyDemoText: 'มีกรณีหนึ่งที่ทำงานต่างออกไปและควรระบุให้ชัดเจน หากมีการใช้งานแอปพลิเคชันนี้ในรูปแบบการสาธิตแบบออฟไลน์ โดยไม่ได้ตั้งค่าฐานข้อมูลไว้ พื้นที่จัดเก็บในเบราว์เซอร์จะทำหน้าที่เป็นฐานข้อมูลเอง กล่าวคือ ข้อมูลฟาร์ม ข้อมูลสต็อก คำขอตรวจทาน และรายการอื่นที่คุณกรอก จะถูกเก็บไว้ในเบราว์เซอร์ของคุณเท่านั้นและไม่ถูกส่งไปที่ใด ทั้งนี้บริการที่ให้บริการอยู่บนที่อยู่เว็บไซต์นี้ไม่ได้ทำงานในรูปแบบดังกล่าว แต่เชื่อมต่อกับฐานข้อมูลตามที่อธิบายไว้ข้างต้น อย่างไรก็ตาม ผู้ที่นำโปรแกรมไปติดตั้งใช้งานเองควรทราบว่ากำลังใช้งานในรูปแบบใด',
+    corpPrivacyRetentionHeading: 'ระยะเวลาการเก็บรักษาข้อมูล',
+    corpPrivacyRetentionText: 'ข้อมูลผู้จัดหาสินค้า ผลการตรวจทาน และเอกสารที่แนบไว้ จะถูกเก็บรักษาไว้ตลอดระยะเวลาที่บัญชียังใช้งานอยู่ และหลังจากนั้นในกรณีที่ข้อมูลดังกล่าวเป็นส่วนหนึ่งของร่องรอยการตรวจสอบของการตัดสินใจที่ได้กระทำไปแล้ว หากต้องการสอบถามระยะเวลาการเก็บรักษาข้อมูลรายการใดรายการหนึ่ง หรือขอให้แก้ไขหรือลบข้อมูล กรุณาติดต่อเราตามที่อยู่ด้านล่าง แล้วเราจะแจ้งให้ทราบว่าข้อมูลนั้นอยู่ภายใต้เงื่อนไขใด',
+    corpPrivacyContactHeading: 'การสอบถามเกี่ยวกับข้อมูลของคุณ',
+    corpPrivacyContactText: 'กรุณาติดต่อ info@ddpbrokerage.com หรือส่งจดหมายมายังที่อยู่สำนักงานใหญ่ที่ระบุไว้ในหน้าติดต่อเรา โปรดแจ้งว่าคุณต้องการสอบถามเรื่องใด แล้วเราจะอธิบายว่ามีข้อมูลใดจัดเก็บอยู่และสามารถแก้ไขสิ่งใดได้บ้าง',
+    corpPrivacyChangesHeading: 'การเปลี่ยนแปลงนโยบายนี้',
+    corpPrivacyChangesText: 'หากแพลตฟอร์มเปลี่ยนแปลงข้อมูลที่จัดเก็บหรือผู้ที่ประมวลผลข้อมูล หน้านี้จะได้รับการปรับปรุงและวันที่ตรวจทานด้านบนจะเปลี่ยนตาม',
+
+    // Terms
+    corpTermsHeading: 'ข้อกำหนดการใช้งาน',
+    corpTermsIntro: 'ข้อกำหนดนี้ครอบคลุมการใช้งานแพลตฟอร์ม DDP Brokerage และเว็บไซต์นี้ โดยอธิบายบริการตามการดำเนินงาน ณ วันที่ตรวจทานที่ระบุไว้ด้านบน',
+    corpTermsEligibilityHeading: 'ผู้ที่สามารถใช้งานแพลตฟอร์มได้',
+    corpTermsAccessHeading: 'บัญชีผู้ใช้และสิทธิ์เข้าใช้งาน',
+    corpTermsAccessText: 'บัญชีผู้ใช้สร้างโดยผู้ดูแลระบบของ DDP หลังจากตรวจสอบคำขอแล้ว ไม่มีการเปิดให้สมัครบัญชีสำหรับการใช้งานเชิงปฏิบัติการด้วยตนเอง คุณมีหน้าที่รับผิดชอบในการรักษาความปลอดภัยของข้อมูลรับรองการเข้าสู่ระบบ และรับผิดชอบต่อการกระทำที่เกิดขึ้นภายใต้บัญชีของคุณ กรุณาแจ้งเราทันทีหากเชื่อว่าบัญชีถูกละเมิด สิทธิ์เข้าใช้งานอาจถูกระงับหรือเพิกถอนได้ รวมถึงกรณีที่ใบอนุญาตสิ้นผลหรือมีการฝ่าฝืนข้อกำหนดด้านล่าง',
+    corpTermsServiceHeading: 'สิ่งที่แพลตฟอร์มให้บริการ',
+    corpTermsServiceText: 'แพลตฟอร์มจัดระเบียบเอกสารของผู้จัดหาสินค้าและนำเสนอเอกสารเหล่านั้นพร้อมสถานะการตรวจทานแก่ผู้ที่มีสิทธิ์เข้าถึง แพลตฟอร์มนี้เป็นเครื่องมือสนับสนุนการตัดสินใจ โดยแสดงว่ามีสิ่งใดถูกส่งเข้ามา สิ่งใดผ่านการตรวจทานแล้ว และสิ่งใดยังคงค้างอยู่',
+    corpTermsRelianceHeading: 'การอ้างอิงข้อมูล',
+    corpTermsRelianceText: 'ข้อมูลที่แสดงบนแพลตฟอร์มสะท้อนสิ่งที่ผู้จัดหาสินค้าส่งเข้ามาและสิ่งที่ผู้ตรวจทานได้บันทึกไว้ ข้อมูลดังกล่าวไม่ใช่คำแนะนำทางกฎหมาย ทางกฎระเบียบ หรือทางวิชาชีพ และไม่ใช่สิ่งทดแทนการตรวจสอบสถานะด้วยตนเองของคุณ การที่รายการหนึ่งระบุว่าผ่านการตรวจทานแล้ว หมายความว่าผู้ตรวจทานของ DDP ได้ประเมินเอกสารที่ได้รับมา มิใช่การรับประกันตัวสินค้า และสถานะที่แสดง ณ ขณะหนึ่งอาจเปลี่ยนแปลงได้เมื่อมีหลักฐานเพิ่มเติม',
+    corpTermsSupplierHeading: 'ข้อมูลที่คุณส่งเข้ามา',
+    corpTermsSupplierText: 'หากคุณส่งข้อมูลหรือเอกสารเข้ามา ถือว่าคุณยืนยันว่าคุณมีสิทธิ์ในการส่งข้อมูลนั้น และข้อมูลนั้นถูกต้องและไม่ทำให้เข้าใจผิดเท่าที่คุณทราบ การส่งเอกสารปลอมเป็นเหตุให้เพิกถอนสิทธิ์เข้าใช้งานทันที',
+    corpTermsConfidentialityHeading: 'การรักษาความลับ',
+    corpTermsConfidentialityText: 'ข้อมูลผู้จัดหาสินค้าและข้อมูลล็อตสินค้าที่เข้าถึงผ่านแพลตฟอร์มถือเป็นความลับ ห้ามคัดลอก เผยแพร่ หรือส่งต่อให้ผู้ใดนอกเหนือจากวัตถุประสงค์ที่ได้รับสิทธิ์เข้าใช้งาน',
+    corpTermsAcceptableHeading: 'การใช้งานที่ยอมรับได้',
+    corpTermsAcceptableText: 'ห้ามพยายามเข้าถึงข้อมูลที่ไม่ใช่ของคุณ ห้ามตรวจสอบหรือแทรกแซงมาตรการความปลอดภัยของแพลตฟอร์ม และห้ามดึงข้อมูลด้วยวิธีอัตโนมัติ ห้ามใช้แพลตฟอร์มเพื่อวัตถุประสงค์ใดที่ไม่ชอบด้วยกฎหมายในเขตอำนาจที่คุณดำเนินงานอยู่',
+    corpTermsIpHeading: 'ทรัพย์สินทางปัญญา',
+    corpTermsIpText: 'แพลตฟอร์ม ส่วนติดต่อผู้ใช้ และเนื้อหาของแพลตฟอร์ม เป็นกรรมสิทธิ์ของบริษัท ดีดีพี โบรกเกอเรจ จำกัด หรือผู้ให้สิทธิ์ของบริษัท ยกเว้นเอกสารและข้อมูลที่ผู้จัดหาสินค้าส่งเข้ามา ซึ่งยังคงเป็นของผู้จัดหาสินค้ารายนั้น',
+    corpTermsChangesHeading: 'การเปลี่ยนแปลงข้อกำหนดนี้',
+    corpTermsChangesText: 'ข้อกำหนดนี้อาจได้รับการปรับปรุงเมื่อบริการเปลี่ยนแปลง วันที่ตรวจทานด้านบนแสดงว่าฉบับนี้เผยแพร่เมื่อใด',
+    corpTermsContactHeading: 'คำถามเกี่ยวกับข้อกำหนดนี้',
+    corpTermsContactText: 'กรุณาติดต่อ info@ddpbrokerage.com หรือส่งจดหมายมายังที่อยู่สำนักงานใหญ่ที่ระบุไว้ในหน้าติดต่อเรา',
 
     // Onboarding
     eyebrow: 'พอร์ทัลเกษตรกร',
@@ -1096,6 +1406,8 @@ export const T = {
     myActivityDesc: 'ติดตามการส่งข้อมูลฟาร์มและสินค้าของคุณ',
     requestsLabel: 'คำขอจาก DDP',
     requestsDesc: 'ดูและตอบกลับคำขอจากทีม DDP',
+    evidenceLabel: 'เอกสารของฉัน',
+    evidenceDesc: 'ดูผลการตรวจสอบเอกสารที่คุณอัปโหลด',
     advancedProfile: 'รายละเอียดขั้นสูง',
     advancedProfileDesc: 'เพิ่มข้อมูลทางกฎหมาย โครงสร้างการถือหุ้น และความพร้อมส่งออกสำหรับการตรวจสอบ DDP',
     needHelp: 'ต้องการความช่วยเหลือ?',

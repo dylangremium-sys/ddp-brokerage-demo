@@ -2,7 +2,7 @@
   "id": "40_licences_permits",
   "title": "Migration 40 — licences, permits and permit draw-down",
   "description": "Applies migration 39 then 40, runs 40's VERIFY A-H, then rolls back 40 on a disposable PostgreSQL 18 cluster. Migration 40 makes three of the export gate's seven conditions askable for the first time: the exporter's licence is in force, the buyer's import permit is in force and matches the regime, and that permit has quantity headroom left. Three design choices carry the weight and are each asserted behaviourally rather than by inspection -- regime is a first-class column so a flower permit can never be compared against an extract consignment (D1); expiry is COMPUTED from expires_on and there is deliberately no 'expired' state, because this repository has no scheduler and a stored expiry flag would be only as fresh as the sweeper that never runs (D4); and draw-down is an append-only ledger with headroom as a SUM under a FOR UPDATE row lock, not a mutable remaining_kg column that two concurrent shipments could both read before either wrote. The dual-calendar CHECK asserts the 543 offset in the database, so a permit keyed from the wrong calendar is rejected at INSERT rather than discovered at the port.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { validatePhotoFile } from '../../lib/db'
 import {
   addPhoto, removePhotoAt, fromStoredPreviews, toPreviews, toUploadFiles,
@@ -12,7 +12,20 @@ interface Props {
   lang: Lang
   farms: FarmProfile[]
   initialItem?: InventoryItem | null
-  onSubmit: (item: InventoryItem, coaFile?: File | null, photoFiles?: File[]) => void | Promise<void>
+  /**
+   * Must report whether the write actually landed.
+   *
+   * This was typed `void | Promise<void>`. App.tsx's handler did return a
+   * boolean, but the prop type erased it at the component boundary — a place
+   * `tsc -b` cannot see a loss — so the form could not tell a committed
+   * submission from a rejected one, and rendered the success screen either
+   * way. The farmer saw a red error banner and a green tick at the same time,
+   * which is why fifty-nine rejected inserts produced no bug report.
+   *
+   * `Promise<boolean>` is the contract: true only if the row is in the
+   * database.
+   */
+  onSubmit: (item: InventoryItem, coaFile?: File | null, photoFiles?: File[]) => Promise<boolean>
   onBack: () => void
   marketBenchmarks?: MarketBenchmark[]
   openRequests?: ReviewRequest[]
@@ -75,8 +88,14 @@ function initForm(item: InventoryItem | null | undefined) {
   }
 }
 
+/**
+ * A heading, not a styled div. The form had no heading structure at all, so a
+ * screen-reader user could not skim its sections or jump between them — on a
+ * form this long that is the difference between navigable and unusable. The
+ * class keeps the existing appearance unchanged.
+ */
 function SectionTitle({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div className="form-section-title" style={style}>{children}</div>
+  return <h2 className="form-section-title" style={style}>{children}</h2>
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -98,6 +117,7 @@ function PillRow<T extends string>({
         <button
           key={o.key}
           type="button"
+          aria-pressed={value === o.key}
           className={`role-btn${value === o.key ? ' role-btn-active' : ''}`}
           onClick={() => onChange(o.key)}
         >{o.label}</button>
@@ -128,7 +148,12 @@ export default function FarmerSubmitInventory({
   const [coaFileError, setCoaFileError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const coaInputRef = useRef<HTMLInputElement>(null)
+  const successHeadingRef = useRef<HTMLHeadingElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (submitted) successHeadingRef.current?.focus()
+  }, [submitted])
 
   const selectedFarm = farms.find(f => f.id === form.farmId) ?? farms[0] ?? null
 
@@ -210,6 +235,10 @@ export default function FarmerSubmitInventory({
       waterActivity: form.waterActivity,
       qualityGrade: 'A',
       pricePerKg,
+      // Preserved, not re-derived. There is no currency control on this form,
+      // so an edit that dropped this would let the write path's THB fallback
+      // redenominate an existing USD or EUR batch without touching its number.
+      priceCurrency: initialItem?.priceCurrency,
       certFileName: form.coaFileName,
       photoUrl: photos[0]?.preview ?? '',
       storageConditions: form.storageConditions,
@@ -235,13 +264,21 @@ export default function FarmerSubmitInventory({
       mycotoxinsStatus: form.mycotoxinsStatus || undefined,
       photoUrls: photos.length > 0 ? toPreviews(photos) : undefined,
       farmerNotes: form.farmerNotes || undefined,
-      ownerNotes: initialItem?.ownerNotes,
+      // ownerNotes is DDP's internal note and is deliberately not carried by the
+      // farmer form. Round-tripping it here made the farmer's own submission the
+      // vehicle for a field they are not supposed to see; since migration 57 the
+      // database would refuse the write anyway, and sending it would be a
+      // request that silently does nothing.
     }
   }
 
-  function handleSaveDraft(e: React.FormEvent) {
+  async function handleSaveDraft(e: React.FormEvent) {
     e.preventDefault()
-    onSubmit(buildItem(true))
+    // "Saved" is only true if the draft reached the database. This was
+    // fire-and-forget: the confirmation appeared before the write settled, and
+    // stayed up if it was rejected.
+    const saveCommitted = await onSubmit(buildItem(true))
+    if (!saveCommitted) return
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
@@ -254,8 +291,12 @@ export default function FarmerSubmitInventory({
     try {
       // Only entries with bytes can be uploaded. Draft-restored previews have no
       // File and are not re-sent; they are already on file or never were.
-      await onSubmit(item, coaFile ?? null, toUploadFiles(photos))
-      setSubmitted(true)
+      //
+      // The success screen is shown only for a committed write. On rejection the
+      // form stays on screen with the farmer's input intact, which is both where
+      // the error banner is actionable and what makes the failure recoverable.
+      const committed = await onSubmit(item, coaFile ?? null, toUploadFiles(photos))
+      if (committed) setSubmitted(true)
     } catch {
       // keep page usable
     } finally {
@@ -270,9 +311,18 @@ export default function FarmerSubmitInventory({
           <circle cx="12" cy="12" r="9.5" stroke="var(--success)" strokeWidth="1.5"/>
           <path d="M7.5 12.5l2.8 2.8L16.5 9" stroke="var(--success)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
-        <h2 style={{ color: 'var(--text)', marginBottom: 8 }}>
+        {/* An h1, and focused on appearance. The form is replaced wholesale on
+            success, and without moving focus a screen-reader user is left on a
+            control that no longer exists, hearing nothing about what happened.
+            tabIndex={-1} makes it programmatically focusable without adding it
+            to the tab order. */}
+        <h1
+          ref={successHeadingRef}
+          tabIndex={-1}
+          style={{ color: 'var(--text)', marginBottom: 8, outline: 'none' }}
+        >
           {isTh ? 'ส่งเรียบร้อยแล้ว' : 'Submitted for Review'}
-        </h2>
+        </h1>
         <p style={{ color: 'var(--text-muted)', marginBottom: 28, maxWidth: 360, margin: '0 auto 28px', lineHeight: 1.6 }}>
           {isTh
             ? 'DDP จะตรวจสอบสินค้าของคุณ ดูสถานะได้ที่สต็อกของฉัน'
@@ -414,6 +464,7 @@ export default function FarmerSubmitInventory({
                   <button
                     key={u}
                     type="button"
+                    aria-pressed={form.unit === u}
                     className={`role-btn${form.unit === u ? ' role-btn-active' : ''}`}
                     onClick={() => set('unit', u)}
                   >{u}</button>
@@ -502,11 +553,13 @@ export default function FarmerSubmitInventory({
             <div className="role-selector">
               <button
                 type="button"
+                aria-pressed={form.coaAvailable}
                 className={`role-btn${form.coaAvailable ? ' role-btn-active' : ''}`}
                 onClick={() => set('coaAvailable', true)}
               >{isTh ? 'มี' : 'Yes'}</button>
               <button
                 type="button"
+                aria-pressed={!form.coaAvailable}
                 className={`role-btn${!form.coaAvailable ? ' role-btn-active' : ''}`}
                 onClick={() => set('coaAvailable', false)}
               >{isTh ? 'ยังไม่มี' : 'Not yet'}</button>

@@ -4,12 +4,12 @@
   --bg-card:     #12213A;
   --bg-elevated: #1B2C47;
   --bg-deep:     #081420;
-  --accent:        #64748B;
-  --accent-strong:  #334155;
+  --accent:        #C6A24C;
+  --accent-strong:  #A8883A;
   --jade:        #114232;
   --text:        #EDF1F5;
-  --text-muted:  #93A1B2;
-  --border:      #29394D;
+  --text-muted:  #8FA2B5;
+  --border:      #2A3C52;
   --success:     #2E8B67;
   --warning:     #B8782E;
   --error:       #991B1B;
@@ -28,7 +28,7 @@ button, input, select, textarea { border-radius: var(--radius-md); font-family: 
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Inter', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 15px;
   line-height: 1.5;
   color: var(--text);
@@ -414,7 +414,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; color: var(--text); }
 
 .btn-primary:hover {
   background: var(--accent-strong);
-  box-shadow: 0 2px 10px rgba(100,116,139,0.25);
+  box-shadow: 0 2px 10px rgba(198,162,76,0.28);
 }
 
 .btn-lg {
@@ -1524,7 +1524,13 @@ body.public-auth-page {
 }
 a.ln-channel-value:hover { color: #FFFFFF; }
 .ln-channel-address { line-height: 1.5; }
-.ln-channel-tel { display: block; margin-top: 4px; color: var(--lg-gold); font-size: 13.5px; }
+.ln-channel-tel { display: block; margin-top: 4px; color: var(--lg-gold); font-size: 13.5px; text-decoration: none; }
+/* Matches a.ln-channel-value:hover above. Now that the number is an anchor the
+   global `a:hover` rule applies to it, and that rule is more specific than
+   .ln-channel-tel — it would darken the gold and underline it on a dark
+   footer, while the two email channels beside it turn white. Same block, same
+   behaviour. */
+a.ln-channel-tel:hover { color: #FFFFFF; text-decoration: none; }
 .ln-footer-legalnote {
   max-width: 1260px;
   margin: 0 auto;
@@ -1553,6 +1559,10 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   font-size: 13px;
 }
 .ln-footer-legal { display: inline-flex; align-items: center; gap: 14px; }
+/* These are <a> elements now, not <button>s — a crawler cannot follow a button,
+   and as buttons they carried no handler at all, so they were inert for
+   visitors too. `text-decoration: none` restores the previous flat look now
+   that the browser supplies an underline by default. */
 .ln-footer-legal-link {
   background: none;
   border: none;
@@ -1561,6 +1571,7 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   font-family: inherit;
   font-size: 13px;
   color: #8FA091;
+  text-decoration: none;
   transition: color 0.15s;
 }
 .ln-footer-legal-link:hover { color: #C7D2C7; text-decoration: underline; }
@@ -2751,6 +2762,21 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   background: rgba(46,139,103,0.12);
   color: var(--success);
   border: 1px solid rgba(46,139,103,0.3);
+}
+
+/* Buyer and pending chips. Added with the buyer role (W3.1): the badge used to
+   render every non-admin as a farmer, so a buyer would have been shown a
+   "Farmer" chip on their own account page. */
+.chip-buyer {
+  background: rgba(59,130,246,0.12);
+  color: #1d4ed8;
+  border: 1px solid rgba(59,130,246,0.3);
+}
+
+.chip-pending {
+  background: rgba(148,163,184,0.15);
+  color: var(--text-muted);
+  border: 1px solid rgba(148,163,184,0.35);
 }
 
 .user-email {
@@ -5069,3 +5095,670 @@ a.ln-channel-value:hover { color: #FFFFFF; }
   border-left-color: var(--ddp-risk-700);
   color: var(--ddp-risk-700);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FARMER PORTAL — MOBILE IMPROVEMENTS
+   ─ Bottom tab nav, touch targets, layout fixes for phones ≤768px
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Farmer bottom navigation bar ── */
+.farmer-mobile-nav {
+  display: none; /* hidden on desktop — shown only at ≤768px below */
+}
+
+@media (max-width: 768px) {
+  /* Show the fixed bottom nav */
+  .farmer-mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 300;
+    background: #081a14;
+    border-top: 1px solid rgba(198,161,91,0.18);
+    padding: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    height: calc(62px + env(safe-area-inset-bottom, 0px));
+    align-items: stretch;
+  }
+
+  /* Each tab item */
+  .fmn-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    /* 0.50, not 0.45. Composited over the #081a14 bar, 0.45 gives
+       rgb(119,129,126) = 4.48:1 against it — under the 4.5:1 WCAG AA floor for
+       text this size. 0.50 measures 5.24:1. Measured in-browser, not estimated;
+       if this colour or the bar background changes, re-measure the pair. */
+    color: rgba(255,255,255,0.50);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    padding: 8px 4px;
+    transition: color 0.14s;
+    -webkit-tap-highlight-color: transparent;
+    min-width: 0;
+  }
+
+  .fmn-item:active {
+    background: rgba(198,161,91,0.07);
+  }
+
+  .fmn-item.fmn-active {
+    color: var(--accent, #C6A15B);
+  }
+
+  .fmn-icon-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+  }
+
+  .fmn-item.fmn-active .fmn-icon-wrap svg {
+    stroke-width: 2.1;
+  }
+
+  .fmn-label {
+    line-height: 1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Badge (unread count) */
+  .fmn-badge {
+    position: absolute;
+    top: -3px;
+    right: -5px;
+    background: #e84e4e;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 20px;
+    min-width: 15px;
+    height: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+    line-height: 1;
+  }
+
+  /* Hide the farmer nav items from the top navbar — bottom nav takes over */
+  .farmer-nav-topbar {
+    display: none;
+  }
+
+  /* Add bottom padding to farmer pages so content isn't hidden behind the nav */
+  .main-content.eo-farmer {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Also pad the demo utility strip up when farmer nav is visible */
+  .demo-utility-strip {
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ── Farmer page layout — mobile fixes ── */
+@media (max-width: 768px) {
+  /* Reduce page-header horizontal padding on mobile */
+  .page-header {
+    padding: 18px 16px;
+  }
+
+  /* Dashboard welcome card — tighter on mobile */
+  .dashboard-welcome-card {
+    padding: 18px 16px;
+  }
+
+  /* Farmer dashboard max-width: let it fill the screen */
+  .farmer-dashboard {
+    max-width: 100%;
+  }
+
+  /* Quick-action grid: 2 columns down to 480px, then 1 */
+  .quick-action-card {
+    padding: 14px 12px;
+  }
+
+  /* Help strip — stack on small screens */
+  .dashboard-help-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  /* eo-farmer form cards — less padding */
+  .eo-farmer .form-card {
+    padding: 16px;
+  }
+
+  /* eo-farmer section padding */
+  .eo-farmer h2 {
+    font-size: 18px;
+  }
+
+  /* Form grid 2-col → 1-col earlier on farmer forms */
+  .eo-farmer .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  /* NOTE: a `.pill-row` rule was removed here. No element in this codebase
+     carries that class — the real ones are `.pill`, `.status-pills` and
+     `.filter-tabs`. It styled nothing. */
+
+  /* Make submit / action buttons full-width on mobile */
+  .eo-farmer .btn-primary,
+  .eo-farmer .btn-ghost-dark,
+  .eo-farmer .btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Onboarding stepper: scale down on mobile.
+     (`.stepper-bar` was dropped from this rule — no element uses it.) */
+  .step-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  /* Toolbar row — scroll horizontally rather than wrap.
+     (`.filter-row` was dropped from this rule: nothing carries that class.
+     The real filter control is `.filter-tabs`, which is deliberately left
+     alone — see the stacked-record note below.) */
+  .toolbar-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+  .toolbar-row::-webkit-scrollbar { display: none; }
+
+  /* DELIBERATELY NOT ADDED: a horizontal-scroll rule for farmer tables.
+     The patch this block came from targeted `.inv-table-wrap`, which does not
+     exist, so the rule did nothing. Writing it against the real wrapper
+     (`.eo-farmer .table-scroll`) would have been worse than useless: line ~4360
+     already sets `overflow-x: visible` at ≤640px and reflows every farmer table
+     into stacked records, under the comment "a phone never scrolls sideways".
+     Restoring sideways scroll would undo that on purpose. Leave it. */
+
+  /* Farmer register / onboarding: nav step labels */
+  .step-label {
+    display: none;
+  }
+
+  /* Requests badge in the top nav — still visible on desktop */
+  .requests-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+  }
+}
+
+/* Very small phones (≤400px) */
+@media (max-width: 400px) {
+  .main-content {
+    padding: 16px 12px;
+  }
+
+  .eo-farmer .form-card {
+    padding: 14px 12px;
+  }
+
+  /* NOTE: `.fmn-item { font-size: 9px }` was removed here. This block is
+     labelled "very small phones", but 390px is an iPhone 12/13/14/15 and 360px
+     is most Android — mainstream widths, not outliers. It put the smallest text
+     in the app on the primary navigation of the commonest handsets. Labels stay
+     at the base 10px; measured at 320px the tab is still 64px wide, which fits
+     "My Stock" and "สต็อกของฉัน" without clipping. */
+
+  .quick-action-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THAI TYPOGRAPHY OVERRIDES  :lang(th)
+   Sarabun is loaded from Google Fonts. The HTML lang attribute is set
+   dynamically by App.tsx so these selectors activate when the user switches
+   to Thai.
+   ─────────────────────────────────────────────────────────────────────────
+   Key rules:
+   • letter-spacing must be 0 — Thai glyph stacking breaks with any spacing
+   • line-height needs room for above/below-baseline vowels and tone marks
+   • Minimum 14px for anything a farmer reads — stacked marks at ≤12px
+     lose their distinguishing detail on a phone screen
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Base: switch to Sarabun, reset letter-spacing, open up line-height */
+:lang(th) body,
+:lang(th) {
+  font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: 0;
+  line-height: 1.65;
+}
+
+/* Monospace must survive the language switch.
+   `:lang(th)` is specificity (0,1,0) — identical to `.mono` (line ~828) and
+   `.td-mono` (line ~667) — but this block sits at the END of the file, so it
+   wins the cascade on a tie and silently turns every reference id, weight and
+   price back into proportional Sarabun the moment the user picks Thai. Only
+   `.ddp-wrap .mono` (0,2,0) survives on its own, which would have made the
+   breakage look like an inconsistency rather than a bug. Numerals are Latin in
+   both languages, so there is nothing to gain by restyling them. */
+:lang(th) .mono,
+:lang(th) .td-mono,
+:lang(th) code,
+:lang(th) pre {
+  font-family: var(--font-mono);
+}
+
+/* Any element with explicit letter-spacing that may show Thai text */
+:lang(th) .page-eyebrow,
+:lang(th) .page-title,
+:lang(th) .page-desc,
+:lang(th) .nav-btn,
+:lang(th) .nav-group-label,
+:lang(th) .btn,
+:lang(th) .badge,
+:lang(th) .status-pill,
+:lang(th) .section-label,
+:lang(th) .form-section-title,
+:lang(th) .field,
+:lang(th) .field-label,
+:lang(th) .field-hint,
+:lang(th) .quick-action-label,
+:lang(th) .quick-action-desc,
+:lang(th) .dashboard-welcome-name,
+:lang(th) .dashboard-completion-hint,
+:lang(th) .fmn-label,
+:lang(th) td,
+:lang(th) th {
+  letter-spacing: 0;
+}
+
+/* Bump minimum size — Thai stacked marks need room */
+:lang(th) .field-hint,
+:lang(th) .page-eyebrow,
+:lang(th) .nav-group-label,
+:lang(th) .fmn-label,
+:lang(th) .quick-action-desc,
+:lang(th) .dashboard-completion-hint {
+  font-size: 13px;
+}
+
+:lang(th) .nav-btn {
+  font-size: 13px;
+}
+
+/* Tables: Thai above-line vowels clip at tight line-heights */
+:lang(th) td,
+:lang(th) th {
+  line-height: 1.7;
+}
+
+:lang(th) .eo-table,
+:lang(th) .eo-farmer table {
+  line-height: 1.7;
+}
+
+/* Form labels and hints in farmer portal */
+:lang(th) .eo-farmer .field-label {
+  font-size: 14px;
+}
+
+:lang(th) .eo-farmer .field-hint {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* eo-farmer inputs already 16px — fine; keep that */
+
+/* Eyebrow / uppercase labels: Thai has no uppercase, so drop the transform
+   and letter-spacing so it doesn't render as stretched Thai characters */
+/* `.section-eyebrow` and `.filter-section-title` were removed from this list:
+   neither class exists in the codebase. */
+:lang(th) .page-eyebrow,
+:lang(th) .nav-group-label,
+:lang(th) .dashboard-completion-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+}
+
+/* Bottom mobile nav labels */
+:lang(th) .fmn-label {
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+/* ── Touch targets and iOS zoom (P1 / W10.5) ───────────────────────────────
+   Scoped to `pointer: coarse`, i.e. a finger, so desktop density is unchanged.
+
+   Two separate problems, both measured on the signed-out farmer forms — the
+   ones a farm actually arrives on from a QR code, on a phone:
+
+   1. `.field input` was 14px. iOS Safari zooms the whole page in when a field
+      smaller than 16px receives focus, so every tap jumped the layout and the
+      farmer had to pinch back out. The `.eo-farmer` surfaces were given 16px
+      for exactly this reason; the generic `.field` never got it.
+
+   2. Tap targets sat under the 44px WCAG 2.5.5 minimum: inputs ≈38px,
+      `.role-btn` ≈34px, `.lang-btn` ≈28px — and `.lang-btn` is the control a
+      Thai farmer needs first. */
+@media (pointer: coarse) {
+  .field input,
+  .field select,
+  .field textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .role-btn {
+    min-height: 44px;
+  }
+
+  .lang-btn {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Public corporate pages (/about, /contact, /privacy, /terms)
+
+   Reuses the landing page's warm green/gold/cream palette so the corporate
+   pages read as the same site, but declares its own tokens rather than nesting
+   under .landing-shell: these pages are documents, not the marketing homepage,
+   and they must not inherit the hero/section layout rules.
+
+   Type is set for reading — a measure around 68 characters, generous leading —
+   because these pages are the only ones on the site somebody reads top to
+   bottom rather than scans.
+──────────────────────────────────────────────────────────────────────────── */
+.corp-shell {
+  --lg-green-900: #0C2A1E;
+  --lg-gold: #C6A24C;
+  --lg-cream: #F7F3EA;
+  --lg-ink: #1E2A24;
+  --lg-ink-soft: #46524B;
+  --lg-line: #E7E0CF;
+  --lg-card: #FFFFFF;
+  /* Same reason as .landing-shell: the shared monogram fills its rect with
+     --bg, so it must be transparent to read as a gold cartouche on green. */
+  --bg: transparent;
+
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--lg-cream);
+  color: var(--lg-ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+}
+.corp-shell *, .corp-shell *::before, .corp-shell *::after { box-sizing: border-box; }
+
+/* ── Header ── */
+.corp-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--lg-green-900);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.corp-nav-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 10px 32px;
+}
+.corp-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.corp-brand-descriptor {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.corp-nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.corp-nav-link {
+  color: #C7D2C7;
+  font-size: 13.5px;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.corp-nav-link:hover { color: #FFFFFF; }
+/* The page you are already on: dimmed and not underlined on hover, so the nav
+   never looks like it offers a navigation that would do nothing. */
+.corp-nav-link[aria-current='page'] { color: var(--lg-gold); cursor: default; }
+.corp-nav-right { display: flex; align-items: center; gap: 14px; }
+.corp-lang { display: inline-flex; align-items: center; gap: 6px; }
+.corp-lang-btn {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.corp-lang-btn.is-active { color: var(--lg-gold); }
+.corp-lang-sep { color: rgba(255, 255, 255, 0.2); }
+.corp-login {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 1px solid rgba(198, 162, 76, 0.55);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--lg-gold);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.corp-login:hover { background: var(--lg-gold); color: var(--lg-green-900); }
+
+/* ── Document body ── */
+.corp-main { flex: 1; padding: 56px 32px 72px; }
+.corp-doc {
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--lg-card);
+  border: 1px solid var(--lg-line);
+  border-radius: 4px;
+  padding: 48px 56px 56px;
+}
+.corp-heading {
+  margin: 0 0 10px;
+  font-family: 'Noto Serif', Georgia, serif;
+  font-size: 34px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--lg-green-900);
+}
+/* Content owner + last-reviewed date. Required on every public corporate page
+   by the search-exposure master plan, and rendered as visible text rather than
+   a comment because its purpose is to tell a reader who stands behind the page
+   and how current it is. */
+.corp-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 36px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--lg-line);
+  color: var(--lg-ink-soft);
+  font-size: 13px;
+}
+.corp-provenance strong { font-weight: 600; color: var(--lg-ink); }
+.corp-provenance-sep { color: var(--lg-line); }
+
+.corp-section { margin-bottom: 34px; }
+.corp-section:last-child { margin-bottom: 0; }
+.corp-section h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--lg-green-900);
+}
+.corp-section p { margin: 0 0 14px; color: var(--lg-ink-soft); }
+.corp-section p:last-child { margin-bottom: 0; }
+.corp-lead { font-size: 17px; color: var(--lg-ink) !important; }
+
+/* Used for the sections a reader must not skim past: what DDP does not assess,
+   how to reach the company about their data, what reliance is being placed on
+   a review status. */
+.corp-section-emphasis {
+  padding: 22px 26px;
+  background: #FBF8F1;
+  border-left: 3px solid var(--lg-gold);
+  border-radius: 0 3px 3px 0;
+}
+.corp-section-emphasis h2 { margin-top: 0; }
+
+.corp-list { margin: 0; padding-left: 22px; color: var(--lg-ink-soft); }
+.corp-list li { margin-bottom: 12px; }
+.corp-list li:last-child { margin-bottom: 0; }
+
+.corp-steps { margin: 0 0 18px; padding: 0; list-style: none; counter-reset: none; }
+.corp-steps li { display: flex; gap: 14px; margin-bottom: 16px; }
+.corp-steps li:last-child { margin-bottom: 0; }
+.corp-steps p { margin: 2px 0 0; }
+.corp-step-num {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--lg-green-900);
+  color: var(--lg-gold);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.corp-address {
+  font-style: normal;
+  color: var(--lg-ink-soft);
+  line-height: 1.8;
+}
+.corp-contact-list { margin: 0; }
+.corp-contact-list > div { margin-bottom: 16px; }
+.corp-contact-list > div:last-child { margin-bottom: 0; }
+.corp-contact-list dt {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lg-ink);
+  margin-bottom: 2px;
+}
+.corp-contact-list dd { margin: 0; }
+.corp-contact-list a, .corp-section a:not(.corp-cta) { color: #2E5B3A; }
+.corp-cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 20px;
+  border-radius: 3px;
+  background: var(--lg-green-900);
+  color: var(--lg-gold);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.corp-cta:hover { background: #133A29; }
+
+/* ── Footer ── */
+.corp-footer {
+  background: var(--lg-green-900);
+  color: #8FA091;
+  padding: 36px 32px 30px;
+}
+.corp-footer-inner { max-width: 1180px; margin: 0 auto; }
+.corp-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.corp-footer-link {
+  color: #C7D2C7;
+  font-size: 13px;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.corp-footer-link:hover { color: #FFFFFF; text-decoration: underline; }
+.corp-footer-legalnote { padding: 20px 0; }
+.corp-footer-legalnote p {
+  margin: 0 0 10px;
+  max-width: 900px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.42);
+}
+.corp-footer-legalnote p:last-child { margin-bottom: 0; }
+.corp-copyright { margin: 0; font-size: 12.5px; }
+
+/* ── Responsive ── */
+@media (max-width: 860px) {
+  .corp-nav-inner { flex-wrap: wrap; gap: 12px; padding: 10px 20px; }
+  .corp-nav-menu { order: 3; width: 100%; margin-left: 0; gap: 16px; }
+  .corp-nav-right { margin-left: auto; }
+  .corp-main { padding: 32px 18px 48px; }
+  .corp-doc { padding: 30px 24px 36px; }
+  .corp-heading { font-size: 27px; }
+  .corp-section-emphasis { padding: 18px 18px; }
+  .corp-footer { padding: 28px 20px 24px; }
+}
+
+/* ── Supplier acquisition block (landing) ──────────────────────────────────
+   Reuses the landing palette. Sits between the process steps and the
+   assurance strip; see the comment at its render site for why it is there. */
+.landing-shell .ln-supplier {
+  background: #f3efe4;
+  border-top: 1px solid rgba(46, 91, 58, 0.12);
+  border-bottom: 1px solid rgba(46, 91, 58, 0.12);
+  padding: 56px 24px;
+}
+.landing-shell .ln-supplier-inner { max-width: 780px; margin: 0 auto; }
+.landing-shell .ln-supplier-lead {
+  font-size: 19px; font-weight: 600; color: #1d2b21; margin: 0 0 18px; line-height: 1.5;
+}
+.landing-shell .ln-supplier-body {
+  font-size: 16px; color: #3c4a41; margin: 0 0 16px; line-height: 1.65;
+}
+.landing-shell .ln-supplier .ln-btn { margin-top: 8px; display: inline-flex; }

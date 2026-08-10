@@ -1,0 +1,68 @@
+{
+  "id": "30_procurement_overrides",
+  "title": "Migration 30 \u2014 server-authoritative procurement overrides",
+  "description": "Applies migration 30 standalone and rolls it back. 30 gives the RISK-STATUS and REQUIREMENT-STATUS overrides a server-side, append-only, actor-attributed home -- the same treatment migration 17 gave the procurement decision itself. Its single VERIFY section A is scored. The rollback has a large surface (two tables, two functions, four policies and two triggers), which is precisely the case where a rollback that drops the tables but forgets the trigger functions leaves working code in public that nothing calls.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-30",
+      "file": "30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_VERIFY.sql",
+    "expectedSections": [
+      "A"
+    ],
+    "expectedPassCount": 1,
+    "readOnly": true
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.risk_overrides",
+        "public.requirement_overrides"
+      ],
+      "functions": [
+        "public.prevent_risk_override_mutation",
+        "public.prevent_requirement_override_mutation"
+      ],
+      "policies": []
+    },
+    "intact": {
+      "tables": [
+        "public.profiles",
+        "public.farms"
+      ],
+      "functions": [
+        "public.is_ddp_admin"
+      ],
+      "authUsersMinRows": 0
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "negative_unrestored_definition",
+  "title": "Negative scenario — a ROLLBACK that re-creates a function but not its prior body",
+  "description": "Harness self-proof for restore-in-place rollbacks. Migration 45 replaces fn_audit_organisation_change() and its rollback is supposed to put the previous body back; name and signature never change, so a snapshot recording only those measured 53 -> 53 -> 53 objects and proved nothing. Here stage 92 establishes the prior definition (not rolled back, so it is the baseline), stage 93 replaces it in place, and 93's rollback re-creates the function with a third, wrong body. Every statement exits 0 and the object exists before and after with identical name and arguments. The definition digest must fail the run with the rollback exit code (30). Registered as expect-failure so dropping the digest turns CI red.",
+  "pgMajor": 17,
+  "migrationDir": "scripts/disposable-pg/fixtures/sql",
+  "expectFailure": { "phase": "rollback", "exitCode": 30 },
+  "applyStages": [
+    { "label": "PRIOR-DEFINITION", "file": "92_fixture_restore_pre_apply.sql" },
+    { "label": "REPLACE-IN-PLACE", "file": "93_fixture_restore_apply.sql" }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": [
+      { "label": "wrong-body-restore", "source": "file", "file": "93_fixture_restore_rollback.sql" }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role", "supabase_storage_admin"],
+    "schemas": ["auth", "storage", "extensions", "public"],
+    "symbols": []
+  },
+  "destructiveGuard": null,
+  "postRollback": null
+}

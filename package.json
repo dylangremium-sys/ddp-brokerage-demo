@@ -6,12 +6,15 @@
   "scripts": {
     "dev": "vite",
     "prebuild": "node scripts/validate-hosted-supabase-config.mjs && node scripts/generate-version.js",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run prerender",
+    "prerender": "vite build --ssr src/prerender/entry.tsx --outDir dist-ssr && node scripts/prerender-public-routes.mjs",
+    "verify:prerender": "node scripts/verify-prerender-deployed.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
     "security:sql": "node scripts/check-security-migrations.mjs",
     "verify:migration-numbers": "node scripts/check-migration-numbers.mjs",
+    "verify:rollback-symmetry": "node scripts/check-rollback-symmetry.mjs",
     "security:staging": "node scripts/run-staging-security-tests.mjs",
     "verify:migration": "node scripts/disposable-pg/run-migration-harness.mjs",
     "ci:runtime": "node scripts/disposable-pg/run-migration-harness.mjs --all --ci",
@@ -19,6 +22,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
+    "qrcode": "^1.5.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
@@ -26,6 +30,7 @@
     "@eslint/js": "^10.0.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.12.3",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",

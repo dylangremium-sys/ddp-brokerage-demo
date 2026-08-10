@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import './App.css'
 import {
   getFarmProfiles,
@@ -10,6 +10,7 @@ import {
   createInventoryBatch,
   updateInventoryStatus,
   patchInventoryBatch,
+  saveBatchInternalNote,
   createReviewRequest,
   resolveReviewRequest,
   loadReviewRequestsFromDB,
@@ -20,6 +21,8 @@ import {
   loadFarmerInventoryFromDB,
   loadFarmerFarmsFromDB,
   uploadCoaFile,
+  hashFileHex,
+  recordCoaDocument,
   uploadBatchPhoto,
   recordBatchPhoto,
   getPhotoSignedUrl,
@@ -27,6 +30,7 @@ import {
   resetDemoData,
   isSupabaseConfigured,
   getFarmerScope,
+  loadFarmerDocuments,
   type FarmerScope,
 } from './lib/db'
 import { loadInventory, loadFarms, loadReviewRequests, saveReviewRequests, loadMarketBenchmarks } from './data'
@@ -51,6 +55,14 @@ import type { Page, Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatu
 import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlerts } from './lib/complianceRepository'
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
+import AboutPage from './pages/public/AboutPage'
+import ContactPage from './pages/public/ContactPage'
+import PrivacyPage from './pages/public/PrivacyPage'
+import TermsPage from './pages/public/TermsPage'
+import LocalisedBuyerPage from './pages/public/LocalisedBuyerPage'
+import ThaiSupplierPage from './pages/public/ThaiSupplierPage'
+import { RegulatoryHubPage, RegulatoryEntryPage } from './pages/public/RegulatoryUpdatesPage'
+import { entryForPath } from './content/regulatoryEntries'
 import LoginPage from './pages/public/LoginPage'
 import SetPasswordPage from './pages/public/SetPasswordPage'
 import ForgotPasswordPage from './pages/public/ForgotPasswordPage'
@@ -60,8 +72,10 @@ import FarmerOnboarding from './pages/farmer/FarmerOnboarding'
 import FarmerAdvancedProfile from './pages/farmer/FarmerAdvancedProfile'
 import FarmerMyStock from './pages/farmer/FarmerMyStock'
 import FarmerSubmitInventory from './pages/farmer/FarmerSubmitInventory'
+import BuyerDashboard from './pages/buyer/BuyerDashboard'
 import FarmerRequests from './pages/farmer/FarmerRequests'
 import FarmerStatus from './pages/farmer/FarmerStatus'
+import FarmerEvidence from './pages/farmer/FarmerEvidence'
 import DDPOverview from './pages/admin/DDPOverview'
 import DDPFarmProfiles from './pages/admin/DDPFarmProfiles'
 import DDPFarmReview from './pages/admin/DDPFarmReview'
@@ -78,19 +92,25 @@ import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
 import FarmerNav from './components/farmer/FarmerNav'
+import FarmerMobileNav from './components/farmer/FarmerMobileNav'
 import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
+import DDPBuyerProvisioning from './pages/admin/DDPBuyerProvisioning'
+import DDPDocumentReview from './pages/admin/DDPDocumentReview'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
-import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
+import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
+import { initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
+import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
+import { applyPublicPageMetadata, metadataForPage } from './lib/publicPageMetadata'
 
 // FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
 // lib/navigationGuard.ts so they can be unit tested. PUBLIC_PAGES once omitted
 // 'farmer-register', which silently made the "Supplier signup" button a no-op
 // for every signed-out visitor; navigationGuard.test.ts now asserts that every
 // target a public surface links to is actually reachable.
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk', 'ddp-access-requests']
+const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk', 'ddp-access-requests', 'ddp-buyer-provisioning', 'ddp-document-review']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
@@ -110,8 +130,22 @@ export default function App() {
   // screen. Landing them anywhere else — even for a moment — is the defect:
   // their session is transient, and once it lapses the account has no password
   // and no way to obtain one.
-  const [page, setPage] = useState<Page>(() => (getAuthRedirect() ? 'set-password' : 'landing'))
-  const [lang, setLang] = useState<Lang>('en')
+  const [page, setPage] = useState<Page>(() => {
+    if (getAuthRedirect()) return 'set-password'
+    // Honour deep-link paths (e.g. /farmer) on a cold load so a bookmarked or
+    // QR-scanned URL reaches the right screen without requiring the user to
+    // navigate from the landing page first.
+    return getInitialPageFromPath(window.location.pathname) ?? 'landing'
+  })
+  // Opens in the farmer's own language, and remembers the choice. This was a
+  // hardcoded 'en' that was never persisted, so a Thai farm scanning the QR
+  // code landed on an English form with no way to change it — see
+  // lib/languagePreference.ts.
+  const [lang, setLangState] = useState<Lang>(initialLanguage)
+  const setLang = useCallback((next: Lang) => {
+    setLangState(next)
+    storeLanguage(next)
+  }, [])
   const [inventory, setInventory] = useState<InventoryItem[]>(() => getInventoryBatches())
   const [farms, setFarms] = useState<FarmProfile[]>(() => getFarmProfiles())
   const [reviewFarmId, setReviewFarmId] = useState<string | null>(null)
@@ -151,6 +185,17 @@ export default function App() {
 
   // Farmer data scope — null until loaded, empty Sets if farmer has no data
   const [farmerScope, setFarmerScope] = useState<FarmerScope | null>(null)
+  // Distinguishes "this farmer has no stock" from "we could not find out".
+  // The catch below sets an EMPTY scope on failure, which makes every derived
+  // farmer list compute to [] — indistinguishable from a genuinely new farm,
+  // so a farmer whose load failed was told they had nothing and invited to add
+  // their first listing. The admin side already tracks this; the farmer side
+  // did not.
+  const [farmerLoadFailed, setFarmerLoadFailed] = useState(false)
+  // Documents DDP has handed back to this farmer (clarification or rejection).
+  // null = not known yet or the read failed — never rendered as "nothing waiting".
+  // Populated by the effect below isFarmerRole; see the comment there.
+  const [farmerEvidenceWaiting, setFarmerEvidenceWaiting] = useState<number | null>(null)
 
   // Review requests (owner → farmer messages) and stock edit tracking
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>(() => loadReviewRequests())
@@ -203,6 +248,35 @@ export default function App() {
   useEffect(() => { persistInventory(inventory) }, [inventory])
   useEffect(() => { persistFarms(farms) }, [farms])
   useEffect(() => { saveReviewRequests(reviewRequests) }, [reviewRequests])
+
+  // ── URL ↔ page sync (deep links) ─────────────────────────────────────────
+  // Keep the address bar consistent with the in-memory page state so that:
+  //   • a QR scan or shared link that lands on /farmer stays on /farmer, and
+  //   • pressing the browser Back button after entering via /farmer returns to
+  //     the referrer (or the app landing page) rather than /farmer again.
+  // See lib/urlRouting.ts for the path↔page mapping.
+  useEffect(() => {
+    syncUrlToPage(page)
+  }, [page])
+
+  // Browser Back / Forward: when the user navigates via history, map the new
+  // pathname back to a page (or fall back to 'landing').
+  //
+  // This calls setPage directly rather than goTo, so it does NOT run
+  // resolveNavigationTarget. That is only safe because every path in
+  // urlRouting's PATH_TO_PAGE maps to a PUBLIC page, which the guard would
+  // admit for any visitor anyway. urlRouting.test.ts enforces that invariant —
+  // if someone adds a farmer or admin route to the map, that test fails and
+  // this handler must be routed through the guard before the route ships.
+  useEffect(() => {
+    function handlePopState() {
+      const mapped = getInitialPageFromPath(window.location.pathname)
+      setPage(mapped ?? 'landing')
+      window.scrollTo(0, 0)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   // ── Auth subscription ────────────────────────────────────────────────────
   // authLoading is initialised to false in demo mode via useState, so no
@@ -316,6 +390,7 @@ export default function App() {
         ])
         // Superseded while loading → drop every result; do not touch state.
         if (!active) return
+        setFarmerLoadFailed(false)
         setFarmerScope(scope)
         // Populate farmer's farm profiles so Add Stock can resolve selectedFarm
         // and write farm_id correctly on every new batch submission.
@@ -340,6 +415,7 @@ export default function App() {
       .catch(err => {
         if (!active) return
         console.warn('getFarmerScope / data load failed:', err)
+        setFarmerLoadFailed(true)
         setFarmerScope({ farmIds: new Set(), itemIds: new Set() })
         // Fail closed: a failed farmer load must not leave prior (possibly
         // admin-wide) requests visible.
@@ -465,6 +541,54 @@ export default function App() {
   const isSignedIn = isDemo || currentProfile !== null
   const isAdminRole = isDemo || currentProfile?.role === 'ddp_admin'
   const isFarmerRole = !isDemo && currentProfile?.role === 'farmer'
+
+  // ── How many of the farmer's documents DDP has handed back to them ───────
+  //
+  // Loaded HERE rather than inside FarmerEvidence because the NAVBAR needs the
+  // number: a farmer working in My Stock — which is where they would go to fix a
+  // document — must be able to see that DDP is waiting without first visiting the
+  // page that would tell them. FarmerEvidence still loads its own rows; this is a
+  // count, not a shared row cache, so it introduces no window in which one farm's
+  // documents could be rendered to another.
+  //
+  // null means "not known yet, or the read failed", and is deliberately NOT 0.
+  // A failed read must render no badge rather than an absent one, because "DDP is
+  // waiting on nothing" is the one thing this must never say wrongly — the same
+  // rule FarmerEvidence and FarmerMyStock already follow for their empty states.
+  //
+  // Re-read on navigation (`page`) so acting on a document updates the badge
+  // without a reload, matching how the Operations Desk refreshes on entry.
+  useEffect(() => {
+    if (isDemo || !isSupabaseConfigured || !isFarmerRole) return
+    let active = true
+    runGuardedLoad(loadFarmerDocuments(), () => active, {
+      onSuccess: docs => setFarmerEvidenceWaiting(
+        docs.filter(d => d.reviewStatus === 'awaiting_clarification' || d.reviewStatus === 'rejected').length,
+      ),
+      // Silent by design: a badge is an affordance, not a report. FarmerEvidence
+      // itself states the failure loudly when the farmer opens it.
+      onError: () => setFarmerEvidenceWaiting(null),
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [isDemo, isFarmerRole, page])
+
+  /**
+   * Fail-closed projection of that count, and the reason it is derived rather
+   * than cleared inside the effect above.
+   *
+   * Outside a real farmer session this is null whatever a previous session left
+   * in state, so a number belonging to a farmer who has signed out — or to the
+   * farmer an admin just switched away from — can never reach the navbar. Same
+   * shape and same reason as the scopeReviewRequestsToFarmer projection below:
+   * farmer surfaces consume the guarded value, never the raw state.
+   *
+   * Clearing it with a setState in the effect body would have achieved this too,
+   * and would have cost a second render pass on every navigation to say nothing
+   * new. The lint rule that rejects that is right.
+   */
+  const farmerEvidenceWaitingSafe = isDemo || !isFarmerRole ? null : farmerEvidenceWaiting
+
+  const isBuyerRole = !isDemo && currentProfile?.role === 'buyer'
   const isFarmerPage = FARMER_PAGES.includes(page)
   // Derived — true while a farmer's scope is being fetched from Supabase
   const scopeLoading = isFarmerRole && farmerScope === null
@@ -644,15 +768,54 @@ export default function App() {
   useEffect(() => {
     // Derived from PUBLIC_AUTH_PAGES rather than an inline page !== chain, so a
     // new auth screen cannot be added without picking up the cream treatment.
-    const isPublicAuthPage = PUBLIC_AUTH_PAGES.includes(page)
+    //
+    // The corporate pages need the same body paint for the same reason: their
+    // .corp-shell covers the layout, not the document, so on a rubber-band
+    // overscroll the navy body shows behind a cream page. The class name says
+    // "auth" for historical reasons — what it actually does is paint the
+    // document cream, which both families of public page want.
+    const isPublicAuthPage = PUBLIC_AUTH_PAGES.includes(page) || PUBLIC_CORPORATE_PAGES.includes(page)
     document.body.classList.toggle('public-auth-page', isPublicAuthPage)
     return () => document.body.classList.remove('public-auth-page')
+  }, [page])
+
+  // Sync the HTML lang attribute so CSS :lang(th) selectors work and
+  // screen readers announce the correct language.
+  //
+  // A PAGE THAT DECLARES ITS OWN LANGUAGE OUTRANKS THE EN/TH TOGGLE. /de is
+  // written in German and is not a translation of the app — 'de' is not a Lang
+  // — so before this, the prerendered document arrived correctly as
+  // <html lang="de"> and this effect immediately overwrote it with 'en'. The
+  // served bytes and the rendered DOM then disagreed about what language the
+  // page was in, which is precisely the disagreement a rendering crawler
+  // resolves against the DOM.
+  useEffect(() => {
+    document.documentElement.lang = metadataForPage(page).lang ?? lang
+  }, [lang, page])
+
+  // Keep the document head describing the page actually on screen.
+  //
+  // index.html carries one title and one description, and vercel.json serves
+  // that one document for every path — so without this, /about, /privacy and
+  // /terms would all present a crawler with the landing page's metadata and no
+  // canonical of their own. Every value comes from the static register in
+  // lib/publicPageMetadata.ts, keyed only by `page`: no caller can pass a title
+  // in, so no farm name, batch id or buyer identity can reach the head, where a
+  // crawler and the browser history would both pick it up.
+  //
+  // It runs on EVERY page change, not only for the corporate pages. That is the
+  // "stale metadata must not survive navigation" rule: pages outside the
+  // register resolve to a fail-closed noindex entry, so navigating from a public
+  // page into the application replaces the indexable metadata rather than
+  // leaving it in place.
+  useEffect(() => {
+    applyPublicPageMetadata(document, page)
   }, [page])
 
   function goTo(p: Page) {
     // The decision itself is pure and lives in lib/navigationGuard.ts; this
     // function keeps only the side effects.
-    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole })
+    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole, isBuyerRole })
     // DO NOT CLEAR dbError HERE. An earlier revision of this fix did, and it was
     // wrong in a way worth recording.
     //
@@ -772,6 +935,16 @@ export default function App() {
     if (coaFile && isSupabaseConfigured && isFarmerRole && currentProfile && item.id) {
       await commitMutation(
         async () => {
+          // Hash BEFORE the upload, from the same File the uploader receives, so
+          // the digest describes exactly the bytes that were sent. Hashing after
+          // a round trip would only prove two reads agreed.
+          //
+          // Deliberately not tolerant of a hashing failure. The register exists
+          // to support one claim — that a document is unchanged since upload —
+          // and a row without a digest cannot support it. An unhashed entry
+          // would be worse than a loud failure, because it would look complete.
+          const digest = await hashFileHex(coaFile)
+
           const { storagePath } = await uploadCoaFile(
             coaFile,
             currentProfile.id,
@@ -782,6 +955,18 @@ export default function App() {
             coa_file_name: coaFile.name,
             coa_available: true,
             coa_storage_path: storagePath,
+          })
+          // The evidence register. Written last, after the bytes exist and the
+          // batch points at them, so the register can never name a document
+          // that is absent. Before this call the platform stored certificates
+          // it had no record of: files in the bucket, zero rows in the register
+          // those files were meant to be catalogued by.
+          await recordCoaDocument({
+            farmId: item.farmId,
+            batchId: item.id,
+            fileName: coaFile.name,
+            storagePath,
+            sha256Hex: digest,
           })
           return storagePath
         },
@@ -968,12 +1153,12 @@ export default function App() {
 
   async function handleSaveOwnerNote(itemId: string, note: string) {
     await commitMutation(
-      () => patchInventoryBatch(itemId, { owner_notes: note }),
+      () => saveBatchInternalNote(itemId, note),
       {
         onBegin: onBeginAction,
         onCommitted: () => {
           setInventory(prev => prev.map(i =>
-            i.id === itemId ? { ...i, ownerNotes: note } : i
+            i.id === itemId ? { ...i, ownerNotes: note.trim() || undefined } : i
           ))
         },
         onError: onDbError,
@@ -1148,7 +1333,11 @@ export default function App() {
           </div>
 
           <div className="navbar-links">
-            {showFarmerNav && <FarmerNav lang={lang} page={page} goTo={goTo} />}
+            {showFarmerNav && (
+              <div className="farmer-nav-topbar">
+                <FarmerNav lang={lang} page={page} goTo={goTo} evidenceWaiting={farmerEvidenceWaitingSafe} />
+              </div>
+            )}
 
             {showFarmerNav && showDDPNav && <div className="nav-sep" />}
 
@@ -1158,9 +1347,11 @@ export default function App() {
           </div>
 
           <div className="navbar-right">
-            {isDemo ? (
-              isFarmerPage && <LangToggle lang={lang} setLang={setLang} />
-            ) : (
+            {/* The toggle used to live inside the `isDemo` branch, so in
+                production — the only place a real farmer ever is — it did not
+                render at all. It is not a demo affordance. */}
+            {isFarmerPage && <LangToggle lang={lang} setLang={setLang} />}
+            {!isDemo && (
               currentProfile
                 ? <UserBadge profile={currentProfile} onSignOut={handleSignOut} />
                 : <button className="btn btn-primary" style={{ fontSize: 13, padding: '6px 14px' }} onClick={() => goTo('login')}>Sign in</button>
@@ -1176,8 +1367,51 @@ export default function App() {
           setLang={setLang}
           onSecureLogin={() => goTo('login')}
           onSupplierSignup={() => goTo('farmer-register')}
+          onNavigate={goTo}
         />
       )}
+
+      {/* ── Public corporate pages ──
+          The only pages besides the landing page approved for public search
+          indexing (lib/publicPageMetadata.ts is the register). They draw their
+          own full-width chrome via CorporatePageShell rather than the cream
+          auth card, which is why they are in PUBLIC_CORPORATE_PAGES and not in
+          PUBLIC_AUTH_PAGES.
+
+          `goTo` is passed whole as onNavigate: these pages link to each other,
+          to the landing page, to login and to supplier registration, and every
+          one of those links must still go through the navigation guard. */}
+      {page === 'about' && (
+        <AboutPage lang={lang} setLang={setLang} onNavigate={goTo} />
+      )}
+      {page === 'contact' && (
+        <ContactPage lang={lang} setLang={setLang} onNavigate={goTo} />
+      )}
+      {page === 'privacy' && (
+        <PrivacyPage lang={lang} setLang={setLang} onNavigate={goTo} />
+      )}
+      {page === 'terms' && (
+        <TermsPage lang={lang} setLang={setLang} onNavigate={goTo} />
+      )}
+
+      {page === 'de-buyer' && <LocalisedBuyerPage page="de-buyer" onNavigate={goTo} />}
+
+      {page === 'cs-buyer' && <LocalisedBuyerPage page="cs-buyer" onNavigate={goTo} />}
+
+      {page === 'th-supplier' && <ThaiSupplierPage onNavigate={goTo} />}
+
+      {page === 'regulatory-hub' && <RegulatoryHubPage onNavigate={goTo} />}
+
+      {/* The slug comes from the address bar, not from state: there is no enum
+          member per entry. An unknown slug falls back to the hub, which is the
+          honest answer — though vercel.json keeps /regulatory-updates/ out of
+          the SPA rewrite, so a wrong URL 404s before reaching this. */}
+      {page === 'regulatory-entry' && (() => {
+        const entry = typeof window === 'undefined' ? undefined : entryForPath(window.location.pathname)
+        return entry
+          ? <RegulatoryEntryPage entry={entry} onNavigate={goTo} />
+          : <RegulatoryHubPage onNavigate={goTo} />
+      })()}
 
       {/* ── Error banner ── */}
       {dbError && (
@@ -1232,10 +1466,17 @@ export default function App() {
       )}
 
       {/* ── Supplier access request (no navbar) ── */}
+      {page === 'buyer-dashboard' && (
+        <main className="main-content">
+          <BuyerDashboard lang={lang} profile={currentProfile} onSignOut={handleSignOut} />
+        </main>
+      )}
+
       {page === 'farmer-register' && (
         <main className="main-content public-auth-shell">
           <FarmerRegister
             lang={lang}
+            setLang={setLang}
             /* Returns to the landing page. It previously routed to
                farmer-dashboard, which requires a session the request flow
                never creates — the dead end this replaced. */
@@ -1268,6 +1509,8 @@ export default function App() {
                   onMyActivity={() => goTo('farmer-status')}
                   onAdvancedProfile={() => goTo('farmer-advanced-profile')}
                   onRequests={() => goTo('farmer-requests')}
+                  onEvidence={() => goTo('farmer-evidence')}
+                  evidenceWaitingCount={farmerEvidenceWaitingSafe}
                   openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
                 />
           )}
@@ -1283,7 +1526,8 @@ export default function App() {
                   openRequestCount={farmerReviewRequests.filter(r => r.status === 'open').length}
                   onGoRequests={() => goTo('farmer-requests')}
                   onCoaUpload={isFarmerRole && isSupabaseConfigured ? handleCoaUpload : undefined}
-                />
+                  loadFailed={farmerLoadFailed}
+              />
           )}
 
           {page === 'farmer-stock-form' && (
@@ -1291,12 +1535,28 @@ export default function App() {
               lang={lang}
               farms={farmerFarms}
               initialItem={stockEditItemId ? farmerInventory.find(i => i.id === stockEditItemId) : null}
-              onSubmit={async (item, coaFile) => {
+              onSubmit={async (item, coaFile, photoFiles) => {
+                // photoFiles IS load-bearing. This lambda used to take only
+                // (item, coaFile), so the form's third argument was dropped on
+                // the floor and handleInventorySubmit's photo block — which is
+                // guarded by `if (photoFiles?.length …)` — could never run. The
+                // result was farmer_photos with n_tup_ins = 0 in production:
+                // not one insert ever ATTEMPTED, against a durable upload path
+                // that was built, tested and correct.
+                //
+                // TypeScript cannot catch this and never will: a function of
+                // fewer parameters is assignable to a type of more, by design.
+                // The guard is the forwarding test in
+                // src/lib/mutationNavigationOrdering.test.ts.
+                //
                 // Navigate only on a committed submission. Leaving the form in
                 // place on failure keeps the farmer's input recoverable and puts
                 // them where the error banner is actionable.
-                const committed = await handleInventorySubmit(item, coaFile)
+                const committed = await handleInventorySubmit(item, coaFile, photoFiles)
                 if (committed && item.stockStatus !== 'draft') goTo('farmer-my-stock')
+                // Returned, not swallowed: the form decides whether to show a
+                // success screen, and it can only do that if it is told.
+                return committed
               }}
               onBack={() => goTo('farmer-my-stock')}
               marketBenchmarks={marketBenchmarks}
@@ -1315,6 +1575,19 @@ export default function App() {
                   onEditStock={handleEditStock}
                   onGoMyStock={() => goTo('farmer-my-stock')}
                 />
+          )}
+
+          {/* No scopeLoading gate, and deliberately not one: FarmerEvidence
+              consumes no scoped array. It reads farmer_documents directly and
+              the RLS policy scopes the rows, so there is no window in which it
+              could render another farm's evidence — and gating it on
+              farmerScope would make it show a loading state waiting on data it
+              never uses. */}
+          {page === 'farmer-evidence' && (
+            <FarmerEvidence
+              lang={lang}
+              onGoMyStock={() => goTo('farmer-my-stock')}
+            />
           )}
 
           {page === 'farmer-onboarding' && (
@@ -1472,6 +1745,8 @@ export default function App() {
               `&& isAdminRole` guard as every other DDP page; RLS remains the
               real boundary (migration 34 `admin read` / `admin triage`). */}
           {page === 'ddp-access-requests' && isAdminRole && <DDPAccessRequests />}
+          {page === 'ddp-buyer-provisioning' && isAdminRole && <DDPBuyerProvisioning />}
+          {page === 'ddp-document-review' && isAdminRole && <DDPDocumentReview />}
 
           {page === 'ddp-operations-desk' && isAdminRole && (
             <DDPOperationsDesk
@@ -1527,6 +1802,24 @@ export default function App() {
           <main className={`main-content${isFarmerPage ? ' eo-farmer' : ''}`}>{appPages}</main>
         )
       })()}
+
+      {/* ── Farmer mobile bottom navigation (visible only on mobile ≤768px) ──
+          The PUBLIC_PAGES exclusion is load-bearing, not belt-and-braces.
+          FARMER_PAGES spreads PUBLIC_PAGES, so isFarmerPage is TRUE on landing,
+          login and the register screens — and showFarmerNav is true for any
+          signed-in farmer and for all of demo mode. Without this clause a farmer
+          who taps the brand logo lands on the cream public landing page with a
+          dark five-tab farmer bar pinned across the bottom. That is the same
+          defect the diagnostic strip below was already fixed for; the top navbar
+          guards itself the same way (`!PUBLIC_PAGES.includes(page)`). */}
+      {showFarmerNav && isFarmerPage && !PUBLIC_PAGES.includes(page) && (
+        <FarmerMobileNav
+          lang={lang}
+          page={page}
+          goTo={goTo}
+          openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
+        />
+      )}
 
       {/* Internal diagnostic chrome. Hidden on every PUBLIC page, not just the
           landing: it is position:fixed with z-index 200, so on sign-in and the

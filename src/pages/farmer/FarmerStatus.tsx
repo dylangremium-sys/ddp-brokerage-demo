@@ -1,4 +1,6 @@
 import { T, FARM_STATUS_LABEL, INVENTORY_STATUS_LABEL } from '../../translations'
+import { formatBatchPrice } from '../../lib/formatPrice'
+import { formatDate } from '../../lib/formatDate'
 import type { Lang, InventoryItem, FarmProfile, FarmStatus, InventoryStatus, CarbonProgrammeStatus } from '../../types'
 
 interface Props {
@@ -191,7 +193,7 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
               )}
               {farm.submittedAt && (
                 <div className="submitted-date">
-                  {t.submittedLabel}: {new Date(farm.submittedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {t.submittedLabel}: {formatDate(farm.submittedAt, lang)}
                 </div>
               )}
               <CarbonRow farm={farm} lang={lang} onExclude={onCarbonExclude} carbonPersistenceAvailable={carbonPersistenceAvailable} />
@@ -231,8 +233,8 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
                   {item.thcPct > 0 && <span className="pill">{t.thcPrefix} {item.thcPct}%</span>}
                   {item.cbdPct > 0 && <span className="pill">{t.cbdPrefix} {item.cbdPct}%</span>}
                   {item.waterActivity && <span className="pill">{t.waPrefix} {item.waterActivity}</span>}
-                  <span className="pill">฿{item.pricePerKg}/{t.kgUnit}</span>
-                  {item.harvestDate && <span className="pill">{t.harvestPrefix} {item.harvestDate}</span>}
+                  <span className="pill">{formatBatchPrice(item.pricePerKg, item.priceCurrency, t.kgUnit)}</span>
+                  {item.harvestDate && <span className="pill">{t.harvestPrefix} {formatDate(item.harvestDate, lang)}</span>}
                   {item.certFileName && <span className="pill pill-doc">{item.certFileName}</span>}
                 </div>
                 {msg && <div className={invMsgClass(item.status)} style={{ marginTop: 10 }}>{msg}</div>}
@@ -257,9 +259,7 @@ export default function FarmerStatus({ lang, inventory, farms, onCarbonExclude, 
                     <div className="status-meta">
                       {event.kind === 'farm' ? t.farmStatusSection : t.inventoryStatusSection}
                       {' · '}
-                      {new Date(event.date).toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-GB', {
-                        day: 'numeric', month: 'short', year: 'numeric',
-                      })}
+                      {formatDate(event.date, lang)}
                     </div>
                   </div>
                   <span className={`badge ${

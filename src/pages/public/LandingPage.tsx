@@ -1,6 +1,9 @@
 import { T } from '../../translations'
-import type { Lang } from '../../types'
+import type { Lang, Page } from '../../types'
 import { DDPMonogramLogo } from '../../components/logos'
+import { pathForPage } from '../../lib/urlRouting'
+import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
+import { OFFICE_TEL_HREF } from '../../lib/publicPhone'
 
 /* ────────────────────────────────────────────────────────────────────────────
    Homepage — implements the approved LandPage.png visual specification.
@@ -16,6 +19,16 @@ interface Props {
   onSecureLogin: () => void
   /** Routes to the supplier/farmer registration flow. */
   onSupplierSignup: () => void
+  /**
+   * In-app navigation for the public corporate pages linked from the footer.
+   *
+   * These links are how a crawler discovers /about, /contact, /privacy and
+   * /terms at all. The sitemap lists them, but a sitemap is a hint; an internal
+   * link from the site's only established page is the real discovery path, and
+   * it is also what tells a search engine the pages are part of this site
+   * rather than four orphans.
+   */
+  onNavigate: (page: Page) => void
 }
 
 function scrollToId(id: string) {
@@ -170,7 +183,32 @@ function PinGlyph() {
   )
 }
 
-export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSignup }: Props) {
+/**
+ * A footer link to a public corporate page.
+ *
+ * A real <a href> with the router's own path, not a <button>. The four controls
+ * this replaces were `<button type="button">` elements with no onClick at all:
+ * they rendered, they were focusable, they looked like links, and clicking one
+ * did nothing. A crawler cannot follow a button either, so the pages would have
+ * been unreachable from the site's front door.
+ *
+ * Declared at module scope, not inside LandingPage: a component defined during
+ * render is a new component type on every render, so React unmounts and
+ * remounts the subtree instead of updating it (react-hooks/static-components).
+ */
+function FooterLink({ target, label, onNavigate }: { target: Page; label: string; onNavigate: (page: Page) => void }) {
+  return (
+    <a
+      className="ln-footer-legal-link"
+      href={pathForPage(target)}
+      onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate(target) }}
+    >
+      {label}
+    </a>
+  )
+}
+
+export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSignup, onNavigate }: Props) {
   const t = T[lang]
 
   const navItems: Array<{ key: string; label: string; target?: string; caret?: boolean }> = [
@@ -275,10 +313,21 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
               <LockIcon size={14} />
               {t.navSecureLogin}
             </button>
-            <button type="button" className="ln-secure-login" onClick={onSupplierSignup}>
+            {/* Deep-link: renders as a real <a> so a bookmark, WhatsApp share,
+                or QR scan lands directly on the farmer register screen. The
+                onClick still uses the in-app goTo so the SPA doesn't hard-
+                reload when the user is already on the page. */}
+            <a
+              href="/farmer"
+              className="ln-secure-login"
+              // Pre-existing anchor, same defect as the footer links had: an
+              // unconditional preventDefault meant a farmer could not Cmd-click
+              // the signup link into a new tab. Guarded now for the same reason.
+              onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onSupplierSignup() }}
+            >
               <UserGlyph />
               {lang === 'th' ? 'สมัครเป็นผู้จัดหาสินค้า' : 'Supplier signup'}
-            </button>
+            </a>
           </div>
         </div>
       </header>
@@ -402,6 +451,34 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
       </section>
 
       {/* ── Assurance strip (dark) ── */}
+      {/* ── Supplier acquisition ──────────────────────────────────────────
+          Placed after the process steps and before the assurance strip, which
+          is where a producer reaches after reading how supply is handled.
+
+          Every other positioning line on this page is buyer-facing — "helps
+          qualified buyers assess supply" — so a Thai producer reading it
+          concluded the site was for somebody else. The two things most likely
+          to move a producer, that there is a real buyer and that imperfect
+          paperwork is not a blocker, appeared nowhere.
+
+          Copy cleared 2026-08-09. The buyer is referenced unnamed, in the
+          exact cleared phrasing; publicCopyConstraints.test.ts pins it. */}
+      <section className="ln-supplier" id="suppliers">
+        <div className="ln-supplier-inner">
+          <h2 className="ln-section-title">{t.landingSupplierHeading}</h2>
+          <p className="ln-supplier-lead">{t.landingSupplierDemand}</p>
+          <p className="ln-supplier-body">{t.landingSupplierForms}</p>
+          <p className="ln-supplier-body">{t.landingSupplierSend}</p>
+          <a
+            href={pathForPage('farmer-register')}
+            className="ln-btn ln-btn-primary"
+            onClick={(e) => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onSupplierSignup() }}
+          >
+            {t.landingSupplierCta}
+          </a>
+        </div>
+      </section>
+
       <section className="ln-assurance" id="governance">
         <div className="ln-assurance-inner">
           {assurance.map((a, i) => (
@@ -425,15 +502,6 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
 
           <div className="ln-footer-channels">
             <div className="ln-channel">
-              <span className="ln-channel-ico ln-channel-mail" aria-hidden="true"><MailGlyph /></span>
-              <div className="ln-channel-body">
-                <div className="ln-channel-label">{t.homeFooterEmailLabel}</div>
-                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail1}`}>{t.homeFooterEmail1}</a>
-                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail2}`}>{t.homeFooterEmail2}</a>
-              </div>
-            </div>
-
-            <div className="ln-channel">
               <span className="ln-channel-ico ln-channel-pin" aria-hidden="true"><PinGlyph /></span>
               <div className="ln-channel-body">
                 <div className="ln-channel-label">{t.homeFooterOfficeLabel}</div>
@@ -442,23 +510,40 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
                   {t.homeFooterOfficeLine2}<br />
                   {t.homeFooterOfficeLine3}
                 </span>
-                <span className="ln-channel-tel">{t.homeFooterOfficeTel}</span>
+                {/* The two email channels beside this one are anchors; the
+                    number was plain text, so on the phone a Thai producer is
+                    actually holding it was the one channel that could not be
+                    used by tapping it. */}
+                <a className="ln-channel-tel" href={OFFICE_TEL_HREF}>{t.homeFooterOfficeTel}</a>
               </div>
             </div>
+            <div className="ln-channel">
+              <span className="ln-channel-ico ln-channel-mail" aria-hidden="true"><MailGlyph /></span>
+              <div className="ln-channel-body">
+                <div className="ln-channel-label">{t.homeFooterEmailLabel}</div>
+                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail1}`}>{t.homeFooterEmail1}</a>
+                <a className="ln-channel-value" href={`mailto:${t.homeFooterEmail2}`}>{t.homeFooterEmail2}</a>
+              </div>
+            </div>
+
           </div>
         </div>
 
         <div className="ln-footer-legalnote">
           <p className="ln-legalnote-line">{t.landingAuthorityNote}</p>
-          <p className="ln-legalnote-line">{t.landingDisclaimer}</p>
+          <p className="ln-legalnote-line">{t.landingDisclaimer} {t.landingDisclaimerAccess}</p>
         </div>
 
         <div className="ln-footer-bottom">
           <span className="ln-copyright">{t.homeFooterCopyright}</span>
           <span className="ln-footer-legal">
-            <button type="button" className="ln-footer-legal-link">{t.homeFooterPrivacy}</button>
+            <FooterLink target="about" label={t.homeFooterAbout} onNavigate={onNavigate} />
             <span className="ln-footer-legal-sep" aria-hidden="true">|</span>
-            <button type="button" className="ln-footer-legal-link">{t.homeFooterTerms}</button>
+            <FooterLink target="contact" label={t.homeFooterContact} onNavigate={onNavigate} />
+            <span className="ln-footer-legal-sep" aria-hidden="true">|</span>
+            <FooterLink target="privacy" label={t.homeFooterPrivacy} onNavigate={onNavigate} />
+            <span className="ln-footer-legal-sep" aria-hidden="true">|</span>
+            <FooterLink target="terms" label={t.homeFooterTerms} onNavigate={onNavigate} />
           </span>
         </div>
       </footer>

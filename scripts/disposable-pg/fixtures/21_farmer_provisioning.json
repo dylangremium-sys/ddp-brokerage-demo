@@ -1,0 +1,52 @@
+{
+  "id": "21_farmer_provisioning",
+  "title": "Migration 21 \u2014 DDP-controlled farmer provisioning",
+  "description": "Applies a pre-21 world stage, then migration 21, and rolls 21 back; baseline is the state immediately before 21. Scores VERIFY sections A, B and C. 21 makes DDP-controlled farmer provisioning real: a brand-new auth user must land as 'pending' rather than 'farmer', so self-signup cannot mint an operational farmer.\n\nThis is the only fixture that needs an explicit pre-migration world, and the reason is structural rather than incidental. The substrate models a post-22 database because five fixtures for later migrations need has_operational_farmer_access(), which migration 22 creates. Migration 21's rollback opens with an ordering guard that refuses to run while 22 is applied -- correctly, since 22's policies are written in terms of the provisioning model 21 installs. On a post-22 substrate that guard therefore always fires and 21's reversibility can never be examined. The pre-21 stage runs BEFORE the symmetry baseline is captured, so it is part of the world rather than a correction applied to the result.\n\nObject counts do not move across this fixture (114 -> 114 -> 114) because 21 replaces rather than creates. What makes it non-vacuous is the definition digest: handle_new_user()'s body differs between baseline and applied, so a rollback that failed to restore the prior body would be reported even though every object name and signature matched.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "PRE-21-WORLD",
+      "file": "scripts/disposable-pg/fixtures/sql/97_pre21_world.sql"
+    },
+    {
+      "label": "HARDENING-21",
+      "file": "21_DDP_CONTROLLED_FARMER_PROVISIONING_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "21_DDP_CONTROLLED_FARMER_PROVISIONING_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C"
+    ],
+    "expectedPassCount": 3,
+    "readOnly": true
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "21_DDP_CONTROLLED_FARMER_PROVISIONING_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users"
+    ]
+  },
+  "postRollback": null
+}

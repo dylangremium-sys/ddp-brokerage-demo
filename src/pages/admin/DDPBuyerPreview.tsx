@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { formatBatchPrice } from '../../lib/formatPrice'
 import type { FarmProfile, InventoryItem, ProcurementDecision } from '../../types'
 import { DDPVerifiedSupplySeal } from '../../components/logos'
 import { deriveComplianceTier, COMPLIANCE_TIER_LABEL, complianceTierClass, testStatusClass, testStatusLabel } from '../../data'
@@ -13,6 +14,9 @@ import {
   type StoredDecision,
 } from '../../lib/procurementControl'
 import { deriveBuyerApprovalGate } from '../../lib/buyerApprovalGate'
+import { isRuleEnforcementUnverified, describeRuleBlock } from '../../lib/complianceRuleEnforcement'
+import type { RuleEnforcementState } from '../../lib/complianceRuleEnforcement'
+import { resolveEnforcedRuleAlerts, resolveEnforcedRuleAlertsForBatches } from '../../lib/complianceRepository'
 import {
   canEmitBuyerPackOutput,
   BUYER_PACK_OUTPUT_BLOCKED_TITLE,
@@ -127,6 +131,7 @@ function computeBuyerDisclosureStatus(
   farms: FarmProfile[] | undefined,
   authoritative?: StoredDecision | null,
   overrideState?: DisclosureOverrideState | null,
+  ruleEnforcement?: RuleEnforcementState | null,
 ) {
   const farm = findFarmForItem(item, farms)
 
@@ -181,10 +186,26 @@ function computeBuyerDisclosureStatus(
   ).filter(r => r.batchId === item.id || (!!farm && r.farmId === farm.id))
 
   const unresolvedRisks = risks.filter(r => r.status !== 'resolved' && r.status !== 'accepted')
+
+  // APPROVED COMPLIANCE RULES NOW ENFORCE. This is the fifth link in the
+  // Watchtower chain, which until now did not exist: rules were approved,
+  // displayed, and read by nothing. An unresolved alert naming a rule that is
+  // blocking right now is a blocking issue here, exactly like a rejected
+  // document or an unresolved blocker risk.
+  //
+  // Unverified rule state blocks, for the same reason unverified overrides do:
+  // a state we cannot read must never be the thing that lets a pack out.
+  const rulesUnverified = isRuleEnforcementUnverified(ruleEnforcement)
+  const blockingRuleAlerts = ruleEnforcement && !ruleEnforcement.unavailable
+    ? ruleEnforcement.blockingAlerts
+    : []
+
   const hasBlockingIssues =
     overridesUnverified
+    || rulesUnverified
     || blockerRequirements.length > 0
     || unresolvedRisks.some(r => r.severity === 'blocker')
+    || blockingRuleAlerts.length > 0
   // AUTHORITATIVE DECISION, when the caller has resolved one. The issue gate must
   // never be driven by the raw localStorage cache: a decision the server refused,
   // or one whose server state could not be read, must not authorise a release.
@@ -202,6 +223,11 @@ function computeBuyerDisclosureStatus(
     // is a different statement from "this batch has a blocker", and conflating
     // them would send an operator hunting for a blocker that does not exist.
     overridesUnverified,
+    // Same reasoning for rules: "blocked by rule LEGAL_X" and "we could not read
+    // the rules" are different statements and the operator acts on them
+    // differently — one is resolved in the Watchtower, the other is an outage.
+    rulesUnverified,
+    blockingRuleAlerts,
   }
 }
 
@@ -237,10 +263,26 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
   // on the strength of an override state nobody has verified.
   const [overrideState, setOverrideState] = useState<DisclosureOverrideState | null>(null)
 
+  // AUTHORITATIVE RULE ENFORCEMENT, same contract as the overrides above: null
+  // until it settles, which blocks. A pack must not be issued on the strength of
+  // a compliance-rule state nobody has verified.
+  const [ruleEnforcement, setRuleEnforcement] = useState<RuleEnforcementState | null>(null)
+
   const {
     farm, requirements, missingRequirements, blockerRequirements, receivedCount, unresolvedRisks,
     storedDecision, isHumanApproved, packStatusLabel, overridesUnverified,
-  } = computeBuyerDisclosureStatus(item, farms, authoritativeDecision, overrideState)
+    rulesUnverified, blockingRuleAlerts,
+  } = computeBuyerDisclosureStatus(item, farms, authoritativeDecision, overrideState, ruleEnforcement)
+
+  // Resolve the rule-enforcement state for THIS batch. Keyed on the batch id
+  // alone: alerts are raised against the batch, not the farm.
+  useEffect(() => {
+    let cancelled = false
+    resolveEnforcedRuleAlerts('batch', item.id)
+      .then(state => { if (!cancelled) setRuleEnforcement(state) })
+      .catch(() => { if (!cancelled) setRuleEnforcement({ blockingAlerts: [], unavailable: true }) })
+    return () => { cancelled = true }
+  }, [item.id])
   const [decision, setDecision] = useState<ProcurementDecision | ''>('')
   const [decisionSaved, setDecisionSaved] = useState(false)
   const [decisionReason, setDecisionReason] = useState('')
@@ -515,7 +557,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
       `Farm:             ${item.farmName}`,
       `Location:         ${location}`,
       `Available Qty:    ${item.quantityKg > 0 ? `${item.quantityKg.toLocaleString()} ${item.unit ?? 'kg'}` : '—'}`,
-      `Price per kg:     ${item.pricePerKg > 0 ? `฿${item.pricePerKg.toLocaleString()} THB/kg` : '—'}`,
+      `Price per kg:     ${formatBatchPrice(item.pricePerKg, item.priceCurrency)}`,
       '',
       `THC:              ${na(item.thcPct, '%')}`,
       `CBD:              ${na(item.cbdPct, '%')}`,
@@ -686,7 +728,7 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
             )}
             <div className="buyer-pack-field">
               <span className="buyer-pack-lbl">Price / kg</span>
-              <span>{item.pricePerKg > 0 ? `฿${item.pricePerKg.toLocaleString()} THB/kg` : '—'}</span>
+              <span>{formatBatchPrice(item.pricePerKg, item.priceCurrency)}</span>
             </div>
             {item.harvestDate && (
               <div className="buyer-pack-field">
@@ -931,7 +973,23 @@ function BuyerPack({ item, farms, onBack, onGetCoaUrl, approverName }: {
                 <strong> not</strong> a statement that one exists. Issuing is blocked until they can be read.
               </span>
             )}
-            {!isHumanApproved && !overridesUnverified && (
+            {/* Same distinction again for compliance rules. "Blocked by rule X"
+                is actionable in the Watchtower; "we could not read the rules" is
+                an outage and there is nothing for the operator to resolve. */}
+            {!isHumanApproved && rulesUnverified && (
+              <span style={{ fontSize: 12, color: 'var(--warning)' }}>
+                ⚠ The compliance rules in force could not be read, so whether an approved rule blocks this
+                batch is <strong>unknown</strong>. This is <strong>not</strong> a statement that one does.
+                Issuing is blocked until they can be read.
+              </span>
+            )}
+            {!isHumanApproved && !rulesUnverified && blockingRuleAlerts.length > 0 && (
+              <span style={{ fontSize: 12, color: 'var(--warning)' }}>
+                ⛔ {describeRuleBlock(blockingRuleAlerts)} Resolve the alert in the Compliance Watchtower, or
+                pause the rule, to release this pack.
+              </span>
+            )}
+            {!isHumanApproved && !overridesUnverified && !rulesUnverified && blockingRuleAlerts.length === 0 && (
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                 Enabled only after this batch is human-approved for buyer discussion.
               </span>
@@ -1128,7 +1186,34 @@ function ApprovedInventoryList({ inventory, farms }: { inventory: InventoryItem[
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidateKey, overrideFarmKey])
 
+  // RULE ENFORCEMENT FOR THE LIST. Keyed on the candidate set alone — alerts are
+  // raised against a batch, not a farm — and held to the same all-or-nothing
+  // contract as the overrides above: an unreadable rule picture shuts the gate
+  // for every candidate, because a partial answer would approve exactly the
+  // batches whose alerts failed to load.
+  const [resolvedRules, setResolvedRules] =
+    useState<{ key: string; value: Map<string, RuleEnforcementState>; unavailable: boolean } | null>(null)
+  const ruleSet = resolvedRules !== null && resolvedRules.key === candidateKey ? resolvedRules : null
+
+  useEffect(() => {
+    let cancelled = false
+    const ids = candidateKey === '' ? [] : candidates.map(i => i.id)
+    resolveEnforcedRuleAlertsForBatches(ids).then(
+      result => {
+        if (cancelled) return
+        setResolvedRules({ key: candidateKey, value: result.byBatchId, unavailable: result.unavailable })
+      },
+      () => {
+        if (cancelled) return
+        setResolvedRules({ key: candidateKey, value: new Map(), unavailable: true })
+      },
+    )
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidateKey])
+
   const approved = resolution === null || resolution.unavailable || overrideState === null || overrideState.unavailable
+    || ruleSet === null || ruleSet.unavailable
     ? []
     : candidates.filter(item => {
         const decision = resolution.decisions.get(item.id)
@@ -1138,7 +1223,11 @@ function ApprovedInventoryList({ inventory, farms }: { inventory: InventoryItem[
           notes: decision!.reason ?? undefined,
           decidedAt: decision!.decidedAt as string,
         }
-        return computeBuyerDisclosureStatus(item, farms, authoritative, overrideState).isHumanApproved
+        // A candidate absent from the map is NOT treated as clean: the map is
+        // built from the same id list, so a miss means the two disagreed, and
+        // an unverifiable state must block.
+        const rules = ruleSet.value.get(item.id) ?? { blockingAlerts: [], unavailable: true }
+        return computeBuyerDisclosureStatus(item, farms, authoritative, overrideState, rules).isHumanApproved
       })
 
   // Both reads gate the list, so both feed its user-visible state. An empty table

@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 import { assertNoRemoteTargets, assertSocketOnlyConnection, assertListenAddressesEmpty } from './lib/guards.mjs';
 import { loadFixture, FIXTURES_DIR, REPO_ROOT } from './lib/fixtures.mjs';
 import { assertNoNumberCollisions } from './lib/migration-numbering.mjs';
-import { DisposableCluster, DEFAULT_PG_MAJOR } from './lib/cluster.mjs';
+import { DisposableCluster, DEFAULT_PG_MAJOR, PG_MAJOR_OVERRIDE } from './lib/cluster.mjs';
 import {
   applyBootstrap,
   assertDeclaredSubstratePresent,
@@ -28,10 +28,30 @@ import {
 } from './lib/supabase-shim.mjs';
 import { parseVerifyOutput, evaluateVerify } from './lib/verify-parser.mjs';
 import { EvidenceBuilder, newRunId } from './lib/evidence.mjs';
+import { snapshotCatalog, assertCatalogSymmetry } from './lib/rollback-symmetry.mjs';
+import { applyKnownAsymmetries } from './lib/known-asymmetries.mjs';
 
 export const EXIT = Object.freeze({
   OK: 0, APPLY: 10, VERIFY: 20, ROLLBACK: 30, GUARD: 40, UNEXPECTED_PASS: 41, ENV: 50, TEARDOWN: 60,
+  COVERAGE: 70,
 });
+
+/**
+ * Migrations allowed to ship without a fixture, each with the reason why.
+ *
+ * EMPTY, AND MEANT TO STAY THAT WAY. It exists so that waiving is a code change
+ * somebody has to justify in review, rather than a flag. It is deliberately NOT
+ * an environment variable: a waiver CI could set is the hole this gate closes,
+ * re-opened somewhere harder to see.
+ *
+ * A waiver naming a migration that is covered, or that does not exist, is itself
+ * a failure — see `staleWaivers`. A waiver that matched nothing is
+ * indistinguishable from a waiver doing its job, which is the same trap as a
+ * `DROP ... IF EXISTS` that matched nothing because the name was misspelled.
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+export const COVERAGE_WAIVERS = Object.freeze({});
 
 class PhaseError extends Error {
   constructor(code, message) {
@@ -39,6 +59,73 @@ class PhaseError extends Error {
     this.code = code;
     this.name = 'PhaseError';
   }
+}
+
+/**
+ * Compute fixture coverage over the repo's numbered migrations.
+ *
+ * Pure and exported ON PURPOSE. The value this function produces is a claim about
+ * how much of the migration set a green run actually exercised, and that claim was
+ * wrong for months while living inline in main(): it counted `*_HARDENING.sql`, a
+ * set every fixture already covered by construction, and so printed "32/32" — a
+ * ratio arithmetically incapable of falling. Nobody noticed, because testing it
+ * required standing up a PostgreSQL cluster.
+ *
+ * Extracted so the falsification is a unit test that runs in milliseconds:
+ * remove a fixture, the numerator MUST drop. A coverage number that cannot go
+ * down is not a measurement, and the only way to keep proving it can go down is
+ * to make proving it cheap.
+ *
+ * Printing the shortfall was never enough on its own. Until this function's
+ * `blocking` list was wired to the exit code, a run could print "NO FIXTURE —
+ * this run proves nothing about: 57" and then print ALL FIXTURES GREEN and exit
+ * 0, past a REQUIRED status check. The number could fall; falling simply cost
+ * nothing, which is the same defect as a number that cannot fall wearing a
+ * different hat.
+ *
+ * @param {string[]} repoFiles   filenames in the repo root (not paths)
+ * @param {string[]} fixtureIds  fixture ids being run, e.g. '24_evidence'
+ * @param {Record<string,string>} waivers  migration number -> written reason
+ */
+export function computeFixtureCoverage(repoFiles, fixtureIds, waivers = {}) {
+  const covered = new Set(
+    fixtureIds.map((id) => (id.match(/^(\d+)_/) || [])[1]).filter(Boolean),
+  );
+  // Any `<number>_*.sql` in the repo root is a migration an operator means when
+  // they say "the migrations". Matching on _HARDENING instead let 11 of 43 escape
+  // the denominator purely by being named differently.
+  const onDisk = [...new Set(
+    repoFiles.map((f) => (f.match(/^(\d+)_.*\.sql$/) || [])[1]).filter(Boolean),
+  )].sort((a, b) => Number(a) - Number(b));
+
+  const uncovered = onDisk.filter((n) => !covered.has(n));
+  // A migration shipping a ROLLBACK that no fixture executes is worse than one
+  // with no rollback: the file's mere existence gets read as proven reversibility.
+  const uncoveredWithRollback = uncovered.filter((n) =>
+    repoFiles.some((f) => new RegExp(`^${n}_.*_ROLLBACK\\.sql$`).test(f)));
+
+  // Waived migrations are still reported as uncovered — the run genuinely did
+  // not exercise them — but they do not block. `blocking` is what the exit code
+  // is derived from, so the difference between "known and accepted" and "nobody
+  // noticed" lives in the repository rather than in somebody's memory.
+  const waivedSet = new Set(Object.keys(waivers));
+  const waived = uncovered.filter((n) => waivedSet.has(n));
+  const blocking = uncovered.filter((n) => !waivedSet.has(n));
+  // A waiver for a migration that IS covered, or that no longer exists, has
+  // stopped describing anything. Left unchecked these accumulate until the
+  // allowlist is a list of names nobody can account for.
+  const staleWaivers = [...waivedSet].filter((n) => !uncovered.includes(n)).sort(
+    (a, b) => Number(a) - Number(b));
+
+  return {
+    total: onDisk.length,
+    coveredCount: onDisk.length - uncovered.length,
+    uncovered,
+    uncoveredWithRollback,
+    waived,
+    blocking,
+    staleWaivers,
+  };
 }
 
 function gitSha() {
@@ -74,6 +161,97 @@ function bucketPresent(cluster, id) {
 }
 function countRows(cluster, table) {
   return Number(scalar(cluster, `SELECT count(*) FROM ${table}`));
+}
+function constraintPresent(cluster, table, name) {
+  const esc = name.replace(/'/g, "''");
+  return Number(scalar(cluster,
+    `SELECT count(*) FROM pg_constraint WHERE conrelid = '${table}'::regclass AND conname = '${esc}'`,
+  )) > 0;
+}
+
+/**
+ * Effective privileges a role holds on a table, as a sorted array.
+ *
+ * Reads through coalesce(relacl, acldefault(...)) for the same reason the catalog
+ * snapshot does: a NULL relacl means "the built-in defaults", not "no privileges".
+ */
+function tablePrivileges(cluster, table, role) {
+  const out = scalar(cluster, `
+    SELECT coalesce(string_agg(DISTINCT a.privilege_type, ',' ORDER BY a.privilege_type), '')
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
+           LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+     WHERE n.nspname || '.' || c.relname = '${table}'
+       AND a.grantee = '${role}'::regrole`);
+  return out ? out.split(',') : [];
+}
+
+/**
+ * Assertions about the state AFTER the forward migration, BEFORE any rollback.
+ *
+ * The harness had no such phase, and its absence is defect D9. Rollback symmetry
+ * compares pre-apply against post-rollback, so it can only ever prove that a
+ * migration was REVERSED — never that it DID anything. A migration whose forward
+ * statement silently matched nothing produces a perfectly symmetric run: nothing
+ * happened, and nothing was undone.
+ *
+ * That is exactly how migration 15's `REVOKE UPDATE, DELETE ... FROM anon`
+ * escaped verification. Making the substrate honest exposes the rollback's
+ * failure to restore anon, but still says nothing about whether the REVOKE
+ * removed anything. Only an assertion taken while the migration is applied can.
+ */
+function assertPostApply(cluster, fixture) {
+  const pa = fixture.postApply;
+  if (!pa) {
+    return { ok: true, checks: [] };
+  }
+  const problems = [];
+
+  for (const c of pa.privileges || []) {
+    const held = tablePrivileges(cluster, c.table, c.role);
+    for (const p of c.absent || []) {
+      if (held.includes(p)) {
+        problems.push(
+          `${c.role} still holds ${p} on ${c.table} after the migration applied ` +
+          `(holds: ${held.join(',') || 'none'})`);
+      }
+    }
+    for (const p of c.present || []) {
+      if (!held.includes(p)) {
+        problems.push(
+          `${c.role} lost ${p} on ${c.table}, which the migration was not supposed to remove ` +
+          `(holds: ${held.join(',') || 'none'})`);
+      }
+    }
+  }
+
+  // Constraints and indexes are the OTHER way a forward migration matches
+  // nothing and still produces a symmetric run. A migration that only ADDs a
+  // CHECK or a UNIQUE INDEX declares no removed table and no removed function,
+  // so the vacuity guard below (`declaresRemovedObjects`) does not fire on it
+  // either — nothing else in the harness would notice that it did nothing.
+  for (const c of pa.constraints || []) {
+    for (const name of c.present || []) {
+      if (!constraintPresent(cluster, c.table, name)) {
+        problems.push(`constraint ${name} is ABSENT from ${c.table} after the migration applied`);
+      }
+    }
+    for (const name of c.absent || []) {
+      if (constraintPresent(cluster, c.table, name)) {
+        problems.push(`constraint ${name} is still present on ${c.table} after the migration applied`);
+      }
+    }
+  }
+  for (const name of pa.indexes?.present || []) {
+    if (!regclassPresent(cluster, name)) {
+      problems.push(`index ${name} is ABSENT after the migration applied`);
+    }
+  }
+  for (const name of pa.indexes?.absent || []) {
+    if (regclassPresent(cluster, name)) {
+      problems.push(`index ${name} is still present after the migration applied`);
+    }
+  }
+  return { ok: problems.length === 0, problems };
 }
 
 function assertPostRollback(cluster, fixture) {
@@ -111,7 +289,11 @@ function log(verbose, msg) {
 // Run one fixture end-to-end. Returns { code, evidence, artifacts }.
 export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
   const fixture = loadFixture(fixtureId);
-  const pgMajor = fixture.pgMajor || DEFAULT_PG_MAJOR;
+  // Precedence: explicit env override > fixture pin > repo default (= prod's major).
+  // The override exists so the advisory PG-18 lane can exercise the same fixtures
+  // on the next major without editing 38 files; without it, `HARNESS_PG_MAJOR`
+  // would be silently ignored, because every fixture carries a pin.
+  const pgMajor = PG_MAJOR_OVERRIDE ?? fixture.pgMajor ?? DEFAULT_PG_MAJOR;
   const runId = newRunId(fixture.id);
   const ev = new EvidenceBuilder({ runId, fixtureId: fixture.id, gitSha: gitSha(), pgMajor });
   const cluster = new DisposableCluster({ pgMajor, log: (m) => verbose && log(verbose, `  · ${m}`) });
@@ -173,8 +355,37 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
     }
     phaseLine(true, 'minimal Supabase substrate bootstrapped');
 
+    // ---- Rollback symmetry baseline ----
+    // The comparison must be pre-apply vs post-rollback. Snapshotting after
+    // apply instead asserts that rollback changes nothing, which passes a
+    // rollback that drops nothing and fails a correct one.
+    //
+    // A fixture applies prerequisites it does NOT undo, so the baseline is the
+    // state immediately before the first apply stage that the rollback actually
+    // reverses. The rollback stages name their own files, so that set is
+    // declared, not guessed: fixture 44 applies 39 then 44 and rolls back only
+    // 44 (baseline = after 39), while fixture 36 applies 34 then 36 and rolls
+    // back both (baseline = before 34).
+    const migrationNumberOf = (file) => Number(/^(\d+)_/.exec(file)?.[1]);
+    const rolledBackNumbers = new Set(
+      fixture.rollbackStages.map((s) => migrationNumberOf(s.file)).filter(Number.isFinite),
+    );
+    let baselineIndex = fixture.applyStages.findIndex((s) =>
+      rolledBackNumbers.has(migrationNumberOf(s.file)),
+    );
+    if (baselineIndex < 0) baselineIndex = 0;
+
+    let catalogBaseline = null;
+
     // ---- Apply forward stages ----
-    for (const st of fixture.applyStages) {
+    for (const [stageIndex, st] of fixture.applyStages.entries()) {
+      if (stageIndex === baselineIndex) {
+        try {
+          catalogBaseline = snapshotCatalog(cluster);
+        } catch (err) {
+          throw new PhaseError(EXIT.ENV, `baseline catalog snapshot failed: ${err.message}`);
+        }
+      }
       const res = cluster.runSqlFile(st.path);
       rawLogs[`apply-${st.label}.log`] = res.combined;
       const ok = res.status === 0;
@@ -190,6 +401,39 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
     }
     if (expectFailure && expectFailure.phase === 'apply') {
       throw new PhaseError(EXIT.UNEXPECTED_PASS, `negative fixture ${fixture.id} was expected to fail at apply but passed`);
+    }
+
+    // ---- POST-APPLY: did the migration actually DO anything? ----
+    // Runs here, while the migration is applied, because this is the only point
+    // in the run at which that question can be asked. Symmetry (below) compares
+    // pre-apply to post-rollback and is blind to a forward statement that matched
+    // nothing. See assertPostApply.
+    if (fixture.postApply) {
+      const pa = assertPostApply(cluster, fixture);
+      ev.set('postApply', { ok: pa.ok, problems: pa.problems || [] });
+      if (!pa.ok) {
+        if (expectFailure && expectFailure.phase === 'postApply') {
+          phaseLine(true, 'post-apply assertion failed AS EXPECTED (negative scenario)', pa.problems.join('\n'));
+          return { code: EXIT.OK, outcome: 'expected-failure' };
+        }
+        throw new PhaseError(EXIT.VERIFY,
+          `post-apply assertions failed — the migration did not take effect:\n  - ${pa.problems.join('\n  - ')}`);
+      }
+      // Count what was actually checked, not just the privileges — a line that
+      // says "0 privilege check(s)" next to a tick reads as nothing having been
+      // asserted when constraints or indexes were.
+      const paCounts = [
+        [(fixture.postApply.privileges || []).length, 'privilege'],
+        [(fixture.postApply.constraints || []).reduce(
+          (n, c) => n + (c.present || []).length + (c.absent || []).length, 0), 'constraint'],
+        [(fixture.postApply.indexes?.present || []).length
+          + (fixture.postApply.indexes?.absent || []).length, 'index'],
+      ].filter(([n]) => n > 0).map(([n, what]) => `${n} ${what} check(s)`);
+      phaseLine(true, `post-apply assertions hold (${paCounts.join(', ') || 'nothing declared'})`);
+    }
+    if (expectFailure && expectFailure.phase === 'postApply') {
+      throw new PhaseError(EXIT.UNEXPECTED_PASS,
+        `negative fixture ${fixture.id} was expected to fail its post-apply assertions but passed`);
     }
 
     // ---- VERIFY ----
@@ -219,6 +463,26 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
         throw new PhaseError(EXIT.VERIFY, `VERIFY failed: ${evaln.problems.join('; ') || res.stderr}`);
       }
       phaseLine(true, `VERIFY ${parsed.passed.length}/${fixture.verify.expectedPassCount}`, parsed.passed.join(''));
+    }
+
+    // ---- Catalog AFTER apply: proves the fixture actually built something ----
+    let catalogApplied = null;
+    try {
+      catalogApplied = snapshotCatalog(cluster);
+    } catch (err) {
+      throw new PhaseError(EXIT.APPLY, `post-apply catalog snapshot failed: ${err.message}`);
+    }
+    // Only fixtures that DECLARE they create public-schema objects can be
+    // vacuous. 37/38 change storage buckets and storage.objects policies and
+    // legitimately add nothing to the public catalog; their postRollback
+    // declares no removed tables or functions.
+    const declaresRemovedObjects =
+      (fixture.postRollback?.removed?.tables?.length ?? 0) > 0 ||
+      (fixture.postRollback?.removed?.functions?.length ?? 0) > 0;
+    if (declaresRemovedObjects && assertCatalogSymmetry(catalogBaseline, catalogApplied).ok) {
+      throw new PhaseError(EXIT.APPLY,
+        `fixture ${fixture.id} declares objects to remove at rollback but created no public ` +
+          'catalog objects, so the rollback symmetry check would pass vacuously');
     }
 
     // ---- Destructive guard + rollback ----
@@ -268,6 +532,80 @@ export function runFixture(fixtureId, { verbose = false, keep = false } = {}) {
         if (res.status !== 0) throw new PhaseError(EXIT.ROLLBACK, `rollback stage ${st.label} failed:\n${res.stderr}`);
       }
       if (fixture.rollbackStages.length) phaseLine(true, 'clean rollback complete');
+    }
+
+    // ---- Catalog AFTER rollback: must equal the pre-apply BASELINE ----
+    let catalogFinal = null;
+    try {
+      catalogFinal = snapshotCatalog(cluster);
+    } catch (err) {
+      throw new PhaseError(EXIT.ROLLBACK, `post-rollback catalog snapshot failed: ${err.message}`);
+    }
+    // A migration that ships NO rollback cannot be asked whether its rollback
+    // reversed anything, and comparing a pre-apply baseline to a post-apply
+    // catalog would report every object it created as an asymmetry. Those
+    // migrations are covered for what CAN be proven — that they apply on the
+    // major production runs, and that their postApply assertions hold — and the
+    // absence of a rollback is stated on every run rather than inferred from a
+    // silence. Eight of the eleven migrations D6 exposed are in this category.
+    if (fixture.forwardOnly) {
+      ev.set('rollbackSymmetry', {
+        baselineObjects: catalogBaseline?.length ?? null,
+        appliedObjects: catalogApplied.length,
+        finalObjects: null,
+        ok: null,
+        skipped: 'forwardOnly',
+      });
+      phaseLine(true,
+        'NO ROLLBACK EXISTS for this migration — applied and asserted only; reversibility is NOT proven and cannot be');
+      return { code: EXIT.OK, outcome: 'passed' };
+    }
+
+    const symmetry = assertCatalogSymmetry(catalogBaseline, catalogFinal);
+    // Registered, already-triaged asymmetries are subtracted here. Scoped to an
+    // exact object AND its exact before/after definition, so anything the
+    // register does not name — including further drift in an object it does —
+    // still fails. See lib/known-asymmetries.mjs for why they are not just fixed.
+    const known = applyKnownAsymmetries(fixture.id, symmetry);
+    ev.set('rollbackSymmetry', {
+      baselineObjects: catalogBaseline.length,
+      appliedObjects: catalogApplied.length,
+      finalObjects: catalogFinal.length,
+      ok: symmetry.ok,
+      diff: symmetry.ok ? null : symmetry.diff,
+      details: symmetry.ok ? null : symmetry.details,
+      waived: known.waived,
+      remaining: known.remaining,
+    });
+    if (!symmetry.ok) {
+      // A fixture may be registered to PROVE this check still bites. Without
+      // that, a symmetry check that quietly stopped detecting anything would
+      // look exactly like a corpus of correct rollbacks.
+      if (expectFailure && expectFailure.phase === 'rollback') {
+        phaseLine(true, 'rollback asymmetry detected AS EXPECTED (negative scenario)', symmetry.diff);
+        return { code: EXIT.OK, outcome: 'expected-failure' };
+      }
+      if (!known.ok) {
+        throw new PhaseError(EXIT.ROLLBACK,
+          `rollback is NOT symmetric — the database did not return to its pre-apply state:\n${symmetry.diff}`);
+      }
+    }
+    if (expectFailure && expectFailure.phase === 'rollback') {
+      throw new PhaseError(EXIT.UNEXPECTED_PASS,
+        `negative fixture ${fixture.id} was expected to fail the rollback symmetry check but passed — ` +
+          'the check no longer detects a rollback that removes nothing');
+    }
+    if (symmetry.ok) {
+      phaseLine(true,
+        `rollback is symmetric (${catalogBaseline.length} → ${catalogApplied.length} → ${catalogFinal.length} objects)`);
+    } else {
+      // Deliberately NOT folded into the line above. A waived asymmetry is an
+      // open defect that this run chose not to fail on, and printing it as
+      // "symmetric" would make the register a way of forgetting rather than a way
+      // of tracking. Every run restates what is outstanding and why.
+      phaseLine(true,
+        `rollback symmetric APART FROM ${known.waived.length} KNOWN, ACCEPTED asymmetry(ies) — open, not fixed`,
+        known.waived.map((w) => `  ! ${w.key.replace('|', ' ')}\n    raised ${w.raised}: ${w.reason}`).join('\n'));
     }
 
     // ---- Post-rollback: objects removed, substrate intact ----
@@ -384,21 +722,63 @@ async function main() {
   // fixture, and turning that into a red build would say "this is broken" about
   // a backlog rather than "this run did not cover these", which is the true and
   // more useful statement.
+  //
+  // ---- WHY THE DENOMINATOR IS NUMBERED MIGRATIONS, NOT *_HARDENING.sql ----
+  //
+  // It used to be `*_HARDENING.sql`. Every file matching that pattern happened to
+  // have a fixture, so the harness printed "32/32" — a ratio that could not have
+  // printed anything else, because the set it counted was defined by the same
+  // naming convention the covered set follows. A migration escaped the
+  // denominator simply by not being called _HARDENING: 3 (`_SEARCH_PATH_AND_GRANTS`),
+  // 10/17 (`_MVP`), 23 (bare), 13 (`_DRIFT_CHECK`), 16/18 (`_VERIFY`),
+  // 20 (`_ACL_FIX`), 4, 8, 9. Eleven migrations, three of which (10, 17, 23) ship
+  // a real ROLLBACK that no fixture has ever executed.
+  //
+  // "32/32" was therefore not a coverage measurement. It was the statement
+  // "every file I chose to count, I counted" — indistinguishable at a glance from
+  // full coverage, and read as full coverage in at least one merge commit message.
+  //
+  // The denominator is now every `<number>_*.sql` in the repo root, which is the
+  // set an operator means by "the migrations". The ratio it prints can fall, and
+  // that is the entire point: a number that cannot go down measures nothing.
+  //
+  // Coverage is only meaningful for a full run: a deliberate single-fixture run
+  // is not claiming to have covered the set, so it is not held to it.
+  let coverageFailed = false;
   if (opts.all) {
     const { readdirSync } = await import('node:fs');
-    const covered = new Set(ids.map((id) => (id.match(/^(\d+)_/) || [])[1]).filter(Boolean));
-    const onDisk = [...new Set(
-      readdirSync(REPO_ROOT)
-        .map((f) => (f.match(/^(\d+)_.*_HARDENING\.sql$/) || [])[1])
-        .filter(Boolean),
-    )].sort((a, b) => Number(a) - Number(b));
-    const uncovered = onDisk.filter((n) => !covered.has(n));
+    const cov = computeFixtureCoverage(readdirSync(REPO_ROOT), ids, COVERAGE_WAIVERS);
     process.stdout.write(
-      `Fixture coverage: ${onDisk.length - uncovered.length}/${onDisk.length} numbered migrations have a fixture.\n`,
+      `Fixture coverage: ${cov.coveredCount}/${cov.total} numbered migrations have a fixture.\n`,
     );
-    if (uncovered.length) {
+    if (cov.uncovered.length) {
+      // Naming the migrations, not just counting them, is what makes the gap
+      // actionable — "11 uncovered" prompts nobody to go and write fixture 10.
       process.stdout.write(
-        `  NO FIXTURE — this run proves nothing about: ${uncovered.join(', ')}\n`,
+        `  NO FIXTURE — this run proves nothing about: ${cov.uncovered.join(', ')}\n`,
+      );
+      if (cov.uncoveredWithRollback.length) {
+        process.stdout.write(
+          `  OF THOSE, these ship a ROLLBACK that has never been executed: ${cov.uncoveredWithRollback.join(', ')}\n`,
+        );
+      }
+      for (const n of cov.waived) {
+        process.stdout.write(`  WAIVED — ${n}: ${COVERAGE_WAIVERS[n]}\n`);
+      }
+    }
+    if (cov.blocking.length) {
+      coverageFailed = true;
+      process.stdout.write(
+        `  COVERAGE FAILURE: migration(s) ${cov.blocking.join(', ')} ship no fixture. `
+        + 'This run cannot vouch for them, so it does not pass. Write a fixture, or add an '
+        + 'entry with a reason to COVERAGE_WAIVERS in run-migration-harness.mjs.\n',
+      );
+    }
+    if (cov.staleWaivers.length) {
+      coverageFailed = true;
+      process.stdout.write(
+        `  STALE WAIVER: ${cov.staleWaivers.join(', ')} — waived, but now covered or no longer `
+        + 'present. A waiver that matches nothing looks exactly like one doing its job. Remove it.\n',
       );
     }
   }
@@ -408,7 +788,21 @@ async function main() {
     process.stdout.write(`  = ${id}: ${ev.result.outcome} (exit ${code})\n`);
     if (code !== EXIT.OK) worst = code;
   }
-  process.stdout.write(worst === EXIT.OK ? '\nALL FIXTURES GREEN\n' : `\nHARNESS FAILED (exit ${worst})\n`);
+  // A fixture failure is the more specific diagnosis, so it keeps the exit code;
+  // coverage only decides the outcome when every fixture that DID run passed.
+  // What must never happen is the two combining into "ALL FIXTURES GREEN" — true
+  // of the fixtures that ran, and read by everyone as true of the migrations.
+  if (worst === EXIT.OK && coverageFailed) worst = EXIT.COVERAGE;
+  if (worst === EXIT.OK) {
+    process.stdout.write('\nALL FIXTURES GREEN\n');
+  } else if (worst === EXIT.COVERAGE) {
+    process.stdout.write(
+      '\nHARNESS FAILED (exit 70) — every fixture that ran passed, but the migration set is not '
+      + 'fully covered. See COVERAGE FAILURE above.\n',
+    );
+  } else {
+    process.stdout.write(`\nHARNESS FAILED (exit ${worst})\n`);
+  }
   process.exit(worst);
 }
 

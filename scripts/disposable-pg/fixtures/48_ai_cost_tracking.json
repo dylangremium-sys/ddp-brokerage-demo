@@ -1,0 +1,70 @@
+{
+  "id": "48_ai_cost_tracking",
+  "title": "Migration 48 \u2014 AI cost tracking and budget caps",
+  "description": "Applies migration 47 then 48 and rolls 48 back; baseline is the state after 47, since 48's rollback reverses only 48. 48 tracks token usage and estimated cost per farm and feature and enforces budget caps, across ai_usage_metrics, ai_cost_alerts and ai_budget_caps. NO VERIFY PHASE: this migration's VERIFY script does not use the repository's `VERIFY <letter> PASSED:` convention -- it emits free-text RAISE NOTICE lines the harness cannot score, so declaring expectedSections here would be a fiction. What this fixture proves is that the migration applies onto the bootstrap substrate and that its ROLLBACK returns the catalog to its exact pre-apply state. Budget enforcement is the half that matters commercially: these tables are what stand between a runaway AI job and an unbounded provider bill, so a rollback that half-removed them would leave cost tracking silently disabled rather than obviously broken.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-47",
+      "file": "47_AI_JOB_QUEUE_FOUNDATION_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING-48",
+      "file": "48_AI_COST_TRACKING_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "48_AI_COST_TRACKING_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.users"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.ai_cost_alerts",
+        "public.ai_budget_caps",
+        "public.ai_usage_metrics",
+        "public.ai_provider_pricing"
+      ],
+      "functions": [
+        "public.prevent_ai_cost_alerts_update",
+        "public.prevent_ai_cost_alerts_delete"
+      ],
+      "policies": []
+    },
+    "intact": {
+      "tables": [
+        "public.profiles",
+        "public.farms"
+      ],
+      "functions": [
+        "public.is_ddp_admin"
+      ],
+      "authUsersMinRows": 0
+    }
+  }
+}

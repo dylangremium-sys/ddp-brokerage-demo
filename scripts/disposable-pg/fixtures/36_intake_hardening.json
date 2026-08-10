@@ -2,7 +2,7 @@
   "id": "36_intake_hardening",
   "title": "Migration 36 — Public intake hardening (rate-limited server path)",
   "description": "Applies migration 34 (the intake table this migration hardens) then migration 36, runs VERIFY A-H, and rolls back 36 then 34. Migration 34 is an apply stage rather than substrate because 36's whole purpose is to change 34's policy and grant posture — shimming it would test the shim, not the migration.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

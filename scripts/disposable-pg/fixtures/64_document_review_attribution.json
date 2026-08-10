@@ -1,0 +1,49 @@
+{
+  "id": "64_document_review_attribution",
+  "title": "Migration 64 — a document review decision must name its reviewer",
+  "description": "Applies migration 64 to the bootstrap substrate, runs its VERIFY A-E, then rolls it back on a disposable PostgreSQL cluster. public.farmer_documents could record that a certificate was accepted and when, but not by whom -- the same defect migration 63 closed on status_history, in the one place it matters most, because an accepted certificate is the decision a buyer ultimately relies on. 64 adds reviewed_by, forces it from auth.uid() by trigger so a caller cannot attribute their decision to a colleague, and adds review_decision_requires_reviewer so no route to a decided state can skip it. Section C is the point and runs as a SUPERUSER with auth.uid() NULL: it must be REFUSED, which is also why a service-role or cron process cannot move a document out of pending -- the project's standing rule is that only an authorised human decides, and this is that rule expressed where it cannot be bypassed.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-64",
+      "file": "64_DOCUMENT_REVIEW_ATTRIBUTION_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "64_DOCUMENT_REVIEW_ATTRIBUTION_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E"],
+    "expectedPassCount": 5,
+    "note": "C is the assertion that matters and it runs as a superuser on purpose -- a rule that only binds the application layer is a convention, and this one must bind whatever reaches the table. B guards the subtle failure: the trigger fires only when review_status actually changes, so a later extraction writing lab_name must not restamp a decision made by someone else at another time. Without B, a trigger that fired on every UPDATE would still pass A, C and E. D proves returning a document to the queue clears the attribution rather than leaving a reviewer named as responsible for a decision that no longer stands. E proves the SECURITY DEFINER trigger function is not directly callable.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "64_DOCUMENT_REVIEW_ATTRIBUTION_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.farmer_documents"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [],
+      "functions": ["public.fn_farmer_documents_set_reviewer"],
+      "policies": []
+    },
+    "intact": {
+      "tables": ["public.farmer_documents"],
+      "functions": ["auth.uid"]
+    }
+  }
+}

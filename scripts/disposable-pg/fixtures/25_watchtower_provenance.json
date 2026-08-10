@@ -1,0 +1,79 @@
+{
+  "id": "25_watchtower_provenance",
+  "title": "Migration 25 \u2014 watchtower ingestion provenance",
+  "description": "Applies migration 9 then 25 and rolls 25 back; baseline is the state after 9. Migration 25 adds the provenance and ingestion-evidence layer underneath the Watchtower tables that 9 creates -- content hashes, canonical URLs and external identifiers used to deduplicate legal updates. Its VERIFY follows the repository convention, so all eight sections A-H are scored: a run that silently skipped a section fails the count guard rather than reporting a pass.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-9",
+      "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql"
+    },
+    {
+      "label": "HARDENING-25",
+      "file": "25_WATCHTOWER_INGESTION_PROVENANCE_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "25_WATCHTOWER_INGESTION_PROVENANCE_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H"
+    ],
+    "expectedPassCount": 8,
+    "readOnly": true
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "25_WATCHTOWER_INGESTION_PROVENANCE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.users"
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.watchtower_ingestion_items",
+        "public.watchtower_ingestion_runs"
+      ],
+      "functions": [
+        "public.prevent_watchtower_ingestion_item_mutation",
+        "public.guard_watchtower_ingestion_item_insert",
+        "public.guard_watchtower_ingestion_run_update"
+      ],
+      "policies": []
+    },
+    "intact": {
+      "tables": [
+        "public.profiles",
+        "public.farms"
+      ],
+      "functions": [
+        "public.is_ddp_admin"
+      ],
+      "authUsersMinRows": 0
+    }
+  }
+}

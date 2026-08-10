@@ -2,7 +2,7 @@
   "id": "45_seam7_event_split",
   "title": "Migration 45 — Seam 7, administrative organisation events leave the regulatory log",
   "description": "Applies migrations 39, 44 then 45, runs 45's VERIFY A-F, then rolls back 45 on a disposable PostgreSQL 18 cluster. This fixture exists because migration 45 was merged WITHOUT one: the harness enumerates fixtures rather than migrations, so a migration with no fixture is silently skipped and its green check says nothing about it. Migration 45 finishes the split PR #115 started -- organisation_created and organisation_updated are re-pointed to commercial_audit_log by replacing fn_audit_organisation_change, the two membership actions move by vocabulary only because nothing writes them anywhere in the repository, and organisation_verification_changed STAYS because whether a counterparty is verified is a compliance fact. The load-bearing change is that compliance_audit_log's vocabulary is NARROWED from 30 values to 26: every earlier migration that touched that constraint widened it, and while a value remains admissible any future code path can put it back with nothing to stop it. Migration 45 refuses to run if the compliance log already holds one of the four moving actions, rather than copying rows across and deleting the originals, because that would mean mutating an append-only evidentiary log.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

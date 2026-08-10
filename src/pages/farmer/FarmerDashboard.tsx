@@ -39,6 +39,17 @@ function IconInbox() {
   )
 }
 
+function IconCertificate() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="14" height="10" rx="1.5"/>
+      <path d="M6 6.5h8M6 9h5"/>
+      <circle cx="13.5" cy="14" r="2.5"/>
+      <path d="M12 16.2V19l1.5-1 1.5 1v-2.8"/>
+    </svg>
+  )
+}
+
 function IconDoc() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -58,6 +69,9 @@ interface Props {
   onMyActivity: () => void
   onAdvancedProfile: () => void
   onRequests: () => void
+  onEvidence: () => void
+  /** null = not known yet or the read failed. Renders no badge, never a zero. */
+  evidenceWaitingCount?: number | null
   openRequestsCount?: number
 }
 
@@ -70,6 +84,8 @@ export default function FarmerDashboard({
   onMyActivity,
   onAdvancedProfile,
   onRequests,
+  onEvidence,
+  evidenceWaitingCount = null,
   openRequestsCount = 0,
 }: Props) {
   const t = T[lang]
@@ -173,6 +189,30 @@ export default function FarmerDashboard({
             {openRequestsCount > 0
               ? (lang === 'th' ? `${openRequestsCount} รายการรอดำเนินการ` : `${openRequestsCount} open`)
               : t.requestsDesc}
+          </div>
+        </button>
+
+        {/* The way a farm learns that DDP asked it a question about a
+            certificate. Reachable from the hub, not only from a deep link: a
+            surface with no affordance is unreachable in production, which is
+            the class of defect navigationGuard.ts exists to document. */}
+        <button
+          className={`quick-action-card${(evidenceWaitingCount ?? 0) > 0 ? ' quick-action-requests' : ' quick-action-advanced'}`}
+          onClick={onEvidence}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="quick-action-icon"><IconCertificate /></div>
+            {evidenceWaitingCount !== null && evidenceWaitingCount > 0 && (
+              <span className="requests-badge">{evidenceWaitingCount}</span>
+            )}
+          </div>
+          <div className="quick-action-label">{t.evidenceLabel}</div>
+          <div className="quick-action-desc">
+            {evidenceWaitingCount !== null && evidenceWaitingCount > 0
+              ? (lang === 'th'
+                  ? `DDP รอข้อมูลจากคุณ ${evidenceWaitingCount} รายการ`
+                  : `DDP is waiting on you for ${evidenceWaitingCount}`)
+              : t.evidenceDesc}
           </div>
         </button>
 

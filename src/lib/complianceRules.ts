@@ -74,19 +74,46 @@ export function formatComplianceLabel(value: string): string {
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
+// ── TWO QUESTIONS, TWO PREDICATES ────────────────────────────────────────────
+//
+// There used to be one function here — `isEnforcedRuleStatus` — whose docblock
+// called it "the single canonical definition". It was answering two different
+// questions for two different sets of callers:
+//
+//   "has a human blessed this rule?"   → stamping approved_by / approved_at
+//   "does this rule gate work now?"    → the buyer-pack gate, rule impact,
+//                                        alert derivation, rule linking
+//
+// Those are not the same question, and a caller could not tell which one it had
+// asked. 41_EFFECTIVE_DATED_RULESETS_HARDENING.sql had already reached this
+// conclusion on the database side and said so plainly: "Two functions rather
+// than one flag, because a single function serving both questions is a function
+// whose callers cannot tell which one they asked." This is the same split,
+// applied to the application.
+//
+// The enforcement question additionally depends on the EFFECTIVE WINDOW, which
+// no predicate here can see from a bare status — so it lives with the rest of
+// the enforcement logic, in complianceRuleEnforcement.ts (`isRuleEnforcedNow`).
+
 /**
- * The single canonical definition of "counts as human-approved/active" for a
- * rule status. Draft/suggested/paused/retired/rejected are never enforced.
- * Exported separately from isRuleEnforced so call sites that only have a bare
- * status value (e.g. a pending Supabase write) don't need to re-derive the
- * same condition independently.
+ * "A human has blessed this rule." True for `approved` and `active`; false for
+ * draft, suggested, paused, retired and rejected.
+ *
+ * Use this for APPROVAL BOOKKEEPING — stamping `approved_by`/`approved_at`, or
+ * counting how much review work has been signed off. It says nothing about
+ * whether the rule is currently gating anything, because a blessed rule can sit
+ * outside its effective window, and `approved` may or may not mean "switched
+ * on" (see the OPEN QUESTION in complianceRuleEnforcement.ts).
+ *
+ * Takes a bare status so a pending Supabase write can ask without a full row.
  */
-export function isEnforcedRuleStatus(status: ComplianceRuleStatus): boolean {
+export function isHumanApprovedRuleStatus(status: ComplianceRuleStatus): boolean {
   return status === 'approved' || status === 'active'
 }
 
-export function isRuleEnforced(rule: ComplianceRule): boolean {
-  return isEnforcedRuleStatus(rule.status)
+/** Row-level form of {@link isHumanApprovedRuleStatus}. */
+export function isRuleHumanApproved(rule: ComplianceRule): boolean {
+  return isHumanApprovedRuleStatus(rule.status)
 }
 
 export function createBaselineComplianceRules(now = new Date().toISOString()): ComplianceRule[] {
@@ -281,4 +308,85 @@ export function createBaselineComplianceRules(now = new Date().toISOString()): C
     createdAt: now,
     updatedAt: now,
   }))
+}
+
+// ── REVIEW DECISIONS → STATUSES ──────────────────────────────────────────────
+//
+// These two mappings existed as four copies of a nested ternary, inline in
+// DDPComplianceWatchtower.tsx: one pair on the Supabase path and an identical
+// pair on the demo/localStorage path. The `decision` they switched on was typed
+// `string`, so nothing forced a branch to exist for every decision — and one did
+// not. `approve_rule` was never named, fell through to the `'reviewed'` default,
+// and left the update in a WEAKER state than `create_rule` produced, while the
+// rule it created was inserted as `active`. The strongest decision an operator
+// could take looked like the mildest afterwards.
+//
+// Four copies is also why fixing it in one place would not have fixed it: the
+// demo path would have kept the old behaviour, exactly the "half a gate" failure
+// this repository has hit before.
+//
+// Both functions take the union rather than `string`, and switch exhaustively,
+// so adding a decision to the union without deciding its statuses is a COMPILE
+// error rather than a silent fall-through to 'reviewed'.
+
+/** Every decision an administrator can record against a compliance review. */
+export type ComplianceReviewDecision =
+  | 'informational'
+  | 'create_rule'
+  | 'approve_rule'
+  | 'send_to_legal'
+  | 'reject'
+  | 'archive'
+
+export const REVIEW_DECISIONS: ComplianceReviewDecision[] = [
+  'informational',
+  'create_rule',
+  'approve_rule',
+  'send_to_legal',
+  'reject',
+  'archive',
+]
+
+export function isComplianceReviewDecision(value: string): value is ComplianceReviewDecision {
+  return (REVIEW_DECISIONS as string[]).includes(value)
+}
+
+/**
+ * The status the REVIEW row takes. Unchanged behaviour, extracted from two
+ * identical inline ternaries.
+ */
+export function reviewStatusForDecision(
+  decision: ComplianceReviewDecision,
+): 'reviewed' | 'sent_to_legal' | 'rejected' | 'archived' {
+  switch (decision) {
+    case 'send_to_legal': return 'sent_to_legal'
+    case 'reject':        return 'rejected'
+    case 'archive':       return 'archived'
+    case 'informational':
+    case 'create_rule':
+    case 'approve_rule':  return 'reviewed'
+  }
+}
+
+/**
+ * The status the LEGAL UPDATE takes.
+ *
+ * `approve_rule` maps to `rule_suggested`, alongside `create_rule`. Both produce
+ * a rule from this update, so both must advance it past `reviewed`; before this
+ * function existed only `create_rule` did. `rule_suggested` is the strongest
+ * status the CHECK vocabulary offers for "a rule came out of this" — there is no
+ * `rule_approved` — so approve and create share it rather than approve being
+ * silently demoted below create.
+ */
+export function legalUpdateStatusForDecision(
+  decision: ComplianceReviewDecision,
+): LegalUpdateStatus {
+  switch (decision) {
+    case 'send_to_legal': return 'sent_to_legal'
+    case 'reject':        return 'rejected'
+    case 'archive':       return 'archived'
+    case 'create_rule':
+    case 'approve_rule':  return 'rule_suggested'
+    case 'informational': return 'reviewed'
+  }
 }

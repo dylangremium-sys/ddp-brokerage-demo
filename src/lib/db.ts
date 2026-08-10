@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase'
 import { shouldPersistToBrowser } from './browserPersistence'
+import { sha256Hex } from './sha256'
 import {
   loadInventory as lsLoadInventory,
   saveInventory as lsSaveInventory,
@@ -7,9 +8,26 @@ import {
   saveFarms as lsSaveFarms,
   resetDemo as lsResetDemo,
 } from '../data'
-import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType } from '../types'
+import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus, ReviewRequest, MarketBenchmark, StockStatus, ProductType, TestStatus, StoredPhoto, BatchPhotoType, BatchPriceCurrency, FarmerDocument, FarmerDocumentType, DocumentReviewStatus, DocumentReviewEvent } from '../types'
+import { BATCH_PRICE_CURRENCIES, DEFAULT_BATCH_PRICE_CURRENCY } from '../types'
 
 export { isSupabaseConfigured }
+
+/**
+ * An empty or whitespace-only string is the absence of a value, and must reach
+ * Postgres as NULL rather than ''.
+ *
+ * The form's text inputs are '' until touched, and several of the columns they
+ * feed refuse a blank outright: a `date` column rejects ''::date with 22007,
+ * and `batch_number` carries a not-blank CHECK. Coercing here — at the single
+ * payload boundary — rather than at each callsite means a field added to the
+ * form later cannot reintroduce the defect by forgetting to do it.
+ */
+function nullIfBlank(value: string | null | undefined): string | null {
+  if (value == null) return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
 
 // ---------------------------------------------------------------------------
 // UUID guard — seed farms use 'farm-1' style IDs that are not valid UUIDs.
@@ -514,15 +532,25 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
     strain: item.productName,
     location: item.location,
     quantity_kg: item.quantityKg,
-    harvest_date: item.harvestDate,
-    cure_date: item.cureDate,
-    batch_number: item.batchNumber,
+    // These three are `string` on InventoryItem and the form leaves them '' when
+    // untouched. Postgres refuses all three: '' fails the ::date cast on the two
+    // date columns, and batch_number carries a live not-blank CHECK. A blank is
+    // the absence of a value, so it is sent as NULL.
+    harvest_date: nullIfBlank(item.harvestDate),
+    cure_date: nullIfBlank(item.cureDate),
+    batch_number: nullIfBlank(item.batchNumber),
     thc_percent: item.thcPct,
     cbd_percent: item.cbdPct,
     moisture_percent: item.moisturePct,
     water_activity: parseFloat(item.waterActivity) || null,
     quality_grade: item.qualityGrade,
     price_per_kg: item.pricePerKg,
+    // Production refuses a priced row that does not state its currency
+    // (inventory_batches_price_requires_currency). The application states it
+    // explicitly rather than relying on a column default: a default would make
+    // the currency an assumption of the database's, silently applied to a
+    // future non-THB listing, instead of a fact the submitting client asserts.
+    price_currency: item.priceCurrency ?? DEFAULT_BATCH_PRICE_CURRENCY,
     coa_file_name: item.certFileName || null,
     photo_url: item.photoUrl || null,
     storage_conditions: item.storageConditions,
@@ -550,7 +578,9 @@ export async function createInventoryBatch(item: InventoryItem, userId?: string)
     photo_urls: storablePhotoUrls.length > 0 ? storablePhotoUrls : null,
     coa_storage_path: item.coaStoragePath ?? null,
     farmer_notes: item.farmerNotes ?? null,
-    owner_notes: item.ownerNotes ?? null,
+    // ownerNotes is deliberately NOT written here. Migration 57 moved DDP's
+    // internal note to batch_internal_notes, which only a ddp_admin can touch;
+    // this path runs as the farmer creating the batch.
   })
 }
 
@@ -585,15 +615,53 @@ export async function updateInventoryStatus(
 }
 
 // ---------------------------------------------------------------------------
-// Patch an inventory batch — for admin actions (client_visible toggle,
-// owner_notes) and farmer re-submissions (stock_status change).
+// DDP's internal note about a batch.
+//
+// Lives in batch_internal_notes, not on the batch row, because a DDP admin and
+// a farmer are the SAME PostgreSQL role (`authenticated`) — only a row-level
+// policy can tell them apart, and a row-level policy needs its own row.
+// Before migration 57 this was inventory_batches.owner_notes and every farmer
+// could read their own batch's copy of it.
+//
+// No admin check here on purpose. The policy on batch_internal_notes is the
+// control; a client-side check would be advice. A non-admin calling this gets
+// nothing written and no row back.
+//
+// An empty note DELETES rather than storing '': the table refuses a blank note,
+// and "cleared" and "never written" are the same state to every reader.
+// ---------------------------------------------------------------------------
+export async function saveBatchInternalNote(batchId: string, note: string): Promise<void> {
+  if (!supabase) return
+  if (!isValidUUID(batchId)) {
+    console.warn(`saveBatchInternalNote: skipping — "${batchId}" is not a valid UUID`)
+    return
+  }
+
+  const trimmed = note.trim()
+  if (trimmed === '') {
+    const { error } = await supabase.from('batch_internal_notes').delete().eq('batch_id', batchId)
+    if (error) throw error
+    return
+  }
+
+  const { data: session } = await supabase.auth.getUser()
+  const { error } = await supabase.from('batch_internal_notes').upsert(
+    { batch_id: batchId, note: trimmed, updated_by: session?.user?.id ?? null, updated_at: new Date().toISOString() },
+    { onConflict: 'batch_id' },
+  )
+  if (error) throw error
+}
+
+// ---------------------------------------------------------------------------
+// Patch an inventory batch — for admin actions (client_visible toggle) and
+// farmer re-submissions (stock_status change). DDP's internal note is NOT here:
+// migration 57 moved it to batch_internal_notes. See saveBatchInternalNote.
 // ---------------------------------------------------------------------------
 export async function patchInventoryBatch(
   itemId: string,
   fields: Partial<{
     stock_status: string
     client_visible: boolean
-    owner_notes: string
     status: InventoryStatus
     coa_file_name: string
     coa_available: boolean
@@ -795,6 +863,196 @@ export async function uploadCoaFile(
     .upload(storagePath, file, { contentType: 'application/pdf', upsert: false })
   if (error) throw new Error(`COA upload failed: ${error.message}`)
   return { storagePath }
+}
+
+/**
+ * Fingerprint a file's bytes before they leave the browser.
+ *
+ * Hashed from the SAME File object that is handed to the uploader, so the digest
+ * describes exactly what was sent. Hashing a re-read or a server-side copy would
+ * prove only that two reads agreed, not that the stored bytes are the ones the
+ * farmer chose.
+ *
+ * This is integrity-since-upload and nothing more. It does NOT establish that a
+ * certificate is authentic or that the issuing laboratory produced it — a byte
+ * hash cannot speak to origin. Claiming otherwise is the single easiest false
+ * statement to make about this feature.
+ */
+export async function hashFileHex(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  return sha256Hex(bytes)
+}
+
+/**
+ * Record an uploaded COA in public.farmer_documents — the evidence register.
+ *
+ * The register, its sha256 index and its RLS have existed since migrations 15,
+ * 22, 28 and 42. Nothing ever wrote to it: three files sat in storage against
+ * zero register rows, so the platform held bytes it had no record of. This is
+ * the write path those migrations were built for.
+ *
+ * `file_url` holds the storage PATH, not a URL — same reasoning as
+ * recordBatchPhoto: a signed URL expires, so persisting one stores a link that
+ * works today and breaks silently later.
+ *
+ * Called only AFTER the bytes are up, so the register can never advertise a
+ * document that does not exist. The reverse order leaves a row pointing at
+ * nothing.
+ *
+ * sha256_hex and sha256_recorded_at are written together because the table's
+ * `sha256_pairing_check` requires both or neither. The schema permits both NULL
+ * for rows that predate hashing; THIS PATH NEVER PRODUCES ONE — an unhashed new
+ * upload would be a register entry that cannot support the only integrity claim
+ * the register exists to make.
+ */
+export async function recordCoaDocument(input: {
+  farmId?: string
+  batchId: string
+  fileName: string
+  storagePath: string
+  sha256Hex: string
+}): Promise<{ id: string }> {
+  if (!supabase) throw new Error('Supabase not configured')
+  if (!/^[0-9a-f]{64}$/.test(input.sha256Hex)) {
+    // Fail here rather than at the CHECK constraint: a 23514 from PostgREST
+    // reaches the farmer as an opaque failure, and an uppercase or truncated
+    // digest is a programming error worth naming precisely.
+    throw new Error('COA digest is not a 64-character lower-case hex SHA-256.')
+  }
+  const id = crypto.randomUUID()
+  await sbInsert('farmer_documents', {
+    id,
+    farm_id: input.farmId && isValidUUID(input.farmId) ? input.farmId : null,
+    inventory_batch_id: input.batchId,
+    document_type: 'coa',
+    file_name: input.fileName,
+    file_url: input.storagePath,
+    sha256_hex: input.sha256Hex,
+    sha256_recorded_at: new Date().toISOString(),
+    // review_status is left to its 'pending' default. A document is not
+    // reviewed by being uploaded, and defaulting it to anything else would
+    // manufacture a review that no person performed.
+  })
+  return { id }
+}
+
+/**
+ * Load the evidence register for administrator review.
+ *
+ * Reads under the caller's own policies — "farmer_documents: admin all" is what
+ * returns every row here, and a farmer running the same query sees only their
+ * own. This function adds no privilege.
+ *
+ * THROWS on failure rather than degrading to an empty array. An empty register
+ * and an unreadable one look identical on screen, and "no documents are waiting
+ * for review" is a very different statement from "we could not find out". The
+ * caller renders a failed state; loadBatchPhotosFromDB degrades quietly because
+ * a missing thumbnail is cosmetic, and a missing review queue is not.
+ */
+export async function loadFarmerDocuments(): Promise<FarmerDocument[]> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  const { data, error } = await supabase
+    .from('farmer_documents')
+    .select('id, farm_id, inventory_batch_id, document_type, file_name, file_url, sha256_hex, sha256_recorded_at, review_status, review_note, uploaded_at, reviewed_at, reviewed_by')
+    .order('uploaded_at', { ascending: false })
+
+  if (error) {
+    console.error('Supabase error [farmer_documents select]:', error)
+    throw new Error(error.message)
+  }
+
+  return (data ?? []).map((row): FarmerDocument => ({
+    id: row.id as string,
+    farmId: (row.farm_id as string) ?? undefined,
+    batchId: (row.inventory_batch_id as string) ?? undefined,
+    documentType: ((row.document_type as FarmerDocumentType) ?? 'other'),
+    fileName: (row.file_name as string) ?? undefined,
+    storagePath: (row.file_url as string) ?? undefined,
+    sha256Hex: (row.sha256_hex as string) ?? undefined,
+    sha256RecordedAt: (row.sha256_recorded_at as string) ?? undefined,
+    reviewStatus: ((row.review_status as DocumentReviewStatus) ?? 'pending'),
+    reviewNote: (row.review_note as string) ?? undefined,
+    uploadedAt: (row.uploaded_at as string) ?? '',
+    reviewedAt: (row.reviewed_at as string) ?? undefined,
+    reviewedBy: (row.reviewed_by as string) ?? undefined,
+  }))
+}
+
+/**
+ * Record an administrator's decision on one document.
+ *
+ * Writes review_status and review_note, and NOTHING ELSE. `reviewed_by` and
+ * `reviewed_at` are deliberately not sent: migration 64's BEFORE UPDATE trigger
+ * takes the reviewer from auth.uid() and overwrites anything supplied, so an
+ * administrator cannot attribute their decision to a colleague. Sending them
+ * here would be dead weight that reads as though the client chooses the
+ * reviewer.
+ *
+ * THE NOTE IS REQUIRED FOR EVERY TRANSITION, return-to-queue included
+ * (migration 65). The blank check here is a courtesy that produces a decent
+ * error message — it is NOT the enforcement. The database refuses a blank note
+ * in a trigger and in `review_decision_requires_note`, and writes the
+ * append-only event, so a caller bypassing this function entirely gains
+ * nothing. Note that "blank" is tested against a whitespace character class
+ * rather than trim(): a tab-only note is blank, and a space-only test does not
+ * say so.
+ */
+export async function setDocumentReviewStatus(
+  documentId: string,
+  status: DocumentReviewStatus,
+  reviewNote: string,
+): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!isValidUUID(documentId)) throw new Error('A document id must be a UUID.')
+  if (!/[^\s]/.test(reviewNote ?? '')) {
+    throw new Error('A review note is required, and cannot be only whitespace.')
+  }
+  await sbUpdate(
+    'farmer_documents',
+    { review_status: status, review_note: reviewNote.trim() },
+    'id',
+    documentId,
+  )
+}
+
+/**
+ * Load the append-only review history for one document.
+ *
+ * Reads public.farmer_document_reviews under the caller's own policies — the
+ * table carries a single admin-only SELECT policy, so this returns nothing for
+ * anyone else and adds no privilege of its own.
+ *
+ * THROWS on failure, for the same reason loadFarmerDocuments does: "this
+ * document has no review history" and "we could not read its history" are
+ * different statements, and on an audit trail the difference is the whole
+ * point. Oldest first — a history is read forwards.
+ */
+export async function loadDocumentReviewEvents(
+  documentId: string,
+): Promise<DocumentReviewEvent[]> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!isValidUUID(documentId)) throw new Error('A document id must be a UUID.')
+
+  const { data, error } = await supabase
+    .from('farmer_document_reviews')
+    .select('id, farmer_document_id, previous_status, new_status, review_note, reviewed_by, reviewed_at')
+    .eq('farmer_document_id', documentId)
+    .order('reviewed_at', { ascending: true })
+
+  if (error) {
+    console.error('Supabase error [farmer_document_reviews select]:', error)
+    throw new Error(error.message)
+  }
+
+  return (data ?? []).map((row): DocumentReviewEvent => ({
+    id: row.id as string,
+    documentId: row.farmer_document_id as string,
+    previousStatus: row.previous_status as DocumentReviewStatus,
+    newStatus: row.new_status as DocumentReviewStatus,
+    reviewNote: (row.review_note as string) ?? '',
+    reviewedBy: (row.reviewed_by as string) ?? '',
+    reviewedAt: (row.reviewed_at as string) ?? '',
+  }))
 }
 
 // Generate a 1-hour signed URL for a private COA file.
@@ -1026,6 +1284,14 @@ function batchRowToInventoryItem(row: Record<string, any>, farmName?: string): I
     waterActivity: String(row.water_activity ?? ''),
     qualityGrade: row.quality_grade as string ?? '',
     pricePerKg: (row.price_per_kg as number) ?? 0,
+    // Carried so an edit cannot silently redenominate the batch. Without this
+    // the item loads with no currency, the write path falls back to THB, and a
+    // 100 USD batch is saved as 100 THB with the number untouched. Unknown
+    // values are dropped rather than trusted — the column's CHECK allows only
+    // THB/USD/EUR, so anything else is data this build does not understand.
+    priceCurrency: (BATCH_PRICE_CURRENCIES as readonly string[]).includes(row.price_currency as string)
+      ? (row.price_currency as BatchPriceCurrency)
+      : undefined,
     certFileName: row.coa_file_name as string ?? '',
     photoUrl: row.photo_url as string ?? '',
     storageConditions: row.storage_conditions as string ?? '',
@@ -1050,7 +1316,9 @@ function batchRowToInventoryItem(row: Record<string, any>, farmName?: string): I
     mycotoxinsStatus: row.mycotoxins_status as TestStatus ?? undefined,
     photoUrls: (row.photo_urls as string[]) ?? undefined,
     farmerNotes: row.farmer_notes as string ?? undefined,
-    ownerNotes: row.owner_notes as string ?? undefined,
+    // Present only for a ddp_admin: RLS on batch_internal_notes returns no row
+    // to anyone else, so the join comes back empty and this stays undefined.
+    ownerNotes: (row.batch_internal_notes as { note?: string }[] | null)?.[0]?.note ?? undefined,
     coaStoragePath: row.coa_storage_path as string ?? undefined,
   }
 }
@@ -1309,7 +1577,7 @@ export async function loadInventoryFromDB(): Promise<InventoryItem[]> {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('inventory_batches')
-    .select('*, farms(farm_name, trading_name)')
+    .select('*, farms(farm_name, trading_name), batch_internal_notes(note)')
     .order('created_at', { ascending: false })
   if (error) {
     // Throw (not silent []) so a query failure is distinguishable from a
@@ -1334,7 +1602,7 @@ export async function loadFarmerInventoryFromDB(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (supabase as any)
     .from('inventory_batches')
-    .select('*, farms(farm_name, trading_name)')
+    .select('*, farms(farm_name, trading_name), batch_internal_notes(note)')
 
   if (idList.length > 0 && farmList.length > 0) {
     query = query.or(`id.in.(${idList.join(',')}),farm_id.in.(${farmList.join(',')})`)

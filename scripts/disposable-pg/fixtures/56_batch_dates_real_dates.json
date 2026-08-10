@@ -1,0 +1,55 @@
+{
+  "id": "56_batch_dates_real_dates",
+  "title": "Migration 56 — batch dates become real dates in the right calendar",
+  "description": "Applies migration 56 to the reconciled substrate, runs its VERIFY A-G, then rolls it back. Production stores harvest_date, cure_date, test_date and expiry_date as text, so the database cannot tell that '2026-13-45' is not a date, that a batch was tested three years before it was harvested, or that '2569-03-14' is a Thai Buddhist-Era year rather than a Common-Era one. The point that makes this migration more than a type change: converting to `date` does NOT catch the calendar error. PostgreSQL accepts DATE '2569-03-14' as a perfectly valid year-2569 date and stores it without complaint, which is why VERIFY C asserts that premise before asserting the refusal. What catches it is a bound on the YEAR -- a Buddhist-Era year for a real harvest is around 2560-2580 and a Common-Era one is around 2020-2030, and the ranges do not overlap this century. This deliberately does NOT store a BE year beside each date the way migration 40 does for permits: a permit is transcribed from a document that STATES a BE year, so storing both lets the database catch a transcription error, whereas a harvest date is a farm event and a second column would be inventing a field nobody wrote down. Requiring strict YYYY-MM-DD going in is what makes the rollback lossless: text -> date -> text round-trips exactly. NOT read-only; wrapped in BEGIN..ROLLBACK.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "HARDENING-56",
+      "file": "56_BATCH_DATES_REAL_DATES_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "56_BATCH_DATES_REAL_DATES_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F", "G"],
+    "expectedPassCount": 7,
+    "note": "C is the section that carries the migration. It first proves that PostgreSQL accepts a year-2569 date on its own -- so the reader knows the type is not the guard and the CHECK is doing real work -- and only then requires all four columns to refuse it. A bound written against a premise nobody checked is how this class of defect survives. D walks what the text column used to accept: an impossible day (2026-02-30), an impossible month (2026-13-01), free prose, and the empty string. F is the counterexample that stops the ordering rules being overstated -- a batch entered over two sittings has a test date and no harvest date yet, and refusing it would make this a constraint somebody removes; it also proves same-day harvest-cure-test is allowed, which is why the rule is >= and not >. G pins the bound at both ends in both directions: 2000 and 2100 admitted, 1999 and 2101 refused, so the range cannot be off by one. NOT PROVEN HERE: that a harvest date in the FUTURE is refused. A CHECK constraint must be IMMUTABLE so it cannot call current_date; catching that needs a trigger and a different migration. NOT PROVEN HERE either: that the application writes strict ISO -- the precondition refuses anything else at apply time, but the TypeScript layer is unchanged and still types these as strings.",
+    "readOnly": false
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "main-rollback",
+        "source": "file",
+        "file": "56_BATCH_DATES_REAL_DATES_ROLLBACK.sql"
+      }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": ["public.farms", "public.inventory_batches"]
+  },
+  "postApply": {
+    "constraints": [
+      {
+        "table": "public.inventory_batches",
+        "present": [
+          "inventory_batches_harvest_date_ce_year",
+          "inventory_batches_cure_date_ce_year",
+          "inventory_batches_test_date_ce_year",
+          "inventory_batches_expiry_date_ce_year",
+          "inventory_batches_cure_after_harvest",
+          "inventory_batches_test_after_harvest",
+          "inventory_batches_expiry_after_harvest"
+        ]
+      }
+    ]
+  },
+  "postRollback": {
+    "intact": {
+      "tables": ["public.inventory_batches", "public.farms"]
+    }
+  }
+}

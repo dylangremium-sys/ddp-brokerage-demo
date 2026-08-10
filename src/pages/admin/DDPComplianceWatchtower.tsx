@@ -19,9 +19,13 @@ import {
   COMPLIANCE_SEVERITIES,
   RULE_ENTITY_TYPES,
   formatComplianceLabel,
-  isEnforcedRuleStatus,
-  isRuleEnforced,
+  isHumanApprovedRuleStatus,
+  isRuleHumanApproved,
+  legalUpdateStatusForDecision,
+  reviewStatusForDecision,
 } from '../../lib/complianceRules'
+import type { ComplianceReviewDecision } from '../../lib/complianceRules'
+import { isRuleBlockingNow, isRuleEnforcedNow, UNRESOLVED_ALERT_STATUSES } from '../../lib/complianceRuleEnforcement'
 import { deriveRuleBasedComplianceAlerts, mergeComplianceAlerts } from '../../lib/complianceAlerts'
 import { COMPLIANCE_ALERTS_STORAGE_KEY, loadStoredComplianceAlerts, COMPLIANCE_RULES_STORAGE_KEY, loadStoredComplianceRules } from '../../lib/complianceLocalAlerts'
 import { deriveExportReadiness } from '../../lib/complianceScoring'
@@ -413,8 +417,15 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   const readiness = useMemo(() => deriveExportReadiness(farms, inventory, alerts), [farms, inventory, alerts])
 
   const pendingReviews = reviews.filter(review => review.status === 'pending' || review.status === 'in_review')
-  const activeRuleCount = rules.filter(isRuleEnforced).length
-  const blockingAlertCount = alerts.filter(alert => alert.status === 'blocked').length
+  const activeRuleCount = rules.filter(isRuleHumanApproved).length
+  // The subset of the above that can ACTUALLY stop a buyer pack — see the tile.
+  const enforcingNowCount = rules.filter(rule => isRuleBlockingNow(rule)).length
+  // Counts every alert the GATE would treat as live, not just status
+  // 'blocked'. It previously counted only the latter, so an 'open' alert could
+  // stop a buyer pack while this tile read zero — the operator would see no
+  // reason for the block anywhere on this page.
+  const unresolvedAlertStatuses = new Set<string>(UNRESOLVED_ALERT_STATUSES)
+  const blockingAlertCount = alerts.filter(alert => unresolvedAlertStatuses.has(alert.status)).length
 
   // entryActorType defaults to 'admin' so every existing call site (all of
   // which pass only `entry`) is unchanged. A future AI-originated intake
@@ -1106,7 +1117,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     })
   }
 
-  async function updateReviewDecision(review: ComplianceReview, decision: string): Promise<void> {
+  async function updateReviewDecision(review: ComplianceReview, decision: ComplianceReviewDecision): Promise<void> {
     setActionMessage(null)
     const now = new Date().toISOString()
     const relatedUpdate = review.legalUpdateId ? legalUpdates.find(update => update.id === review.legalUpdateId) : undefined
@@ -1118,7 +1129,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
       }
       setBusy(true)
       try {
-        const nextStatus: ComplianceReview['status'] = decision === 'send_to_legal' ? 'sent_to_legal' : decision === 'reject' ? 'rejected' : decision === 'archive' ? 'archived' : 'reviewed'
+        const nextStatus: ComplianceReview['status'] = reviewStatusForDecision(decision)
         const updatedReview = await repo.updateReview(review.id, {
           status: nextStatus,
           decision,
@@ -1127,15 +1138,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
 
         let nextLegalUpdates = legalUpdates
         if (relatedUpdate) {
-          const updateStatus: LegalUpdate['status'] = decision === 'send_to_legal'
-            ? 'sent_to_legal'
-            : decision === 'reject'
-              ? 'rejected'
-              : decision === 'archive'
-                ? 'archived'
-                : decision === 'create_rule'
-                  ? 'rule_suggested'
-                  : 'reviewed'
+          const updateStatus: LegalUpdate['status'] = legalUpdateStatusForDecision(decision)
           const updatedLegalUpdate = await repo.updateLegalUpdateStatus(relatedUpdate.id, updateStatus)
           nextLegalUpdates = legalUpdates.map(update => update.id === updatedLegalUpdate.id ? updatedLegalUpdate : update)
         }
@@ -1194,7 +1197,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
 
     const nextReview: ComplianceReview = {
       ...review,
-      status: decision === 'send_to_legal' ? 'sent_to_legal' : decision === 'reject' ? 'rejected' : decision === 'archive' ? 'archived' : 'reviewed',
+      status: reviewStatusForDecision(decision),
       decision,
       reviewedBy: actorName,
       reviewedAt: now,
@@ -1202,15 +1205,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     }
 
     if (relatedUpdate) {
-      const updateStatus: LegalUpdate['status'] = decision === 'send_to_legal'
-        ? 'sent_to_legal'
-        : decision === 'reject'
-          ? 'rejected'
-          : decision === 'archive'
-            ? 'archived'
-            : decision === 'create_rule'
-              ? 'rule_suggested'
-              : 'reviewed'
+      const updateStatus: LegalUpdate['status'] = legalUpdateStatusForDecision(decision)
       const updatedLegalUpdate: LegalUpdate = { ...relatedUpdate, status: updateStatus, updatedAt: now }
       nextLegalUpdates = legalUpdates.map(update => update.id === updatedLegalUpdate.id ? updatedLegalUpdate : update)
       afterState = { review: nextReview, legalUpdate: updatedLegalUpdate }
@@ -1295,8 +1290,8 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     const updated: ComplianceRule = {
       ...rule,
       status,
-      approvedBy: isEnforcedRuleStatus(status) ? actorName : rule.approvedBy,
-      approvedAt: isEnforcedRuleStatus(status) ? now : rule.approvedAt,
+      approvedBy: isHumanApprovedRuleStatus(status) ? actorName : rule.approvedBy,
+      approvedAt: isHumanApprovedRuleStatus(status) ? now : rule.approvedAt,
       updatedAt: now,
     }
     persistRulesLocal(rules.map(item => item.id === rule.id ? updated : item))
@@ -1327,7 +1322,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     // selection time) so a rule that was paused/retired/rejected between
     // opening the dropdown and clicking submit can never be linked.
     const linkedRule = rules.find(rule => rule.id === alertForm.linkedRuleId)
-    const linkedRuleId = linkedRule && isRuleEnforced(linkedRule) ? linkedRule.id : null
+    const linkedRuleId = linkedRule && isRuleEnforcedNow(linkedRule) ? linkedRule.id : null
 
     if (repo.isSupabaseConfigured) {
       if (!isSupabaseAdmin) {
@@ -1526,6 +1521,18 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
         <div className="summary-card s-total"><div className="summary-val">{legalUpdates.length}</div><div className="summary-lbl">Legal Updates</div></div>
         <div className="summary-card s-pending"><div className="summary-val">{pendingReviews.length}</div><div className="summary-lbl">Needs Review</div></div>
         <div className="summary-card s-approved"><div className="summary-val">{activeRuleCount}</div><div className="summary-lbl">Approved / Active Rules</div></div>
+        {/* "Approved / Active" is NOT the same number as "can stop a buyer pack",
+            and now that rules actually enforce, showing only the first invites the
+            reader to assume every one of them is doing something. This tile is the
+            honest count: blocking by design, status enforced, and inside its
+            effective window. */}
+        <div
+          className="summary-card s-approved"
+          title="Rules that can stop a buyer pack right now: is_blocking, an enforced status, and today inside the effective window. A suggested, paused, retired or not-yet-effective rule is excluded."
+        >
+          <div className="summary-val">{enforcingNowCount}</div>
+          <div className="summary-lbl">Enforcing Now</div>
+        </div>
         <div className="summary-card s-missing"><div className="summary-val">{blockingAlertCount}</div><div className="summary-lbl">Blocking Alerts</div></div>
       </div>
 
@@ -1685,8 +1692,26 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                       <td style={{ minWidth: 250 }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'informational') }}>Mark informational</button>
-                          <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'create_rule') }}>Create suggested rule</button>
-                          <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'approve_rule') }}>Approve rule</button>
+                          {/* THESE TWO BUTTONS DIFFER IN A WAY THE LABELS ALONE DO NOT CARRY.
+                              "Create suggested rule" inserts at status 'suggested', which
+                              enforces NOTHING — compliance_rules_currently_enforced() and the
+                              buyer-pack gate both require 'active'. "Approve rule" inserts at
+                              'active' and is the only one of the two that can stop a pack.
+                              Without this said out loud, the predictable failure is an operator
+                              creating a rule, watching a non-conforming pack issue anyway, and
+                              reporting enforcement as broken. */}
+                          <button
+                            className="btn btn-review"
+                            disabled={busy}
+                            title="Records the rule at status 'suggested'. A suggested rule does NOT block anything — promote it to active before it can stop a buyer pack."
+                            onClick={() => { void updateReviewDecision(review, 'create_rule') }}
+                          >Create suggested rule</button>
+                          <button
+                            className="btn btn-review"
+                            disabled={busy}
+                            title="Records the rule at status 'active' and stamps the approval. An active blocking rule WILL block the buyer pack of any batch with an open alert naming it."
+                            onClick={() => { void updateReviewDecision(review, 'approve_rule') }}
+                          >Approve rule (enforces)</button>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'send_to_legal') }}>Send to legal</button>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'reject') }}>Reject</button>
                           <button className="btn btn-review" disabled={busy} onClick={() => { void updateReviewDecision(review, 'archive') }}>Archive</button>
@@ -1824,7 +1849,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
                 <span>Linked approved rule</span>
                 <select value={alertForm.linkedRuleId} onChange={e => setAlertForm({ ...alertForm, linkedRuleId: e.target.value })}>
                   <option value="">No linked rule</option>
-                  {rules.filter(isRuleEnforced).map(rule => (
+                  {rules.filter(rule => isRuleEnforcedNow(rule)).map(rule => (
                     <option key={rule.id} value={rule.id}>{rule.ruleCode} — {rule.title}</option>
                   ))}
                 </select>

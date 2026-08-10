@@ -1,0 +1,28 @@
+{
+  "id": "negative_storage_policy_leak",
+  "title": "Negative scenario — a ROLLBACK that leaves an RLS policy on storage.objects",
+  "description": "Harness self-proof: migration 38 creates its RLS policies on storage.objects, so a catalog sweep scoped to the public schema observes nothing for it — that fixture measured 15 -> 15 -> 15 objects and a rollback removing no policies would still have passed. Here the apply stage creates a policy on storage.objects and the rollback drops a policy that never existed, exiting 0 and leaving the real one in place. The symmetry check must fail with the rollback exit code (30). Registered as expect-failure so narrowing the sweep back to public turns CI red.",
+  "pgMajor": 17,
+  "migrationDir": "scripts/disposable-pg/fixtures/sql",
+  "expectFailure": { "phase": "rollback", "exitCode": 30 },
+  "applyStages": [
+    { "label": "STORAGE-POLICY", "file": "91_fixture_storage_policy_apply.sql" }
+  ],
+  "verify": {
+    "file": null,
+    "expectedSections": [],
+    "expectedPassCount": 0
+  },
+  "rollback": {
+    "stages": [
+      { "label": "leaky-rollback", "source": "file", "file": "91_fixture_storage_policy_rollback.sql" }
+    ]
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role", "supabase_storage_admin"],
+    "schemas": ["auth", "storage", "extensions", "public"],
+    "symbols": ["storage.objects"]
+  },
+  "destructiveGuard": null,
+  "postRollback": null
+}

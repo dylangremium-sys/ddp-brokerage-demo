@@ -1,4 +1,6 @@
 import { useState, useRef } from 'react'
+import { formatBatchPrice } from '../../lib/formatPrice'
+import { formatDate } from '../../lib/formatDate'
 import type { Lang, InventoryItem } from '../../types'
 
 interface Props {
@@ -7,6 +9,13 @@ interface Props {
   onAddNew: () => void
   onEdit: (itemId: string) => void
   openRequestCount: number
+  /**
+   * True when the farmer's data could not be fetched. Without it an empty list
+   * means both "you have no stock" and "we could not find out", and the screen
+   * chose the first — telling a farmer with fifty batches that they had none,
+   * and inviting them to add their first.
+   */
+  loadFailed?: boolean
   onGoRequests: () => void
   onCoaUpload?: (batchId: string, file: File) => Promise<void>
 }
@@ -47,6 +56,7 @@ function matchesFilter(item: InventoryItem, f: Filter): boolean {
 
 export default function FarmerMyStock({
   lang, inventory, onAddNew, onEdit, openRequestCount, onGoRequests, onCoaUpload,
+  loadFailed = false,
 }: Props) {
   const isTh = lang === 'th'
   const [filter, setFilter] = useState<Filter>('all')
@@ -178,12 +188,19 @@ export default function FarmerMyStock({
               <path d="M16 8l-6 3.5L4 8"/>
             </svg>
           </div>
-          <p className="empty-state-message">
-            {inventory.length === 0
-              ? (isTh ? 'ยังไม่มีสต็อก กดปุ่มด้านบนเพื่อเพิ่มสต็อกแรก' : 'No stock yet. Add your first listing above.')
-              : (isTh ? 'ไม่มีรายการในหมวดนี้' : 'No items in this category.')}
+          <p className="empty-state-message" role={loadFailed ? 'alert' : undefined}>
+            {loadFailed
+              ? (isTh
+                  ? 'ไม่สามารถโหลดสต็อกของคุณได้ นี่ไม่ได้แปลว่าคุณไม่มีสต็อก กรุณารีเฟรชหน้านี้อีกครั้ง'
+                  : 'We could not load your stock. This does not mean you have none — please refresh and try again.')
+              : inventory.length === 0
+                ? (isTh ? 'ยังไม่มีสต็อก กดปุ่มด้านบนเพื่อเพิ่มสต็อกแรก' : 'No stock yet. Add your first listing above.')
+                : (isTh ? 'ไม่มีรายการในหมวดนี้' : 'No items in this category.')}
           </p>
-          {inventory.length === 0 && (
+          {/* Never offer "add your first listing" on a failed load: the farmer
+              may already have stock, and creating a duplicate is a worse
+              outcome than an unanswered screen. */}
+          {!loadFailed && inventory.length === 0 && (
             <button className="btn btn-primary" onClick={onAddNew} style={{ marginTop: 16 }}>
               + {isTh ? 'เพิ่มสต็อกแรก' : 'Add First Stock'}
             </button>
@@ -222,7 +239,7 @@ export default function FarmerMyStock({
                   <span className="pill">{item.quantityKg.toLocaleString()} {item.unit ?? 'kg'}</span>
                 )}
                 {item.pricePerKg > 0 && (
-                  <span className="pill">฿{item.pricePerKg.toLocaleString()}/{item.unit ?? 'kg'}</span>
+                  <span className="pill">{formatBatchPrice(item.pricePerKg, item.priceCurrency, item.unit ?? 'kg')}</span>
                 )}
                 {item.thcPct > 0 && <span className="pill">THC {item.thcPct}%</span>}
                 {item.cbdPct > 0 && <span className="pill">CBD {item.cbdPct}%</span>}
@@ -261,7 +278,7 @@ export default function FarmerMyStock({
                     : <span className="pill" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>{isTh ? 'ไม่มี COA' : 'No COA'}</span>
                 }
                 {item.harvestDate && (
-                  <span className="pill">{isTh ? 'เก็บเกี่ยว' : 'Harvest'} {item.harvestDate}</span>
+                  <span className="pill">{isTh ? 'เก็บเกี่ยว' : 'Harvest'} {formatDate(item.harvestDate, lang)}</span>
                 )}
                 {(item.photoUrls?.length ?? 0) > 0 && (
                   <span className="pill">{item.photoUrls!.length} photo{item.photoUrls!.length === 1 ? '' : 's'}</span>
@@ -286,7 +303,7 @@ export default function FarmerMyStock({
                 </button>
                 {item.submittedAt && (
                   <span style={{ fontSize: 12, color: 'var(--text-muted)', alignSelf: 'center' }}>
-                    {isTh ? 'อัปเดต' : 'Updated'} {new Date(item.submittedAt).toLocaleDateString()}
+                    {isTh ? 'อัปเดต' : 'Updated'} {formatDate(item.submittedAt, lang)}
                   </span>
                 )}
               </div>

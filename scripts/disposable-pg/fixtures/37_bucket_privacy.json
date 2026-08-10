@@ -2,7 +2,7 @@
   "id": "37_bucket_privacy",
   "title": "Migration 37 \u2014 Storage bucket privacy (buckets only)",
   "description": "Applies migration 37, runs VERIFY A-C, then rolls back on a disposable PostgreSQL 18 cluster. Migration 37 now covers BUCKETS ONLY: it asserts public = false on both farmer buckets and creates farmer-photos private. The object policies were split into migration 38 because they require OWNERSHIP of storage.objects while a bucket write needs only table privileges -- coupling them meant the achievable half could not be applied either. The rollback deliberately leaves bucket privacy at public = false (a rollback must not reintroduce a vulnerability), so postRollback asserts the buckets remain present rather than removed. The destructive bucket-deletion path is guarded by SET LOCAL bucket_privacy.rollback_destructive and is NOT exercised here; the default no-opt-in path is.",
-  "pgMajor": 18,
+  "pgMajor": 17,
   "migrationDir": ".",
   "applyStages": [
     {

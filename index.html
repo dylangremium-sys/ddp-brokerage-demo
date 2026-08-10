@@ -5,9 +5,35 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DDP Brokerage — Procurement Intelligence</title>
+    <!--
+      Wording is the landing page's own approved copy (translations.ts
+      `landingHero1`) rather than newly authored marketing text, so the
+      description cannot assert a capability, certification or compliance
+      status the product has not committed to elsewhere.
+
+      No <link rel="canonical"> here on purpose, and the reason has changed.
+
+      It used to be that the vercel.json SPA rewrite served this one document
+      for every path, so a hardcoded canonical would also have claimed /farmer.
+      That is no longer true: scripts/prerender-public-routes.mjs now writes a
+      separate document per public route at build time, each with its own
+      canonical, and /farmer has one of its own precisely so it keeps its own.
+
+      This file is the SOURCE TEMPLATE, not a served document. The prerender
+      reads the BUILT dist/index.html and writes the head into every output
+      file, including this one's, so a tag here would be a second place the
+      same decision is made — and the one place that no test reads.
+
+      crawlPolicyFiles.test.ts asserts this file stays canonical-free;
+      prerenderDocument.test.ts asserts every generated document has one.
+    -->
+    <meta
+      name="description"
+      content="DDP Brokerage buys from licensed Thai producers for a certified pharmaceutical buyer in Central Europe. Send your documentation as it is — our team reviews it."
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif:wght@400;500;600&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

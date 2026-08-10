@@ -317,6 +317,16 @@ export interface ComplianceRule {
   sourceLegalUpdateId?: string | null
   approvedBy?: string | null
   approvedAt?: string | null
+  /**
+   * Effective dating, added to the table by migration 41 but absent from this
+   * interface until rule enforcement needed it. `effective_from` is NOT NULL
+   * DEFAULT current_date in the database, so a row always has one; it is
+   * optional here only because a client projection may omit the column.
+   * Optional/absent must therefore be read as "unknown", never as "not yet in
+   * force" — see isRuleWithinEffectiveWindow.
+   */
+  effectiveFrom?: string | null
+  effectiveTo?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -392,6 +402,52 @@ export interface RiskRegisterEntry {
 
 export type Page =
   | 'landing'
+  // ── Public corporate pages ────────────────────────────────────────────────
+  // The only pages besides the landing page that are approved for public search
+  // indexing. They exist because the search-exposure programme's binding entry
+  // condition was that at least two real corporate pages exist to index: until
+  // they did, the whole programme governed exactly one URL.
+  //
+  // They carry no operational data of any kind. Everything they state is either
+  // copy already approved on the landing page or a description of behaviour
+  // that can be read out of this repository — see lib/publicPageMetadata.ts for
+  // the indexability register and pages/public/* for the content.
+  | 'about'
+  | 'contact'
+  | 'privacy'
+  | 'terms'
+  // The German-language buyer page at /de.
+  //
+  // The site speaks English and Thai. Thai serves the SUPPLY side — Thai farms
+  // reached by QR code and WhatsApp. Both demand-side markets the company names
+  // (Germany, Czechia) had no language on the site at all, while a German buyer
+  // searches in German.
+  //
+  // It is deliberately NOT a third app language. Adding 'de' to Lang would mean
+  // translating every authenticated screen in the application; this is one
+  // public page that stands on its own, and it states nothing that is not
+  // already published in English on the landing page.
+  | 'de-buyer'
+  // The Czech-language buyer page at /cs. Same construction as /de: a
+  // standalone public document, not a third app language.
+  | 'cs-buyer'
+  // The regulatory-updates hub at /regulatory-updates.
+  // The Thai-language supplier page at /th/suppliers. Acquisition side: content
+  // a Thai producer searches for, linking to /farmer, which stays a noindexed
+  // form because a form has nothing to rank.
+  | 'th-supplier'
+  | 'regulatory-hub'
+  // One published entry. Unlike every other member here, this does NOT identify
+  // a single URL: entries are files on disk, one or two new ones a week, so the
+  // slug comes from the path rather than the enum. The member says "render an
+  // entry"; content/regulatoryEntries.entryForPath says which one.
+  | 'regulatory-entry'
+  // The buyer's own surface. Production has admitted `buyer` as a profile role
+  // since migration 39 and carries the organisation tables, but no page existed
+  // for one to land on — so `resolvePostLoginDecision` fell a buyer through to
+  // `default:` and signed them straight back out. The substrate was built and
+  // the door was locked from the inside.
+  | 'buyer-dashboard'
   | 'login'
   // Where a Supabase invite / password-recovery link lands. Reached from the
   // captured redirect (lib/authRedirect.ts), never from a nav affordance.
@@ -405,6 +461,9 @@ export type Page =
   | 'farmer-stock-form'
   | 'farmer-requests'
   | 'farmer-status'
+  // Where a farm reads DDP's decisions on the documents it uploaded — including
+  // the clarification a reviewer asked for (migration 65).
+  | 'farmer-evidence'
   | 'ddp-overview'
   | 'ddp-farms'
   | 'ddp-farm-review'
@@ -418,6 +477,14 @@ export type Page =
   | 'ddp-compliance-watchtower'
   | 'ddp-operations-desk'
   | 'ddp-access-requests'
+  // Onboarding a buyer is a form, not a triage action: there is no buyer
+  // self-registration, so unlike a farmer there is no enquiry row to provision
+  // FROM. Hence its own page rather than a control on 'ddp-access-requests'.
+  | 'ddp-buyer-provisioning'
+  // The read-and-decide half of the evidence register. Separate from
+  // 'ddp-missing-documents', which reports what is ABSENT; this one reviews
+  // what has actually arrived.
+  | 'ddp-document-review'
 
 export type StockStatus =
   | 'draft'
@@ -465,6 +532,28 @@ export interface MarketBenchmark {
   visibleToFarmers: boolean
 }
 
+/**
+ * The currencies production will accept on a batch price.
+ *
+ * Mirrors the live CHECK `inventory_batches_price_currency_allowed`, verified
+ * against production 2026-08-06:
+ *
+ *   price_currency IS NULL OR price_currency = ANY (ARRAY['THB','USD','EUR'])
+ *
+ * A companion CHECK, `inventory_batches_price_requires_currency`, refuses any
+ * row that carries a price without one. Widening this list is a database
+ * change first — the constraint is the authority, not this type.
+ */
+export const BATCH_PRICE_CURRENCIES = ['THB', 'USD', 'EUR'] as const
+export type BatchPriceCurrency = (typeof BATCH_PRICE_CURRENCIES)[number]
+
+/**
+ * Thai baht. The owner-stated pricing currency for DDP, and the only one the
+ * product offers today — there is no currency control on the batch form, so
+ * every batch a farmer submits is priced in THB.
+ */
+export const DEFAULT_BATCH_PRICE_CURRENCY: BatchPriceCurrency = 'THB'
+
 export interface InventoryItem {
   id: string
   farmerName: string
@@ -482,6 +571,13 @@ export interface InventoryItem {
   waterActivity: string
   qualityGrade: string
   pricePerKg: number
+  /**
+   * The currency `pricePerKg` is stated in. Optional on the type because
+   * records created before the column existed do not carry one; the write
+   * path in `db.ts` always sends a value, because production refuses a priced
+   * row without it.
+   */
+  priceCurrency?: BatchPriceCurrency
   certFileName: string
   photoUrl: string
   storageConditions: string
@@ -539,6 +635,79 @@ export type BatchPhotoType = 'product' | 'packaging' | 'batch_label' | 'facility
  * time. Storing a signed URL would be wrong: they expire, so a persisted one is
  * a link that works today and silently breaks later.
  */
+/**
+ * `farmer_documents.review_status` — the CHECK admits exactly these four.
+ *
+ * `awaiting_clarification` (migration 65) is the reasoned non-decision: an
+ * administrator has examined the evidence and can responsibly neither accept
+ * nor reject it. It is NOT a weaker acceptance. Nothing in the product may
+ * treat it as verified, compliant, export-ready or buyer-visible.
+ */
+export type DocumentReviewStatus =
+  | 'pending'
+  | 'awaiting_clarification'
+  | 'accepted'
+  | 'rejected'
+
+/** The three states that are an actual decision, each requiring a human and a note. */
+export const DOCUMENT_REVIEW_DECISIONS = [
+  'awaiting_clarification',
+  'accepted',
+  'rejected',
+] as const satisfies readonly DocumentReviewStatus[]
+
+/**
+ * One row of public.farmer_document_reviews — the append-only history.
+ *
+ * The document row carries only the CURRENT status and note; the next decision
+ * overwrites both. This is the record that cannot be overwritten, and it is
+ * what makes a review defensible rather than merely displayed.
+ */
+export interface DocumentReviewEvent {
+  id: string
+  documentId: string
+  previousStatus: DocumentReviewStatus
+  newStatus: DocumentReviewStatus
+  reviewNote: string
+  /** Taken from auth.uid() by the database; never chosen by the caller. */
+  reviewedBy: string
+  reviewedAt: string
+}
+
+/** `farmer_documents.document_type` — likewise CHECK-constrained. */
+export type FarmerDocumentType = 'coa' | 'licence' | 'photo' | 'other'
+
+/**
+ * A row of the evidence register, public.farmer_documents.
+ *
+ * `sha256Hex` is integrity-since-upload and nothing more: it proves the stored
+ * bytes are the bytes DDP received. It does NOT establish that a certificate is
+ * authentic or that the laboratory named on it produced it. Any surface
+ * rendering this field must say so — it is the easiest false claim in the
+ * product to make by accident.
+ */
+export interface FarmerDocument {
+  id: string
+  farmId?: string
+  batchId?: string
+  documentType: FarmerDocumentType
+  fileName?: string
+  /** Storage PATH, never a signed URL — a persisted signed URL expires. */
+  storagePath?: string
+  sha256Hex?: string
+  sha256RecordedAt?: string
+  reviewStatus: DocumentReviewStatus
+  /**
+   * The reason given for the CURRENT reviewStatus (migration 65). Overwritten by
+   * the next decision — `DocumentReviewEvent` is the authoritative history.
+   */
+  reviewNote?: string
+  uploadedAt: string
+  reviewedAt?: string
+  /** Set by migration 64's trigger from auth.uid(); never chosen by the caller. */
+  reviewedBy?: string
+}
+
 export interface StoredPhoto {
   id: string
   batchId: string
