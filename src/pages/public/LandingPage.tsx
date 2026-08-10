@@ -3,6 +3,7 @@ import type { Lang, Page } from '../../types'
 import { DDPMonogramLogo } from '../../components/logos'
 import { pathForPage } from '../../lib/urlRouting'
 import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
+import { OFFICE_TEL_HREF } from '../../lib/publicPhone'
 
 /* ────────────────────────────────────────────────────────────────────────────
    Homepage — implements the approved LandPage.png visual specification.
@@ -509,7 +510,11 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
                   {t.homeFooterOfficeLine2}<br />
                   {t.homeFooterOfficeLine3}
                 </span>
-                <span className="ln-channel-tel">{t.homeFooterOfficeTel}</span>
+                {/* The two email channels beside this one are anchors; the
+                    number was plain text, so on the phone a Thai producer is
+                    actually holding it was the one channel that could not be
+                    used by tapping it. */}
+                <a className="ln-channel-tel" href={OFFICE_TEL_HREF}>{t.homeFooterOfficeTel}</a>
               </div>
             </div>
             <div className="ln-channel">

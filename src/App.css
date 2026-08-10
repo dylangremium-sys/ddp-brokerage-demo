@@ -1524,7 +1524,13 @@ body.public-auth-page {
 }
 a.ln-channel-value:hover { color: #FFFFFF; }
 .ln-channel-address { line-height: 1.5; }
-.ln-channel-tel { display: block; margin-top: 4px; color: var(--lg-gold); font-size: 13.5px; }
+.ln-channel-tel { display: block; margin-top: 4px; color: var(--lg-gold); font-size: 13.5px; text-decoration: none; }
+/* Matches a.ln-channel-value:hover above. Now that the number is an anchor the
+   global `a:hover` rule applies to it, and that rule is more specific than
+   .ln-channel-tel — it would darken the gold and underline it on a dark
+   footer, while the two email channels beside it turn white. Same block, same
+   behaviour. */
+a.ln-channel-tel:hover { color: #FFFFFF; text-decoration: none; }
 .ln-footer-legalnote {
   max-width: 1260px;
   margin: 0 auto;
