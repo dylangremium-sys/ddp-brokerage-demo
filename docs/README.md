@@ -8,6 +8,7 @@ the index is wrong and should be fixed rather than worked around.
 - [`../README.md`](../README.md) — product scope, local/Supabase modes, auth model, the AI summariser and its guards, migration safety, deployment
 - [`../AGENTS.md`](../AGENTS.md) — environment setup and verification commands; read before running anything
 - [`MASTER_DEVELOPMENT_ROADMAP.md`](MASTER_DEVELOPMENT_ROADMAP.md) — what is built and what is planned
+- [`CONTROLLED_PILOT_EXECUTION_PLAN_2026-08-10.md`](CONTROLLED_PILOT_EXECUTION_PLAN_2026-08-10.md) — adopted sequential gates for the first genuine-farm pilot, including the mandatory production-cleanup approval checkpoint
 
 ## Shipping
 
