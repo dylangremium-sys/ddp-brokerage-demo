@@ -4,6 +4,9 @@ import { DDPMonogramLogo } from '../../components/logos'
 import { pathForPage } from '../../lib/urlRouting'
 import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
 import { OFFICE_TEL_HREF } from '../../lib/publicPhone'
+import supplyFlower from '../../assets/supply/supply-flower.jpeg'
+import supplyCultivation from '../../assets/supply/supply-cultivation.jpeg'
+import supplyBatch from '../../assets/supply/supply-batch.jpeg'
 
 /* ────────────────────────────────────────────────────────────────────────────
    Homepage — implements the approved LandPage.png visual specification.
@@ -37,14 +40,6 @@ function scrollToId(id: string) {
 }
 
 /* ── Icons (inline, no external assets) ─────────────────────────────────────── */
-function CaretIcon() {
-  return (
-    <svg className="ln-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="6,9 12,15 18,9" />
-    </svg>
-  )
-}
-
 function LockIcon({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -89,28 +84,11 @@ function DocGlyph() {
     </svg>
   )
 }
-function LabGlyph() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M10 3.5v6L5.5 18a1.5 1.5 0 001.4 2.1h10.2A1.5 1.5 0 0018.5 18L14 9.5v-6" />
-      <path d="M8.5 3.5h7" />
-      <path d="M8 14h8" />
-    </svg>
-  )
-}
 function UserGlyph() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="8" r="3.6" />
       <path d="M5.5 20c0-3.4 2.9-5.6 6.5-5.6s6.5 2.2 6.5 5.6" />
-    </svg>
-  )
-}
-function DecisionGlyph() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M8 12.3l2.6 2.6L16 9.4" />
     </svg>
   )
 }
@@ -211,29 +189,13 @@ function FooterLink({ target, label, onNavigate }: { target: Page; label: string
 export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSignup, onNavigate }: Props) {
   const t = T[lang]
 
-  const navItems: Array<{ key: string; label: string; target?: string; caret?: boolean }> = [
-    { key: 'cap', label: t.navCapabilities, caret: true },
+  const navItems: Array<{ key: string; label: string; target: string }> = [
+    { key: 'cap', label: t.navCapabilities, target: 'evidence' },
     { key: 'proc', label: t.navProcess, target: 'process' },
     { key: 'evi', label: t.navEvidence, target: 'evidence' },
     { key: 'gov', label: t.navGovernance, target: 'governance' },
     { key: 'com', label: t.navCompany, target: 'contact' },
-    { key: 'res', label: t.navResources, caret: true },
-  ]
-
-  const checklist = [
-    { icon: <UserGlyph />, label: t.homeBatchSupplierProfile, status: t.homeBatchStatusDocumented, tone: 'ok' },
-    { icon: <DocGlyph />, label: t.homeBatchBatchEvidence, status: t.homeBatchStatusUnderReview, tone: 'pending' },
-    { icon: <LabGlyph />, label: t.homeBatchLabReport, status: t.homeBatchStatusPresent, tone: 'ok' },
-    { icon: <DecisionGlyph />, label: t.homeBatchBuyerRequirements, status: t.homeBatchStatusMatched, tone: 'ok' },
-    { icon: <UserGlyph />, label: t.homeBatchHumanDecision, status: t.homeBatchStatusRequired, tone: 'pending' },
-  ]
-
-  const docStatus = [
-    t.homeDocAllPresent,
-    t.homeDocCoa,
-    t.homeDocPesticides,
-    t.homeDocHeavyMetals,
-    t.homeDocMicro,
+    { key: 'res', label: t.navResources, target: 'suppliers' },
   ]
 
   const steps = [
@@ -253,6 +215,7 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
 
   return (
     <div className="landing-shell">
+      <a className="ln-skip" href="#main-content">{t.homeSkipToContent}</a>
       {/* ── Top navigation ── */}
       <header className="ln-nav">
         <div className="ln-nav-inner">
@@ -269,24 +232,16 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
           </div>
 
           <nav className="ln-nav-menu" aria-label="Primary">
-            {navItems.map((item) =>
-              item.target ? (
-                <a
+            {navItems.map((item) => (
+              <a
                   key={item.key}
                   className="ln-nav-link"
                   href={`#${item.target}`}
                   onClick={(e) => { e.preventDefault(); scrollToId(item.target!) }}
                 >
                   {item.label}
-                </a>
-              ) : (
-                // Visual-only dropdown labels (no target page yet) — decision: render as-is.
-                <span key={item.key} className="ln-nav-link ln-nav-link-static">
-                  {item.label}
-                  {item.caret && <CaretIcon />}
-                </span>
-              ),
-            )}
+              </a>
+            ))}
           </nav>
 
           <div className="ln-nav-right">
@@ -333,6 +288,7 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
       </header>
 
       {/* ── Hero ── */}
+      <main id="main-content">
       <section className="ln-hero" id="top">
         {/* Decorative cannabis leaf bleeding from the left edge */}
         <svg className="ln-hero-leaf" viewBox="0 0 200 260" fill="none" aria-hidden="true">
@@ -372,57 +328,23 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
             </p>
           </div>
 
-          {/* ── Sample Batch Overview card ── */}
-          <div className="ln-batch" id="evidence">
-            <div className="ln-batch-head">
-              <h2 className="ln-batch-title">{t.homeBatchTitle}</h2>
-              <span className="ln-batch-badge">{t.homeBatchReviewBadge}</span>
+          <figure className="ln-supply-visual" id="evidence">
+            <div className="ln-supply-grid">
+              <img className="ln-supply-main" src={supplyFlower} alt={t.homeSupplyImageFlowerAlt} />
+              <img src={supplyCultivation} alt={t.homeSupplyImageCultivationAlt} />
+              <img src={supplyBatch} alt={t.homeSupplyImageBatchAlt} />
             </div>
-            <p className="ln-batch-disclaimer">{t.homeBatchDisclaimer}</p>
-
-            <div className="ln-batch-cols">
-              <ul className="ln-check">
-                {checklist.map((row, i) => (
-                  <li className="ln-check-row" key={i}>
-                    <span className="ln-check-ico" aria-hidden="true">{row.icon}</span>
-                    <span className="ln-check-label">{row.label}</span>
-                    <span className={`ln-check-status ln-status-${row.tone}`}>
-                      <span className="ln-status-dot" aria-hidden="true" />
-                      {row.status}
-                    </span>
-                  </li>
-                ))}
-                <li className="ln-check-note">
-                  <span className="ln-check-note-ico" aria-hidden="true"><ShieldGlyph size={20} /></span>
-                  <span>{t.homeBatchAuditNote}</span>
-                </li>
-              </ul>
-
-              <div className="ln-batch-right">
-                <div className="ln-summary">
-                  <div className="ln-summary-main">
-                    <div className="ln-summary-title">{t.homeBatchSummaryTitle}</div>
-                    <dl className="ln-summary-list">
-                      <div><dt>{t.homeBatchStrainLabel}</dt><dd>{t.homeBatchStrainValue}</dd></div>
-                      <div><dt>{t.homeBatchOriginLabel}</dt><dd>{t.homeBatchOriginValue}</dd></div>
-                      <div><dt>{t.homeBatchIdLabel}</dt><dd>{t.homeBatchIdValue}</dd></div>
-                      <div><dt>{t.homeBatchHarvestLabel}</dt><dd>{t.homeBatchHarvestValue}</dd></div>
-                    </dl>
-                  </div>
-                </div>
-
-                <div className="ln-docs">
-                  <div className="ln-docs-title">{t.homeDocStatusTitle}</div>
-                  <div className="ln-docs-bar" aria-hidden="true"><span /></div>
-                  <ul className="ln-docs-list">
-                    {docStatus.map((line, i) => (
-                      <li key={i}><CheckCircleIcon />{line}</li>
-                    ))}
-                  </ul>
-                </div>
+            <figcaption className="ln-supply-caption">
+              <p className="ln-supply-kicker">{t.homeSupplyKicker}</p>
+              <h2>{t.homeSupplyTitle}</h2>
+              <p>{t.homeSupplyBody}</p>
+              <div className="ln-supply-proof" aria-label={t.homeSupplyProofLabel}>
+                <span><CheckCircleIcon />{t.homeSupplyProof1}</span>
+                <span><CheckCircleIcon />{t.homeSupplyProof2}</span>
+                <span><CheckCircleIcon />{t.homeSupplyProof3}</span>
               </div>
-            </div>
-          </div>
+            </figcaption>
+          </figure>
         </div>
       </section>
 
@@ -490,6 +412,7 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
           ))}
         </div>
       </section>
+      </main>
 
       {/* ── Footer / contact ── */}
       <footer className="ln-footer" id="contact">
