@@ -3,6 +3,7 @@ import type { Lang, Page } from '../../types'
 import CorporatePageShell from '../../components/public/CorporatePageShell'
 import { pathForPage } from '../../lib/urlRouting'
 import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
+import { OFFICE_TEL_HREF } from '../../lib/publicPhone'
 
 /* ────────────────────────────────────────────────────────────────────────────
    /contact — public contact information.
@@ -100,7 +101,7 @@ function OfficeAddress({ lang }: { lang: Lang }) {
       {copy.homeFooterOfficeLine1}<br />
       {copy.homeFooterOfficeLine2}<br />
       {copy.homeFooterOfficeLine3}<br />
-      {copy.homeFooterOfficeTel}
+      <a href={OFFICE_TEL_HREF}>{copy.homeFooterOfficeTel}</a>
     </address>
   )
 }
