@@ -99,3 +99,19 @@ describe('the farm portal has its own opening language', () => {
     expect(initialLanguage(storage(null), ['en-GB'], 'th')).toBe('en')
   })
 })
+
+describe('the mono line under a batch joins only what exists', () => {
+  // Every batch on the live farm has an empty batch number, so a fixed
+  // "code · qty" template rendered "— · 50 kg": a separator with nothing on one
+  // side of it, which is the shape of missing data rather than a fact.
+  const line = (parts: Array<string | undefined>) => parts.filter(Boolean).join(' · ')
+
+  it('drops the separator when there is no code', () => {
+    expect(line(['', '50 kg'])).toBe('50 kg')
+    expect(line([undefined, '50 kg'])).toBe('50 kg')
+  })
+
+  it('keeps it when both parts are real', () => {
+    expect(line(['DSO-0112', '80 kg'])).toBe('DSO-0112 · 80 kg')
+  })
+})

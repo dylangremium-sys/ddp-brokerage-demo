@@ -271,10 +271,15 @@ function StockList({ lang, inventory, onAddBatch }: {
             <div className="stock-row" key={item.id}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 14.5 }}>{named.name}</div>
+                {/* Join only the parts that exist. Every batch on this farm
+                    has an empty batch number, so a fixed template rendered
+                    "— · 50 kg" — a separator with nothing on one side of it,
+                    which is the shape of missing data rather than a fact. */}
                 <div className="portal-code">
-                  {named.identifier
-                    ? shortIdentifier(named.identifier)
-                    : `${item.batchNumber || '—'} · ${item.quantityKg} kg`}
+                  {[
+                    named.identifier ? shortIdentifier(named.identifier) : item.batchNumber,
+                    `${item.quantityKg} kg`,
+                  ].filter(Boolean).join(' · ')}
                 </div>
               </div>
               <div className="stock-col-desk portal-num">{item.quantityKg} kg</div>
