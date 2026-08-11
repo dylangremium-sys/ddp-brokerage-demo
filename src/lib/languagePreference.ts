@@ -27,6 +27,29 @@ const SUPPORTED: readonly Lang[] = ['en', 'th']
 /** English unless something says otherwise — the safe default for an operator. */
 export const FALLBACK_LANGUAGE: Lang = 'en'
 
+/**
+ * What the farm portal opens in when nothing else decides.
+ *
+ * INTENDED VALUE: 'th'. Its readers are Thai farms, and English is the
+ * surprising choice there, not the safe one.
+ *
+ * HELD AT 'en' UNTIL THE THAI COPY IS PROOFREAD. The portal's Thai strings were
+ * drafted for tone and length — the same caveat the design handoff makes about
+ * its own — and no native speaker has read them. Making unreviewed Thai the
+ * default is a decision about what suppliers are shown, so it waits for the
+ * review rather than riding along with a layout fix. Owner's call, taken
+ * 2026-08-11.
+ *
+ * TO FLIP IT: change this one value to 'th'. Nothing else needs to move —
+ * languagePreference.test.ts covers both settings, and the Thai strings are
+ * already in translations.ts.
+ *
+ * Note this only ever decides the LAST RESORT. A stored choice wins over it,
+ * and so does the handset's own language — so a Thai phone was already getting
+ * Thai before this constant existed, and still is.
+ */
+export const FARMER_PORTAL_DEFAULT_LANGUAGE: Lang = 'en'
+
 export function isSupportedLanguage(value: unknown): value is Lang {
   return typeof value === 'string' && (SUPPORTED as readonly string[]).includes(value)
 }
@@ -82,6 +105,7 @@ export function initialLanguage(
   preferences: readonly string[] | undefined = typeof globalThis.navigator === 'undefined'
     ? undefined
     : globalThis.navigator.languages ?? [globalThis.navigator.language],
+  fallback: Lang = FALLBACK_LANGUAGE,
 ): Lang {
-  return readStoredLanguage(storage) ?? detectLanguage(preferences) ?? FALLBACK_LANGUAGE
+  return readStoredLanguage(storage) ?? detectLanguage(preferences) ?? fallback
 }

@@ -67,7 +67,7 @@ import LoginPage from './pages/public/LoginPage'
 import SetPasswordPage from './pages/public/SetPasswordPage'
 import ForgotPasswordPage from './pages/public/ForgotPasswordPage'
 import FarmerRegister from './pages/farmer/FarmerRegister'
-import FarmerDashboard from './pages/farmer/FarmerDashboard'
+import FarmerPortal from './pages/farmer/FarmerPortal'
 import FarmerOnboarding from './pages/farmer/FarmerOnboarding'
 import FarmerAdvancedProfile from './pages/farmer/FarmerAdvancedProfile'
 import FarmerMyStock from './pages/farmer/FarmerMyStock'
@@ -102,7 +102,7 @@ import DDPBuyerProvisioning from './pages/admin/DDPBuyerProvisioning'
 import DDPDocumentReview from './pages/admin/DDPDocumentReview'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
-import { initialLanguage, storeLanguage } from './lib/languagePreference'
+import { FARMER_PORTAL_DEFAULT_LANGUAGE, initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
 import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
 import { applyPublicPageMetadata, metadataForPage } from './lib/publicPageMetadata'
@@ -143,7 +143,17 @@ export default function App() {
   // hardcoded 'en' that was never persisted, so a Thai farm scanning the QR
   // code landed on an English form with no way to change it — see
   // lib/languagePreference.ts.
-  const [lang, setLangState] = useState<Lang>(initialLanguage)
+  // The farm portal has its own opening language, held at English until its
+  // Thai has been proofread — see FARMER_PORTAL_DEFAULT_LANGUAGE. Only the LAST
+  // RESORT differs; a stored choice and the handset's own preference both still
+  // win, so nobody's explicit choice is overridden either way.
+  const [lang, setLangState] = useState<Lang>(() => initialLanguage(
+    undefined,
+    undefined,
+    FARMER_PAGES.includes(getInitialPageFromPath(window.location.pathname) ?? 'landing')
+      ? FARMER_PORTAL_DEFAULT_LANGUAGE
+      : undefined,
+  ))
   const setLang = useCallback((next: Lang) => {
     setLangState(next)
     storeLanguage(next)
@@ -1427,7 +1437,12 @@ export default function App() {
     <div className="app">
 
       {/* ── Navbar (all non-landing pages; the editorial shell draws its own) ── */}
-      {!useEditorialShell && !PUBLIC_PAGES.includes(page) && (
+      {/* The farm portal draws its own lockup — the one that REPLACES the
+          collided "BROKERAGEFARMER" wordmark and the seven wrapping nav labels
+          (both still live at desk width today, verified signed in as a farm).
+          Rendering this navbar above it would stack two headers, which is what
+          looking at the real screen caught before it shipped. */}
+      {!useEditorialShell && page !== 'farmer-dashboard' && !PUBLIC_PAGES.includes(page) && (
         <nav className="navbar">
           <div
             className="navbar-brand"
@@ -1610,18 +1625,27 @@ export default function App() {
           {page === 'farmer-dashboard' && (
             scopeLoading
               ? <div className="scope-loading">{T[lang].scopeLoadingDashboard}</div>
-              : <FarmerDashboard
+              : <FarmerPortal
                   lang={lang}
+                  onLang={setLang}
                   farms={farmerFarms}
+                  inventory={farmerInventory}
+                  reviewRequests={farmerReviewRequests}
                   currentProfile={isDemo ? null : currentProfile}
-                  onBuildProfile={() => goTo('farmer-onboarding')}
-                  onMyStock={() => goTo('farmer-my-stock')}
-                  onMyActivity={() => goTo('farmer-status')}
-                  onAdvancedProfile={() => goTo('farmer-advanced-profile')}
-                  onRequests={() => goTo('farmer-requests')}
-                  onEvidence={() => goTo('farmer-evidence')}
                   evidenceWaitingCount={farmerEvidenceWaitingSafe}
                   openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
+                  onPrimary={task => goTo(
+                    task === 'evidence' ? 'farmer-evidence'
+                      : task === 'requests' ? 'farmer-requests'
+                        : task === 'documents' ? 'farmer-advanced-profile'
+                          : 'farmer-onboarding',
+                  )}
+                  onContact={() => goTo('farmer-requests')}
+                  onAddBatch={() => goTo('farmer-stock-form')}
+                  onSignOut={handleSignOut}
+                  onGoTo={task => goTo(
+                    task === 'documents' ? 'farmer-advanced-profile' : 'farmer-onboarding',
+                  )}
                 />
           )}
 

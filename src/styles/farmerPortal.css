@@ -1,0 +1,322 @@
+/*
+ * The farm portal's two layouts.
+ *
+ * WHY THIS IS CSS AND NOT JAVASCRIPT. The portal has two real layouts, not one
+ * that stretches: a phone column and a desk two-column with a rail. Deciding
+ * between them by measuring the window in React means the first paint is a
+ * guess, and it re-renders the whole tree on resize. A media query is the
+ * browser's own answer to the same question, it is correct before React runs,
+ * and it cannot disagree with itself.
+ *
+ * The previous build had no breakpoint at all: the phone layout rendered
+ * unconstrained at desk width, which is how a 2,200px-wide primary button
+ * happened.
+ *
+ * BREAKPOINT: 900px, per the instruction. The handoff's own screen 2 says the
+ * rail stacks "below ~1100px"; 900 is used here because that is what was asked
+ * for, and the difference is one number in one place.
+ *
+ * Everything is nested under `.organic-scope` so it cannot reach the rest of
+ * the product, which is still on the app's own stylesheet.
+ */
+
+.organic-scope {
+  /* ── Typography discipline ───────────────────────────────────────────────
+     Caprasimo ships weight 400 ONLY. Asking for 600/700 makes the browser
+     synthesise the bold, which smears the face — and the Organic sheet puts
+     `--font-heading` on `.btn`, so every button inherited a display face and
+     "Message DDP" rendered faux-bold.
+
+     Page titles are the only place the display face belongs. Buttons, links
+     and subheads are Figtree, which has real weights. */
+  & .btn,
+  & button,
+  & a,
+  & h2, & h3, & h4, & h5, & h6 {
+    font-family: var(--font-body);
+  }
+
+  & .btn { font-weight: 600; }
+
+  /* The display face, at the one weight it has. */
+  & h1,
+  & .portal-title {
+    font-family: var(--font-heading);
+    font-weight: 400;
+  }
+
+  /* ── The portal shell ────────────────────────────────────────────────────
+     Phone first: one column, held to the phone's measure so nothing stretches
+     when the window is wider than the layout was designed for. */
+  & .portal {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+    width: 100%;
+    max-width: 430px;
+    margin: 0 auto;
+    padding: 16px;
+    min-height: 100vh;
+    background: var(--color-bg);
+    /* The farmer's bottom tab bar is fixed and 62px tall plus the home
+       indicator, and it is still rendered on this page — verified signed in as
+       a farm. Without this the last card sits underneath it. */
+    padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The rail exists in the markup at every width; below the breakpoint it
+     simply follows the main column, which is what "becomes screen 1" means. */
+  & .portal-rail {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+  }
+
+  & .portal-main {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+    min-width: 0;
+  }
+
+  /* Full-bleed action pair: the ghost sits directly beneath the primary at the
+     same width, so the two read as one choice rather than a button and a link. */
+  & .portal-actions {
+    display: grid;
+    gap: 8px;
+  }
+  & .portal-actions .btn { width: 100%; }
+
+  /* ── Stock rows ──────────────────────────────────────────────────────────
+     Phone: two columns. The previous grid left a wide empty column between the
+     name and the status because it was authored for the desk shape. */
+  & .stock-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border-top: 1px solid var(--color-neutral-200);
+  }
+  & .stock-row:first-of-type { border-top: 0; }
+
+  /* Quantity and grade are desk-only columns; on a phone they are folded into
+     the mono line beneath the name, so they must not occupy grid tracks. */
+  & .stock-col-desk { display: none; }
+
+  /* ── Header, two shapes ──────────────────────────────────────────────────
+     Phone: a plain account row on the page ground. Desk: the dark lockup pill
+     that replaces the collided "BROKERAGEFARMER" wordmark. */
+  & .portal-header-phone {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  & .portal-header-desk { display: none; }
+
+  /* The date + h1 belong to the desk layout; on a phone the blocking task is
+     the title, and a second heading above it would push content below the fold
+     for nothing. */
+  & .portal-titleblock { display: none; }
+
+  /* ── Language segment ────────────────────────────────────────────────────
+     Thai is first and is the active option on this portal. */
+  & .portal-seg {
+    display: flex;
+    gap: 3px;
+    padding: 3px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+  }
+  & .portal-seg--light { background: var(--color-neutral-200); }
+  & .portal-seg--dark { background: var(--color-accent-2-800); }
+  & .portal-seg-opt {
+    border: 0;
+    cursor: pointer;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 11.5px;
+    font-weight: 500;
+    background: transparent;
+  }
+  & .portal-seg--light .portal-seg-opt { color: var(--color-neutral-700); }
+  & .portal-seg--dark .portal-seg-opt { color: var(--color-accent-2-200); }
+  & .portal-seg--light .portal-seg-opt.is-active {
+    background: var(--color-neutral-100);
+    color: var(--color-text);
+    font-weight: 600;
+  }
+  & .portal-seg--dark .portal-seg-opt.is-active {
+    background: var(--color-accent-2-700);
+    color: var(--color-neutral-100);
+    font-weight: 600;
+  }
+
+  & .portal-mark {
+    width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
+    background: var(--color-accent-500);
+    display: grid; place-items: center;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    color: var(--color-accent-2-900);
+  }
+  & .portal-account {
+    background: var(--color-accent-2-700); color: var(--color-accent-2-100);
+    border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch;
+  }
+  & .portal-signout {
+    background: transparent; border: 0; cursor: pointer;
+    font-size: 13px; color: var(--color-accent-2-200);
+  }
+
+  /* ── Blocking task ───────────────────────────────────────────────────────
+     Terracotta, and the only terracotta block on the screen: a named human
+     must act. */
+  & .portal-task {
+    background: var(--color-accent-100);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+  }
+  & .portal-task-title {
+    font-weight: 700; font-size: 19px; line-height: 1.3; margin: 12px 0 0;
+  }
+  & .portal-task-body {
+    font-size: 14px; line-height: 1.6; color: var(--color-accent-900);
+    margin: 8px 0 16px; max-width: 46ch;
+  }
+  /* Age is metadata: mono, terracotta, and it never wraps. */
+  & .portal-age {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    color: var(--color-accent-800); white-space: nowrap;
+  }
+  & .portal-actions .btn-primary { font-size: 15px; padding: 15px; }
+  & .portal-actions .btn-secondary { font-size: 14px; padding: 14px; }
+
+  /* ── Cards ───────────────────────────────────────────────────────────────*/
+  & .portal-card {
+    background: var(--color-neutral-100);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  & .portal-card-head {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--color-neutral-700);
+    padding: 14px 16px; margin: 0;
+  }
+  & .portal-checklist, & .portal-contact { border-radius: var(--radius-lg); padding: 18px; }
+  & .portal-checklist { background: var(--color-neutral-100); }
+  & .portal-checklist .portal-card-head { padding: 0; }
+  & .portal-contact { background: var(--color-accent-2-200); }
+  & .portal-empty { padding: 0 16px 16px; margin: 0; font-size: 14px; color: var(--color-neutral-700); }
+
+  /* Identifiers in mono, names in body type. */
+  & .portal-code {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px;
+    color: var(--color-neutral-600); margin-top: 2px;
+  }
+  & .portal-num { font-variant-numeric: tabular-nums; font-size: 15px; }
+
+  & .portal-dot { width: 9px; height: 9px; border-radius: 999px; flex: 0 0 auto; }
+  & .portal-dot--listed { background: var(--color-accent-2-600); }
+  & .portal-dot--held { background: var(--color-accent-500); }
+
+  & .portal-stock-foot { padding: 14px 16px; border-top: 1px solid var(--color-neutral-200); }
+
+  /* ── Profile checklist ───────────────────────────────────────────────────*/
+  & .portal-pct {
+    font-family: var(--font-heading); font-weight: 400; font-size: 22px;
+    color: var(--color-accent-2-700);
+  }
+  & .portal-bar {
+    height: 8px; border-radius: 999px; background: var(--color-neutral-300);
+    margin: 12px 0 14px; overflow: hidden;
+  }
+  & .portal-bar-fill { height: 100%; border-radius: 999px; background: var(--color-accent-2-500); }
+  & .portal-check-row {
+    display: grid; grid-template-columns: 22px 1fr auto; gap: 10px;
+    align-items: center; padding: 7px 0;
+  }
+  & .portal-mark-sm {
+    width: 22px; height: 22px; border-radius: 999px;
+    display: grid; place-items: center; font-size: 12px; font-weight: 700;
+  }
+  & .portal-mark-sm.is-done { background: var(--color-accent-2-300); color: var(--color-accent-2-900); }
+  & .portal-mark-sm.is-todo { background: var(--color-accent-300); color: var(--color-accent-900); }
+  & .portal-link {
+    background: transparent; border: 0; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: var(--color-accent-700);
+  }
+
+  & .portal-avatar {
+    width: 52px; height: 52px; border-radius: 999px; flex: 0 0 auto;
+    background: var(--color-accent-2-600); color: var(--color-neutral-100);
+    display: grid; place-items: center; font-weight: 700; font-size: 16px;
+  }
+
+  & .portal-activity-row { padding: 10px 16px; border-top: 1px solid var(--color-neutral-200); }
+  & .portal-stamp { font-size: 12.5px; color: var(--color-neutral-600); margin-top: 2px; }
+}
+
+@media (min-width: 900px) {
+  .organic-scope {
+    & .portal {
+      padding-bottom: 90px;
+      max-width: 1180px;
+      grid-template-columns: 1fr 430px;
+      gap: 48px;
+      padding: 48px 56px 90px;
+      align-items: start;
+    }
+
+    /* The header bar spans both columns — it is the portal's lockup, not part
+       of the main column. */
+    & .portal-header { grid-column: 1 / -1; }
+
+    & .stock-row {
+      grid-template-columns: 1.4fr 0.6fr 0.6fr 1fr;
+      gap: 18px;
+      padding: 20px 26px;
+    }
+    & .stock-col-desk { display: block; }
+
+    /* On the desk the pair sits side by side rather than stacked — the card is
+       wide enough that two full-bleed buttons would read as banners. They stay
+       EQUAL to each other so the pair still reads as one choice, which is the
+       point of the instruction; only the axis changes. */
+    & .portal-actions {
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      justify-content: start;
+      gap: 12px;
+      max-width: 460px;
+    }
+    & .portal-actions .btn { width: 100%; }
+
+    & .portal-header-phone { display: none; }
+    & .portal-header-desk {
+      display: flex; align-items: center; justify-content: space-between; gap: 20px;
+      background: var(--color-accent-2-900); border-radius: 999px; padding: 14px 22px;
+    }
+    & .portal-titleblock { display: block; }
+
+    /* The spec's rail order is checklist, contact, activity. The source order
+       puts contact first so a phone reads account, task, stock, a named human —
+       screen 1's order. Reordered here rather than duplicating the markup. */
+    & .portal-rail > .portal-checklist { order: 1; }
+    & .portal-rail > .portal-contact { order: 2; }
+    & .portal-rail > .portal-card:not(.portal-checklist) { order: 3; }
+
+    & .portal-task { padding: 32px 34px; box-shadow: var(--shadow-sm); }
+    & .portal-task-title { font-size: 24px; line-height: 1.25; }
+    & .portal-task-body { font-size: 16px; }
+    & .portal-age { font-size: 12px; }
+    & .portal-actions .btn-primary,
+    & .portal-actions .btn-secondary { padding: 15px 26px; }
+
+    & .portal-card, & .portal-stock { box-shadow: var(--shadow-sm); }
+    & .portal-checklist { padding: 28px 30px; box-shadow: var(--shadow-sm); }
+    & .portal-contact { padding: 26px 28px; }
+    & .portal-stock-foot { padding: 20px 26px; }
+  }
+}
