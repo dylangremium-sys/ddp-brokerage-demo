@@ -255,3 +255,15 @@ they create exist. See `docs/runbooks/EXPORT_HUB_FOUNDATION_APPLY.md` before app
    already have a *file*. This is how 45 was found.
 7. **Claim before you write, not when you finish.** A row in this file costs nothing and is the only
    artefact a concurrent session can see. The number is reserved by the claim, not by the SQL.
+
+## Allocation made by the evidence-review rebuild (2026-08-11)
+
+**The register above is stale.** It was last reconciled 2026-08-02 and records nothing for 54–65,
+all of which exist on `main`. This section claims 66 against the numbers actually present in the
+tree (`ls | grep -E '^[0-9]+_'` → highest 65; 62 is absent and stays free) and against
+`git worktree list`, which showed no sibling branch holding a claim. It does not attempt to
+back-fill 54–65; that reconciliation is its own piece of work.
+
+| # | Migration stem | What it does | Depends on |
+|---|---|---|---|
+| 66 | `66_EVIDENCE_DECISION_GATE_*` | `farmer_document_opens` (append-only record that a named reviewer opened a document); `sha256_at_decision` on `farmer_document_reviews`; and a BEFORE UPDATE trigger on `farmer_documents` that **refuses** a decision without a recorded open by the deciding reviewer and without a reason of substance. Moves the read-first gate from the client, where it is advisory, into the database, where it is enforced. | 64 (`farmer_documents_set_reviewer`), 65 (`farmer_document_reviews`) |
