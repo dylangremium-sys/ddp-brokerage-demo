@@ -694,9 +694,23 @@ export async function createReviewRequest(
     console.warn('createReviewRequest: skipping — invalid UUID for stockItemId')
     return
   }
+  if (req.farmProfileId && !isValidUUID(req.farmProfileId)) {
+    console.warn('createReviewRequest: skipping — invalid UUID for farmProfileId')
+    return
+  }
   await sbInsert('farmer_review_requests', {
     inventory_batch_id: req.stockItemId ?? null,
-    farm_id: null,
+    // WAS HARDCODED `null`, and that silently broke farm-level requests. The
+    // farmer's own read scopes on `farm_id.in.(…)` OR `inventory_batch_id.in.(…)`
+    // (loadReviewRequestsForFarmer), so a request about a FARM rather than a
+    // batch was written with both columns null and could never be read by
+    // anyone but an admin — it reached the farmer's screen for exactly as long
+    // as it took to leave the browser that created it.
+    // Nothing wrote farm-level requests before, so nothing regressed; the field
+    // was simply unreachable. The column is nullable, foreign-keyed to farms(id),
+    // and both the permissive admin policy and the restrictive
+    // "operational farmer or admin" policy are satisfied by is_ddp_admin().
+    farm_id: req.farmProfileId ?? null,
     request_type: req.requestType,
     message: req.message,
     status: 'open',
