@@ -20,6 +20,68 @@ export const INVENTORY_STATUS_LABEL: Record<InventoryStatus, Record<Lang, string
 
 export const T = {
   en: {
+    // ── Farm portal (handoff screens 1 and 2) ─────────────────────────────
+    // The Thai below is DRAFTED, not proofread. The handoff says the same of
+    // its own Thai: composed for tone and length. A native speaker must read
+    // it before a farm does — flagged in the PR, not buried here.
+    portalTitle: 'Farm portal',
+    portalSignOut: 'Sign out',
+    portalToday: 'Today',
+    portalHeading: 'What DDP needs from you',
+    portalNoName: 'Farm with no name on file',
+    portalYourStock: 'Your stock',
+    portalNoStock: 'Nothing has been sent to DDP yet.',
+    portalListed: 'Listed',
+    portalHeld: 'Held',
+    portalAddBatch: 'Add a new batch',
+    portalProfile: 'Farm profile',
+    portalAdd: 'Add',
+    portalActivity: 'Recent activity',
+    portalNoActivity: 'Nothing has happened on your account yet.',
+    portalMessageDdp: 'Message DDP',
+    portalContactName: 'Nattaya S.',
+    portalContactRole: 'Your contact at DDP',
+    portalCheckLicence: 'Cultivation licence',
+    portalCheckCoa: 'Certificate of analysis',
+    portalCheckProfile: 'Farm details',
+    portalCheckStock: 'Stock listed',
+    portalDaysOpen: (n: number) => `${n} day${n === 1 ? '' : 's'} open`,
+    portalWhen: (iso: string) => {
+      const parsed = new Date(iso)
+      // Standing rule 9: "8 Aug 2026, 12:30", never 08/08/2026, 12:30:08.
+      return Number.isNaN(parsed.getTime())
+        ? '\u2014'
+        : parsed.toLocaleString('en-GB', {
+            day: 'numeric', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          }).replace(',', ',')
+    },
+    portalTask: {
+      evidence: {
+        tag: 'DDP is waiting on you',
+        title: 'Send a photo of your lab report',
+        body: 'DDP cannot clear your stock for buyers until the certificate of analysis is on file. A photo taken on this phone is enough — it does not need to be scanned.',
+        cta: 'Take a photo of the COA',
+      },
+      requests: {
+        tag: 'DDP is waiting on you',
+        title: 'Answer DDP\u2019s question about your batch',
+        body: 'Someone at DDP has asked you something specific about a batch you sent. Your stock stays held until it is answered.',
+        cta: 'Read the question',
+      },
+      documents: {
+        tag: 'DDP is waiting on you',
+        title: 'Add your cultivation licence',
+        body: 'DDP verifies your licence against Thai FDA records before anything you have is shown to a buyer. A photo of the certificate is enough to start.',
+        cta: 'Take a photo of the licence',
+      },
+      profile: {
+        tag: 'One thing left',
+        title: 'Finish your farm profile',
+        body: 'Your file is open with DDP. Completing it is what lets a buyer see what you have.',
+        cta: 'Continue your profile',
+      },
+    },
     // Added while the domain's mailboxes are unreachable: every page that asks
     // somebody to make contact must offer a channel that currently works.
     contactByPhone: 'You can also reach us by telephone.',
@@ -787,6 +849,64 @@ export const T = {
     scopeLoadingSubmissions: 'Loading your submissions…',
   },
   th: {
+    // ── Farm portal — DRAFTED THAI, NOT PROOFREAD. See the English block. ──
+    portalTitle: 'พอร์ทัลเกษตรกร',
+    portalSignOut: 'ออกจากระบบ',
+    portalToday: 'วันนี้',
+    portalHeading: 'สิ่งที่ DDP ต้องการจากคุณ',
+    portalNoName: 'ฟาร์มที่ยังไม่มีชื่อในระบบ',
+    portalYourStock: 'สินค้าของคุณ',
+    portalNoStock: 'ยังไม่ได้ส่งข้อมูลให้ DDP',
+    portalListed: 'แสดงต่อผู้ซื้อ',
+    portalHeld: 'ระงับไว้',
+    portalAddBatch: 'เพิ่มล็อตใหม่',
+    portalProfile: 'โปรไฟล์ฟาร์ม',
+    portalAdd: 'เพิ่ม',
+    portalActivity: 'ความเคลื่อนไหวล่าสุด',
+    portalNoActivity: 'ยังไม่มีความเคลื่อนไหวในบัญชีของคุณ',
+    portalMessageDdp: 'ส่งข้อความถึง DDP',
+    portalContactName: 'ณัฐฐญา ส.',
+    portalContactRole: 'ผู้ดูแลฟาร์มของคุณที่ DDP',
+    portalCheckLicence: 'ใบอนุญาตเพาะปลูก',
+    portalCheckCoa: 'ใบรับรองผลการวิเคราะห์',
+    portalCheckProfile: 'ข้อมูลฟาร์ม',
+    portalCheckStock: 'รายการสินค้า',
+    portalDaysOpen: (n: number) => `เปิดค้างไว้ ${n} วัน`,
+    portalWhen: (iso: string) => {
+      const parsed = new Date(iso)
+      return Number.isNaN(parsed.getTime())
+        ? '\u2014'
+        : parsed.toLocaleString('th-TH', {
+            day: 'numeric', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          })
+    },
+    portalTask: {
+      evidence: {
+        tag: 'DDP กำลังรอคุณอยู่',
+        title: 'ส่งภาพถ่ายผลตรวจแล็บของคุณ',
+        body: 'DDP ไม่สามารถอนุมัติสินค้าของคุณให้ผู้ซื้อได้ จนกว่าจะได้รับใบรับรองผลการวิเคราะห์ ถ่ายภาพด้วยโทรศัพท์เครื่องนี้ก็เพียงพอ ไม่จำเป็นต้องสแกน',
+        cta: 'ถ่ายภาพ COA',
+      },
+      requests: {
+        tag: 'DDP กำลังรอคุณอยู่',
+        title: 'ตอบคำถามของ DDP เกี่ยวกับล็อตของคุณ',
+        body: 'ทีมงาน DDP มีคำถามเฉพาะเจาะจงเกี่ยวกับล็อตที่คุณส่งมา สินค้าของคุณจะยังไม่ถูกปล่อยจนกว่าจะได้รับคำตอบ',
+        cta: 'อ่านคำถาม',
+      },
+      documents: {
+        tag: 'DDP กำลังรอคุณอยู่',
+        title: 'เพิ่มใบอนุญาตเพาะปลูกของคุณ',
+        body: 'DDP จะตรวจสอบใบอนุญาตของคุณกับฐานข้อมูล อย. ก่อนที่สินค้าของคุณจะแสดงต่อผู้ซื้อ ถ่ายภาพใบรับรองก็เริ่มได้แล้ว',
+        cta: 'ถ่ายภาพใบอนุญาต',
+      },
+      profile: {
+        tag: 'เหลืออีกอย่างเดียว',
+        title: 'กรอกข้อมูลฟาร์มของคุณให้ครบ',
+        body: 'DDP ได้เปิดแฟ้มข้อมูลของคุณแล้ว การกรอกให้ครบคือสิ่งที่ทำให้ผู้ซื้อเห็นสินค้าของคุณ',
+        cta: 'กรอกข้อมูลต่อ',
+      },
+    },
     // See the English note on this key.
     contactByPhone: 'คุณสามารถติดต่อเราทางโทรศัพท์ได้เช่นกัน',
     // ── Supplier acquisition block (homepage) ─────────────────────────────

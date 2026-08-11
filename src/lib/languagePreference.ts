@@ -27,6 +27,16 @@ const SUPPORTED: readonly Lang[] = ['en', 'th']
 /** English unless something says otherwise — the safe default for an operator. */
 export const FALLBACK_LANGUAGE: Lang = 'en'
 
+/**
+ * The farm portal opens in Thai.
+ *
+ * Its readers are Thai farms; English is the surprising choice there, not the
+ * safe one. This changes the LAST RESORT only — an explicit stored choice still
+ * wins, and so does the handset's own preference, so a farmer who picked
+ * English keeps English and a Thai handset was already getting Thai.
+ */
+export const FARMER_PORTAL_FALLBACK_LANGUAGE: Lang = 'th'
+
 export function isSupportedLanguage(value: unknown): value is Lang {
   return typeof value === 'string' && (SUPPORTED as readonly string[]).includes(value)
 }
@@ -82,6 +92,7 @@ export function initialLanguage(
   preferences: readonly string[] | undefined = typeof globalThis.navigator === 'undefined'
     ? undefined
     : globalThis.navigator.languages ?? [globalThis.navigator.language],
+  fallback: Lang = FALLBACK_LANGUAGE,
 ): Lang {
-  return readStoredLanguage(storage) ?? detectLanguage(preferences) ?? FALLBACK_LANGUAGE
+  return readStoredLanguage(storage) ?? detectLanguage(preferences) ?? fallback
 }
