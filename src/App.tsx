@@ -1084,6 +1084,72 @@ export default function App() {
   }
 
   /**
+   * The Operations Desk's own frame.
+   *
+   * The Organic design system brings a console shell with it, so this screen
+   * REPLACES AdminShell rather than nesting inside it — two sidebars is not a
+   * layout. Sign-out moves with the frame, because AdminShell is where sign-out
+   * otherwise lives.
+   *
+   * A named function rather than an inline branch: the routing function it came
+   * out of is already the largest in this file, and this branch is
+   * self-contained.
+   */
+  function operationsDeskFrame() {
+      // The Operations Desk is the first screen rebuilt on the Organic design
+      // system, and that system brings its own console frame. It therefore
+      // REPLACES AdminShell here rather than nesting inside it — two sidebars
+      // is not a layout. Sign-out moves with it, because AdminShell is where
+      // sign-out otherwise lives.
+      //
+      // The console is visibly two styles while this is the only screen
+      // rebuilt. That is the accepted cost of piloting a design system on a
+      // real screen instead of a mock.
+  return (
+          <OrganicConsoleShell
+            page={page}
+            goTo={goTo}
+            onSignOut={handleSignOut}
+            signedInAs={
+              currentProfile
+                ? `Signed in as ${currentProfile.displayName || currentProfile.email}`
+                : 'Demo mode'
+            }
+            items={[
+              { page: 'ddp-overview', label: 'Overview' },
+              { page: 'ddp-operations-desk', label: 'Operations Desk' },
+              { page: 'ddp-access-requests', label: 'Supplier Enquiries' },
+              { page: 'ddp-buyer-provisioning', label: 'Buyers' },
+              { page: 'ddp-document-review', label: 'Evidence' },
+              { page: 'ddp-farms', label: 'Compliance' },
+              { page: 'ddp-master', label: 'Supply Ledger' },
+              { page: 'ddp-compliance-watchtower', label: 'Compliance Watchtower' },
+            ]}
+          >
+            <DDPOperationsDeskOrganic
+              // The same guarded admin view the old desk used: never a stale
+              // farmer-scoped subset, and null where a source failed so the
+              // screen can report the gap rather than imply an empty queue.
+              farms={deskData.farms}
+              inventory={deskData.inventory}
+              reviewRequests={deskReviewRequests.requests}
+              complianceAlerts={deskComplianceAlerts}
+              reviewRequestsLoading={deskReviewRequests.loading}
+              complianceLoading={!isDemo && (complianceLoadState === 'idle' || complianceLoadState === 'loading')}
+              farmInventoryLoading={!isDemo && (adminDataLoadState === 'idle' || adminDataLoadState === 'loading')}
+              farmInventoryFailed={!isDemo && adminDataLoadState === 'failed'}
+              onOpen={item => {
+                if (item.destinationParams?.farmId) handleReviewFarm(item.destinationParams.farmId)
+                else if (item.destinationParams?.itemId) handleReviewItem(item.destinationParams.itemId)
+                else goTo(item.destinationPage)
+              }}
+              onChaseFarms={chases => { handleChaseFarms(chases).catch(() => undefined) }}
+            />
+          </OrganicConsoleShell>
+        )
+  }
+
+  /**
    * Chase several farms at once from the Operations Desk.
    *
    * ONE request per farm, listing that farm's outstanding matters — not one per
@@ -1106,8 +1172,7 @@ export default function App() {
         requestType: 'general',
         message: chase.missing.length === 1
           ? chase.missing[0]
-          : `DDP is waiting on ${chase.missing.length} items:\n` +
-            chase.missing.map(m => `\u2022 ${m}`).join('\n'),
+          : `DDP is waiting on ${chase.missing.length} items:\n${chase.missing.map(m => `\u2022 ${m}`).join('\n')}`,
         status: 'open',
         createdBy: currentProfile?.id ?? '',
         farmName: chase.farmName,
@@ -1808,59 +1873,9 @@ export default function App() {
           </>
         )
 
-        // The Operations Desk is the first screen rebuilt on the Organic design
-        // system, and that system brings its own console frame. It therefore
-        // REPLACES AdminShell here rather than nesting inside it — two sidebars
-        // is not a layout. Sign-out moves with it, because AdminShell is where
-        // sign-out otherwise lives.
-        //
-        // The console is visibly two styles while this is the only screen
-        // rebuilt. That is the accepted cost of piloting a design system on a
-        // real screen instead of a mock.
-        if (page === 'ddp-operations-desk' && isAdminRole) {
-          return (
-            <OrganicConsoleShell
-              page={page}
-              goTo={goTo}
-              onSignOut={handleSignOut}
-              signedInAs={
-                currentProfile
-                  ? `Signed in as ${currentProfile.displayName || currentProfile.email}`
-                  : 'Demo mode'
-              }
-              items={[
-                { page: 'ddp-overview', label: 'Overview' },
-                { page: 'ddp-operations-desk', label: 'Operations Desk' },
-                { page: 'ddp-access-requests', label: 'Supplier Enquiries' },
-                { page: 'ddp-buyer-provisioning', label: 'Buyers' },
-                { page: 'ddp-document-review', label: 'Evidence' },
-                { page: 'ddp-farms', label: 'Compliance' },
-                { page: 'ddp-master', label: 'Supply Ledger' },
-                { page: 'ddp-compliance-watchtower', label: 'Compliance Watchtower' },
-              ]}
-            >
-              <DDPOperationsDeskOrganic
-                // The same guarded admin view the old desk used: never a stale
-                // farmer-scoped subset, and null where a source failed so the
-                // screen can report the gap rather than imply an empty queue.
-                farms={deskData.farms}
-                inventory={deskData.inventory}
-                reviewRequests={deskReviewRequests.requests}
-                complianceAlerts={deskComplianceAlerts}
-                reviewRequestsLoading={deskReviewRequests.loading}
-                complianceLoading={!isDemo && (complianceLoadState === 'idle' || complianceLoadState === 'loading')}
-                farmInventoryLoading={!isDemo && (adminDataLoadState === 'idle' || adminDataLoadState === 'loading')}
-                farmInventoryFailed={!isDemo && adminDataLoadState === 'failed'}
-                onOpen={item => {
-                  if (item.destinationParams?.farmId) handleReviewFarm(item.destinationParams.farmId)
-                  else if (item.destinationParams?.itemId) handleReviewItem(item.destinationParams.itemId)
-                  else goTo(item.destinationPage)
-                }}
-                onChaseFarms={chases => { handleChaseFarms(chases).catch(() => undefined) }}
-              />
-            </OrganicConsoleShell>
-          )
-        }
+        // The Operations Desk renders in its own frame — see operationsDeskFrame
+        // below for why it replaces AdminShell rather than nesting inside it.
+        if (page === 'ddp-operations-desk' && isAdminRole) return operationsDeskFrame()
 
         // Identical routed content in both frames — only the surrounding chrome
         // differs, so no page's behaviour depends on which one is drawn.

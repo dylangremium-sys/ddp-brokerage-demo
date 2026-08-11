@@ -25,6 +25,13 @@ import type { FarmProfile, InventoryItem } from '../../types'
  *     chasing a farm must not silently re-open every batch it touches.
  */
 
+// These tests render the whole desk over the seeded queue, fourteen times, and
+// the suite runs files in parallel. Measured at ~23s for this file under load
+// against a 5s per-test default, so the waitFor deadlines below could never be
+// reached — the test timed out first. Raised together so a loaded machine is
+// tolerated; none of the assertions changed.
+vi.setConfig({ testTimeout: 30000 })
+
 afterEach(cleanup)
 
 /** Source text, read the way operationsDeskRouting.test.ts reads it. */
@@ -77,7 +84,7 @@ describe('the bulk chase counts farms, not rows', () => {
     expect(boxes.length).toBeGreaterThan(1)
     boxes.forEach(b => fireEvent.click(b))
 
-    await waitFor(() => expect(chaseButton().disabled).toBe(false))
+    await waitFor(() => expect(chaseButton().disabled).toBe(false), { timeout: 8000 })
     fireEvent.click(chaseButton())
 
     expect(onChase).toHaveBeenCalledTimes(1)
@@ -99,9 +106,9 @@ describe('the bulk chase counts farms, not rows', () => {
     const onChase = vi.fn()
     renderDesk(onChase)
     enabledBoxes().slice(0, 1).forEach(b => fireEvent.click(b))
-    await waitFor(() => expect(chaseButton().disabled).toBe(false))
+    await waitFor(() => expect(chaseButton().disabled).toBe(false), { timeout: 8000 })
     fireEvent.click(chaseButton())
-    await waitFor(() => expect(chaseButton().disabled).toBe(true))
+    await waitFor(() => expect(chaseButton().disabled).toBe(true), { timeout: 8000 })
     expect(chaseButton().textContent).toContain('Chase farms')
   })
 
@@ -111,7 +118,7 @@ describe('the bulk chase counts farms, not rows', () => {
   })
 
   it('is disabled when no chase handler is wired, rather than silently doing nothing', () => {
-    renderDesk(undefined)
+    renderDesk()
     expect(chaseButton().disabled).toBe(true)
   })
 })
@@ -130,7 +137,7 @@ describe('a matter with no farm on file cannot be chased', () => {
     const onChase = vi.fn<(c: FarmChase[]) => void>()
     renderDesk(onChase)
     enabledBoxes().forEach(b => fireEvent.click(b))
-    await waitFor(() => expect(chaseButton().disabled).toBe(false))
+    await waitFor(() => expect(chaseButton().disabled).toBe(false), { timeout: 8000 })
     fireEvent.click(chaseButton())
     for (const chase of onChase.mock.calls[0][0]) {
       expect(chase.farmProfileId).toBeTruthy()
@@ -153,13 +160,18 @@ describe('the chase written by App is farm-level, never batch-level', () => {
     // screen cannot be driven in a browser here. This pins the swap instead:
     // the Organic desk is rendered for that page, inside its own shell, and the
     // desk it replaced is no longer rendered anywhere.
-    expect(APP_SRC).toContain("if (page === 'ddp-operations-desk' && isAdminRole) {")
-    expect(APP_SRC).toContain('<OrganicConsoleShell')
-    expect(APP_SRC).toContain('<DDPOperationsDeskOrganic')
+    expect(APP_SRC).toContain("if (page === 'ddp-operations-desk' && isAdminRole) return operationsDeskFrame()")
+    const frame = APP_SRC.slice(
+      APP_SRC.indexOf('function operationsDeskFrame()'),
+      APP_SRC.indexOf('async function handleChaseFarms'),
+    )
+    expect(frame).toContain('<OrganicConsoleShell')
+    expect(frame).toContain('<DDPOperationsDeskOrganic')
+    // The desk it replaced is no longer rendered or even imported.
     expect(APP_SRC).not.toContain('<DDPOperationsDesk\n')
     expect(APP_SRC).not.toContain("import DDPOperationsDesk from")
     // Sign-out moves with the frame — AdminShell is where it otherwise lives.
-    expect(APP_SRC).toContain('onSignOut={handleSignOut}')
+    expect(frame).toContain('onSignOut={handleSignOut}')
   })
 
   it('keeps feeding the desk its source states, so a pending load is never an all-clear', () => {
@@ -206,5 +218,32 @@ describe('createReviewRequest persists the farm it was told about', () => {
 
   it('validates it as a UUID, exactly as it does for the batch id', () => {
     expect(fn).toContain('isValidUUID(req.farmProfileId)')
+  })
+})
+
+describe('a UUID is never shown as a farm name', () => {
+  // Measured in production: 11 of 24 matters rendered the farm as
+  // b1f4182c-3a2b-419b-b050-84609ac13492, and one as "BIG HAIRY ASS ·" — a
+  // dangling separator where the farm name should be.
+  it('replaces a bare UUID label with a plain statement, keeping the id as metadata', () => {
+    const orphanUuid = 'b1f4182c-3a2b-419b-b050-84609ac13492'
+    render(
+      <DDPOperationsDeskOrganic
+        farms={[{ id: orphanUuid, tradingName: '', status: 'Submitted to DDP' } as FarmProfile]}
+        inventory={[]}
+        reviewRequests={[]}
+        complianceAlerts={[]}
+        reviewRequestsLoading={false}
+        complianceLoading={false}
+        farmInventoryLoading={false}
+        farmInventoryFailed={false}
+        onOpen={() => undefined}
+      />,
+    )
+    // The farm raises several matters, so several rows carry the same label.
+    expect(screen.queryByText(orphanUuid)).toBeNull()
+    expect(screen.getAllByText(/no name on file/i).length).toBeGreaterThan(0)
+    // The identifier survives, truncated, so the row is still traceable.
+    expect(screen.getAllByText(/^b1f4182c/).length).toBeGreaterThan(0)
   })
 })
