@@ -80,9 +80,9 @@ export default function FarmerPortal({
   evidenceWaitingCount, openRequestsCount,
   onPrimary, onContact, onAddBatch, onSignOut, onGoTo,
 }: FarmerPortalProps) {
-  const t = T[lang]
+  const text = T[lang]
   const farm = farms[0]
-  const farmNamed = displayName(farm?.tradingName ?? '', t.portalNoName, farm?.id)
+  const farmNamed = displayName(farm?.tradingName ?? '', text.portalNoName, farm?.id)
 
   const completion = farm ? Math.max(farm.completionPct, calcCompletion(farm)) : 0
 
@@ -95,19 +95,18 @@ export default function FarmerPortal({
 
   /** Oldest open request, so the age shown is the age of the actual wait. */
   const ageDays = useMemo(() => {
-    const oldest = reviewRequests
+    const [oldest] = reviewRequests
       .filter(r => r.status === 'open')
-      .reduce<ReviewRequest | undefined>(
-        (found, r) => (!found || r.createdAt < found.createdAt ? r : found), undefined)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     return oldest ? daysOpen(oldest.createdAt) : null
   }, [reviewRequests])
 
   const checklist = useMemo(() => [
-    { key: 'documents' as const, label: t.portalCheckLicence, done: hasAnyLicence(farm) },
-    { key: 'documents' as const, label: t.portalCheckCoa, done: Boolean(farm?.coaFiles?.trim()) },
-    { key: 'profile' as const, label: t.portalCheckProfile, done: completion >= 60 },
-    { key: 'profile' as const, label: t.portalCheckStock, done: inventory.length > 0 },
-  ], [farm, completion, inventory.length, t])
+    { key: 'documents' as const, label: text.portalCheckLicence, done: hasAnyLicence(farm) },
+    { key: 'documents' as const, label: text.portalCheckCoa, done: Boolean(farm?.coaFiles?.trim()) },
+    { key: 'profile' as const, label: text.portalCheckProfile, done: completion >= 60 },
+    { key: 'profile' as const, label: text.portalCheckStock, done: inventory.length > 0 },
+  ], [farm, completion, inventory.length, text])
 
   const activity = useMemo(
     () => [...reviewRequests]
@@ -125,37 +124,22 @@ export default function FarmerPortal({
             Two shapes, because the spec asks for two: a plain account row on a
             phone, and the dark lockup pill at desk width. Both carry the same
             two things — who you are, and which language you are reading. */}
-        <div className="portal-header">
-          <div className="portal-header-phone">
-            <span style={{ fontWeight: 700, fontSize: 15 }}>{farmNamed.name}</span>
-            <LanguageSegment lang={lang} onLang={onLang} tone="light" />
-          </div>
-
-          <div className="portal-header-desk">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              <span aria-hidden="true" className="portal-mark">DDP</span>
-              <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--color-neutral-100)' }}>
-                {t.portalTitle}
-              </span>
-              <span className="portal-account">{accountLabel}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <LanguageSegment lang={lang} onLang={onLang} tone="dark" />
-              <button type="button" className="portal-signout" onClick={onSignOut}>
-                {t.portalSignOut}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PortalHeader
+          lang={lang}
+          onLang={onLang}
+          farmName={farmNamed.name}
+          accountLabel={accountLabel}
+          onSignOut={onSignOut}
+        />
 
         <div className="portal-main">
           {/* Page title — desk only. On a phone the blocking task is the title. */}
           <div className="portal-titleblock">
             <p style={{ fontSize: 15, color: 'var(--color-neutral-700)', margin: '0 0 8px' }}>
-              {t.portalToday}
+              {text.portalToday}
             </p>
             <h1 className="portal-title" style={{ fontSize: 46, lineHeight: 1.08, maxWidth: '22ch', margin: 0 }}>
-              {t.portalHeading}
+              {text.portalHeading}
             </h1>
           </div>
 
@@ -177,6 +161,46 @@ export default function FarmerPortal({
           <ContactCard lang={lang} onContact={onContact} />
           <ProfileChecklist lang={lang} completion={completion} rows={checklist} onGoTo={onGoTo} />
           <RecentActivity lang={lang} entries={activity} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Two header shapes, because the spec asks for two: a plain account row on a
+ * phone, and the dark lockup pill at desk width. Both carry the same two
+ * things — who you are, and which language you are reading. Which one shows is
+ * decided by the media query, not by this component.
+ */
+function PortalHeader({ lang, onLang, farmName, accountLabel, onSignOut }: {
+  lang: Lang
+  onLang: (lang: Lang) => void
+  farmName: string
+  accountLabel: string
+  onSignOut: () => void
+}) {
+  const text = T[lang]
+  return (
+    <div className="portal-header">
+      <div className="portal-header-phone">
+        <span style={{ fontWeight: 700, fontSize: 15 }}>{farmName}</span>
+        <LanguageSegment lang={lang} onLang={onLang} tone="light" />
+      </div>
+
+      <div className="portal-header-desk">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          <span aria-hidden="true" className="portal-mark">DDP</span>
+          <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--color-neutral-100)' }}>
+            {text.portalTitle}
+          </span>
+          <span className="portal-account">{accountLabel}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <LanguageSegment lang={lang} onLang={onLang} tone="dark" />
+          <button type="button" className="portal-signout" onClick={onSignOut}>
+            {text.portalSignOut}
+          </button>
         </div>
       </div>
     </div>
@@ -208,14 +232,14 @@ function BlockingTask({ lang, kind, ageDays, onPrimary, onContact }: {
   lang: Lang; kind: BlockingTaskKind; ageDays: number | null
   onPrimary: () => void; onContact: () => void
 }) {
-  const t = T[lang]
-  const copy = t.portalTask[kind]
+  const text = T[lang]
+  const copy = text.portalTask[kind]
   return (
     <section className="portal-task">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 12 }}>
         <span className="tag tag-accent" style={{ fontSize: 10.5 }}>{copy.tag}</span>
         {/* Identifiers and metadata in mono; absent is an em dash. */}
-        <span className="portal-age">{ageDays === null ? '—' : t.portalDaysOpen(ageDays)}</span>
+        <span className="portal-age">{ageDays === null ? '—' : text.portalDaysOpen(ageDays)}</span>
       </div>
       <h2 className="portal-task-title">{copy.title}</h2>
       <p className="portal-task-body">{copy.body}</p>
@@ -223,7 +247,7 @@ function BlockingTask({ lang, kind, ageDays, onPrimary, onContact }: {
           same width so the pair reads as a choice, not a button and a link. */}
       <div className="portal-actions">
         <button type="button" className="btn btn-primary" onClick={onPrimary}>{copy.cta}</button>
-        <button type="button" className="btn btn-secondary" onClick={onContact}>{t.portalMessageDdp}</button>
+        <button type="button" className="btn btn-secondary" onClick={onContact}>{text.portalMessageDdp}</button>
       </div>
     </section>
   )
@@ -232,16 +256,16 @@ function BlockingTask({ lang, kind, ageDays, onPrimary, onContact }: {
 function StockList({ lang, inventory, onAddBatch }: {
   lang: Lang; inventory: InventoryItem[]; onAddBatch: () => void
 }) {
-  const t = T[lang]
+  const text = T[lang]
   return (
     <section className="portal-card portal-stock">
-      <h3 className="portal-card-head">{t.portalYourStock}</h3>
+      <h3 className="portal-card-head">{text.portalYourStock}</h3>
       {inventory.length === 0 ? (
-        <p className="portal-empty">{t.portalNoStock}</p>
+        <p className="portal-empty">{text.portalNoStock}</p>
       ) : (
         inventory.map(item => {
           // A batch is not a farm — the same rule, the right noun.
-          const named = displayName(item.productName ?? '', t.portalNoBatchName, item.id)
+          const named = displayName(item.productName ?? '', text.portalNoBatchName, item.id)
           const state = stockState(item)
           return (
             <div className="stock-row" key={item.id}>
@@ -258,7 +282,7 @@ function StockList({ lang, inventory, onAddBatch }: {
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, justifyContent: 'flex-end' }}>
                 <span aria-hidden="true" className={`portal-dot portal-dot--${state}`} />
                 <span style={{ fontSize: 14, color: 'var(--color-neutral-700)' }}>
-                  {state === 'listed' ? t.portalListed : t.portalHeld}
+                  {state === 'listed' ? text.portalListed : text.portalHeld}
                 </span>
               </div>
             </div>
@@ -266,7 +290,7 @@ function StockList({ lang, inventory, onAddBatch }: {
         })
       )}
       <div className="portal-stock-foot">
-        <button type="button" className="btn btn-secondary" onClick={onAddBatch}>{t.portalAddBatch}</button>
+        <button type="button" className="btn btn-secondary" onClick={onAddBatch}>{text.portalAddBatch}</button>
       </div>
     </section>
   )
@@ -277,11 +301,11 @@ function ProfileChecklist({ lang, completion, rows, onGoTo }: {
   rows: Array<{ key: BlockingTaskKind; label: string; done: boolean }>
   onGoTo: (task: BlockingTaskKind) => void
 }) {
-  const t = T[lang]
+  const text = T[lang]
   return (
     <section className="portal-card portal-checklist">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-        <h3 className="portal-card-head" style={{ margin: 0 }}>{t.portalProfile}</h3>
+        <h3 className="portal-card-head" style={{ margin: 0 }}>{text.portalProfile}</h3>
         <span className="portal-pct">{completion}%</span>
       </div>
       <div className="portal-bar"><div className="portal-bar-fill" style={{ width: `${completion}%` }} /></div>
@@ -293,7 +317,7 @@ function ProfileChecklist({ lang, completion, rows, onGoTo }: {
           <span style={{ fontSize: 14.5 }}>{row.label}</span>
           {!row.done && (
             <button type="button" className="portal-link" onClick={() => onGoTo(row.key)}>
-              {t.portalAdd}
+              {text.portalAdd}
             </button>
           )}
         </div>
@@ -303,8 +327,8 @@ function ProfileChecklist({ lang, completion, rows, onGoTo }: {
 }
 
 function ContactCard({ lang, onContact }: { lang: Lang; onContact: () => void }) {
-  const t = T[lang]
-  const name = t.portalContactName
+  const text = T[lang]
+  const name = text.portalContactName
   return (
     <section className="portal-contact">
       <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
@@ -313,30 +337,30 @@ function ContactCard({ lang, onContact }: { lang: Lang; onContact: () => void })
         </span>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-accent-2-900)' }}>{name}</div>
-          <div style={{ fontSize: 13.5, color: 'var(--color-accent-2-900)' }}>{t.portalContactRole}</div>
+          <div style={{ fontSize: 13.5, color: 'var(--color-accent-2-900)' }}>{text.portalContactRole}</div>
         </div>
       </div>
       <button type="button" className="btn btn-secondary" style={{ width: '100%', marginTop: 14 }} onClick={onContact}>
-        {t.portalMessageDdp}
+        {text.portalMessageDdp}
       </button>
     </section>
   )
 }
 
 function RecentActivity({ lang, entries }: { lang: Lang; entries: ReviewRequest[] }) {
-  const t = T[lang]
+  const text = T[lang]
   return (
     <section className="portal-card">
-      <h3 className="portal-card-head">{t.portalActivity}</h3>
+      <h3 className="portal-card-head">{text.portalActivity}</h3>
       {entries.length === 0 ? (
-        <p className="portal-empty">{t.portalNoActivity}</p>
+        <p className="portal-empty">{text.portalNoActivity}</p>
       ) : (
         entries.map(entry => (
           <div className="portal-activity-row" key={entry.id}>
             <div style={{ fontSize: 14.5, lineHeight: 1.5, color: 'var(--color-neutral-800)' }}>
               {entry.message}
             </div>
-            <div className="portal-stamp">{t.portalWhen(entry.createdAt)}</div>
+            <div className="portal-stamp">{text.portalWhen(entry.createdAt)}</div>
           </div>
         ))
       )}
