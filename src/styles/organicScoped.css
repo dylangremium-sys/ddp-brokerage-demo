@@ -287,4 +287,22 @@ textarea.input { min-height: 90px; resize: vertical; }
 .input { padding-inline: 14px; }
 
 
+
+  /* ── Containment in the OTHER direction ──────────────────────────────────
+     Scoping stops Organic leaking out. It does not stop the app leaking IN.
+     App.css:41 sets `h1, h2, h3 { font-weight: 700; color: var(--text); }`, and
+     `--text` there is #EDF1F5 — near-white, for the dark navy shell. Organic's
+     own heading rule sets family and weight but NOT colour, so colour fell
+     through to App.css and every page title rendered near-white on sand:
+     invisible, and only visible as a bug once the screen was rendered.
+
+     The weight matters as much as the colour. Caprasimo ships weight 400 only;
+     a 700 leaking in makes the browser fake the bold, which smears the face.
+
+     Declared here rather than edited into the block above so this file still
+     diffs cleanly against the handoff's stylesheet. */
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--color-text);
+    font-weight: var(--font-heading-weight);
+  }
 }
