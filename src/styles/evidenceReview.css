@@ -1,0 +1,155 @@
+/*
+ * Evidence review — handoff screen 5, on the Organic design system.
+ * Scoped under .organic-scope so it cannot reach the rest of the product.
+ */
+
+.organic-scope {
+  & .ev {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 44px 48px 90px;
+    background: var(--color-bg);
+    min-height: 100vh;
+  }
+
+  /* Caprasimo ships weight 400 only; page titles are the one place it belongs. */
+  & .ev-title {
+    font-family: var(--font-heading);
+    font-weight: 400;
+    font-size: 40px;
+    line-height: 1.1;
+    margin: 0;
+  }
+  & .ev button, & .ev a, & .ev h2 { font-family: var(--font-body); }
+
+  & .ev-head {
+    display: flex; justify-content: space-between; align-items: start;
+    gap: 24px; flex-wrap: wrap; margin-bottom: 28px;
+  }
+  & .ev-head-text { min-width: 0; }
+  & .ev-eyebrow {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--color-neutral-600); margin: 0 0 12px;
+  }
+  /* Identifiers in mono, names in body type. */
+  & .ev-filename {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12.5px;
+    color: var(--color-neutral-600); margin: 8px 0 0; word-break: break-all;
+  }
+
+  & .ev-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 28px; align-items: start; }
+  & .ev-rail { display: grid; gap: 20px; align-content: start; }
+
+  & .ev-preview {
+    background: var(--color-neutral-100); border-radius: var(--radius-lg);
+    overflow: hidden; box-shadow: var(--shadow-sm);
+  }
+  & .ev-preview-body { height: 520px; background: var(--color-surface); }
+  & .ev-frame { width: 100%; height: 100%; border: 0; display: block; }
+  & .ev-preview-empty {
+    height: 100%; display: grid; place-content: center; justify-items: center;
+    gap: 16px; padding: 24px; text-align: center;
+  }
+  & .ev-opened {
+    margin: 0; padding: 10px 26px;
+    background: var(--color-accent-2-200); color: var(--color-accent-2-900);
+    font-size: 13px; font-weight: 600;
+  }
+  & .ev-preview-foot {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    flex-wrap: wrap; padding: 18px 26px; font-size: 13px;
+    color: var(--color-neutral-700); border-top: 1px solid var(--color-neutral-200);
+  }
+  & .ev-preview-foot code { font-family: 'IBM Plex Mono', monospace; word-break: break-all; }
+
+  & .ev-history { padding: 0 26px 20px; display: grid; gap: 14px; }
+  & .ev-history-row { display: grid; gap: 2px; font-size: 14px; padding-top: 12px; border-top: 1px solid var(--color-neutral-200); }
+  & .ev-stamp { font-size: 12.5px; color: var(--color-neutral-600); }
+  & .ev-quote { font-size: 13.5px; color: var(--color-neutral-700); }
+
+  & .ev-card {
+    background: var(--color-neutral-100); border-radius: var(--radius-lg);
+    padding: 26px 28px; box-shadow: var(--shadow-sm);
+  }
+  & .ev-card-head { font-size: 17px; font-weight: 700; margin: 0 0 8px; }
+
+  & .ev-fact {
+    display: flex; justify-content: space-between; gap: 18px;
+    padding: 11px 0; border-top: 1px solid var(--color-neutral-200);
+  }
+  & .ev-fact-label { font-size: 14px; color: var(--color-neutral-600); flex: 0 0 auto; }
+  & .ev-fact-value { font-size: 14px; font-weight: 500; text-align: right; min-width: 0; word-break: break-word; }
+  & .ev-mono { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
+
+  & .ev-question { background: var(--color-accent-100); border-radius: var(--radius-lg); padding: 24px 26px; }
+  & .ev-question-label {
+    font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--color-accent-800); margin: 0 0 10px;
+  }
+  & .ev-question-body { font-size: 14.5px; line-height: 1.6; color: var(--color-accent-900); margin: 0 0 12px; }
+  & .ev-caveat { font-size: 13px; line-height: 1.55; color: var(--color-accent-800); margin: 0; }
+
+  & .ev-label { display: block; font-size: 13.5px; font-weight: 600; margin: 14px 0 6px; }
+  & .ev-textarea {
+    width: 100%; border-radius: var(--radius-md); background: var(--color-bg);
+    border: 1px solid var(--color-neutral-300); padding: 12px 14px;
+    font-family: var(--font-body); font-size: 14.5px; line-height: 1.5; resize: vertical;
+  }
+
+  /* Equal weight. Accept filled sage, Reject outlined terracotta — same size,
+     same padding, same radius, so neither reads as the default. */
+  & .ev-decide { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  & .ev-accept, & .ev-reject {
+    border-radius: 999px; padding: 15px 30px; font-size: 15px; font-weight: 600;
+    font-family: var(--font-body); cursor: pointer; border: 1px solid transparent;
+  }
+  & .ev-accept { background: var(--color-accent-2-600); color: var(--color-neutral-100); }
+  & .ev-reject { background: var(--color-neutral-100); color: var(--color-accent-700); border-color: var(--color-accent-700); }
+  & .ev-accept:disabled, & .ev-reject:disabled { opacity: .45; cursor: not-allowed; }
+
+  & .ev-gate { font-size: 13px; line-height: 1.6; color: var(--color-neutral-700); margin: 12px 0 0; }
+
+  & .ev-links { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+  & .ev-link {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font-family: var(--font-body); font-size: 13px; font-weight: 600;
+    color: var(--color-accent-700); text-decoration: underline;
+  }
+  & .ev-link:disabled { opacity: .45; cursor: not-allowed; }
+
+  & .ev-muted { color: var(--color-neutral-700); font-size: 14.5px; margin: 0; }
+  & .ev-alert {
+    background: var(--color-accent-100); color: var(--color-accent-900);
+    border-radius: var(--radius-md); padding: 18px 22px; font-size: 14.5px; line-height: 1.55;
+  }
+  & .ev-alert-inline {
+    background: var(--color-accent-100); color: var(--color-accent-900);
+    border-radius: var(--radius-md); padding: 12px 16px; font-size: 13.5px;
+    line-height: 1.5; margin: 12px 0 0;
+  }
+
+  & .ev-queue { display: grid; gap: 8px; margin-top: 28px; }
+  & .ev-queue-item {
+    display: flex; justify-content: space-between; gap: 16px; align-items: center;
+    background: var(--color-neutral-100); border: 1px solid var(--color-neutral-200);
+    border-radius: var(--radius-md); padding: 14px 20px; cursor: pointer;
+    font-family: var(--font-body); font-size: 14.5px; text-align: left;
+  }
+  & .ev-queue-item.is-current { background: var(--color-accent-100); border-color: var(--color-accent-300); }
+  & .ev-queue-meta { font-size: 12.5px; color: var(--color-neutral-600); flex: 0 0 auto; }
+}
+
+/* At the 1280px cap the two columns are at their tightest; below it they stack
+   rather than squeeze the document preview into a letterbox. */
+@media (max-width: 1080px) {
+  .organic-scope {
+    & .ev { padding: 32px 20px 72px; }
+    & .ev-grid { grid-template-columns: 1fr; }
+    & .ev-title { font-size: 32px; }
+  }
+}
+
+.organic-scope {
+  & .ev-fact-label { display: grid; gap: 3px; }
+  & .ev-fact-hint { font-size: 12.5px; line-height: 1.45; color: var(--color-neutral-600); max-width: 34ch; }
+}

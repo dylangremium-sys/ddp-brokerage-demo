@@ -99,7 +99,7 @@ import AdminNav from './components/admin/AdminNav'
 import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import DDPBuyerProvisioning from './pages/admin/DDPBuyerProvisioning'
-import DDPDocumentReview from './pages/admin/DDPDocumentReview'
+import DDPEvidenceReview from './pages/admin/DDPEvidenceReview'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 import { FARMER_PORTAL_DEFAULT_LANGUAGE, initialLanguage, storeLanguage } from './lib/languagePreference'
@@ -1880,7 +1880,13 @@ export default function App() {
               real boundary (migration 34 `admin read` / `admin triage`). */}
           {page === 'ddp-access-requests' && isAdminRole && <DDPAccessRequests />}
           {page === 'ddp-buyer-provisioning' && isAdminRole && <DDPBuyerProvisioning />}
-          {page === 'ddp-document-review' && isAdminRole && <DDPDocumentReview />}
+          {/* The evidence screen brings the Organic system with it, and takes the
+              admin inventory so it can name the batch a certificate is filed
+              against — the contradiction between that and the sample the report
+              names is why most of these are in the queue. */}
+          {page === 'ddp-document-review' && isAdminRole && (
+            <DDPEvidenceReview inventory={deskData.inventory ?? []} />
+          )}
 
           {/* The Operations Desk renders in its own frame below, outside
               AdminShell, because it brings the Organic console shell with it.
