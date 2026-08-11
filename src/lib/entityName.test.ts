@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { daysOpen, displayName, shortIdentifier } from './entityName'
-import {
-  FARMER_PORTAL_FALLBACK_LANGUAGE, initialLanguage,
-} from './languagePreference'
+import { initialLanguage } from './languagePreference'
 
 /**
  * Standing rule 4: identifiers in mono, names in body type, and a UUID must
@@ -75,23 +73,29 @@ describe('daysOpen', () => {
   })
 })
 
-describe('the farm portal opens in Thai', () => {
+describe('the farm portal has its own opening language', () => {
   const storage = (value: string | null): Storage => ({
     getItem: () => value, setItem: () => undefined, removeItem: () => undefined,
     clear: () => undefined, key: () => null, length: 0,
   })
 
-  it('falls back to Thai on the portal and English elsewhere', () => {
-    expect(initialLanguage(storage(null), [], FARMER_PORTAL_FALLBACK_LANGUAGE)).toBe('th')
+  // Both settings are covered, so flipping FARMER_PORTAL_DEFAULT_LANGUAGE to
+  // 'th' after the copy review is a one-value change with a test already behind
+  // it, not a change that needs new tests written under time pressure.
+  it('uses whichever fallback it is given', () => {
+    expect(initialLanguage(storage(null), [], 'th')).toBe('th')
+    expect(initialLanguage(storage(null), [], 'en')).toBe('en')
     expect(initialLanguage(storage(null), [])).toBe('en')
   })
 
   it('never overrides a choice the farmer already made', () => {
     // Someone who picked English on a Thai handset meant it.
-    expect(initialLanguage(storage('en'), ['th-TH'], FARMER_PORTAL_FALLBACK_LANGUAGE)).toBe('en')
+    expect(initialLanguage(storage('en'), ['th-TH'], 'th')).toBe('en')
   })
 
   it('still prefers the handset over the fallback', () => {
-    expect(initialLanguage(storage(null), ['en-GB'], FARMER_PORTAL_FALLBACK_LANGUAGE)).toBe('en')
+    // A Thai phone gets Thai whatever the fallback is set to.
+    expect(initialLanguage(storage(null), ['th-TH'], 'en')).toBe('th')
+    expect(initialLanguage(storage(null), ['en-GB'], 'th')).toBe('en')
   })
 })

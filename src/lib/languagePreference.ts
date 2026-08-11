@@ -28,14 +28,27 @@ const SUPPORTED: readonly Lang[] = ['en', 'th']
 export const FALLBACK_LANGUAGE: Lang = 'en'
 
 /**
- * The farm portal opens in Thai.
+ * What the farm portal opens in when nothing else decides.
  *
- * Its readers are Thai farms; English is the surprising choice there, not the
- * safe one. This changes the LAST RESORT only — an explicit stored choice still
- * wins, and so does the handset's own preference, so a farmer who picked
- * English keeps English and a Thai handset was already getting Thai.
+ * INTENDED VALUE: 'th'. Its readers are Thai farms, and English is the
+ * surprising choice there, not the safe one.
+ *
+ * HELD AT 'en' UNTIL THE THAI COPY IS PROOFREAD. The portal's Thai strings were
+ * drafted for tone and length — the same caveat the design handoff makes about
+ * its own — and no native speaker has read them. Making unreviewed Thai the
+ * default is a decision about what suppliers are shown, so it waits for the
+ * review rather than riding along with a layout fix. Owner's call, taken
+ * 2026-08-11.
+ *
+ * TO FLIP IT: change this one value to 'th'. Nothing else needs to move —
+ * languagePreference.test.ts covers both settings, and the Thai strings are
+ * already in translations.ts.
+ *
+ * Note this only ever decides the LAST RESORT. A stored choice wins over it,
+ * and so does the handset's own language — so a Thai phone was already getting
+ * Thai before this constant existed, and still is.
  */
-export const FARMER_PORTAL_FALLBACK_LANGUAGE: Lang = 'th'
+export const FARMER_PORTAL_DEFAULT_LANGUAGE: Lang = 'en'
 
 export function isSupportedLanguage(value: unknown): value is Lang {
   return typeof value === 'string' && (SUPPORTED as readonly string[]).includes(value)

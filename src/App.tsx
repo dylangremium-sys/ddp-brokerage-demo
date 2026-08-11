@@ -102,7 +102,7 @@ import DDPBuyerProvisioning from './pages/admin/DDPBuyerProvisioning'
 import DDPDocumentReview from './pages/admin/DDPDocumentReview'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
-import { FARMER_PORTAL_FALLBACK_LANGUAGE, initialLanguage, storeLanguage } from './lib/languagePreference'
+import { FARMER_PORTAL_DEFAULT_LANGUAGE, initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
 import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
 import { applyPublicPageMetadata, metadataForPage } from './lib/publicPageMetadata'
@@ -143,14 +143,15 @@ export default function App() {
   // hardcoded 'en' that was never persisted, so a Thai farm scanning the QR
   // code landed on an English form with no way to change it — see
   // lib/languagePreference.ts.
-  // The farm portal opens in Thai; everywhere else opens in English. Only the
-  // LAST RESORT differs — a stored choice and the handset's own preference both
-  // still win, so nobody's explicit choice is overridden.
+  // The farm portal has its own opening language, held at English until its
+  // Thai has been proofread — see FARMER_PORTAL_DEFAULT_LANGUAGE. Only the LAST
+  // RESORT differs; a stored choice and the handset's own preference both still
+  // win, so nobody's explicit choice is overridden either way.
   const [lang, setLangState] = useState<Lang>(() => initialLanguage(
     undefined,
     undefined,
     FARMER_PAGES.includes(getInitialPageFromPath(window.location.pathname) ?? 'landing')
-      ? FARMER_PORTAL_FALLBACK_LANGUAGE
+      ? FARMER_PORTAL_DEFAULT_LANGUAGE
       : undefined,
   ))
   const setLang = useCallback((next: Lang) => {
