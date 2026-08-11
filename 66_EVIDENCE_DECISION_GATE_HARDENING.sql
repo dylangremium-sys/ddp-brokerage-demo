@@ -163,6 +163,29 @@ AS $$
 DECLARE
   deciding_reviewer uuid := auth.uid();
 BEGIN
+  -- ── INSERT: a document may only ARRIVE undecided. ─────────────────────────
+  -- Every trigger on this table was UPDATE-only, which left the whole gate
+  -- addressable by creating the row already decided instead of deciding on it.
+  -- Measured on staging before this clause existed: a document could be
+  -- INSERTed as 'accepted' with the reason "x", with reviewed_by chosen by the
+  -- caller rather than taken from the session, and with ZERO rows in
+  -- farmer_document_reviews — a decided document with no record of any
+  -- decision, which is precisely the artefact this screen exists to make
+  -- impossible.
+  --
+  -- Refused outright rather than gated, because the gate cannot be satisfied at
+  -- INSERT time even in principle: an open references the document, so it
+  -- cannot exist before the document does. A document enters the register
+  -- undecided and is decided by an UPDATE, which is the path that is gated.
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.review_status IS DISTINCT FROM 'pending' THEN
+      RAISE EXCEPTION
+        'A document must be created undecided. Insert it as pending and record the decision, so the decision has a reviewer, a reason and an open behind it.'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+
   -- Only a change of review status is a decision. Every other update to a
   -- document row passes through untouched.
   IF NEW.review_status IS NOT DISTINCT FROM OLD.review_status THEN
@@ -214,7 +237,7 @@ COMMENT ON FUNCTION public.enforce_evidence_decision_gate() IS
 -- "farmer_documents_enforce_..." sorts before "farmer_documents_set_reviewer".
 DROP TRIGGER IF EXISTS farmer_documents_enforce_decision_gate ON public.farmer_documents;
 CREATE TRIGGER farmer_documents_enforce_decision_gate
-  BEFORE UPDATE ON public.farmer_documents
+  BEFORE INSERT OR UPDATE ON public.farmer_documents
   FOR EACH ROW EXECUTE FUNCTION public.enforce_evidence_decision_gate();
 
 -- ─────────────────────────────────────────────────────────────────────────────

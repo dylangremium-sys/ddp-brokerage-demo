@@ -31,6 +31,18 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED: the decision-gate trigger is not attached';
   END IF;
 
+  -- It must cover INSERT as well as UPDATE. tgtype bit 2 (value 4) is INSERT,
+  -- bit 4 (value 16) is UPDATE. A gate that only watches UPDATE can be walked
+  -- around by creating the row already decided.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+     WHERE tgrelid='public.farmer_documents'::regclass
+       AND tgname='farmer_documents_enforce_decision_gate'
+       AND (tgtype & 4) = 4 AND (tgtype & 16) = 16
+  ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED: the decision gate does not cover both INSERT and UPDATE';
+  END IF;
+
   -- The gate must fire BEFORE the reviewer is set, or a refused decision has
   -- already derived values from itself. Alphabetical order within a timing
   -- class is what guarantees this, so it is asserted rather than assumed.
@@ -141,7 +153,23 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED: one character repeated was accepted as a reason';
   END IF;
 
-  RAISE NOTICE 'VERIFY PASSED: the gate refused an unopened decision and a thin reason.';
+  -- (c) A document may not ARRIVE decided. Without this the whole gate is
+  -- addressable by creating the row already accepted instead of deciding on it.
+  v_failed := false;
+  BEGIN
+    INSERT INTO public.farmer_documents
+      (farm_id, document_type, file_name, review_status, review_note, reviewed_by, reviewed_at)
+    SELECT farm_id, 'coa', 'gate-verify-insert.pdf', 'accepted',
+           'Gate verification: this insert is expected to be refused.', v_actor, now()
+      FROM public.farmer_documents WHERE id = v_doc;
+  EXCEPTION WHEN check_violation THEN
+    v_failed := true;
+  END;
+  IF NOT v_failed THEN
+    RAISE EXCEPTION 'VERIFY FAILED: a document was inserted already decided';
+  END IF;
+
+  RAISE NOTICE 'VERIFY PASSED: the gate refused an unopened decision, a thin reason, and an already-decided insert.';
   -- Nothing is committed: the caller runs this inside a transaction it rolls
   -- back, and the runbook says so.
 END
