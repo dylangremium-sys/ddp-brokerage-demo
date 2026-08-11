@@ -1436,7 +1436,12 @@ export default function App() {
     <div className="app">
 
       {/* ── Navbar (all non-landing pages; the editorial shell draws its own) ── */}
-      {!useEditorialShell && !PUBLIC_PAGES.includes(page) && (
+      {/* The farm portal draws its own lockup — the one that REPLACES the
+          collided "BROKERAGEFARMER" wordmark and the seven wrapping nav labels
+          (both still live at desk width today, verified signed in as a farm).
+          Rendering this navbar above it would stack two headers, which is what
+          looking at the real screen caught before it shipped. */}
+      {!useEditorialShell && page !== 'farmer-dashboard' && !PUBLIC_PAGES.includes(page) && (
         <nav className="navbar">
           <div
             className="navbar-brand"

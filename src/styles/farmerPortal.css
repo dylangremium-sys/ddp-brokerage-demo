@@ -58,6 +58,10 @@
     padding: 16px;
     min-height: 100vh;
     background: var(--color-bg);
+    /* The farmer's bottom tab bar is fixed and 62px tall plus the home
+       indicator, and it is still rendered on this page — verified signed in as
+       a farm. Without this the last card sits underneath it. */
+    padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px));
   }
 
   /* The rail exists in the markup at every width; below the breakpoint it
@@ -257,6 +261,7 @@
 @media (min-width: 900px) {
   .organic-scope {
     & .portal {
+      padding-bottom: 90px;
       max-width: 1180px;
       grid-template-columns: 1fr 430px;
       gap: 48px;
