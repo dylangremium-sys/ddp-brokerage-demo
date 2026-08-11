@@ -9,6 +9,7 @@ import {
 } from '../../lib/db'
 import type { FarmerDocument, DocumentReviewStatus, DocumentReviewEvent } from '../../types'
 import { isBlank, resolveDocumentDecisionGate } from '../../lib/documentReviewGate'
+import type { DocumentDecisionGate } from '../../lib/documentReviewGate'
 
 /**
  * Evidence review — the administrator's queue for documents farms have uploaded.
@@ -85,6 +86,133 @@ function formatWhen(iso?: string): string {
   if (!iso) return '—'
   const parsed = new Date(iso)
   return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString()
+}
+
+
+/**
+ * Everything below the reason box on one document: read, decide, withdraw, and
+ * the line that says which condition is still outstanding.
+ *
+ * Extracted from the card so the card's own renderer stays legible. It is a
+ * presentation component with no state and no data access — every decision it
+ * can express is already resolved by `resolveDocumentDecisionGate` and handed
+ * in, so reading this tells you what the operator sees, not when they may act.
+ */
+function DecisionControls({
+  doc, gate, opened, recording, reasonBlank, historyShown,
+  onOpen, onDecide, onToggleHistory,
+}: {
+  doc: FarmerDocument
+  gate: DocumentDecisionGate
+  opened: boolean
+  recording: boolean
+  reasonBlank: boolean
+  historyShown: boolean
+  onOpen: () => void
+  onDecide: (status: DocumentReviewStatus) => void
+  onToggleHistory: () => void
+}) {
+  const busyLabel = (label: string) => (recording ? 'Recording…' : label)
+
+  return (
+    <>
+      {/* Read first. The document leads, and is the only control here that is
+          live before the gate opens. */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={!doc.storagePath}
+          onClick={onOpen}
+        >
+          {opened ? 'Open document again' : 'Open document'}
+        </button>
+      </div>
+
+      {/* Accept and Reject at equal weight, side by side. Accept was the only
+          filled button in a row of five, which made the fastest click on the
+          page the irreversible one. btn-approve/btn-reject are the pair already
+          used by DDPInventoryReview and DDPFarmReview — same size, same
+          prominence, different meaning — so this screen now matches its siblings
+          instead of inventing a hierarchy. width:auto because those classes are
+          authored for a stacked card column, and this is a row. */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {doc.reviewStatus !== 'accepted' && (
+          <button
+            type="button"
+            className="btn btn-approve"
+            style={{ width: 'auto', marginBottom: 0, ...gatedStyle(gate.allowed) }}
+            disabled={!gate.allowed}
+            onClick={() => onDecide('accepted')}
+          >
+            {busyLabel('Accept')}
+          </button>
+        )}
+
+        {doc.reviewStatus !== 'rejected' && (
+          <button
+            type="button"
+            className="btn btn-reject"
+            style={{ width: 'auto', marginBottom: 0, ...gatedStyle(gate.allowed) }}
+            disabled={!gate.allowed}
+            onClick={() => onDecide('rejected')}
+          >
+            {busyLabel('Reject')}
+          </button>
+        )}
+
+        {doc.reviewStatus !== 'awaiting_clarification' && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={gatedStyle(gate.allowed)}
+            disabled={!gate.allowed}
+            // The reasoned non-decision. Before migration 65 an administrator
+            // who could responsibly neither accept nor reject had no way to
+            // record that they had looked at all. Gated with the other two: its
+            // recorded meaning asserts the document "was reviewed", which is
+            // exactly the claim the read condition exists to make true.
+            title={STATUS_MEANING.awaiting_clarification}
+            onClick={() => onDecide('awaiting_clarification')}
+          >
+            {busyLabel('Awaiting clarification')}
+          </button>
+        )}
+      </div>
+
+      {/* The gate states itself in every state, rather than leaving a disabled
+          button to be read as a broken one. */}
+      <div className="muted" style={{ fontSize: '0.8em', marginTop: 8 }} aria-live="polite">
+        {gate.note}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+        {doc.reviewStatus !== 'pending' && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            // Reason only, deliberately NOT behind the read gate. This withdraws
+            // a decision rather than recording one, and the commonest cause is
+            // realising the document cannot be relied on — which does not
+            // require opening it again. Do not "fix" this into gate.allowed.
+            disabled={recording || reasonBlank}
+            // Returning a document to the queue clears its CURRENT reviewer, so
+            // nobody stays named as responsible for a decision that no longer
+            // stands. It does not erase the history: migration 65 records the
+            // return as its own event, with its own reason and its own named
+            // actor.
+            onClick={() => onDecide('pending')}
+          >
+            Return to queue
+          </button>
+        )}
+
+        <button type="button" className="btn btn-ghost" onClick={onToggleHistory}>
+          {historyShown ? 'Hide review history' : 'Show review history'}
+        </button>
+      </div>
+    </>
+  )
 }
 
 export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<string, string> }) {
@@ -370,112 +498,17 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
                 </div>
               </div>
 
-              {/* Read first. The document leads the row, and is the only control
-                  here that is live before the gate opens. */}
-              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={!doc.storagePath}
-                  onClick={() => { openDocument(doc).catch(() => undefined) }}
-                >
-                  {openedIds.has(doc.id) ? 'Open document again' : 'Open document'}
-                </button>
-              </div>
-
-              {/* Accept and Reject at equal weight, side by side. Accept was the
-                  only filled button in a row of five, which made the fastest
-                  click on the page the irreversible one. btn-approve/btn-reject
-                  are the pair already used by DDPInventoryReview and
-                  DDPFarmReview — same size, same prominence, different meaning —
-                  so this screen now matches its siblings instead of inventing a
-                  hierarchy. width:auto because those classes are authored for a
-                  stacked card column, and this is a row. */}
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                {doc.reviewStatus !== 'accepted' && (
-                  <button
-                    type="button"
-                    className="btn btn-approve"
-                    style={{ width: 'auto', marginBottom: 0, ...gatedStyle(gate.allowed) }}
-                    disabled={!gate.allowed}
-                    onClick={() => { decide(doc, 'accepted').catch(() => undefined) }}
-                  >
-                    {busyId === doc.id ? 'Recording…' : 'Accept'}
-                  </button>
-                )}
-
-                {doc.reviewStatus !== 'rejected' && (
-                  <button
-                    type="button"
-                    className="btn btn-reject"
-                    style={{ width: 'auto', marginBottom: 0, ...gatedStyle(gate.allowed) }}
-                    disabled={!gate.allowed}
-                    onClick={() => { decide(doc, 'rejected').catch(() => undefined) }}
-                  >
-                    {busyId === doc.id ? 'Recording…' : 'Reject'}
-                  </button>
-                )}
-
-                {doc.reviewStatus !== 'awaiting_clarification' && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={gatedStyle(gate.allowed)}
-                    disabled={!gate.allowed}
-                    // The reasoned non-decision. Before migration 65 an
-                    // administrator who could responsibly neither accept nor
-                    // reject had no way to record that they had looked at all.
-                    // Gated with the other two: its recorded meaning asserts the
-                    // document "was reviewed", which is exactly the claim the
-                    // read condition exists to make true.
-                    title={STATUS_MEANING.awaiting_clarification}
-                    onClick={() => { decide(doc, 'awaiting_clarification').catch(() => undefined) }}
-                  >
-                    {busyId === doc.id ? 'Recording…' : 'Awaiting clarification'}
-                  </button>
-                )}
-              </div>
-
-              {/* The gate states itself in every state, rather than leaving a
-                  disabled button to be read as a broken one. */}
-              <div
-                className="muted"
-                style={{ fontSize: '0.8em', marginTop: 8 }}
-                aria-live="polite"
-              >
-                {gate.note}
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                {doc.reviewStatus !== 'pending' && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    // Reason only, deliberately NOT behind the read gate. This
-                    // withdraws a decision rather than recording one, and the
-                    // commonest cause is realising the document cannot be relied
-                    // on — which does not require opening it again. Do not
-                    // "fix" this into gate.allowed.
-                    disabled={busyId === doc.id || isBlank(notes[doc.id] ?? '')}
-                    // Returning a document to the queue clears its CURRENT
-                    // reviewer, so nobody stays named as responsible for a
-                    // decision that no longer stands. It does not erase the
-                    // history: migration 65 records the return as its own event,
-                    // with its own reason and its own named actor.
-                    onClick={() => { decide(doc, 'pending').catch(() => undefined) }}
-                  >
-                    Return to queue
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => { toggleHistory(doc.id).catch(() => undefined) }}
-                >
-                  {historyOpen[doc.id] ? 'Hide review history' : 'Show review history'}
-                </button>
-              </div>
+              <DecisionControls
+                doc={doc}
+                gate={gate}
+                opened={openedIds.has(doc.id)}
+                recording={busyId === doc.id}
+                reasonBlank={isBlank(notes[doc.id] ?? '')}
+                historyShown={Boolean(historyOpen[doc.id])}
+                onOpen={() => { openDocument(doc).catch(() => undefined) }}
+                onDecide={status => { decide(doc, status).catch(() => undefined) }}
+                onToggleHistory={() => { toggleHistory(doc.id).catch(() => undefined) }}
+              />
 
               {historyOpen[doc.id] && (
                 <div style={{ marginTop: 12, fontSize: '0.85em' }}>
