@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { runGuardedLoad } from '../../lib/asyncLoadGuard'
 import {
   loadFarmerDocuments,
@@ -7,6 +8,8 @@ import {
   getCoaSignedUrl,
 } from '../../lib/db'
 import type { FarmerDocument, DocumentReviewStatus, DocumentReviewEvent } from '../../types'
+import { isBlank, resolveDocumentDecisionGate } from '../../lib/documentReviewGate'
+import type { DocumentDecisionGate } from '../../lib/documentReviewGate'
 
 /**
  * Evidence review — the administrator's queue for documents farms have uploaded.
@@ -53,9 +56,23 @@ const STATUS_MEANING: Record<DocumentReviewStatus, string> = {
   rejected: 'A named administrator examined this document and will not rely on it.',
 }
 
-/** A note of only whitespace is not a reason. Mirrors the database's test exactly. */
-function isBlank(note: string): boolean {
-  return !/[^\s]/.test(note ?? '')
+/**
+ * How a gated control looks while the gate is shut.
+ *
+ * `.btn` carries no `:disabled` rule anywhere in this stylesheet, so a disabled
+ * button renders identically to a live one. That was survivable when nothing on
+ * this screen was gated for long; it is not survivable now that the read
+ * condition is the point. An operator who cannot see that Accept is unavailable
+ * clicks it, gets nothing, and concludes the screen is broken.
+ *
+ * Applied inline rather than as a `.btn:disabled` rule because that rule would
+ * silently restyle every disabled button in the product, which is a wider change
+ * than this one should make. The gap is worth closing globally — separately.
+ */
+function gatedStyle(allowed: boolean): CSSProperties {
+  return allowed
+    ? {}
+    : { opacity: 0.45, cursor: 'not-allowed', filter: 'grayscale(0.4)' }
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -69,6 +86,133 @@ function formatWhen(iso?: string): string {
   if (!iso) return '—'
   const parsed = new Date(iso)
   return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString()
+}
+
+
+/**
+ * Everything below the reason box on one document: read, decide, withdraw, and
+ * the line that says which condition is still outstanding.
+ *
+ * Extracted from the card so the card's own renderer stays legible. It is a
+ * presentation component with no state and no data access — every decision it
+ * can express is already resolved by `resolveDocumentDecisionGate` and handed
+ * in, so reading this tells you what the operator sees, not when they may act.
+ */
+function DecisionControls({
+  doc, gate, opened, recording, reasonBlank, historyShown,
+  onOpen, onDecide, onToggleHistory,
+}: {
+  doc: FarmerDocument
+  gate: DocumentDecisionGate
+  opened: boolean
+  recording: boolean
+  reasonBlank: boolean
+  historyShown: boolean
+  onOpen: () => void
+  onDecide: (status: DocumentReviewStatus) => void
+  onToggleHistory: () => void
+}) {
+  const busyLabel = (label: string) => (recording ? 'Recording…' : label)
+
+  return (
+    <>
+      {/* Read first. The document leads, and is the only control here that is
+          live before the gate opens. */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={!doc.storagePath}
+          onClick={onOpen}
+        >
+          {opened ? 'Open document again' : 'Open document'}
+        </button>
+      </div>
+
+      {/* Accept and Reject at equal weight, side by side. Accept was the only
+          filled button in a row of five, which made the fastest click on the
+          page the irreversible one. btn-approve/btn-reject are the pair already
+          used by DDPInventoryReview and DDPFarmReview — same size, same
+          prominence, different meaning — so this screen now matches its siblings
+          instead of inventing a hierarchy. width:auto because those classes are
+          authored for a stacked card column, and this is a row. */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {doc.reviewStatus !== 'accepted' && (
+          <button
+            type="button"
+            className="btn btn-approve"
+            style={{ width: 'auto', marginBottom: 0, ...gatedStyle(gate.allowed) }}
+            disabled={!gate.allowed}
+            onClick={() => onDecide('accepted')}
+          >
+            {busyLabel('Accept')}
+          </button>
+        )}
+
+        {doc.reviewStatus !== 'rejected' && (
+          <button
+            type="button"
+            className="btn btn-reject"
+            style={{ width: 'auto', marginBottom: 0, ...gatedStyle(gate.allowed) }}
+            disabled={!gate.allowed}
+            onClick={() => onDecide('rejected')}
+          >
+            {busyLabel('Reject')}
+          </button>
+        )}
+
+        {doc.reviewStatus !== 'awaiting_clarification' && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={gatedStyle(gate.allowed)}
+            disabled={!gate.allowed}
+            // The reasoned non-decision. Before migration 65 an administrator
+            // who could responsibly neither accept nor reject had no way to
+            // record that they had looked at all. Gated with the other two: its
+            // recorded meaning asserts the document "was reviewed", which is
+            // exactly the claim the read condition exists to make true.
+            title={STATUS_MEANING.awaiting_clarification}
+            onClick={() => onDecide('awaiting_clarification')}
+          >
+            {busyLabel('Awaiting clarification')}
+          </button>
+        )}
+      </div>
+
+      {/* The gate states itself in every state, rather than leaving a disabled
+          button to be read as a broken one. */}
+      <div className="muted" style={{ fontSize: '0.8em', marginTop: 8 }} aria-live="polite">
+        {gate.note}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+        {doc.reviewStatus !== 'pending' && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            // Reason only, deliberately NOT behind the read gate. This withdraws
+            // a decision rather than recording one, and the commonest cause is
+            // realising the document cannot be relied on — which does not
+            // require opening it again. Do not "fix" this into gate.allowed.
+            disabled={recording || reasonBlank}
+            // Returning a document to the queue clears its CURRENT reviewer, so
+            // nobody stays named as responsible for a decision that no longer
+            // stands. It does not erase the history: migration 65 records the
+            // return as its own event, with its own reason and its own named
+            // actor.
+            onClick={() => onDecide('pending')}
+          >
+            Return to queue
+          </button>
+        )}
+
+        <button type="button" className="btn btn-ghost" onClick={onToggleHistory}>
+          {historyShown ? 'Hide review history' : 'Show review history'}
+        </button>
+      </div>
+    </>
+  )
 }
 
 export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<string, string> }) {
@@ -86,6 +230,11 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
   // successful decision so the next one starts from an empty box rather than
   // inheriting a justification written for a different decision.
   const [notes, setNotes] = useState<Record<string, string>>({})
+  // Documents whose stored file has been fetched and handed to the browser in
+  // this session. Deliberately NOT persisted and NOT derived from the register:
+  // the claim being made is "the person about to decide has had this file put in
+  // front of them", and a colleague having opened it last week is not that.
+  const [openedIds, setOpenedIds] = useState<Set<string>>(() => new Set())
   const [history, setHistory] = useState<Record<string, DocumentReviewEvent[]>>({})
   const [historyError, setHistoryError] = useState<Record<string, string>>({})
   const [historyOpen, setHistoryOpen] = useState<Record<string, boolean>>({})
@@ -144,6 +293,13 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
       setActionError('Enter the reason for this decision before recording it.')
       return
     }
+    // The read condition, restated where the write happens rather than only on
+    // the control. A disabled attribute is a presentation detail; this is the
+    // invariant. 'pending' is exempt — see the Return to queue button.
+    if (status !== 'pending' && doc.storagePath && !openedIds.has(doc.id)) {
+      setActionError('Open and read the document before recording a decision about it.')
+      return
+    }
     setBusyId(doc.id)
     setActionError(null)
     try {
@@ -162,7 +318,7 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
     } finally {
       setBusyId(null)
     }
-  }, [notes, refresh, historyOpen, loadHistory])
+  }, [notes, refresh, historyOpen, loadHistory, openedIds])
 
   const openDocument = useCallback(async (doc: FarmerDocument) => {
     setActionError(null)
@@ -178,6 +334,17 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
     // noopener/noreferrer: the signed URL is a credential for the duration of
     // its life, and must not be handed to an opener via window.opener.
     window.open(url, '_blank', 'noopener,noreferrer')
+    // Marked after the URL resolved, not on the click: a failed signing attempt
+    // returns above and must not unlock the decision. Deliberately NOT
+    // conditioned on window.open's return value — with `noopener` the spec
+    // requires it to be null even on success, so testing it would leave the gate
+    // permanently shut and every decision button dead.
+    setOpenedIds(prev => {
+      if (prev.has(doc.id)) return prev
+      const next = new Set(prev)
+      next.add(doc.id)
+      return next
+    })
   }, [])
 
   // 'awaiting_clarification' stays in the default view alongside 'pending'.
@@ -218,7 +385,8 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
           The fingerprint shows that a stored file has not changed since DDP received it.
           It does <strong>not</strong> show that the document is genuine, or that the laboratory or
           authority named on it issued it. Accepting a document records only that a named DDP
-          administrator examined it and was satisfied — open the file and read it before deciding.
+          administrator examined it and was satisfied. A decision cannot be recorded here until the
+          document has been opened and a reason written.
         </div>
       </div>
 
@@ -262,7 +430,14 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
 
       {loadState === 'ready' && visible.length > 0 && (
         <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: 12 }}>
-          {visible.map(doc => (
+          {visible.map(doc => {
+            const gate = resolveDocumentDecisionGate({
+              hasStoredFile: Boolean(doc.storagePath),
+              opened: openedIds.has(doc.id),
+              reason: notes[doc.id] ?? '',
+              recording: busyId === doc.id,
+            })
+            return (
             <li key={doc.id} className="card" style={{ padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <div>
@@ -323,77 +498,17 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={!doc.storagePath}
-                  onClick={() => { openDocument(doc).catch(() => undefined) }}
-                >
-                  Open document
-                </button>
-
-                {doc.reviewStatus !== 'accepted' && (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={busyId === doc.id || isBlank(notes[doc.id] ?? '')}
-                    onClick={() => { decide(doc, 'accepted').catch(() => undefined) }}
-                  >
-                    {busyId === doc.id ? 'Recording…' : 'Accept'}
-                  </button>
-                )}
-
-                {doc.reviewStatus !== 'awaiting_clarification' && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    disabled={busyId === doc.id || isBlank(notes[doc.id] ?? '')}
-                    // The reasoned non-decision. Before migration 65 an
-                    // administrator who could responsibly neither accept nor
-                    // reject had no way to record that they had looked at all.
-                    title={STATUS_MEANING.awaiting_clarification}
-                    onClick={() => { decide(doc, 'awaiting_clarification').catch(() => undefined) }}
-                  >
-                    {busyId === doc.id ? 'Recording…' : 'Awaiting clarification'}
-                  </button>
-                )}
-
-                {doc.reviewStatus !== 'rejected' && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    disabled={busyId === doc.id || isBlank(notes[doc.id] ?? '')}
-                    onClick={() => { decide(doc, 'rejected').catch(() => undefined) }}
-                  >
-                    {busyId === doc.id ? 'Recording…' : 'Reject'}
-                  </button>
-                )}
-
-                {doc.reviewStatus !== 'pending' && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    disabled={busyId === doc.id || isBlank(notes[doc.id] ?? '')}
-                    // Returning a document to the queue clears its CURRENT
-                    // reviewer, so nobody stays named as responsible for a
-                    // decision that no longer stands. It does not erase the
-                    // history: migration 65 records the return as its own event,
-                    // with its own reason and its own named actor.
-                    onClick={() => { decide(doc, 'pending').catch(() => undefined) }}
-                  >
-                    Return to queue
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => { toggleHistory(doc.id).catch(() => undefined) }}
-                >
-                  {historyOpen[doc.id] ? 'Hide review history' : 'Show review history'}
-                </button>
-              </div>
+              <DecisionControls
+                doc={doc}
+                gate={gate}
+                opened={openedIds.has(doc.id)}
+                recording={busyId === doc.id}
+                reasonBlank={isBlank(notes[doc.id] ?? '')}
+                historyShown={Boolean(historyOpen[doc.id])}
+                onOpen={() => { openDocument(doc).catch(() => undefined) }}
+                onDecide={status => { decide(doc, status).catch(() => undefined) }}
+                onToggleHistory={() => { toggleHistory(doc.id).catch(() => undefined) }}
+              />
 
               {historyOpen[doc.id] && (
                 <div style={{ marginTop: 12, fontSize: '0.85em' }}>
@@ -424,7 +539,8 @@ export default function DDPDocumentReview({ adminNames }: { adminNames?: Map<str
                 </div>
               )}
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </div>
