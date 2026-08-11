@@ -22,6 +22,13 @@ import { resolveOperationsDeskEmptyState } from '../../lib/operationsDeskEmptySt
 import { operationsDeskActionAvailable, resolveOperationsDeskRoute } from '../../lib/operationsDeskActions'
 
 /**
+ * UNROUTED AS OF THE ORGANIC REBUILD. `ddp-operations-desk` now renders
+ * DDPOperationsDeskOrganic.tsx inside OrganicConsoleShell. This file is kept on
+ * disk for one release as the reference for what was replaced, and so the
+ * behaviour it encodes can be diffed rather than remembered. Delete it once the
+ * new desk has been used in anger.
+ */
+/**
  * Operations Desk — an operational index over records that already exist.
  *
  * READ-ONLY BY CONSTRUCTION. This page renders no mutation control of any

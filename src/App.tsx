@@ -87,7 +87,9 @@ import DDPMissingDocuments from './pages/admin/DDPMissingDocuments'
 import DDPCoaIntelligence from './pages/admin/DDPCoaIntelligence'
 import DDPRiskRegister from './pages/admin/DDPRiskRegister'
 import DDPComplianceWatchtower from './pages/admin/DDPComplianceWatchtower'
-import DDPOperationsDesk from './pages/admin/DDPOperationsDesk'
+import DDPOperationsDeskOrganic, { type FarmChase } from './pages/admin/DDPOperationsDeskOrganic'
+import OrganicConsoleShell from './components/admin/OrganicConsoleShell'
+import './styles/organicScoped.css'
 import LangToggle from './components/shared/LangToggle'
 import UserBadge from './components/shared/UserBadge'
 import AccessDenied from './components/shared/AccessDenied'
@@ -1081,6 +1083,114 @@ export default function App() {
     ))
   }
 
+  /**
+   * The Operations Desk's own frame.
+   *
+   * The Organic design system brings a console shell with it, so this screen
+   * REPLACES AdminShell rather than nesting inside it — two sidebars is not a
+   * layout. Sign-out moves with the frame, because AdminShell is where sign-out
+   * otherwise lives.
+   *
+   * A named function rather than an inline branch: the routing function it came
+   * out of is already the largest in this file, and this branch is
+   * self-contained.
+   */
+  function operationsDeskFrame() {
+      // The Operations Desk is the first screen rebuilt on the Organic design
+      // system, and that system brings its own console frame. It therefore
+      // REPLACES AdminShell here rather than nesting inside it — two sidebars
+      // is not a layout. Sign-out moves with it, because AdminShell is where
+      // sign-out otherwise lives.
+      //
+      // The console is visibly two styles while this is the only screen
+      // rebuilt. That is the accepted cost of piloting a design system on a
+      // real screen instead of a mock.
+  return (
+          <OrganicConsoleShell
+            page={page}
+            goTo={goTo}
+            onSignOut={handleSignOut}
+            signedInAs={
+              currentProfile
+                ? `Signed in as ${currentProfile.displayName || currentProfile.email}`
+                : 'Demo mode'
+            }
+            items={[
+              { page: 'ddp-overview', label: 'Overview' },
+              { page: 'ddp-operations-desk', label: 'Operations Desk' },
+              { page: 'ddp-access-requests', label: 'Supplier Enquiries' },
+              { page: 'ddp-buyer-provisioning', label: 'Buyers' },
+              { page: 'ddp-document-review', label: 'Evidence' },
+              { page: 'ddp-farms', label: 'Compliance' },
+              { page: 'ddp-master', label: 'Supply Ledger' },
+              { page: 'ddp-compliance-watchtower', label: 'Compliance Watchtower' },
+            ]}
+          >
+            <DDPOperationsDeskOrganic
+              // The same guarded admin view the old desk used: never a stale
+              // farmer-scoped subset, and null where a source failed so the
+              // screen can report the gap rather than imply an empty queue.
+              farms={deskData.farms}
+              inventory={deskData.inventory}
+              reviewRequests={deskReviewRequests.requests}
+              complianceAlerts={deskComplianceAlerts}
+              reviewRequestsLoading={deskReviewRequests.loading}
+              complianceLoading={!isDemo && (complianceLoadState === 'idle' || complianceLoadState === 'loading')}
+              farmInventoryLoading={!isDemo && (adminDataLoadState === 'idle' || adminDataLoadState === 'loading')}
+              farmInventoryFailed={!isDemo && adminDataLoadState === 'failed'}
+              onOpen={item => {
+                if (item.destinationParams?.farmId) handleReviewFarm(item.destinationParams.farmId)
+                else if (item.destinationParams?.itemId) handleReviewItem(item.destinationParams.itemId)
+                else goTo(item.destinationPage)
+              }}
+              onChaseFarms={chases => { handleChaseFarms(chases).catch(() => undefined) }}
+            />
+          </OrganicConsoleShell>
+        )
+  }
+
+  /**
+   * Chase several farms at once from the Operations Desk.
+   *
+   * ONE request per farm, listing that farm's outstanding matters — not one per
+   * matter. A farm owing six documents gets one message; six would train it to
+   * ignore them.
+   *
+   * Deliberately NOT handleSendReviewRequest in a loop. That function's second
+   * write flips the batch to `needs_changes`, which is right when an operator
+   * is asking about one specific batch and wrong here: a farm-level chase must
+   * not silently re-open every batch it touches. So `stockItemId` is left unset
+   * and no batch is patched.
+   *
+   * DB first, then local state, per the mutation-truthfulness convention: a
+   * chase that failed to persist must not appear in the queue as though it had.
+   */
+  async function handleChaseFarms(chases: FarmChase[]) {
+    for (const chase of chases) {
+      const req: Omit<ReviewRequest, 'id' | 'createdAt'> = {
+        farmProfileId: chase.farmProfileId,
+        requestType: 'general',
+        message: chase.missing.length === 1
+          ? chase.missing[0]
+          : `DDP is waiting on ${chase.missing.length} items:\n${chase.missing.map(m => `\u2022 ${m}`).join('\n')}`,
+        status: 'open',
+        createdBy: currentProfile?.id ?? '',
+        farmName: chase.farmName,
+      }
+      const newReq: ReviewRequest = {
+        ...req, id: crypto.randomUUID(), createdAt: new Date().toISOString(),
+      }
+      await commitMutation(
+        () => createReviewRequest(req, currentProfile?.id),
+        {
+          onBegin: onBeginAction,
+          onCommitted: () => { setReviewRequests(prev => [newReq, ...prev]) },
+          onError: onDbError,
+        },
+      )
+    }
+  }
+
   async function handleSendReviewRequest(req: Omit<ReviewRequest, 'id' | 'createdAt'>) {
     const newReq: ReviewRequest = { ...req, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
     // Two independent writes. The request is created FIRST so the ordering can
@@ -1748,36 +1858,10 @@ export default function App() {
           {page === 'ddp-buyer-provisioning' && isAdminRole && <DDPBuyerProvisioning />}
           {page === 'ddp-document-review' && isAdminRole && <DDPDocumentReview />}
 
-          {page === 'ddp-operations-desk' && isAdminRole && (
-            <DDPOperationsDesk
-              // Only farm/inventory data confirmed fresh by the current admin
-              // load — never a stale farmer-scoped subset or a rejected dataset's
-              // retained rows (deskAdminDataView). Loading/failure notices below
-              // still hold; a partial failure keeps its fulfilled half actionable.
-              farms={deskData.farms}
-              inventory={deskData.inventory}
-              // Demo: the in-memory review requests are the honest value. Supabase
-              // admin: null on a failed fetch so the desk reports the gap; [] while
-              // still loading so a stale localStorage/farmer-scoped array is never
-              // shown as admin data (the loading flag below explains the empty count);
-              // the loaded rows once ready.
-              reviewRequests={deskReviewRequests.requests}
-              reviewRequestsLoading={deskReviewRequests.loading}
-              // The same merged view the Watchtower shows: rule-derived (enforced)
-              // alerts unioned with the persisted/stored alerts, deduped by id;
-              // null on a failed fetch so the desk reports the gap.
-              complianceAlerts={deskComplianceAlerts}
-              complianceLoading={!isDemo && (complianceLoadState === 'idle' || complianceLoadState === 'loading')}
-              // The farm/inventory source feeds most queues. In Supabase admin it
-              // is pending until BOTH loaders settle, and failed if either throws;
-              // demo data is settled locally (never pending/failed).
-              farmInventoryLoading={!isDemo && (adminDataLoadState === 'idle' || adminDataLoadState === 'loading')}
-              farmInventoryFailed={!isDemo && adminDataLoadState === 'failed'}
-              onOpenFarm={handleReviewFarm}
-              onOpenItem={handleReviewItem}
-              goTo={goTo}
-            />
-          )}
+          {/* The Operations Desk renders in its own frame below, outside
+              AdminShell, because it brings the Organic console shell with it.
+              DDPOperationsDesk.tsx is kept on disk, unrouted, for one release
+              as the reference for what this replaced. */}
 
           {page === 'ddp-compliance-watchtower' && isAdminRole && (
             <DDPComplianceWatchtower
@@ -1788,6 +1872,10 @@ export default function App() {
           )}
           </>
         )
+
+        // The Operations Desk renders in its own frame — see operationsDeskFrame
+        // below for why it replaces AdminShell rather than nesting inside it.
+        if (page === 'ddp-operations-desk' && isAdminRole) return operationsDeskFrame()
 
         // Identical routed content in both frames — only the surrounding chrome
         // differs, so no page's behaviour depends on which one is drawn.
