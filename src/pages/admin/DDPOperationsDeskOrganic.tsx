@@ -391,15 +391,33 @@ export default function DDPOperationsDeskOrganic({
    */
   const farmIdFor = useMemo(() => {
     const batchToFarm = new Map((inventory ?? []).map(i => [i.id, i.farmId]))
-    const nameById = new Map(farms.map(f => [f.id, f.tradingName || f.legalBusinessName || f.id]))
+    const known = new Map(farms.map(f => [f.id, f.tradingName || f.legalBusinessName || f.id]))
     return (item: OperationsDeskItem): { id: string; name: string } | null => {
-      const direct = item.destinationParams?.farmId
-      const viaBatch = item.destinationParams?.itemId
-        ? batchToFarm.get(item.destinationParams.itemId)
-        : undefined
-      const id = direct ?? viaBatch
-      if (!id) return null
-      return { id, name: nameById.get(id) ?? item.entityLabel }
+      // Each queue carries its farm differently, and the first cut of this only
+      // read destinationParams — which document matters do not have. Measured in
+      // production: all 24 matters came back unchaseable, so the screen's one
+      // primary action was dead on the day it shipped.
+      //
+      // Ordered most specific first. sourceEntityType is the reliable
+      // discriminator; destinationParams is a fallback for queues that set it.
+      const bySource =
+        item.sourceEntityType === 'farm'
+          ? item.sourceEntityId
+          // `${farm.id}:${requirement}` — the farm is the part before the colon.
+          : item.sourceEntityType === 'document-requirement'
+            ? item.sourceEntityId.split(':')[0]
+            : item.sourceEntityType === 'inventory-batch'
+              ? batchToFarm.get(item.sourceEntityId)
+              : undefined
+
+      const byParams = item.destinationParams?.farmId
+        ?? (item.destinationParams?.itemId ? batchToFarm.get(item.destinationParams.itemId) : undefined)
+
+      const id = bySource ?? byParams
+      // A resolved id that is not a farm we hold is not "a farm on file": the
+      // chase would be written against something this console cannot show.
+      if (!id || !known.has(id)) return null
+      return { id, name: known.get(id) ?? item.entityLabel }
     }
   }, [farms, inventory])
 

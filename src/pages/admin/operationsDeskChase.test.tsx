@@ -247,3 +247,61 @@ describe('a UUID is never shown as a farm name', () => {
     expect(screen.getAllByText(/^b1f4182c/).length).toBeGreaterThan(0)
   })
 })
+
+describe('every queue resolves its farm — measured against production', () => {
+  // The first cut read only destinationParams. Document matters do not set it:
+  // they carry the farm inside sourceEntityId as `${farm.id}:${requirement}`.
+  // Result in production: all 24 matters unchaseable, and the screen's one
+  // primary action was dead on the day it shipped. One case per queue shape.
+  const FARM_ID = '11111111-1111-4111-8111-111111111111'
+
+  function renderFor(farm: Partial<FarmProfile>, inventory: InventoryItem[] = []) {
+    render(
+      <DDPOperationsDeskOrganic
+        farms={[{ id: FARM_ID, tradingName: 'Doi Farm', ...farm } as FarmProfile]}
+        inventory={inventory}
+        reviewRequests={[]}
+        complianceAlerts={[]}
+        reviewRequestsLoading={false}
+        complianceLoading={false}
+        farmInventoryLoading={false}
+        farmInventoryFailed={false}
+        onOpen={() => undefined}
+      />,
+    )
+  }
+
+  it('resolves a document-requirement matter, which carries the farm in its id', () => {
+    // A farm with no documents on file raises the "— missing" queue.
+    renderFor({ status: 'Approved' })
+    const selectable = (screen.getAllByRole('checkbox') as HTMLInputElement[]).filter(b => !b.disabled)
+    expect(selectable.length).toBeGreaterThan(0)
+    expect(screen.queryByText(/cannot be chased from here/i)).toBeNull()
+  })
+
+  it('resolves a farm-approval matter, whose sourceEntityId IS the farm', () => {
+    renderFor({ status: 'Submitted to DDP' })
+    const selectable = (screen.getAllByRole('checkbox') as HTMLInputElement[]).filter(b => !b.disabled)
+    expect(selectable.length).toBeGreaterThan(0)
+  })
+
+  it('does not claim a farm it does not hold', () => {
+    // An id that resolves but belongs to no loaded farm is not a farm on file:
+    // chasing it would write against something the console cannot show.
+    render(
+      <DDPOperationsDeskOrganic
+        farms={[]}
+        inventory={[{ id: 'batch-x', farmId: 'ghost-farm', productName: 'X', farmName: 'X', quantityKg: 1, status: 'Missing Document' } as InventoryItem]}
+        reviewRequests={[]}
+        complianceAlerts={[]}
+        reviewRequestsLoading={false}
+        complianceLoading={false}
+        farmInventoryLoading={false}
+        farmInventoryFailed={false}
+        onOpen={() => undefined}
+      />,
+    )
+    const selectable = (screen.getAllByRole('checkbox') as HTMLInputElement[]).filter(b => !b.disabled)
+    expect(selectable.length).toBe(0)
+  })
+})
