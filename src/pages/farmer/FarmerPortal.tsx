@@ -115,7 +115,20 @@ export default function FarmerPortal({
     [reviewRequests],
   )
 
-  const accountLabel = currentProfile?.displayName || currentProfile?.email || farmNamed.name
+  /**
+   * What to call the farm in the header.
+   *
+   * The farm record's trading name first, then the signed-in account's own
+   * name. Measured on the live portal: the farm had no trading name, so the
+   * header greeted a real farm with "Farm with no name on file" while its
+   * account plainly said "Billy Bum Farm". Telling someone their farm has no
+   * name where their name should be is not honesty, it is just unkind — the
+   * missing trading name is already reported in the profile checklist, which is
+   * the place that can actually be acted on.
+   */
+  const accountLabel = farmNamed.unnamed
+    ? (currentProfile?.displayName || currentProfile?.email || farmNamed.name)
+    : farmNamed.name
 
   return (
     <div className="organic-scope">
@@ -127,7 +140,7 @@ export default function FarmerPortal({
         <PortalHeader
           lang={lang}
           onLang={onLang}
-          farmName={farmNamed.name}
+          farmName={accountLabel}
           accountLabel={accountLabel}
           onSignOut={onSignOut}
         />
