@@ -240,7 +240,8 @@ function StockList({ lang, inventory, onAddBatch }: {
         <p className="portal-empty">{t.portalNoStock}</p>
       ) : (
         inventory.map(item => {
-          const named = displayName(item.productName ?? '', t.portalNoName, item.id)
+          // A batch is not a farm — the same rule, the right noun.
+          const named = displayName(item.productName ?? '', t.portalNoBatchName, item.id)
           const state = stockState(item)
           return (
             <div className="stock-row" key={item.id}>
