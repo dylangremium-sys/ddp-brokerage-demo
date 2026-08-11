@@ -142,8 +142,8 @@ const UI = {
 export default function FarmerDashboardOrganic({
   lang, onLang, farmName, task, stock, contact, onPrimary, onContact,
 }: FarmerDashboardOrganicProps) {
-  const t = UI[lang]
-  const copy = TASK_COPY[task.kind][lang]
+  const uiText = UI[lang]
+  const taskCopy = TASK_COPY[task.kind][lang]
 
   return (
     // The one class that turns the design system on. Remove it and every rule
@@ -192,7 +192,7 @@ export default function FarmerDashboardOrganic({
           filled button here for the same reason. */}
       <div style={{ background: 'var(--color-accent-100)', borderRadius: 'var(--radius-lg)', padding: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 12 }}>
-          <span className="tag tag-accent" style={{ fontSize: 10.5 }}>{copy.tag}</span>
+          <span className="tag tag-accent" style={{ fontSize: 10.5 }}>{taskCopy.tag}</span>
           {task.ageDays !== null && (
             <span
               style={{
@@ -200,16 +200,16 @@ export default function FarmerDashboardOrganic({
                 color: 'var(--color-accent-800)', whiteSpace: 'nowrap',
               }}
             >
-              {t.days(task.ageDays)}
+              {uiText.days(task.ageDays)}
             </span>
           )}
         </div>
 
         <h2 style={{ fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 19, lineHeight: 1.3, margin: '12px 0 0' }}>
-          {copy.title}
+          {taskCopy.title}
         </h2>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--color-accent-900)', margin: '8px 0 16px' }}>
-          {copy.body}
+          {taskCopy.body}
         </p>
 
         {/* 15px text + 15px padding ≈ a 48px target, which is the floor for a
@@ -220,7 +220,7 @@ export default function FarmerDashboardOrganic({
           style={{ fontSize: 15, padding: 15 }}
           onClick={onPrimary}
         >
-          {copy.cta}
+          {taskCopy.cta}
         </button>
         <button
           type="button"
@@ -228,7 +228,7 @@ export default function FarmerDashboardOrganic({
           style={{ fontSize: 14, marginTop: 8 }}
           onClick={onContact}
         >
-          {t.contactCta}
+          {uiText.contactCta}
         </button>
       </div>
 
@@ -243,12 +243,12 @@ export default function FarmerDashboardOrganic({
             letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-neutral-700)',
           }}
         >
-          {t.stock}
+          {uiText.stock}
         </div>
 
         {stock.length === 0 ? (
           <div style={{ padding: '0 16px 16px', fontSize: 14, color: 'var(--color-neutral-700)' }}>
-            {t.empty}
+            {uiText.empty}
           </div>
         ) : (
           stock.map(row => (
@@ -281,7 +281,7 @@ export default function FarmerDashboardOrganic({
                   }}
                 />
                 <span style={{ fontSize: 13, color: 'var(--color-neutral-700)' }}>
-                  {row.state === 'listed' ? t.listed : t.held}
+                  {row.state === 'listed' ? uiText.listed : uiText.held}
                 </span>
               </div>
             </div>
