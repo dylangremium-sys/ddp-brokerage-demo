@@ -261,7 +261,12 @@ function MatterRow({ item, farm, blockedKg, overdue, selected, onToggle, onOpen 
   onToggle: () => void
   onOpen: () => void
 }) {
-  const chaseable = farm !== null
+  // Two different things stop a chase, and the row must not confuse them: no
+  // farm on file is an inability, notChaseableReason is a decision.
+  const blockedReason = farm === null
+    ? 'This matter is not tied to a farm on file, so it cannot be chased from here.'
+    : item.notChaseableReason
+  const chaseable = blockedReason === undefined
   const entity = entityDisplay(item.entityLabel, farm)
   return (
     <div
@@ -278,7 +283,7 @@ function MatterRow({ item, farm, blockedKg, overdue, selected, onToggle, onOpen 
         type="checkbox"
         checked={selected}
         disabled={!chaseable}
-        title={chaseable ? undefined : 'This matter is not tied to a farm on file, so it cannot be chased from here.'}
+        title={blockedReason}
         onClick={e => e.stopPropagation()}
         onChange={onToggle}
         aria-label={`Select ${item.title}`}
@@ -454,6 +459,10 @@ export default function DDPOperationsDeskOrganic({
     const byFarm = new Map<string, FarmChase>()
     for (const item of result.items) {
       if (!selected.has(item.id)) continue
+      // Belt and braces: the row cannot be ticked, and a matter blocked from
+      // being chased is dropped here too, so no future way of selecting a row
+      // can put it into a message.
+      if (item.notChaseableReason) continue
       const farm = farmIdFor(item)
       if (!farm) continue
       // What the farm is told is not always what the admin reading the row is

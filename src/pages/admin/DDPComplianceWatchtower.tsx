@@ -26,7 +26,7 @@ import {
 } from '../../lib/complianceRules'
 import type { ComplianceReviewDecision } from '../../lib/complianceRules'
 import { isRuleBlockingNow, isRuleEnforcedNow, UNRESOLVED_ALERT_STATUSES } from '../../lib/complianceRuleEnforcement'
-import { deriveRuleBasedComplianceAlerts, mergeComplianceAlerts } from '../../lib/complianceAlerts'
+import { deriveRuleBasedComplianceAlerts, isRuleDerivedAlert, mergeComplianceAlerts } from '../../lib/complianceAlerts'
 import { COMPLIANCE_ALERTS_STORAGE_KEY, loadStoredComplianceAlerts, COMPLIANCE_RULES_STORAGE_KEY, loadStoredComplianceRules } from '../../lib/complianceLocalAlerts'
 import { deriveExportReadiness } from '../../lib/complianceScoring'
 import { guardAiDraftedFields } from '../../lib/aiComplianceGuard'
@@ -1390,7 +1390,9 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
   async function updateAlertStatus(alert: ComplianceAlert, status: ComplianceStatus): Promise<void> {
     setActionMessage(null)
     const now = new Date().toISOString()
-    const isAutoAlert = alert.id.startsWith('auto-')
+    // One definition of "derived", shared with the desk — a second copy of this
+    // test is how the desk missed a naming fix for two releases.
+    const isAutoAlert = isRuleDerivedAlert(alert)
     const resolutionNotes = status === 'resolved' ? 'Resolved by admin review.' : status === 'dismissed' ? 'Dismissed by admin review.' : alert.resolutionNotes ?? null
 
     if (repo.isSupabaseConfigured) {

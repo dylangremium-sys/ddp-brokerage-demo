@@ -324,7 +324,10 @@ describe('a compliance matter can be chased', () => {
 
   function renderWithAlert(over: Partial<ComplianceAlert> = {}, onChase?: (c: FarmChase[]) => void) {
     const alert: ComplianceAlert = {
-      id: 'alert-1', entityType: 'farm', entityId: FARM_A,
+      // Rule-derived by default: the `auto-` prefix is what makes an alert
+      // chaseable at all, so the cases below would otherwise all test a
+      // hand-raised alert and pass for the wrong reason.
+      id: 'auto-farm_license_required-farm-farm-a', entityType: 'farm', entityId: FARM_A,
       alertTitle: 'Licence renewal published',
       alertDetail: 'A regulatory update affects this farm.',
       severity: 'high', status: 'open',
@@ -399,6 +402,45 @@ describe('a compliance matter can be chased', () => {
     expect(sent).not.toContain(INTERNAL)
     expect(sent).not.toContain('internal note')
     expect(sent).toContain('Licence renewal published')
+  })
+
+  /**
+   * A hand-raised alert has no field written to be read by a farm: its title and
+   * its detail are both free text from the Watchtower form. It is a note a
+   * colleague made, and it is resolved in Watchtower — not by messaging the farm.
+   *
+   * Rule-derived alerts keep their id under the `auto-` prefix; everything else
+   * takes an id from the database, so the prefix is the discriminator, and it is
+   * the one this codebase already used.
+   */
+  it('a hand-raised alert cannot be chased, even when its farm is known', () => {
+    // A title straight out of the free-text form — the reason none of its
+    // fields can be sent onward.
+    const TYPED = 'Spoke to them, chasing again Friday'
+    renderWithAlert({ id: 'manual-7', alertTitle: TYPED })
+    const row = screen.getByText(TYPED).closest('[role="button"]') as HTMLElement
+    const box = row.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(box.disabled).toBe(true)
+  })
+
+  it('and says WHY it cannot be chased, rather than claiming there is no farm', () => {
+    renderWithAlert({ id: 'manual-7' })
+    const box = complianceRow().querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(box.title).toMatch(/raised by hand/i)
+    expect(box.title).not.toMatch(/not tied to a farm on file/i)
+  })
+
+  it('a rule-derived alert is still chaseable', () => {
+    renderWithAlert({ id: 'auto-farm_license_required-farm-farm-a' })
+    const box = complianceRow().querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(box.disabled).toBe(false)
+  })
+
+  it('a matter with no farm on file still gives the no-farm reason', () => {
+    renderWithAlert({ id: 'auto-farm_license_required-farm-ghost', entityId: 'ghost-farm' })
+    const box = complianceRow().querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(box.disabled).toBe(true)
+    expect(box.title).toMatch(/not tied to a farm on file/i)
   })
 
   it('other queues are unchanged — their reason is a fact about the record and is still sent', async () => {
