@@ -36,12 +36,18 @@ import { resolveOperationsDeskEmptyState } from '../../lib/operationsDeskEmptySt
 /**
  * The age at which a matter is shown as overdue.
  *
- * ASSUMED, NOT CONFIRMED. Open question 2 in the design handoff asks DDP for
- * "the true SLA that colors the age column (5 days was assumed)". It is a named
- * constant so that answering the question is a one-line change rather than a
- * search through the markup.
+ * CONFIRMED, 12 Aug 2026 — the design handoff's open question 2 has been
+ * answered and its revision log records "Ops Desk SLA set to 3 days (was 5,
+ * assumed)". Previously 5 and explicitly a guess; it is no longer one, so the
+ * name no longer says assumed.
+ *
+ * WHAT TO WATCH. Shortening the target moves matters into the overdue colour.
+ * If most of the queue turns terracotta, the screen has recreated the defect it
+ * replaced — a signal that never varies — by a different mechanism. The answer
+ * then is a second tier, not a longer target: the colour has to distinguish
+ * something, and "everything is late" distinguishes nothing.
  */
-const ASSUMED_SLA_DAYS = 5
+const SLA_DAYS = 3
 
 /** Categories the handoff groups the queue by, in the order it shows them. */
 const GROUPS: Array<{ key: OperationsDeskCategory | 'all'; label: string }> = [
@@ -372,7 +378,7 @@ export default function DDPOperationsDeskOrganic({
   })
 
   const alerts = complianceAlerts ?? []
-  const overdue = result.items.filter(i => (i.ageInDays ?? 0) > ASSUMED_SLA_DAYS).length
+  const overdue = result.items.filter(i => (i.ageInDays ?? 0) > SLA_DAYS).length
   const heldKg = [...blockedKg.values()].reduce((sum, kg) => sum + kg, 0)
   const farmsOwing = new Set(result.items.map(i => i.entityLabel)).size
 
@@ -476,7 +482,7 @@ export default function DDPOperationsDeskOrganic({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 18, marginTop: 32 }}>
         <Tile tone="accent" label="Needs a person" value={String(result.items.length)}
           note={`across ${farmsOwing} farm${farmsOwing === 1 ? '' : 's'}`} />
-        <Tile tone="accent-soft" label={`Waiting over ${ASSUMED_SLA_DAYS} days`} value={String(overdue)}
+        <Tile tone="accent-soft" label={`Waiting over ${SLA_DAYS} days`} value={String(overdue)}
           note={overdue === 0 ? 'nothing has aged past the target' : 'these are the ones to open first'} />
         <Tile tone="sage" label="Stock held on paperwork" value={heldKg ? `${heldKg.toLocaleString()} kg` : '—'}
           note={heldKg ? 'released when the documents land' : 'no held stock is linked to a matter'} />
@@ -552,7 +558,7 @@ export default function DDPOperationsDeskOrganic({
             item={item}
             farm={farmIdFor(item)}
             blockedKg={blockedKg.get(item.id)}
-            overdue={(item.ageInDays ?? 0) > ASSUMED_SLA_DAYS}
+            overdue={(item.ageInDays ?? 0) > SLA_DAYS}
             selected={selected.has(item.id)}
             onToggle={() => toggle(item.id)}
             onOpen={() => onOpen(item)}
