@@ -124,13 +124,22 @@
     background: var(--color-neutral-100);
     color: var(--color-accent-600);
   }
+  /* A step behind the current one is one you have BEEN PAST, which is not the
+     same as one you have completed — Skip advances without filling anything in,
+     and per-step completion is not tracked at all. So it gets a neutral mark,
+     not the sage one: standing rule 2 reserves sage for cleared/healthy, and
+     spending it on "you walked past this" is exactly the undisciplined tinting
+     the redesign exists to remove. */
   & .ob-stage.is-done .ob-stage-num {
-    background: var(--color-accent-2-300);
-    color: var(--color-accent-2-900);
+    background: var(--color-neutral-400);
+    color: var(--color-neutral-100);
   }
 
-  & .ob-stage-name { font-size: 15px; font-weight: 600; }
+  /* Both are spans inside a grid cell; without this they run together as
+     "Farm BasicsStep 1 of 9" and the margin below does nothing. */
+  & .ob-stage-name { display: block; font-size: 15px; font-weight: 600; }
   & .ob-stage-state {
+    display: block;
     font-size: 12.5px;
     margin-top: 3px;
     color: var(--color-neutral-700);
@@ -143,6 +152,19 @@
     border-radius: var(--radius-lg);
     padding: 34px 36px;
     box-shadow: var(--shadow-sm);
+  }
+
+  /* The step bodies are `.card.form-card`, which App.css gives its own surface,
+     border and radius. Inside this panel that renders as a second framed box
+     inset in the first. The panel IS the card here. */
+  & .ob-panel .card,
+  & .ob-panel .form-card {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
   }
 
   & .ob-panel-hint {
@@ -171,12 +193,22 @@
     font-weight: 600;
     margin-bottom: 6px;
     color: var(--color-text);
+    /* App.css uppercases these. The handoff specifies Figtree 600 at 13.5px in
+       sentence case, and a hint that reads "THE NAME YOU WANT DISPLAYED" is
+       shouting an aside. Also: uppercasing does nothing to Thai, so the two
+       languages drift apart for no gain. */
+    text-transform: none;
+    letter-spacing: normal;
   }
   & .ob-panel .field-hint {
+    display: block;
     font-size: 12.5px;
     line-height: 1.5;
     color: var(--color-neutral-600);
     margin-top: 6px;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
   }
   & .ob-panel input,
   & .ob-panel select,

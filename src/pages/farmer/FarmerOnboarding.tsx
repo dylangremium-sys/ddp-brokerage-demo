@@ -340,11 +340,21 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
                 <span className="ob-stage-num" aria-hidden="true">{n}</span>
                 <span>
                   <span className="ob-stage-name">{title}</span>
-                  <span className="ob-stage-state">
-                    {n === step
-                      ? t.stepOf(step, TOTAL_STEPS)
-                      : `${completionPct}% ${lang === 'th' ? 'สมบูรณ์' : 'complete'}`}
-                  </span>
+                  {/*
+                    ONLY THE CURRENT STEP SAYS ANYTHING.
+
+                    This printed the overall completion percentage on every
+                    row, so eight rows each read "0% complete" — which states
+                    that THAT step is 0% complete. Per-step completion is not
+                    measured anywhere; the percentage is for the whole profile.
+                    Eight false claims, standing rule 10, and the kind that
+                    reads as broken rather than as informative.
+
+                    The overall figure has one home: the footer.
+                  */}
+                  {n === step && (
+                    <span className="ob-stage-state">{t.stepOf(step, TOTAL_STEPS)}</span>
+                  )}
                 </span>
               </button>
             )
