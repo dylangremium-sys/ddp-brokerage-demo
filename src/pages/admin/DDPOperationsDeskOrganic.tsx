@@ -456,9 +456,14 @@ export default function DDPOperationsDeskOrganic({
       if (!selected.has(item.id)) continue
       const farm = farmIdFor(item)
       if (!farm) continue
+      // What the farm is told is not always what the admin reading the row is
+      // told — a compliance matter's reason is DDP's own note. Queues that do
+      // not set chaseMessage keep sending their reason, which is a fact about
+      // the farm's record and safe to send.
+      const message = item.chaseMessage ?? item.reason
       const existing = byFarm.get(farm.id)
-      if (existing) existing.missing.push(item.reason)
-      else byFarm.set(farm.id, { farmProfileId: farm.id, farmName: farm.name, missing: [item.reason] })
+      if (existing) existing.missing.push(message)
+      else byFarm.set(farm.id, { farmProfileId: farm.id, farmName: farm.name, missing: [message] })
     }
     return [...byFarm.values()]
   }, [result.items, selected, farmIdFor])
