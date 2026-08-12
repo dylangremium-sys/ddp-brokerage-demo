@@ -1,0 +1,249 @@
+/*
+ * Overview — handoff screen 6, the console landing page.
+ *
+ * Scoped like every Organic screen. OrganicConsoleShell supplies the wrapper
+ * and the sidebar; everything here is the content column.
+ *
+ * WHAT THIS REPLACES: eight rigid tiles in which two different zeros were gold
+ * and dark red, a 2 was green while another 2 was dark red, and every empty
+ * table said "NO RECORDS ON FILE". The colour carried no rule, so it carried no
+ * meaning, and a zero could not be told from a failure.
+ *
+ * COLOUR HAS ONE MEANING HERE (standing rule 2), and the page says so in its
+ * own subline rather than leaving it to a style guide nobody opens:
+ *   terracotta — a named human must decide or chase
+ *   sage       — cleared / healthy
+ *   ink        — a plain count
+ * Nothing else is tinted. There is no fourth tint in this file.
+ */
+
+.organic-scope {
+
+  & .ov { max-width: 1240px; padding: 48px 48px 90px; }
+
+  /* ── Header ─────────────────────────────────────────────────────────────── */
+  & .ov-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  & .ov-eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-neutral-700);
+  }
+  & .ov-eyebrow:lang(th) {
+    letter-spacing: 0;
+    text-transform: none;
+    font-size: 13px;
+    font-family: var(--font-thai);
+  }
+
+  & .ov-title {
+    font-family: var(--font-heading);
+    font-weight: var(--font-heading-weight);
+    font-size: 42px;
+    line-height: 1.1;
+    margin: 10px 0 0;
+    max-width: 20ch;
+  }
+  & .ov-title:lang(th) {
+    font-family: var(--font-thai);
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: 0;
+  }
+
+  /* The colour rule, stated on the screen it governs. */
+  & .ov-rule {
+    font-size: 15px;
+    line-height: 1.6;
+    max-width: 62ch;
+    margin: 14px 0 0;
+    color: var(--color-neutral-800);
+  }
+
+  /* ── KPI tiles ──────────────────────────────────────────────────────────
+     Four, not eight. Each carries a note in plain language — never a bare
+     number, because a bare number cannot say whether it is healthy. */
+  & .ov-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    margin-top: 32px;
+  }
+
+  & .ov-kpi {
+    border-radius: var(--radius-md);
+    padding: 26px 28px;
+    box-shadow: var(--shadow-sm);
+    background: var(--color-neutral-100);
+  }
+  & .ov-kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-neutral-700);
+  }
+  & .ov-kpi-label:lang(th) {
+    letter-spacing: 0;
+    text-transform: none;
+    font-size: 13px;
+  }
+  & .ov-kpi-value {
+    font-family: var(--font-heading);
+    font-weight: var(--font-heading-weight);
+    font-size: 42px;
+    line-height: 1.05;
+    margin-top: 10px;
+  }
+  & .ov-kpi-value:lang(th) { font-family: var(--font-thai); font-weight: 700; }
+  & .ov-kpi-note {
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin-top: 8px;
+    color: var(--color-neutral-700);
+  }
+
+  /* The three meanings, and nothing else. */
+  & .ov-kpi.is-person {
+    background: var(--color-accent-200);
+  }
+  & .ov-kpi.is-person .ov-kpi-label { color: var(--color-accent-800); }
+  & .ov-kpi.is-person .ov-kpi-value { color: var(--color-accent-900); }
+  & .ov-kpi.is-person .ov-kpi-note  { color: var(--color-accent-800); }
+
+  & .ov-kpi.is-held {
+    background: var(--color-accent-100);
+  }
+  & .ov-kpi.is-held .ov-kpi-label { color: var(--color-accent-800); }
+  & .ov-kpi.is-held .ov-kpi-value { color: var(--color-accent-900); }
+  & .ov-kpi.is-held .ov-kpi-note  { color: var(--color-accent-800); }
+
+  & .ov-kpi.is-cleared {
+    background: var(--color-accent-2-200);
+  }
+  & .ov-kpi.is-cleared .ov-kpi-label { color: var(--color-accent-2-800); }
+  & .ov-kpi.is-cleared .ov-kpi-value { color: var(--color-accent-2-900); }
+  & .ov-kpi.is-cleared .ov-kpi-note  { color: var(--color-accent-2-800); }
+
+  /* ── Body grid ──────────────────────────────────────────────────────────── */
+  & .ov-body {
+    display: grid;
+    grid-template-columns: 1.3fr 0.7fr;
+    gap: 24px;
+    align-items: start;
+    margin-top: 24px;
+  }
+
+  & .ov-panel {
+    background: var(--color-neutral-100);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  & .ov-panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 24px 28px 0;
+  }
+  & .ov-panel-title { font-size: 17px; font-weight: 700; }
+  & .ov-panel-meta { font-size: 13px; color: var(--color-neutral-600); }
+
+  /* ── Queue rows ─────────────────────────────────────────────────────────── */
+  & .ov-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 20px;
+    align-items: center;
+    padding: 20px 28px;
+    border-top: 1px solid var(--color-neutral-200);
+    width: 100%;
+    text-align: left;
+    background: none;
+    border-left: 0; border-right: 0; border-bottom: 0;
+    font: inherit;
+    cursor: pointer;
+  }
+  & .ov-row:first-of-type { border-top: 0; }
+  & .ov-row:hover { background: var(--color-accent-100); }
+
+  /* Both are spans in a grid cell. Without `display: block` they run together
+     as "Calli Krush Co., LtdFarm · waiting 9 days" and the margin does nothing
+     — the same defect the onboarding rail had, from the same cause. */
+  & .ov-row-title { display: block; font-size: 15.5px; font-weight: 600; }
+  & .ov-row-meta {
+    display: block;
+    font-size: 13.5px;
+    margin-top: 3px;
+    color: var(--color-neutral-600);
+  }
+  /* Age is the only signal, and only past the threshold. */
+  & .ov-row-meta.is-overdue { color: var(--color-accent-700); }
+
+  & .ov-row-action {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--color-accent-700);
+    white-space: nowrap;
+  }
+
+  & .ov-rail { display: grid; gap: 16px; }
+
+  /* ── Explained empty states ─────────────────────────────────────────────
+     Every zero says whether it is healthy and offers the next action. The
+     screen this replaces said "NO RECORDS ON FILE", which cannot tell a clear
+     queue apart from a broken feed. */
+  & .ov-empty {
+    border-radius: var(--radius-lg);
+    padding: 24px 26px;
+  }
+  & .ov-empty.is-healthy {
+    background: var(--color-accent-2-200);
+    color: var(--color-accent-2-900);
+  }
+  & .ov-empty.is-neutral {
+    background: var(--color-neutral-100);
+    box-shadow: var(--shadow-sm);
+  }
+  & .ov-empty-title { font-size: 16px; font-weight: 700; }
+  & .ov-empty-body {
+    font-size: 14px;
+    line-height: 1.6;
+    margin-top: 8px;
+  }
+  & .ov-empty.is-neutral .ov-empty-body { color: var(--color-neutral-700); }
+  & .ov-empty-action {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--color-accent-700);
+    background: none;
+    border: 0;
+    padding: 0;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  & .ov-empty.is-healthy .ov-empty-action { color: var(--color-accent-2-900); }
+
+  /* ── Responsive ─────────────────────────────────────────────────────────── */
+  @media (max-width: 1100px) {
+    & .ov-kpis { grid-template-columns: repeat(2, 1fr); }
+    & .ov-body { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 700px) {
+    & .ov { padding: 28px 20px 72px; }
+    & .ov-title { font-size: 30px; }
+    & .ov-kpis { grid-template-columns: 1fr; }
+    & .ov-kpi-value { font-size: 34px; }
+  }
+}
