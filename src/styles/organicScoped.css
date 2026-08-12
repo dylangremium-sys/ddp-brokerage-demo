@@ -73,6 +73,11 @@
   --font-heading: "Caprasimo", system-ui, sans-serif;
   --font-heading-weight: 400;
   --font-body: "Figtree", system-ui, sans-serif;
+  /* Caprasimo and Figtree are Latin-only. Thai needs a face that has the
+     glyphs — the same stack App.css:5348 switches the rest of the product to,
+     so the two halves of the product render Thai identically. Consumed by the
+     :lang(th) block at the foot of this file. */
+  --font-thai: "Sarabun", -apple-system, BlinkMacSystemFont, sans-serif;
 
   --space-1: 4.4px;
   --space-2: 8.8px;
@@ -145,7 +150,20 @@ figcaption {
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   cursor: pointer; text-decoration: none;
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  /* HANDOFF DEFECT 1, fixed here at source — do not restore `--font-heading`.
+     See design_handoff_ddp_platform/README.md § "Design system".
+
+     Caprasimo ships weight 400 only, and it is a display face: it belongs on
+     page titles and section headings, never on a control label.
+
+     farmerPortal.css already carries this correction, and it was INERT. Both
+     rules land at (0,2,0) and organicScoped.css is emitted AFTER
+     farmerPortal.css in the bundle (measured: farmerPortal @109374,
+     organicScoped @116411 in dist/assets/index-*.css), so this declaration won
+     the tie and every button in the portal rendered Caprasimo. Fixing it in
+     the sheet that loses the tie is the only fix that holds — which is why it
+     is here and not layered on top. */
+  font-family: var(--font-body); font-weight: 600;
   font-size: 14px; line-height: 1.2; color: var(--color-text); /* matches the .input's 14px —
      the pair sits side by side in sign-up rows */
   background: transparent; border: 1px solid transparent;
@@ -160,7 +178,18 @@ figcaption {
 .btn-secondary { border-color: var(--color-divider); }
 .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .btn-secondary:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
-.btn-ghost { color: var(--color-accent); padding-inline: var(--space-1); }
+/* HANDOFF DEFECT 2, fixed here at source — do not restore `--color-accent`.
+   See design_handoff_ddp_platform/README.md § "Design system".
+
+   The base accent is an ACTION colour, not a text colour. Measured on the page
+   ground (#c67139 on #f5ead8) it is 3.03:1 — under the 4.5:1 floor for
+   body-size text, and a ghost button is all label. --color-accent-700
+   (#8c491a) measures 5.72:1 and passes. The system's own note says the same
+   thing: "for paragraph-size text in the accent use a deep ramp step".
+
+   Hover/active below keep the BASE accent deliberately: they tint a
+   background, where the contrast floor does not apply. */
+.btn-ghost { color: var(--color-accent-700); padding-inline: var(--space-1); }
 .btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
 .btn-ghost:active { background: color-mix(in srgb, var(--color-accent) 18%, transparent); }
 .btn-icon { width: 36px; height: 36px; padding: 0; }
@@ -305,4 +334,79 @@ textarea.input { min-height: 90px; resize: vertical; }
     color: var(--color-text);
     font-weight: var(--font-heading-weight);
   }
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     THAI TYPOGRAPHY INSIDE THE ORGANIC SCOPE  :lang(th)
+
+     App.css:5335 already carries the product's Thai rules — Sarabun, zero
+     letter-spacing ("Thai glyph stacking breaks with any spacing"), opened
+     line-height, a raised minimum size. That block works by ENUMERATING the
+     classes that set an explicit letter-spacing, and it was written before the
+     Organic layer existed, so it lists none of Organic's.
+
+     This sheet then re-introduces exactly what that block exists to prevent —
+     and it is emitted LAST in the bundle (App.css :lang(th) @102061,
+     farmerPortal @109374, organicScoped @116411 in dist/assets/index-*.css),
+     so at equal specificity these rules won and Thai broke. Measured in a
+     browser at the shipped order, on the farm portal — the screen where Thai
+     is the DEFAULT language:
+
+         h1 portal title   Caprasimo   -0.63px   42px   (no Thai glyphs)
+         .btn              Caprasimo    0px      14px   (no Thai glyphs)
+         .card-kicker      Sarabun      1px      10px
+         .tag              Sarabun      0.22px   11px
+         table th          Sarabun      0.88px   11px
+         body paragraph    Sarabun      0px      15px   <- survived
+         table td          Sarabun      0px      14px   <- survived
+
+     Body text survived because bare `:lang(th)` matches every element directly
+     and beats inheritance; only elements THIS sheet styles directly broke.
+
+     `:lang(th)` sits on the TARGET element, never on an ancestor. The
+     descendant form (`.organic-scope :lang(th) .btn`) needs an intermediate
+     element, so it silently fails to match a direct child — and it fails OPEN,
+     restoring the tracking on the one screen this exists to protect.
+
+     Identifiers keep IBM Plex Mono: nothing here sets a font on the portal's
+     mono classes, mirroring App.css's `:lang(th) .mono` carve-out.
+     ══════════════════════════════════════════════════════════════════════════ */
+
+  /* Give Thai a face that has the glyphs. */
+  h1:lang(th), h2:lang(th), h3:lang(th),
+  h4:lang(th), h5:lang(th), h6:lang(th),
+  .portal-title:lang(th),
+  .btn:lang(th), button:lang(th), a:lang(th) {
+    font-family: var(--font-thai);
+  }
+
+  /* Zero tracking, per App.css:5341. Every element this sheet gives an
+     explicit letter-spacing — the enumeration App.css could not have had. */
+  h1:lang(th), h2:lang(th), h3:lang(th),
+  h4:lang(th), h5:lang(th), h6:lang(th),
+  .portal-title:lang(th),
+  .btn:lang(th), .tag:lang(th), .card-kicker:lang(th),
+  .table th:lang(th), th:lang(th),
+  .field > label:lang(th) {
+    letter-spacing: 0;
+  }
+
+  /* Room for above- and below-baseline vowels and tone marks.
+     Organic sets headings to 1.12, which clips the mark stack outright.
+     1.4 is a judgement between the design's 1.08 and the app's Thai body
+     value of 1.65 — tight enough to still read as a display line. Worth a
+     look by the Thai reviewer alongside the copy. */
+  h1:lang(th), h2:lang(th), h3:lang(th),
+  h4:lang(th), h5:lang(th), h6:lang(th),
+  .portal-title:lang(th) {
+    line-height: 1.4;
+  }
+
+  /* Tables, per App.css:5410. */
+  td:lang(th), th:lang(th) { line-height: 1.7; }
+
+  /* Raise the smallest labels, per App.css:5395 — stacked marks at 10px lose
+     the detail that tells them apart on a phone. `.card-kicker` is the
+     eyebrow, so it takes the same 13px `.page-eyebrow` takes. `.tag` is left
+     at its own size, exactly as App.css leaves `.badge` and `.status-pill`. */
+  .card-kicker:lang(th) { font-size: 13px; }
 }
