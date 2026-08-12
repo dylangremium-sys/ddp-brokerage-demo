@@ -397,11 +397,12 @@ export default function DDPOperationsDeskOrganic({
   /**
    * The farm a matter belongs to.
    *
-   * Read off `destinationParams`, which the queue builder already populates
-   * with `farmId` for farm-destined matters and `itemId` for batch-destined
-   * ones; a batch resolves through inventory. Deliberately NOT parsed out of
-   * `entityLabel` — that is a display string, and matching farms by their
-   * printed name is how the wrong farm gets chased.
+   * Taken from `farmProfileId` where the builder states it outright, otherwise
+   * from `sourceEntityId`, otherwise from `destinationParams` — `farmId` for
+   * farm-destined matters, `itemId` for batch-destined ones, a batch resolving
+   * through inventory. Deliberately NOT parsed out of `entityLabel` — that is a
+   * display string, and matching farms by their printed name is how the wrong
+   * farm gets chased.
    *
    * Returns null when the matter cannot be tied to a farm on file. Those rows
    * cannot be selected, so the button's count can never overstate what will
@@ -416,8 +417,12 @@ export default function DDPOperationsDeskOrganic({
       // production: all 24 matters came back unchaseable, so the screen's one
       // primary action was dead on the day it shipped.
       //
-      // Ordered most specific first. sourceEntityType is the reliable
-      // discriminator; destinationParams is a fallback for queues that set it.
+      // Ordered most specific first. The builder's own answer wins where it has
+      // one: a compliance matter's source is the ALERT, so no farm could ever be
+      // derived from it and the whole category sat unselectable — the same dead
+      // primary action as before, just for one queue instead of all of them.
+      // sourceEntityType is the discriminator for the queues that carry their
+      // farm in their source; destinationParams is a fallback for the rest.
       const bySource =
         item.sourceEntityType === 'farm'
           ? item.sourceEntityId
@@ -431,7 +436,7 @@ export default function DDPOperationsDeskOrganic({
       const byParams = item.destinationParams?.farmId
         ?? (item.destinationParams?.itemId ? batchToFarm.get(item.destinationParams.itemId) : undefined)
 
-      const id = bySource ?? byParams
+      const id = item.farmProfileId ?? bySource ?? byParams
       // A resolved id that is not a farm we hold is not "a farm on file": the
       // chase would be written against something this console cannot show.
       if (!id || !known.has(id)) return null

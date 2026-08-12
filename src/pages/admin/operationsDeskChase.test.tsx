@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import DDPOperationsDeskOrganic, { type FarmChase } from './DDPOperationsDeskOrganic'
-import type { FarmProfile, InventoryItem } from '../../types'
+import type { ComplianceAlert, FarmProfile, InventoryItem } from '../../types'
 
 /**
  * Chasing farms in bulk — the one thing this screen does that the old desk
@@ -303,5 +303,102 @@ describe('every queue resolves its farm — measured against production', () => 
     )
     const selectable = (screen.getAllByRole('checkbox') as HTMLInputElement[]).filter(b => !b.disabled)
     expect(selectable.length).toBe(0)
+  })
+})
+
+/**
+ * A compliance matter is chaseable.
+ *
+ * It was not: a compliance row's `sourceEntityId` is the ALERT's id, so the
+ * farm resolution — which reads a farm id, a batch id or destinationParams —
+ * could derive nothing, and every compliance row's checkbox was disabled. The
+ * category with the most urgent matters on it was the one category that could
+ * not be actioned, and nothing said so; the box was simply dead.
+ *
+ * The builder holds the alert and the records it points at, so it now states
+ * the farm outright. These assert the SCREEN, because the fault was only ever
+ * visible where the two halves meet.
+ */
+describe('a compliance matter can be chased', () => {
+  const FARM_A = 'farm-a'
+
+  function renderWithAlert(over: Partial<ComplianceAlert> = {}, onChase?: (c: FarmChase[]) => void) {
+    const alert: ComplianceAlert = {
+      id: 'alert-1', entityType: 'farm', entityId: FARM_A,
+      alertTitle: 'Licence renewal published',
+      alertDetail: 'A regulatory update affects this farm.',
+      severity: 'high', status: 'open',
+      createdAt: '2026-02-01T00:00:00.000Z',
+      ...over,
+    } as ComplianceAlert
+    return render(
+      <DDPOperationsDeskOrganic
+        farms={FARMS}
+        inventory={INVENTORY}
+        reviewRequests={[]}
+        complianceAlerts={[alert]}
+        reviewRequestsLoading={false}
+        complianceLoading={false}
+        farmInventoryLoading={false}
+        farmInventoryFailed={false}
+        onOpen={() => undefined}
+        onChaseFarms={onChase}
+      />,
+    )
+  }
+
+  /** The compliance row, found by its title rather than by position. */
+  const complianceRow = () =>
+    screen.getByText('Licence renewal published').closest('[role="button"]') as HTMLElement
+
+  it('its checkbox is live, not dead', () => {
+    renderWithAlert()
+    const box = complianceRow().querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(box).toBeTruthy()
+    expect(box.disabled).toBe(false)
+  })
+
+  it('the chase it produces is addressed to the farm the alert names', async () => {
+    const onChase = vi.fn<(c: FarmChase[]) => void>()
+    renderWithAlert({}, onChase)
+
+    const box = complianceRow().querySelector('input[type="checkbox"]') as HTMLInputElement
+    fireEvent.click(box)
+    await waitFor(() => expect(chaseButton().disabled).toBe(false), { timeout: 8000 })
+    fireEvent.click(chaseButton())
+
+    expect(onChase).toHaveBeenCalledTimes(1)
+    const chases = onChase.mock.calls[0][0]
+    const chase = chases.find(c => c.farmProfileId === FARM_A)
+    expect(chase).toBeDefined()
+    // What the farm is told is the alert's own detail, not a generic nudge.
+    expect(chase!.missing).toContain('A regulatory update affects this farm.')
+  })
+
+  it('a batch-level alert is chased to the batch OWNER', async () => {
+    const onChase = vi.fn<(c: FarmChase[]) => void>()
+    // batch-1 belongs to farm-a.
+    renderWithAlert({ entityType: 'batch', entityId: 'batch-1' }, onChase)
+
+    const box = complianceRow().querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(box.disabled).toBe(false)
+    fireEvent.click(box)
+    await waitFor(() => expect(chaseButton().disabled).toBe(false), { timeout: 8000 })
+    fireEvent.click(chaseButton())
+
+    expect(onChase.mock.calls[0][0].some(c => c.farmProfileId === FARM_A)).toBe(true)
+  })
+
+  it('an alert naming a farm this console does not hold stays unchaseable', () => {
+    renderWithAlert({ entityId: 'ghost-farm' })
+    const box = complianceRow().querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(box.disabled).toBe(true)
+  })
+
+  it('a batch alert whose batch has no owner stays unchaseable', () => {
+    // batch-orphan carries no farmId — see the fixture above.
+    renderWithAlert({ entityType: 'batch', entityId: 'batch-orphan' })
+    const box = complianceRow().querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(box.disabled).toBe(true)
   })
 })
