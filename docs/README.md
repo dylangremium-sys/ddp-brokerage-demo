@@ -22,7 +22,7 @@ the index is wrong and should be fixed rather than worked around.
 Never replay a migration that has already been applied. Repository-recorded
 state is not proof of live state — verify against the live catalog first.
 
-- [`MIGRATION_RUNTIME_STATUS.md`](MIGRATION_RUNTIME_STATUS.md) — recorded environment status
+- [`MIGRATION_RUNTIME_STATUS.md`](MIGRATION_RUNTIME_STATUS.md) — recorded environment status for migrations 10, 17, 19–24 and 47–50; read its *Coverage and authority* section first, and prefer the database's own ledger `public.schema_migrations` for 63 onward
 - [`MIGRATION_NUMBER_REGISTER.md`](MIGRATION_NUMBER_REGISTER.md) — number allocation, to prevent collisions
 - [`MIGRATION_RUNTIME_REGISTER.md`](MIGRATION_RUNTIME_REGISTER.md)
 - [`PRODUCTION_MIGRATION_PLAN.md`](PRODUCTION_MIGRATION_PLAN.md)

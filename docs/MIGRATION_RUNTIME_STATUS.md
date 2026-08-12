@@ -17,6 +17,57 @@ applies no DDL.
 
 Contains no credentials, connection strings, keys or passwords.
 
+## Coverage and authority — 2026-08-12
+
+**Read this section before trusting a silence in this file.** This register is
+maintained by hand, and it covers a minority of the migrations in this repository.
+A migration missing from it has not been found absent from Production — it has not
+been looked at.
+
+**What this file records a Production status for**, and nothing else: migrations
+**10, 17, 19–24** and **47–50**. Twelve of the fifty-seven forward migrations on
+`main`.
+
+**What the database now records for itself.** Since migration 67 the production
+database keeps its own ledger, `public.schema_migrations`, and every migration from
+67 onward writes its own row there as its final act. Within the rows it holds that
+table is better evidence than this file, because the apply writes it, not a person
+afterwards. Read as `ddp_ro` on 2026-08-12 17:35 UTC it holds eight rows:
+
+| Number | Name | Applied (UTC) | By | Evidence |
+|---|---|---|---|---|
+| 63 | `STATUS_HISTORY_APPEND_ONLY` | — | — | `backfilled 2026-08-12: a status_history append-only trigger exists` |
+| 64 | `DOCUMENT_REVIEW_ATTRIBUTION` | — | — | `backfilled 2026-08-12: trigger farmer_documents_set_reviewer exists` |
+| 65 | `DOCUMENT_REVIEW_CLARIFICATION` | — | — | `backfilled 2026-08-12: table farmer_document_reviews exists` |
+| 67 | `MIGRATIONS_LEDGER` | 2026-08-12 10:37 | `postgres` | `self-recorded` |
+| 68 | `EVIDENCE_DECISION_GATE` | 2026-08-12 10:37 | `postgres` | `self-recorded` |
+| 69 | `DOCUMENT_DELETION_RECORD` | 2026-08-12 13:51 | `postgres` | `self-recorded` |
+| 70 | `AUDITOR_READ_ACCESS` | 2026-08-12 15:22 | `postgres` | `self-recorded` |
+| 71 | `AUDITOR_READ_REMAINING` | 2026-08-12 16:58 | `postgres` | `self-recorded` |
+
+The three backfilled rows carry no apply date because the ledger did not exist when
+they were applied; their evidence column names the catalog object that was observed
+instead, which is weaker than a self-recorded row and is labelled as such. Staging
+was not read for this section — no staging credential was used.
+
+**What is recorded in neither** — thirty-seven forward migrations: **3–4, 8–9, 11–15,
+25–30, 34–46, 51, 54–61**. Their Production status is `UNKNOWN` as this file defines
+the word: no runtime evidence either way is recorded here. **`UNKNOWN` is not
+`NOT_APPLIED`.** Several of these are believed applied and handover notes elsewhere
+say so — but a merged PR, a green CI run and a handover note are not runtime
+evidence, which is the rule this register exists to hold. Closing the gap needs
+either a purpose-built read-only catalog probe per migration, or a backfill of
+`public.schema_migrations` derived from one. Neither has been done, and the backfill
+additionally needs a write credential against Production that does not exist today.
+
+Numbers **1–2, 5–7, 16, 18, 31–33, 52–53, 62** and **66** have no forward migration
+file at all. The sequence is not contiguous, and their absence from every register
+here is expected rather than a gap.
+
+**Every section below is dated, and is true as of its date rather than today.** Where
+an older section speaks in the present tense about the repository — "the migration
+ledger now ends at 24" — read it as of that section's date.
+
 ## Audit provenance
 
 | | |
