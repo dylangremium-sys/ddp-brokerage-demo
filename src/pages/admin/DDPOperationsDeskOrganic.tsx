@@ -5,12 +5,15 @@ import {
 } from '../../lib/operationsDesk'
 import type { ComplianceAlert, FarmProfile, InventoryItem, ReviewRequest } from '../../types'
 import { resolveOperationsDeskEmptyState } from '../../lib/operationsDeskEmptyState'
+import { displayName, isIdentifier } from '../../lib/entityName'
 
 /**
  * The Operations Desk on the Organic design system — handoff screen 4.
  *
- * PILOT. Nothing routes here; the live desk is DDPOperationsDesk.tsx. This is a
- * sibling so it can be judged before anything replaces anything.
+ * THIS IS THE LIVE DESK. App.tsx:1139 routes here; DDPOperationsDesk.tsx is kept
+ * on disk, unrouted (App.tsx:1893). The header used to say the reverse, left over
+ * from when this was a pilot — and an audit that trusted it went and read the
+ * wrong file, which is part of why the identifier defect below survived review.
  *
  * THIS IS NOT A REPAINT. The audit's complaint about this screen was never that
  * it was ugly. It was that the screen tells its operator not to believe it:
@@ -217,19 +220,28 @@ function DeskHeader({ total, search, onSearch, chaseCount, chaseEnabled, busy, o
  * a colleague is impossible. The id is kept, demoted to metadata, and the row
  * says plainly what is actually wrong: the farm has no name on file.
  */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/**
+ * The rule itself lives in lib/entityName, shared with the farm portal. This
+ * screen used to keep its own copy, and the two had already drifted — the copy
+ * stripped a dangling separator from one end where the shared rule strips both,
+ * and it judged the whole label where the shared rule judges each part. That
+ * second difference is why compliance rows still printed "farm · b1f4182c-…"
+ * after #212/#213. One rule, one place, or the desk silently opts out of every
+ * fix made to it.
+ */
+const UNNAMED_ENTITY = 'Farm with no name on file'
 
 function entityDisplay(label: string, farm: { id: string; name: string } | null): {
   name: string; identifier?: string; unnamed: boolean
 } {
-  const trimmed = label.trim()
-  // The queue joins product and farm with " · ", so an empty farm leaves a
-  // dangling separator — "BIG HAIRY ASS ·" is a real row in production.
-  const cleaned = trimmed.replace(/\s*·\s*$/, '').trim()
-  if (cleaned && !UUID.test(cleaned)) return { name: cleaned, unnamed: false }
-  const id = UUID.test(cleaned) ? cleaned : farm?.id
-  if (farm && !UUID.test(farm.name)) return { name: farm.name, identifier: id, unnamed: false }
-  return { name: 'Farm with no name on file', identifier: id, unnamed: true }
+  const shown = displayName(label, UNNAMED_ENTITY, farm?.id)
+  // Kept from this screen's own version, and deliberately not pushed into the
+  // shared module: the desk holds the farm record, so where the label yields no
+  // name it can still name the farm. The portal has no equivalent to fall back on.
+  if (shown.unnamed && farm && !isIdentifier(farm.name)) {
+    return { name: farm.name, identifier: shown.identifier, unnamed: false }
+  }
+  return shown
 }
 
 /**

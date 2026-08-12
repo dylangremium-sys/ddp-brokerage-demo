@@ -163,6 +163,55 @@ describe('Operations Desk aggregation — inclusion conditions', () => {
     expect(compliance.every(i => i.destinationPage === 'ddp-compliance-watchtower')).toBe(true)
   })
 
+  /**
+   * A compliance alert stores only entityType + entityId. This used to be
+   * rendered as `${entityType} · ${entityId}`, which is an identifier with a
+   * word glued to it — unreadable as a row title, and indistinguishable from
+   * the next one. The desk already holds the farms and the inventory, so the
+   * id is resolved to the name the record actually has.
+   */
+  describe('a compliance matter is named, not identified', () => {
+    const FARM_UUID = 'b1f4182c-3a2b-419b-b050-84609ac13492'
+    const BATCH_UUID = 'c2e5293d-4b3c-52ac-c161-95710bd24503'
+
+    const complianceLabel = (over: Partial<OperationsDeskInput>, a: ComplianceAlert) =>
+      buildOperationsDeskItems(input({ ...over, complianceAlerts: [a] }))
+        .items.find(i => i.category === 'compliance')!.entityLabel
+
+    it('names the farm a farm alert is about', () => {
+      const label = complianceLabel(
+        { farms: [makeFarm({ id: FARM_UUID, tradingName: 'Mae Rim Organics' })] },
+        alert({ entityType: 'farm', entityId: FARM_UUID }),
+      )
+      expect(label).toBe('Mae Rim Organics')
+      expect(label).not.toContain(FARM_UUID)
+    })
+
+    it('names the batch a batch alert is about, in the shape the other queues use', () => {
+      const label = complianceLabel(
+        { inventory: [makeInventoryItem({ id: BATCH_UUID, productName: 'Sunrise Mango', farmName: 'Mae Rim Organics' })] },
+        alert({ entityType: 'batch', entityId: BATCH_UUID }),
+      )
+      expect(label).toBe('Sunrise Mango · Mae Rim Organics')
+    })
+
+    // The guard in the row demotes a BARE identifier to metadata and says what
+    // is wrong. A glued one defeats it, so an unresolvable entity must return
+    // the id alone — never with its type welded on.
+    it('returns the bare id when the entity is not on file, never "type · id"', () => {
+      const label = complianceLabel({}, alert({ entityType: 'farm', entityId: FARM_UUID }))
+      expect(label).toBe(FARM_UUID)
+      expect(label).not.toContain('·')
+      expect(label).not.toContain('farm ')
+    })
+
+    it('does the same for an entity type the desk holds no records for', () => {
+      const label = complianceLabel({}, alert({ entityType: 'coa', entityId: FARM_UUID }))
+      expect(label).toBe(FARM_UUID)
+      expect(label).not.toContain('·')
+    })
+  })
+
   it('excludes resolved and dismissed compliance alerts', () => {
     const result = buildOperationsDeskItems(input({
       complianceAlerts: [

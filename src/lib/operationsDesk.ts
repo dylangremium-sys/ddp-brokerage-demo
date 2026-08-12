@@ -167,6 +167,39 @@ function farmLabel(farm: FarmProfile): string {
   return farm.tradingName || farm.legalBusinessName || farm.id
 }
 
+/**
+ * What a compliance matter is ABOUT, as a name.
+ *
+ * A stored alert carries only `entityType` + `entityId`, so the first cut of
+ * this glued the two together — "farm · b1f4182c-3a2b-419b-b050-84609ac13492".
+ * That is an identifier wearing a name's clothes. The row guard demotes a BARE
+ * id to metadata and says what is actually wrong, but a glued label is not a
+ * bare id, so it reads as a title and prints verbatim — which is how this desk
+ * still showed raw ids after #212/#213 fixed every other queue.
+ *
+ * The id is resolved against records the desk already holds. When it cannot be
+ * resolved, return the BARE id and nothing else: never `type · id`, because the
+ * whole point is to leave the guard something it can recognise.
+ */
+function complianceEntityLabel(
+  alert: ComplianceAlert,
+  farms: FarmProfile[],
+  inventory: InventoryItem[],
+): string {
+  if (alert.entityType === 'farm') {
+    const farm = farms.find(f => f.id === alert.entityId)
+    // farmLabel falls back to farm.id, which is a bare id by design — the guard
+    // demotes it rather than this function inventing a name the record lacks.
+    if (farm) return farmLabel(farm)
+  }
+  if (alert.entityType === 'batch') {
+    const item = inventory.find(i => i.id === alert.entityId)
+    // Same shape the batch queues use, so one farm reads identically everywhere.
+    if (item) return `${item.productName} · ${item.farmName}`
+  }
+  return alert.entityId
+}
+
 function daysBetween(fromIso: string | undefined, now: Date): number | undefined {
   if (!fromIso) return undefined
   const then = new Date(fromIso).getTime()
@@ -409,7 +442,7 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
           category: 'compliance' as const,
           priority: classifyOperationsDeskPriority({ complianceSeverity: alert.severity }),
           title: alert.alertTitle,
-          entityLabel: `${alert.entityType} · ${alert.entityId}`,
+          entityLabel: complianceEntityLabel(alert, farms, inventory),
           reason: alert.alertDetail,
           occurredAt: alert.createdAt,
           ageInDays: daysBetween(alert.createdAt, now),
