@@ -4,6 +4,7 @@ import { T } from '../../translations'
 import { calcCompletion, loadFarmDraft, saveFarmDraft, clearFarmDraft } from '../../data'
 import type { Lang, FarmProfile } from '../../types'
 import type { UserProfile } from '../../services/auth'
+import '../../styles/farmerOnboarding.css'
 
 interface Props {
   lang: Lang
@@ -292,24 +293,68 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
   }
 
   return (
-    <div className="page-wrap">
-      <div className="page-header farmer-header">
-        <div className="page-eyebrow">{t.eyebrow}</div>
-        <h1 className="page-title">{t.wizardTitle}</h1>
-        <p className="page-desc">{t.wizardDesc}</p>
+    <div className="organic-scope">
+    <div className="ob">
+    <div className="ob-inner">
+      <div>
+        <div className="ob-eyebrow">{t.eyebrow}</div>
+        <h1 className="ob-title">{t.wizardTitle}</h1>
+        <p className="ob-desc">{t.wizardDesc}</p>
       </div>
 
-      {/* Progress bar */}
-      <div className="wizard-progress-wrap">
-        <div className="wizard-progress-meta">
-          <span className="wizard-step-label">{t.stepOf(step, TOTAL_STEPS)} — {stepTitles[step - 1]}</span>
-          <span className="wizard-completion-pct">{completionPct}% {lang === 'th' ? 'สมบูรณ์' : 'complete'}</span>
-        </div>
-        <div className="wizard-progress-track">
-          <div className="wizard-progress-fill" style={{ width: `${(step / TOTAL_STEPS) * 100}%` }} />
-        </div>
-        <div className="wizard-step-hint">{hints[step]}</div>
-      </div>
+      <div className="ob-cols">
+        {/* ── Stage rail ──────────────────────────────────────────────────
+            Replaces a 4px bar whose only signal was a creeping percentage.
+            Nine entries, because there are nine steps — see the note at the
+            head of styles/farmerOnboarding.css on why they were not regrouped
+            into the handoff's four stages.
+
+            Each entry is a button: the wizard already allowed movement between
+            steps, and a rail you can read but not use is a worse rail. */}
+        <nav className="ob-rail" aria-label={t.wizardTitle}>
+          {stepTitles.map((title, i) => {
+            const n = i + 1
+            const state = n === step ? 'is-current' : n < step ? 'is-done' : ''
+            return (
+              <button
+                key={title}
+                type="button"
+                className={`ob-stage ${state}`}
+                aria-current={n === step ? 'step' : undefined}
+                /*
+                 * The accessible name is navigational, not the step title.
+                 *
+                 * Step 9 is called "Ready to Submit?", so a rail entry carrying
+                 * that title announces as a submit control sitting beside the
+                 * real one — two buttons a screen reader reads as the same
+                 * action, one of which only scrolls. The validation tests found
+                 * it first ("Found multiple elements with the role button and
+                 * name /submit|send to ddp|finish/"), but the ambiguity is real
+                 * before it is a test failure.
+                 *
+                 * The title stays visible; only the announced name changes.
+                 */
+                aria-label={lang === 'th' ? `ไปที่ขั้นตอนที่ ${n}` : `Go to step ${n}`}
+                onClick={() => setStep(n)}
+              >
+                <span className="ob-stage-num" aria-hidden="true">{n}</span>
+                <span>
+                  <span className="ob-stage-name">{title}</span>
+                  <span className="ob-stage-state">
+                    {n === step
+                      ? t.stepOf(step, TOTAL_STEPS)
+                      : `${completionPct}% ${lang === 'th' ? 'สมบูรณ์' : 'complete'}`}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </nav>
+
+        <div className="ob-panel">
+          {/* The step's own hint, kept — it is the one line telling a farmer
+              what this step is for. */}
+          <p className="ob-panel-hint">{hints[step]}</p>
 
       {/* ── Step 1: Farm Basics ── */}
       {step === 1 && (
@@ -318,11 +363,29 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
             <Field label={t.tradingName} hint={lang === 'th' ? 'ชื่อที่คุณต้องการให้แสดง' : 'The name you want displayed'}>
               <input value={form.tradingName ?? ''} onChange={e => set('tradingName', e.target.value)} placeholder={lang === 'th' ? 'เช่น สวนพฤกษา' : 'e.g. Green Valley Farm'} />
             </Field>
+            {/* A segmented control, not a dropdown. The handoff is explicit
+                that farm type is never free text and never a select whose
+                empty value renders as "—" — which is exactly what the live
+                build shows here, so "—" reads as a farm type rather than as
+                "not answered".
+
+                Same field, same four stored values, same `set` call. Only the
+                affordance changed: four visible options a thumb can hit,
+                instead of a menu that hides them and defaults to a dash. */}
             <Field label={t.farmType}>
-              <select value={form.farmType ?? ''} onChange={e => set('farmType', e.target.value)}>
-                <option value="">—</option>
-                {FARM_TYPES.map(ft => <option key={ft} value={ft}>{ft}</option>)}
-              </select>
+              <div className="ob-seg" role="group" aria-label={t.farmType}>
+                {FARM_TYPES.map(ft => (
+                  <button
+                    key={ft}
+                    type="button"
+                    className={`ob-seg-opt${form.farmType === ft ? ' is-active' : ''}`}
+                    aria-pressed={form.farmType === ft}
+                    onClick={() => set('farmType', ft)}
+                  >
+                    {ft}
+                  </button>
+                ))}
+              </div>
             </Field>
           </Row>
           <Row>
@@ -634,37 +697,41 @@ export default function FarmerOnboarding({ lang, currentProfile, onSubmit, onBac
         </div>
       )}
 
-      {/* ── Wizard controls ── */}
-      <div className="wizard-controls">
-        <div className="wizard-controls-left">
-          {step > 1 && (
-            <button className="btn btn-ghost" onClick={handleBack}>{t.btnBack}</button>
-          )}
-        </div>
-        <div className="wizard-controls-center">
-          <button className="btn btn-ghost-sm" onClick={handleContinueLater}>
-            {t.continueLater}
-          </button>
-          {draftSavedMsg && (
-            <span className="wizard-draft-saved">{t.draftSaved}</span>
-          )}
-        </div>
-        <div className="wizard-controls-right">
-          {step < TOTAL_STEPS && (
-            <>
-              <button className="btn btn-outline-sm" onClick={handleSaveDraft} style={{ marginRight: 8 }}>
-                {t.saveProgress}
-              </button>
-              <button className="btn btn-ghost-sm" onClick={handleSkip} style={{ marginRight: 8 }}>
-                {t.skipForNow}
-              </button>
-              <button className="btn btn-primary" onClick={handleNext}>
-                {t.btnNext}
-              </button>
-            </>
-          )}
+          {/* ── Controls ──────────────────────────────────────────────────
+              EVERY control the wizard had is still here. The handoff's
+              complaint is that four exits of equal weight give a farmer no
+              idea which one is the way forward — and the fix for that is
+              hierarchy, not amputation. One filled button, the rest secondary
+              or text. Someone who relies on "Skip for now" still finds it. */}
+          <div className="ob-foot">
+            <span className="ob-foot-status">
+              {draftSavedMsg ? t.draftSaved : `${completionPct}% ${lang === 'th' ? 'สมบูรณ์' : 'complete'}`}
+            </span>
+
+            {step > 1 && (
+              <button type="button" className="btn btn-ghost" onClick={handleBack}>{t.btnBack}</button>
+            )}
+            <button type="button" className="btn btn-ghost" onClick={handleContinueLater}>
+              {t.continueLater}
+            </button>
+            {step < TOTAL_STEPS && (
+              <>
+                <button type="button" className="btn btn-ghost" onClick={handleSkip}>
+                  {t.skipForNow}
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={handleSaveDraft}>
+                  {t.saveProgress}
+                </button>
+                <button type="button" className="btn btn-primary" onClick={handleNext}>
+                  {t.btnNext}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
+    </div>
+    </div>
     </div>
   )
 }
