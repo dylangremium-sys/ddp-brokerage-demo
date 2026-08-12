@@ -37,8 +37,13 @@ export const T = {
     portalAddBatch: 'Add a new batch',
     portalProfile: 'Farm profile',
     portalAdd: 'Add',
-    portalActivity: 'Recent activity',
-    portalNoActivity: 'Nothing has happened on your account yet.',
+    // NAMED FOR WHAT IT LISTS. This section renders `reviewRequests` and
+    // nothing else, so under the heading "Recent activity" its empty state
+    // told a farm that nothing had happened on an account with a document
+    // uploaded on 8 Aug and reviewed the same day. The list was right; the
+    // heading claimed a scope it never had. Observed live 2026-08-12.
+    portalActivity: 'Requests from DDP',
+    portalNoActivity: 'DDP has not sent you any requests yet.',
     portalMessageDdp: 'Message DDP',
     portalContactName: 'Nattaya S.',
     portalContactRole: 'Your contact at DDP',
@@ -82,11 +87,24 @@ export const T = {
         body: 'Someone at DDP has asked you something specific about a batch you sent. Your stock stays held until it is answered.',
         cta: 'Read the question',
       },
-      documents: {
+      // SPLIT FROM ONE `documents` CARD. The old single card was selected when
+      // EITHER the licence or the COA was missing, and only ever named the
+      // licence — so a farm that had sent its licence and not its COA was told
+      // to add the licence it had already sent. Two states, two cards.
+      licence: {
         tag: 'DDP is waiting on you',
         title: 'Add your cultivation licence',
         body: 'DDP verifies your licence against Thai FDA records before anything you have is shown to a buyer. A photo of the certificate is enough to start.',
         cta: 'Take a photo of the licence',
+      },
+      // This wording was correct all along — it was simply filed under
+      // `evidence`, a state that means the opposite. Here it is true: DDP holds
+      // no certificate of analysis for this farm at all.
+      coa: {
+        tag: 'DDP is waiting on you',
+        title: 'Send a photo of your lab report',
+        body: 'DDP cannot clear your stock for buyers until the certificate of analysis is on file. A photo taken on this phone is enough — it does not need to be scanned.',
+        cta: 'Take a photo of the COA',
       },
       profile: {
         tag: 'One thing left',
@@ -876,8 +894,9 @@ export const T = {
     portalAddBatch: 'เพิ่มล็อตใหม่',
     portalProfile: 'โปรไฟล์ฟาร์ม',
     portalAdd: 'เพิ่ม',
-    portalActivity: 'ความเคลื่อนไหวล่าสุด',
-    portalNoActivity: 'ยังไม่มีความเคลื่อนไหวในบัญชีของคุณ',
+    // See the English note. NEWLY DRAFTED THAI — awaiting a Thai reader.
+    portalActivity: 'คำขอจาก DDP',
+    portalNoActivity: 'DDP ยังไม่ได้ส่งคำขอถึงคุณ',
     portalMessageDdp: 'ส่งข้อความถึง DDP',
     portalContactName: 'ณัฐฐญา ส.',
     portalContactRole: 'ผู้ดูแลฟาร์มของคุณที่ DDP',
@@ -911,11 +930,20 @@ export const T = {
         body: 'ทีมงาน DDP มีคำถามเฉพาะเจาะจงเกี่ยวกับล็อตที่คุณส่งมา สินค้าของคุณจะยังไม่ถูกปล่อยจนกว่าจะได้รับคำตอบ',
         cta: 'อ่านคำถาม',
       },
-      documents: {
+      // See the English note on the split.
+      licence: {
         tag: 'DDP กำลังรอคุณอยู่',
         title: 'เพิ่มใบอนุญาตเพาะปลูกของคุณ',
         body: 'DDP จะตรวจสอบใบอนุญาตของคุณกับฐานข้อมูล อย. ก่อนที่สินค้าของคุณจะแสดงต่อผู้ซื้อ ถ่ายภาพใบรับรองก็เริ่มได้แล้ว',
         cta: 'ถ่ายภาพใบอนุญาต',
+      },
+      // Carried across unchanged from the old `evidence` entry — human-written
+      // Thai, correct wording, previously filed under the wrong state.
+      coa: {
+        tag: 'DDP กำลังรอคุณอยู่',
+        title: 'ส่งภาพถ่ายผลตรวจแล็บของคุณ',
+        body: 'DDP ไม่สามารถอนุมัติสินค้าของคุณให้ผู้ซื้อได้ จนกว่าจะได้รับใบรับรองผลการวิเคราะห์ ถ่ายภาพด้วยโทรศัพท์เครื่องนี้ก็เพียงพอ ไม่จำเป็นต้องสแกน',
+        cta: 'ถ่ายภาพ COA',
       },
       profile: {
         tag: 'เหลืออีกอย่างเดียว',

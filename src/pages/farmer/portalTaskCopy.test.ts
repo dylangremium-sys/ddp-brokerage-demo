@@ -50,12 +50,30 @@ describe('portal blocking-task copy matches the state that selects it', () => {
         expect(evidenceCopy).toMatch(POINTS_AT_A_REPLY[lang])
       })
 
-      it('the documents card — which IS about a missing document — may still ask for one', () => {
-        // Guards the opposite mistake: fixing the wording above by swapping the
-        // two cards would leave the farm with no way to send what is genuinely
-        // absent.
-        const documentsCopy = [task.documents.title, task.documents.body, task.documents.cta].join(' ')
-        expect(documentsCopy).toMatch(ASKS_FOR_AN_UPLOAD[lang])
+      it.each(['licence', 'coa'] as const)(
+        'the %s card — which IS about a genuinely missing document — asks for one',
+        kind => {
+          // Guards the opposite mistake: fixing the wording above by swapping
+          // the cards would leave the farm with no way to send what is absent.
+          const copy = [task[kind].title, task[kind].body, task[kind].cta].join(' ')
+          expect(copy).toMatch(ASKS_FOR_AN_UPLOAD[lang])
+        },
+      )
+
+      it('the licence card asks for the licence and the coa card asks for the report', () => {
+        // These were ONE card until 2026-08-12, selected when either document
+        // was missing and worded only for the licence — so a farm that had sent
+        // its licence and not its lab report was told to send the licence again.
+        // Each card must name its own document.
+        const licence = [task.licence.title, task.licence.cta].join(' ')
+        const coa = [task.coa.title, task.coa.cta].join(' ')
+        const NAMES_LICENCE = { en: /licen[cs]e/i, th: /ใบอนุญาต/ }
+        const NAMES_REPORT = { en: /\b(lab|laboratory|report|analysis|COA)\b/i, th: /(แล็บ|ผลตรวจ|COA|วิเคราะห์)/ }
+
+        expect(licence).toMatch(NAMES_LICENCE[lang])
+        expect(licence).not.toMatch(NAMES_REPORT[lang])
+        expect(coa).toMatch(NAMES_REPORT[lang])
+        expect(coa).not.toMatch(NAMES_LICENCE[lang])
       })
 
       it('every blocking task states a tag, a title, a body and an action', () => {
