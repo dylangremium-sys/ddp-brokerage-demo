@@ -4,11 +4,11 @@
 --
 -- Removes exactly what 70 added and restores exactly what it re-scoped.
 --
--- 70 CREATED NO TABLES AND NO FUNCTIONS. It changed the role scope of six
+-- 70 CREATED NO TABLES AND NO FUNCTIONS. It changed the role scope of seven
 -- existing policies and added five new ones. So this file has two jobs:
 --
 --   1. drop the five auditor policies; and
---   2. restore the six re-scoped policies to `TO public`, predicates verbatim.
+--   2. restore the seven re-scoped policies to `TO public`, predicates verbatim.
 --
 -- BOTH HALVES MATTER EQUALLY, and the second is the one that is easy to forget.
 -- A rollback that dropped only the auditor policies would leave the admin

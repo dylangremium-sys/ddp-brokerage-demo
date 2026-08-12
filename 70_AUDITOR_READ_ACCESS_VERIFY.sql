@@ -19,7 +19,7 @@
 -- broken fix cheerfully. B asserts a specific row is VISIBLE, which is the only
 -- claim this migration actually makes.
 --
--- WHY C EXISTS AT ALL. 70 re-scopes six live policies and reproduces their
+-- WHY C EXISTS AT ALL. 70 re-scopes seven live policies and reproduces their
 -- predicates by hand. The failure mode that would sail past sections A and B is
 -- an auditor who reads perfectly while the application has been broken or
 -- widened underneath. C drives the admin path, the non-admin path and the
