@@ -6,15 +6,15 @@
   "migrationDir": ".",
   "applyStages": [
     {
-      "label": "BASE-SCHEMA",
-      "file": "SUPABASE_SCHEMA.sql"
+      "label": "PRE-MIGRATION-64",
+      "file": "64_DOCUMENT_REVIEW_ATTRIBUTION_HARDENING.sql"
     },
     {
-      "label": "FARMER-MVP",
-      "file": "FARMER_MVP_MIGRATION.sql"
+      "label": "PRE-MIGRATION-65",
+      "file": "65_DOCUMENT_REVIEW_CLARIFICATION_HARDENING.sql"
     },
     {
-      "label": "67-PREREQ",
+      "label": "PRE-MIGRATION-67",
       "file": "67_MIGRATIONS_LEDGER_HARDENING.sql"
     },
     {
@@ -52,7 +52,8 @@
         "public.enforce_evidence_decision_gate",
         "public.evidence_reason_is_substantive",
         "public.set_document_open_actor",
-        "public.refuse_document_open_mutation"
+        "public.refuse_document_open_mutation",
+        "public.set_review_digest"
       ]
     },
     "retained": {
@@ -75,9 +76,8 @@
     "symbols": [
       "auth.uid",
       "auth.users",
-      "public.is_ddp_admin",
       "public.farmer_documents",
-      "public.farmer_document_reviews"
+      "public.is_ddp_admin"
     ]
   }
 }

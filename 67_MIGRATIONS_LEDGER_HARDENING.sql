@@ -109,6 +109,16 @@ BEGIN
 END;
 $$;
 
+
+-- Trigger functions are invoked by the trigger, never by a caller, so nobody
+-- holds EXECUTE. Stated explicitly rather than left to the default, because the
+-- PostgreSQL default is EXECUTE to PUBLIC.
+-- acl-no-grant: refuse_schema_migration_removal
+REVOKE EXECUTE ON FUNCTION public.refuse_schema_migration_removal() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.refuse_schema_migration_removal() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.refuse_schema_migration_removal() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.refuse_schema_migration_removal() FROM service_role;
+
 DROP TRIGGER IF EXISTS schema_migrations_no_delete ON public.schema_migrations;
 CREATE TRIGGER schema_migrations_no_delete
   BEFORE DELETE ON public.schema_migrations

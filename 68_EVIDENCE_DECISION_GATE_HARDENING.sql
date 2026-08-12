@@ -76,6 +76,16 @@ BEGIN
 END;
 $$;
 
+
+-- Trigger functions are invoked by the trigger, never by a caller, so nobody
+-- holds EXECUTE. Stated explicitly rather than left to the default, because the
+-- PostgreSQL default is EXECUTE to PUBLIC.
+-- acl-no-grant: set_document_open_actor
+REVOKE EXECUTE ON FUNCTION public.set_document_open_actor() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.set_document_open_actor() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.set_document_open_actor() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.set_document_open_actor() FROM service_role;
+
 DROP TRIGGER IF EXISTS farmer_document_opens_set_actor ON public.farmer_document_opens;
 CREATE TRIGGER farmer_document_opens_set_actor
   BEFORE INSERT ON public.farmer_document_opens
@@ -92,6 +102,16 @@ BEGIN
     USING ERRCODE = 'check_violation';
 END;
 $$;
+
+
+-- Trigger functions are invoked by the trigger, never by a caller, so nobody
+-- holds EXECUTE. Stated explicitly rather than left to the default, because the
+-- PostgreSQL default is EXECUTE to PUBLIC.
+-- acl-no-grant: refuse_document_open_mutation
+REVOKE EXECUTE ON FUNCTION public.refuse_document_open_mutation() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.refuse_document_open_mutation() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.refuse_document_open_mutation() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.refuse_document_open_mutation() FROM service_role;
 
 DROP TRIGGER IF EXISTS farmer_document_opens_no_update_delete ON public.farmer_document_opens;
 CREATE TRIGGER farmer_document_opens_no_update_delete
@@ -153,6 +173,14 @@ $$;
 COMMENT ON FUNCTION public.evidence_reason_is_substantive(text) IS
   'The floor for a recorded reason. The client mirrors this predicate exactly; '
   'if the two drift, the database is the one that decides.';
+
+-- Read by the gate trigger only. The client mirrors the predicate in
+-- TypeScript rather than calling it, so no API role needs EXECUTE.
+-- acl-no-grant: evidence_reason_is_substantive
+REVOKE EXECUTE ON FUNCTION public.evidence_reason_is_substantive(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.evidence_reason_is_substantive(text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.evidence_reason_is_substantive(text) FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.evidence_reason_is_substantive(text) FROM service_role;
 
 CREATE OR REPLACE FUNCTION public.enforce_evidence_decision_gate()
 RETURNS trigger
@@ -235,6 +263,16 @@ COMMENT ON FUNCTION public.enforce_evidence_decision_gate() IS
 -- refusal happens before anything is derived from a decision that will not
 -- stand. Trigger order within a timing class is alphabetical in PostgreSQL, and
 -- "farmer_documents_enforce_..." sorts before "farmer_documents_set_reviewer".
+
+-- Trigger functions are invoked by the trigger, never by a caller, so nobody
+-- holds EXECUTE. Stated explicitly rather than left to the default, because the
+-- PostgreSQL default is EXECUTE to PUBLIC.
+-- acl-no-grant: enforce_evidence_decision_gate
+REVOKE EXECUTE ON FUNCTION public.enforce_evidence_decision_gate() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.enforce_evidence_decision_gate() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.enforce_evidence_decision_gate() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.enforce_evidence_decision_gate() FROM service_role;
+
 DROP TRIGGER IF EXISTS farmer_documents_enforce_decision_gate ON public.farmer_documents;
 CREATE TRIGGER farmer_documents_enforce_decision_gate
   BEFORE INSERT OR UPDATE ON public.farmer_documents
@@ -243,58 +281,49 @@ CREATE TRIGGER farmer_documents_enforce_decision_gate
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 4. Carry the digest onto the decision record.
 -- ─────────────────────────────────────────────────────────────────────────────
--- `fn_farmer_document_review_event` (AFTER UPDATE, migration 65) is the ONLY
--- writer of farmer_document_reviews. It is replaced here rather than
--- supplemented, so that stays true.
+-- FIRST ATTEMPT, AND WHY IT WAS WRONG. This originally replaced
+-- fn_farmer_document_review_event — migration 65's function, the only writer of
+-- farmer_document_reviews — adding the digest to its INSERT. It applied cleanly
+-- to staging and the VERIFY passed.
 --
--- Its existing behaviour is preserved exactly and deliberately:
---   · fires only on a status transition
---   · refuses when auth.uid() is NULL, naming the transition in the message
---   · trims the note with the same character class before storing it
---   · RETURNS NULL, which is correct for an AFTER trigger
--- The only change is the digest column. Diff this against the definition
--- captured from production on 2026-08-11 before trusting that claim.
-CREATE OR REPLACE FUNCTION public.fn_farmer_document_review_event()
+-- The disposable-PostgreSQL harness then failed it on rollback symmetry: after
+-- rolling back, the function was present but NOT restored to its prior
+-- definition. The rollback carried the body captured from PRODUCTION, and
+-- production's body is not byte-identical to what 65's own file creates. Undoing
+-- 68 would therefore have quietly rewritten 65's function into a different
+-- version of itself — on a chain-of-custody table, by a rollback whose entire
+-- job is to leave no trace.
+--
+-- So 65's function is left alone. A BEFORE INSERT trigger on the review table
+-- fills the column instead. There is still exactly one writer of the rows; this
+-- only completes a row already being written, and rolling 68 back removes a
+-- trigger rather than rewriting somebody else's function.
+CREATE OR REPLACE FUNCTION public.set_review_digest()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
-AS $function$
-DECLARE
-  v_actor uuid := auth.uid();
+SET search_path = public, pg_catalog
+AS $$
 BEGIN
-  IF NEW.review_status IS DISTINCT FROM OLD.review_status THEN
-
-    IF v_actor IS NULL THEN
-      RAISE EXCEPTION
-        'A document review transition must name an authenticated human; auth.uid() is NULL (% -> %)',
-        OLD.review_status,
-        NEW.review_status
-        USING ERRCODE = 'check_violation';
-    END IF;
-
-    INSERT INTO public.farmer_document_reviews (
-      farmer_document_id,
-      previous_status,
-      new_status,
-      review_note,
-      reviewed_by,
-      sha256_at_decision
-    )
-    VALUES (
-      NEW.id,
-      OLD.review_status,
-      NEW.review_status,
-      btrim(NEW.review_note, E' \t\r\n\f\v'),
-      v_actor,
-      NEW.sha256_hex
-    );
-
-  END IF;
-
-  RETURN NULL;
+  -- Null is a legal outcome: "the digest as it stood" includes "there was none",
+  -- which this product reports rather than hides.
+  SELECT d.sha256_hex INTO NEW.sha256_at_decision
+    FROM public.farmer_documents d
+   WHERE d.id = NEW.farmer_document_id;
+  RETURN NEW;
 END;
-$function$;
+$$;
+
+-- acl-no-grant: set_review_digest
+REVOKE EXECUTE ON FUNCTION public.set_review_digest() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.set_review_digest() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.set_review_digest() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.set_review_digest() FROM service_role;
+
+DROP TRIGGER IF EXISTS farmer_document_reviews_set_digest ON public.farmer_document_reviews;
+CREATE TRIGGER farmer_document_reviews_set_digest
+  BEFORE INSERT ON public.farmer_document_reviews
+  FOR EACH ROW EXECUTE FUNCTION public.set_review_digest();
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 5. Record that this migration ran, here, now.

@@ -136,11 +136,14 @@ BEGIN
       END IF;
       INSERT INTO public.farms (id, farm_name, status)
       VALUES (gen_random_uuid(), 'Gate Verify Farm', 'Approved') RETURNING id INTO v_farm;
-      -- sha256_hex and sha256_recorded_at are paired by a CHECK: a digest with
-      -- no recorded time is not evidence of anything.
+      -- Only the columns every cluster is guaranteed to have. A digest is not
+      -- needed to exercise the gate, and sha256_hex arrives in a later
+      -- migration than this fixture's prerequisites — demanding it here made the
+      -- section pass on staging (which has the column) and fail on a minimal
+      -- cluster, which is the wrong way round for a test.
       INSERT INTO public.farmer_documents
-        (id, farm_id, document_type, file_name, review_status, sha256_hex, sha256_recorded_at)
-      VALUES (gen_random_uuid(), v_farm, 'coa', 'gate-verify.pdf', 'pending', repeat('a', 64), now())
+        (id, farm_id, document_type, file_name, review_status)
+      VALUES (gen_random_uuid(), v_farm, 'coa', 'gate-verify.pdf', 'pending')
       RETURNING id INTO v_doc;
     END IF;
 
