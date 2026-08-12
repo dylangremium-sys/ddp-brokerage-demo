@@ -706,6 +706,18 @@ export interface FarmerDocument {
   reviewedAt?: string
   /** Set by migration 64's trigger from auth.uid(); never chosen by the caller. */
   reviewedBy?: string
+  /**
+   * What the certificate says about itself.
+   *
+   * These columns have existed since the COA work and nothing selected them, so
+   * the review screen could not show a reviewer what they were being asked to
+   * judge — and could not surface the contradiction between the sample the
+   * report names and the batch the document is filed against, which is the
+   * commonest reason a certificate is in the queue at all.
+   */
+  labName?: string
+  reportNumber?: string
+  sampleName?: string
 }
 
 export interface StoredPhoto {

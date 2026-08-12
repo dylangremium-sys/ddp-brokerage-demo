@@ -12,6 +12,13 @@ import { isBlank, resolveDocumentDecisionGate } from '../../lib/documentReviewGa
 import type { DocumentDecisionGate } from '../../lib/documentReviewGate'
 
 /**
+ * UNROUTED AS OF THE EVIDENCE REBUILD (2026-08-11). `ddp-document-review` now
+ * renders DDPEvidenceReview.tsx. Kept on disk for one release as the reference
+ * for what was replaced — in particular its `adminNames?.get(id) ?? id`
+ * fallback, which is why every reviewer on the live screen was a bare UUID: the
+ * prop was optional and App never passed it.
+ */
+/**
  * Evidence review — the administrator's queue for documents farms have uploaded.
  *
  * WHAT THIS CLOSES. public.farmer_documents, its sha256 index and its RLS were

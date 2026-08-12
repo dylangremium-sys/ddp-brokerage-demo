@@ -967,7 +967,7 @@ export async function loadFarmerDocuments(): Promise<FarmerDocument[]> {
   if (!supabase) throw new Error('Supabase is not configured.')
   const { data, error } = await supabase
     .from('farmer_documents')
-    .select('id, farm_id, inventory_batch_id, document_type, file_name, file_url, sha256_hex, sha256_recorded_at, review_status, review_note, uploaded_at, reviewed_at, reviewed_by')
+    .select('id, farm_id, inventory_batch_id, document_type, file_name, file_url, sha256_hex, sha256_recorded_at, review_status, review_note, uploaded_at, reviewed_at, reviewed_by, lab_name, report_number, sample_name')
     .order('uploaded_at', { ascending: false })
 
   if (error) {
@@ -989,6 +989,9 @@ export async function loadFarmerDocuments(): Promise<FarmerDocument[]> {
     uploadedAt: (row.uploaded_at as string) ?? '',
     reviewedAt: (row.reviewed_at as string) ?? undefined,
     reviewedBy: (row.reviewed_by as string) ?? undefined,
+    labName: (row.lab_name as string) ?? undefined,
+    reportNumber: (row.report_number as string) ?? undefined,
+    sampleName: (row.sample_name as string) ?? undefined,
   }))
 }
 
@@ -1041,6 +1044,43 @@ export async function setDocumentReviewStatus(
  * different statements, and on an audit trail the difference is the whole
  * point. Oldest first — a history is read forwards.
  */
+/**
+ * Record that this reviewer was handed the document's bytes.
+ *
+ * Migration 66 requires one of these before it will allow a decision, so this
+ * is not telemetry — it is half of the gate. Called after a signed URL has been
+ * produced and handed to the browser, never on the click, so a failed signing
+ * attempt cannot unlock a decision.
+ *
+ * The actor is set from the session by a trigger; sending one would be ignored.
+ */
+export async function recordDocumentOpen(
+  documentId: string,
+  sha256Hex?: string | null,
+): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!isValidUUID(documentId)) throw new Error('A document id must be a UUID.')
+
+  const { error } = await supabase
+    .from('farmer_document_opens')
+    .insert({ farmer_document_id: documentId, sha256_at_open: sha256Hex ?? null })
+
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * The documents this reviewer has already opened, so a screen reopened mid-task
+ * does not ask them to read it again — the record already says they did.
+ */
+export async function loadMyDocumentOpens(): Promise<Set<string>> {
+  if (!supabase) return new Set()
+  const { data, error } = await supabase
+    .from('farmer_document_opens')
+    .select('farmer_document_id')
+  if (error || !data) return new Set()
+  return new Set((data as Array<{ farmer_document_id: string }>).map(r => r.farmer_document_id))
+}
+
 export async function loadDocumentReviewEvents(
   documentId: string,
 ): Promise<DocumentReviewEvent[]> {
