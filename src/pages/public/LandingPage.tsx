@@ -122,8 +122,8 @@ function FarmApplicationPanel({ lang, onStart }: { lang: Lang; onStart: () => vo
           same trap the fields above are written to avoid, so the pills stop
           pretending too. The real choice is made in the registration flow. */}
       <div className="hp-croprow">
-        {crops.map(c => (
-          <span key={c} className="tag tag-outline">{c}</span>
+        {crops.map(cropLabel => (
+          <span key={cropLabel} className="tag tag-outline">{cropLabel}</span>
         ))}
       </div>
 
