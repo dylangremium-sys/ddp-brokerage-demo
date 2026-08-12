@@ -72,6 +72,31 @@ if (routes.length === 0) fail('the render entry produced no routes')
 
 const digests = new Map()
 
+// ─── inline styles the CSP will refuse ──────────────────────────────────────
+//
+// `style-src` on the live site is `'self' https://fonts.googleapis.com` with no
+// `'unsafe-inline'`, so a `style` attribute in a prerendered document is
+// blocked by the browser and its styling never applies. Measured 2026-08-12:
+// six `style` props on the landing page were dead on `/`, `/de-buyer`,
+// `/cs-buyer` and `/thai-supplier` from the moment they shipped in 05e042d.
+//
+// Nothing signalled it. The build passed, the page returned 200 and rendered,
+// and the only trace was a console error on a page no build step opens. A
+// `style` prop is also the most natural thing in the world to write — it works
+// in dev, and it works on every client-rendered screen in this app, because
+// React sets those values through the DOM where CSP does not police them. It
+// is dead HERE and only here, which is exactly why it needs a build-time check
+// rather than a convention.
+//
+// Reported all at once: told "fix this one", the natural next commit adds the
+// second, and so on.
+const inlineStyled = []
+function collectInlineStyles(label, document) {
+  for (const match of document.matchAll(/<([a-zA-Z][\w-]*)\b[^>]*?\sstyle="([^"]*)"/g)) {
+    inlineStyled.push(`${label}: <${match[1]} style="${match[2]}">`)
+  }
+}
+
 for (const { page, bodyHtml, feedUrl } of routes) {
   const target = targetForPage(page, feedUrl ? { feedUrl } : {})
   const relativePath = outputPathFor(target.metadata.canonicalPath)
@@ -80,6 +105,7 @@ for (const { page, bodyHtml, feedUrl } of routes) {
 
   mkdirSync(dirname(absolutePath), { recursive: true })
   writeFileSync(absolutePath, document, 'utf8')
+  collectInlineStyles(relativePath, document)
 
   const digest = createHash('md5').update(document).digest('hex')
   digests.set(relativePath, digest)
@@ -114,12 +140,23 @@ for (const { label, target, bodyHtml } of contentRoutes) {
 
   mkdirSync(dirname(absolutePath), { recursive: true })
   writeFileSync(absolutePath, document, 'utf8')
+  collectInlineStyles(relativePath, document)
 
   const digest = createHash('md5').update(document).digest('hex')
   digests.set(relativePath, digest)
 
   console.log(
     `entry:     ${relativePath.padEnd(46)} ${String(document.length).padStart(6)} bytes  ${digest.slice(0, 8)}  ${label}`,
+  )
+}
+
+if (inlineStyled.length > 0) {
+  fail(
+    `${inlineStyled.length} inline style attribute(s) in prerendered documents — the CSP ` +
+      'refuses every one of them, so this styling does not apply on the live site:\n  ' +
+      inlineStyled.join('\n  ') +
+      '\nMove the declarations into a class. See the note beside .hp-form-step in ' +
+      'src/styles/publicHome.css.',
   )
 }
 

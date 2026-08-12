@@ -101,12 +101,12 @@ function FarmApplicationPanel({ lang, onStart }: { lang: Lang; onStart: () => vo
   return (
     <div className="hp-form">
       <div className="hp-eyebrow">{t.hpFormTitle}</div>
-      <p style={{ margin: '10px 0 0', fontSize: 14, color: 'var(--color-neutral-700)' }}>
+      <p className="hp-form-step">
         {t.hpFormStep}
       </p>
       <div className="hp-progress" aria-hidden="true"><div className="hp-progress-fill" /></div>
 
-      <ul className="hp-points hp-field-grid" style={{ marginTop: 24 }}>
+      <ul className="hp-points hp-field-grid">
         {[t.hpFormFarmName, t.hpFormProvince, t.hpFormLicence].map(label => (
           <li key={label}>
             <span className="hp-tick" aria-hidden="true">·</span>
@@ -115,7 +115,7 @@ function FarmApplicationPanel({ lang, onStart }: { lang: Lang; onStart: () => vo
         ))}
       </ul>
 
-      <p style={{ margin: '22px 0 10px', fontSize: 14, fontWeight: 600 }}>{t.hpFormCrops}</p>
+      <p className="hp-form-cropslabel">{t.hpFormCrops}</p>
       {/* Labels, not controls. These were buttons with local `crop` state that
           `onStart` never received and navigation threw away — an apparent
           answer to an apparent "Step 1 of 4", silently discarded. That is the
@@ -129,7 +129,7 @@ function FarmApplicationPanel({ lang, onStart }: { lang: Lang; onStart: () => vo
 
       <div className="hp-note">{t.hpFormUploadNote}</div>
 
-      <button type="button" className="btn btn-secondary btn-block" onClick={onStart} style={{ marginTop: 20 }}>
+      <button type="button" className="btn btn-secondary btn-block hp-form-cta" onClick={onStart}>
         {t.hpFarmsCta}
       </button>
 
@@ -272,8 +272,8 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
           <div className="hp-split">
             <div>
               <div className="hp-eyebrow">{t.hpFarmsEyebrow}</div>
-              <h2 style={{ marginTop: 14 }}>{t.hpFarmsTitle}</h2>
-              <p style={{ fontSize: 17, lineHeight: 1.65, maxWidth: '48ch', marginTop: 18 }}>
+              <h2 className="hp-split-title">{t.hpFarmsTitle}</h2>
+              <p className="hp-split-lede">
                 {t.hpFarmsBody}
               </p>
               <ul className="hp-points">

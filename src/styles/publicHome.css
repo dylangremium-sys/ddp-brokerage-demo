@@ -283,6 +283,43 @@
     box-shadow: var(--shadow-md);
   }
 
+  /* ── Rules that were `style` props ────────────────────────────────────────
+     These six declarations lived inline on the elements below until the CSP
+     was measured against the live site: `style-src` is `'self'` with no
+     `'unsafe-inline'`, so every `style` attribute in a PRERENDERED document is
+     refused by the browser and the styling silently does not apply.
+
+     It bites here and not in the app because these pages are prerendered:
+     React emits a real `style="..."` attribute into static HTML, and that is
+     what CSP blocks. On a client-rendered screen React sets the same values
+     through the DOM, which CSP does not police — so an inline style that works
+     everywhere else is dead on exactly these routes, with nothing failing.
+
+     Public-page styling belongs in a class. `scripts/prerender-public-routes.mjs`
+     now fails the build if a style attribute reappears in the output. */
+  & .hp-form-step {
+    margin: 10px 0 0;
+    font-size: 14px;
+    color: var(--color-neutral-700);
+  }
+  & .hp-form-cropslabel {
+    margin: 22px 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  & .hp-form-cta {
+    margin-top: 20px;
+  }
+  & .hp-split-title {
+    margin-top: 14px;
+  }
+  & .hp-split-lede {
+    font-size: 17px;
+    line-height: 1.65;
+    max-width: 48ch;
+    margin-top: 18px;
+  }
+
   & .hp-progress {
     height: 8px;
     border-radius: 999px;
@@ -297,10 +334,15 @@
     background: var(--color-accent-500);
   }
 
+  /* 24px, not the 26px this rule carried, because the element it styles — its
+     only user — also carried `style={{ marginTop: 24 }}`, which overrode this
+     everywhere except the live prerendered pages, where CSP dropped it. 24 is
+     the value that was meant to win; the live 2px difference is that block
+     being restored, not a new decision. */
   & .hp-field-grid {
     display: grid;
     gap: 18px;
-    margin-top: 26px;
+    margin-top: 24px;
   }
 
   & .hp-croprow {
