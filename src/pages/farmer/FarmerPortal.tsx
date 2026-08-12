@@ -26,7 +26,7 @@ import '../../styles/farmerPortal.css'
  * so the same absent name reads the same way on both sides of the product.
  */
 
-export type BlockingTaskKind = 'evidence' | 'requests' | 'documents' | 'profile'
+export type BlockingTaskKind = 'evidence' | 'requests' | 'licence' | 'coa' | 'profile'
 
 export interface FarmerPortalProps {
   lang: Lang
@@ -36,6 +36,11 @@ export interface FarmerPortalProps {
   reviewRequests: ReviewRequest[]
   currentProfile: UserProfile | null
   evidenceWaitingCount: number | null
+  /**
+   * Whether the document register holds a COA for this farm. `null` = not
+   * known yet; see resolveBlockingTask, which refuses to read that as "no".
+   */
+  coaDocumentOnFile: boolean | null
   openRequestsCount: number
   onPrimary: (task: BlockingTaskKind) => void
   onContact: () => void
@@ -50,13 +55,26 @@ function resolveBlockingTask(input: {
   evidenceWaiting: number
   openRequests: number
   hasLicence: boolean
-  hasCoa: boolean
+  /**
+   * Whether DDP holds a certificate of analysis for this farm at all.
+   *
+   * `null` means NOT KNOWN YET — the document register has not answered. It is
+   * deliberately not folded into `false`: "we could not check" and "you have
+   * not sent one" are different statements, and only one of them justifies
+   * telling a farm to go and take a photograph. Asking for a document the farm
+   * has already sent is the exact defect this screen shipped with on
+   * 2026-08-12, so an unknown answer stays silent and the profile checklist —
+   * which lists the gap without instructing anyone — carries it instead.
+   */
+  coaOnFile: boolean | null
 }): BlockingTaskKind {
   // DDP has asked a question — nothing else the farm does will unblock it.
   if (input.evidenceWaiting > 0) return 'evidence'
   if (input.openRequests > 0) return 'requests'
-  // Then the two documents that gate a listing at all.
-  if (!input.hasLicence || !input.hasCoa) return 'documents'
+  // Then the two documents that gate a listing at all, named separately.
+  // They were one card until 2026-08-12, and it only ever said "licence".
+  if (!input.hasLicence) return 'licence'
+  if (input.coaOnFile === false) return 'coa'
   return 'profile'
 }
 
@@ -77,7 +95,7 @@ function stockState(item: InventoryItem): 'listed' | 'held' {
 
 export default function FarmerPortal({
   lang, onLang, farms, inventory, reviewRequests, currentProfile,
-  evidenceWaitingCount, openRequestsCount,
+  evidenceWaitingCount, coaDocumentOnFile, openRequestsCount,
   onPrimary, onContact, onAddBatch, onSignOut, onGoTo,
 }: FarmerPortalProps) {
   const text = T[lang]
@@ -86,11 +104,23 @@ export default function FarmerPortal({
 
   const completion = farm ? Math.max(farm.completionPct, calcCompletion(farm)) : 0
 
+  /**
+   * A COA counts as on file if EITHER the farm profile carries one or the
+   * document register holds one.
+   *
+   * The profile field alone was the whole test until 2026-08-12, and it knows
+   * nothing about `farmer_documents` — so a farm that had uploaded a
+   * certificate into the register, had it received and read by DDP, still
+   * measured as having sent nothing. Unknown (`null`) propagates rather than
+   * collapsing to "missing".
+   */
+  const coaOnFile: boolean | null = farm?.coaFiles?.trim() ? true : coaDocumentOnFile
+
   const task = resolveBlockingTask({
     evidenceWaiting: evidenceWaitingCount ?? 0,
     openRequests: openRequestsCount,
     hasLicence: hasAnyLicence(farm),
-    hasCoa: Boolean(farm?.coaFiles?.trim()),
+    coaOnFile,
   })
 
   /** Oldest open request, so the age shown is the age of the actual wait. */
@@ -102,11 +132,13 @@ export default function FarmerPortal({
   }, [reviewRequests])
 
   const checklist = useMemo(() => [
-    { key: 'documents' as const, label: text.portalCheckLicence, done: hasAnyLicence(farm) },
-    { key: 'documents' as const, label: text.portalCheckCoa, done: Boolean(farm?.coaFiles?.trim()) },
+    { key: 'licence' as const, label: text.portalCheckLicence, done: hasAnyLicence(farm) },
+    // Ticked when the register holds one, not only when the profile field is
+    // filled — the same correction as the blocking card above.
+    { key: 'coa' as const, label: text.portalCheckCoa, done: coaOnFile === true },
     { key: 'profile' as const, label: text.portalCheckProfile, done: completion >= 60 },
     { key: 'profile' as const, label: text.portalCheckStock, done: inventory.length > 0 },
-  ], [farm, completion, inventory.length, text])
+  ], [farm, coaOnFile, completion, inventory.length, text])
 
   const activity = useMemo(
     () => [...reviewRequests]

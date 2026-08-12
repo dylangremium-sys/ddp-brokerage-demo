@@ -208,6 +208,9 @@ export default function App() {
   // null = not known yet or the read failed — never rendered as "nothing waiting".
   // Populated by the effect below isFarmerRole; see the comment there.
   const [farmerEvidenceWaiting, setFarmerEvidenceWaiting] = useState<number | null>(null)
+  // Whether the register holds a COA at all. null = not known yet, and stays
+  // null rather than collapsing to false — see FarmerPortal.resolveBlockingTask.
+  const [farmerCoaOnFile, setFarmerCoaOnFile] = useState<boolean | null>(null)
 
   // Review requests (owner → farmer messages) and stock edit tracking
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>(() => loadReviewRequests())
@@ -574,12 +577,18 @@ export default function App() {
     if (isDemo || !isSupabaseConfigured || !isFarmerRole) return
     let active = true
     runGuardedLoad(loadFarmerDocuments(), () => active, {
-      onSuccess: docs => setFarmerEvidenceWaiting(
-        docs.filter(d => d.reviewStatus === 'awaiting_clarification' || d.reviewStatus === 'rejected').length,
-      ),
+      onSuccess: docs => {
+        setFarmerEvidenceWaiting(
+          docs.filter(d => d.reviewStatus === 'awaiting_clarification' || d.reviewStatus === 'rejected').length,
+        )
+        // Derived from the SAME response — a boolean, not a row cache,
+        // so the reasoning above about never holding one farm's rows
+        // while another is on screen still holds.
+        setFarmerCoaOnFile(docs.some(d => d.documentType === 'coa'))
+      },
       // Silent by design: a badge is an affordance, not a report. FarmerEvidence
       // itself states the failure loudly when the farmer opens it.
-      onError: () => setFarmerEvidenceWaiting(null),
+      onError: () => { setFarmerEvidenceWaiting(null); setFarmerCoaOnFile(null) },
     }).catch(() => undefined)
     return () => { active = false }
   }, [isDemo, isFarmerRole, page])
@@ -599,6 +608,7 @@ export default function App() {
    * new. The lint rule that rejects that is right.
    */
   const farmerEvidenceWaitingSafe = isDemo || !isFarmerRole ? null : farmerEvidenceWaiting
+  const farmerCoaOnFileSafe = isDemo || !isFarmerRole ? null : farmerCoaOnFile
 
   const isBuyerRole = !isDemo && currentProfile?.role === 'buyer'
   const isFarmerPage = FARMER_PAGES.includes(page)
@@ -1633,18 +1643,19 @@ export default function App() {
                   reviewRequests={farmerReviewRequests}
                   currentProfile={isDemo ? null : currentProfile}
                   evidenceWaitingCount={farmerEvidenceWaitingSafe}
+                  coaDocumentOnFile={farmerCoaOnFileSafe}
                   openRequestsCount={farmerReviewRequests.filter(r => r.status === 'open').length}
                   onPrimary={task => goTo(
                     task === 'evidence' ? 'farmer-evidence'
                       : task === 'requests' ? 'farmer-requests'
-                        : task === 'documents' ? 'farmer-advanced-profile'
+                        : task === 'licence' || task === 'coa' ? 'farmer-advanced-profile'
                           : 'farmer-onboarding',
                   )}
                   onContact={() => goTo('farmer-requests')}
                   onAddBatch={() => goTo('farmer-stock-form')}
                   onSignOut={handleSignOut}
                   onGoTo={task => goTo(
-                    task === 'documents' ? 'farmer-advanced-profile' : 'farmer-onboarding',
+                    task === 'licence' || task === 'coa' ? 'farmer-advanced-profile' : 'farmer-onboarding',
                   )}
                 />
           )}
