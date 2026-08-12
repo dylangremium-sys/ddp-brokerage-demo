@@ -112,6 +112,21 @@ export interface OperationsDeskItem {
   actionLabel: string
   sourceEntityType: string
   sourceEntityId: string
+  /**
+   * The farm this matter belongs to, when the builder knows it outright.
+   *
+   * The desk's chase groups by farm, and it used to work that farm out from
+   * `sourceEntityId` — which only functions for queues whose source IS a farm or
+   * a batch. A compliance matter's source is the alert, so no farm could be
+   * derived and every compliance row was unselectable. The builder holds the
+   * alert and the records it points at, so it states the farm rather than
+   * leaving the screen to reverse-engineer one.
+   *
+   * Optional: queues that already resolve through `sourceEntityId` or
+   * `destinationParams` are left alone. Setting this does not assert the farm is
+   * loaded — the screen still refuses to chase a farm it cannot show.
+   */
+  farmProfileId?: string
 }
 
 /** A queue that could not be built, or a source that could not be loaded. */
@@ -168,36 +183,49 @@ function farmLabel(farm: FarmProfile): string {
 }
 
 /**
- * What a compliance matter is ABOUT, as a name.
+ * What a compliance matter is ABOUT — the name to show, and the farm to chase.
  *
- * A stored alert carries only `entityType` + `entityId`, so the first cut of
- * this glued the two together — "farm · b1f4182c-3a2b-419b-b050-84609ac13492".
- * That is an identifier wearing a name's clothes. The row guard demotes a BARE
- * id to metadata and says what is actually wrong, but a glued label is not a
- * bare id, so it reads as a title and prints verbatim — which is how this desk
- * still showed raw ids after #212/#213 fixed every other queue.
+ * A stored alert carries only `entityType` + `entityId`, which caused two
+ * separate defects that both come down to the desk not being told what the
+ * alert points at:
  *
- * The id is resolved against records the desk already holds. When it cannot be
- * resolved, return the BARE id and nothing else: never `type · id`, because the
- * whole point is to leave the guard something it can recognise.
+ *   · The label glued the two together — "farm · b1f4182c-…". The row guard
+ *     demotes a BARE id to metadata and says what is actually wrong, but a glued
+ *     label is not a bare id, so it read as a title and printed verbatim.
+ *   · No farm could be derived, so every compliance row was unselectable and the
+ *     screen's one primary action was dead for the whole category.
+ *
+ * One resolution answers both, so there is one lookup and no chance of the
+ * label naming one farm while the chase is written against another.
+ *
+ * `label` falls back to the BARE id — never `type · id` — so the guard is left
+ * something it can recognise. `farmProfileId` is undefined when the alert points
+ * at nothing this desk holds; it is NOT a claim that the farm is loaded, which
+ * the screen checks separately before allowing a chase.
  */
-function complianceEntityLabel(
+function complianceEntity(
   alert: ComplianceAlert,
   farms: FarmProfile[],
   inventory: InventoryItem[],
-): string {
+): { label: string; farmProfileId?: string } {
   if (alert.entityType === 'farm') {
     const farm = farms.find(f => f.id === alert.entityId)
     // farmLabel falls back to farm.id, which is a bare id by design — the guard
     // demotes it rather than this function inventing a name the record lacks.
-    if (farm) return farmLabel(farm)
+    if (farm) return { label: farmLabel(farm), farmProfileId: farm.id }
+    // The farm is not loaded, but the alert still says which farm it is. Naming
+    // it here would be inventing one; chasing it is the screen's call, and its
+    // own "is this a farm on file" gate is what decides.
+    return { label: alert.entityId, farmProfileId: alert.entityId }
   }
   if (alert.entityType === 'batch') {
     const item = inventory.find(i => i.id === alert.entityId)
     // Same shape the batch queues use, so one farm reads identically everywhere.
-    if (item) return `${item.productName} · ${item.farmName}`
+    // farmId, not farmName: a chase addressed by printed name is how the wrong
+    // farm gets chased. An orphan batch carries no farmId and stays unchaseable.
+    if (item) return { label: `${item.productName} · ${item.farmName}`, farmProfileId: item.farmId }
   }
-  return alert.entityId
+  return { label: alert.entityId }
 }
 
 function daysBetween(fromIso: string | undefined, now: Date): number | undefined {
@@ -437,21 +465,25 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
     safeQueue('compliance', () =>
       alerts
         .filter(alert => UNRESOLVED_ALERT.has(alert.status))
-        .map(alert => ({
-          id: `compliance:alert:${alert.id}`,
-          category: 'compliance' as const,
-          priority: classifyOperationsDeskPriority({ complianceSeverity: alert.severity }),
-          title: alert.alertTitle,
-          entityLabel: complianceEntityLabel(alert, farms, inventory),
-          reason: alert.alertDetail,
-          occurredAt: alert.createdAt,
-          ageInDays: daysBetween(alert.createdAt, now),
-          statusLabel: alert.status,
-          destinationPage: 'ddp-compliance-watchtower' as Page,
-          actionLabel: 'Resolve in Watchtower',
-          sourceEntityType: 'compliance-alert',
-          sourceEntityId: alert.id,
-        })), collected, failures)
+        .map(alert => {
+          const entity = complianceEntity(alert, farms, inventory)
+          return {
+            id: `compliance:alert:${alert.id}`,
+            category: 'compliance' as const,
+            priority: classifyOperationsDeskPriority({ complianceSeverity: alert.severity }),
+            title: alert.alertTitle,
+            entityLabel: entity.label,
+            farmProfileId: entity.farmProfileId,
+            reason: alert.alertDetail,
+            occurredAt: alert.createdAt,
+            ageInDays: daysBetween(alert.createdAt, now),
+            statusLabel: alert.status,
+            destinationPage: 'ddp-compliance-watchtower' as Page,
+            actionLabel: 'Resolve in Watchtower',
+            sourceEntityType: 'compliance-alert',
+            sourceEntityId: alert.id,
+          }
+        }), collected, failures)
   }
 
   // ── 10.8 Follow-up ───────────────────────────────────────────────────────
