@@ -210,6 +210,57 @@ describe('Operations Desk aggregation — inclusion conditions', () => {
       expect(label).toBe(FARM_UUID)
       expect(label).not.toContain('·')
     })
+
+    /**
+     * The chase groups by farm, and it can only do that for matters that say
+     * which farm they belong to. A compliance matter's SOURCE is the alert, so
+     * nothing about the farm could be derived from it and every compliance row
+     * was unselectable — the screen's one primary action, dead for the category.
+     */
+    describe('and says which farm it belongs to, so it can be chased', () => {
+      const complianceItem = (over: Partial<OperationsDeskInput>, a: ComplianceAlert) =>
+        buildOperationsDeskItems(input({ ...over, complianceAlerts: [a] }))
+          .items.find(i => i.category === 'compliance')!
+
+      it('a farm alert carries the farm', () => {
+        const item = complianceItem(
+          { farms: [makeFarm({ id: FARM_UUID, tradingName: 'Mae Rim Organics' })] },
+          alert({ entityType: 'farm', entityId: FARM_UUID }),
+        )
+        expect(item.farmProfileId).toBe(FARM_UUID)
+      })
+
+      it('a batch alert carries the batch OWNER, by id and never by printed name', () => {
+        const item = complianceItem(
+          { inventory: [makeInventoryItem({ id: BATCH_UUID, farmId: FARM_UUID, productName: 'Sunrise Mango', farmName: 'Mae Rim Organics' })] },
+          alert({ entityType: 'batch', entityId: BATCH_UUID }),
+        )
+        expect(item.farmProfileId).toBe(FARM_UUID)
+        expect(item.farmProfileId).not.toBe('Mae Rim Organics')
+      })
+
+      it('a batch with no owner on the record carries no farm', () => {
+        const orphan = makeInventoryItem({ id: BATCH_UUID, productName: 'Orphan' })
+        const item = complianceItem(
+          { inventory: [{ ...orphan, farmId: undefined } as unknown as typeof orphan] },
+          alert({ entityType: 'batch', entityId: BATCH_UUID }),
+        )
+        expect(item.farmProfileId).toBeUndefined()
+      })
+
+      it('a COA alert carries no farm — nothing on file says which farm it is', () => {
+        expect(complianceItem({}, alert({ entityType: 'coa', entityId: FARM_UUID })).farmProfileId)
+          .toBeUndefined()
+      })
+
+      // Naming the farm is not the same as holding its record. The screen keeps
+      // its own "is this a farm on file" gate, so an unloaded farm still cannot
+      // be chased — this field must not be read as a claim that it can.
+      it('a farm alert for a farm that is not loaded still names the farm', () => {
+        expect(complianceItem({ farms: [] }, alert({ entityType: 'farm', entityId: FARM_UUID })).farmProfileId)
+          .toBe(FARM_UUID)
+      })
+    })
   })
 
   it('excludes resolved and dismissed compliance alerts', () => {
