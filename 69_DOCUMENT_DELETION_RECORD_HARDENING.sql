@@ -102,6 +102,10 @@ BEGIN
 END;
 $$;
 
+-- Trigger functions are invoked by the trigger, never by a caller, so nobody
+-- holds EXECUTE. Stated explicitly rather than left to the default, because the
+-- PostgreSQL default is EXECUTE to PUBLIC.
+-- acl-no-grant: refuse_document_deletion_mutation
 REVOKE EXECUTE ON FUNCTION public.refuse_document_deletion_mutation() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.refuse_document_deletion_mutation() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.refuse_document_deletion_mutation() FROM authenticated;
@@ -194,6 +198,10 @@ COMMENT ON FUNCTION public.record_document_deletion() IS
   'Writes the permanent record of a deletion before allowing it, and refuses the '
   'deletion outright when there is no named actor or no stated reason.';
 
+-- Trigger functions are invoked by the trigger, never by a caller, so nobody
+-- holds EXECUTE. Stated explicitly rather than left to the default, because the
+-- PostgreSQL default is EXECUTE to PUBLIC.
+-- acl-no-grant: record_document_deletion
 REVOKE EXECUTE ON FUNCTION public.record_document_deletion() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.record_document_deletion() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.record_document_deletion() FROM authenticated;
@@ -218,6 +226,10 @@ BEGIN
 END;
 $$;
 
+-- Trigger functions are invoked by the trigger, never by a caller, so nobody
+-- holds EXECUTE. Stated explicitly rather than left to the default, because the
+-- PostgreSQL default is EXECUTE to PUBLIC.
+-- acl-no-grant: refuse_document_truncate
 REVOKE EXECUTE ON FUNCTION public.refuse_document_truncate() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.refuse_document_truncate() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.refuse_document_truncate() FROM authenticated;
