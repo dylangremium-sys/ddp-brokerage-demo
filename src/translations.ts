@@ -894,7 +894,8 @@ export const T = {
     portalAddBatch: 'เพิ่มล็อตใหม่',
     portalProfile: 'โปรไฟล์ฟาร์ม',
     portalAdd: 'เพิ่ม',
-    // See the English note. NEWLY DRAFTED THAI — awaiting a Thai reader.
+    // See the English note. Thai drafted 2026-08-12 and READ AND PASSED by the
+    // owner the same day on the live signed-in portal.
     portalActivity: 'คำขอจาก DDP',
     portalNoActivity: 'DDP ยังไม่ได้ส่งคำขอถึงคุณ',
     portalMessageDdp: 'ส่งข้อความถึง DDP',
@@ -915,8 +916,8 @@ export const T = {
           })
     },
     portalTask: {
-      // NEWLY DRAFTED THAI — awaiting a Thai reader. Listed in the PR.
-      // See the English note: this state means a document already sent came
+      // Thai drafted 2026-08-12, READ AND PASSED by the owner the same day on the
+      // live signed-in portal. This state means a document already sent came
       // back with a question, never that one is missing.
       evidence: {
         tag: 'DDP กำลังรอคุณอยู่',
@@ -955,7 +956,7 @@ export const T = {
     // See the English note on this key.
     contactByPhone: 'คุณสามารถติดต่อเราทางโทรศัพท์ได้เช่นกัน',
     // ── Supplier acquisition block (homepage) ─────────────────────────────
-    // NEWLY DRAFTED THAI — awaiting a Thai reader. Listed in the PR.
+    // Thai drafted 2026-08-12, READ AND PASSED by the owner the same day.
     landingSupplierHeading: 'ผู้ผลิตที่ได้รับใบอนุญาตในประเทศไทย',
     landingSupplierDemand: 'ขณะนี้เรากำลังรับซื้อ เพื่อผู้ซื้อภาคเภสัชกรรมที่ได้รับการรับรองในยุโรปกลาง',
     landingSupplierForms: 'ทุกรูปแบบ — ดอก ไบโอแมส ทริม ฟรีชฟโรเซน ครูด ดิสทิลเลท ไอโซเลท หากมีเอกสารครบ ถูกกฎหมาย และส่งออกได้ เราต้องการดู',
