@@ -33,7 +33,24 @@
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif:wght@400;500;600&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <!--
+      Caprasimo, Figtree and IBM Plex Mono are the Organic design system's three
+      faces. They were NOT loaded until 2026-08-12, and styles/organicScoped.css
+      says of the @import it dropped: "The faces are loaded with a <link> where
+      this is used." That link was never added.
+
+      So every Organic screen — the farm portal, evidence review, the Operations
+      Desk — specified `--font-heading: Caprasimo` and rendered system-ui, and
+      every mono identifier specified IBM Plex Mono and rendered the generic
+      monospace. Measured: document.fonts registered only Inter, JetBrains Mono,
+      Noto Serif and Sarabun. Note document.fonts.check() is NOT the way to test
+      this — it returns true for an absent family, because falling back to a
+      system font counts as "available".
+
+      Caprasimo is requested at 400 and nothing else: it ships one weight, and
+      asking for 600/700 makes the browser synthesise a bold that smears.
+    -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif:wght@400;500;600&family=Sarabun:wght@300;400;500;600;700&family=Caprasimo&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

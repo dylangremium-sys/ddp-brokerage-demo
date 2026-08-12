@@ -877,6 +877,89 @@ export const T = {
     scopeLoadingRequests: 'Loading your requests…',
     scopeLoadingDashboard: 'Loading your farm…',
     scopeLoadingSubmissions: 'Loading your submissions…',
+
+    // ── Homepage, Organic redesign (handoff screen 9) ───────────────────────
+    // Copy is the handoff's, verbatim, and is final per README § "Fidelity".
+    // Two deliberate departures, both recorded in the README revision log:
+    //   * The three "trust" figures (2 farms / 233 updates / 100% with a COA)
+    //     are NOT here. They are illustrative, the read-only reporting role
+    //     cannot derive them, and
+    //     "100% of batches released with a COA on file" is a compliance claim
+    //     about a regulated product that no record on this machine supports.
+    //     Standing rule 10. The band states what is true without them.
+    //   * The prototype's Thai read "ภาศาไทย" and "เกศตรกร" — both ศ where ษ
+    //     belongs. Corrected here; do not copy them back from the prototype.
+    hpNavHowItWorks: 'How it works',
+    hpNavForFarms: 'For farms',
+    hpNavForBuyers: 'For buyers',
+    hpNavCompliance: 'Compliance',
+    hpNavSignIn: 'Sign in',
+    hpNavApply: 'Apply to supply',
+
+    hpHeroBadge: 'Licensed medical supply · Thailand → Czech Republic',
+    hpHeroTitle: 'Paperwork that travels as well as the flower does.',
+    hpHeroBody: 'DDP registers Thai farms, inventories and grades every batch, verifies the certificates of analysis, and hands European medical buyers a dossier their regulator will accept. One ledger, both languages.',
+    hpHeroCtaFarm: 'Register your farm',
+    hpHeroCtaBuyer: 'I am a licensed buyer',
+    hpCred1: 'Thai FDA-licensed farms only',
+    hpCred2: 'Batch-level COA on file',
+    hpCred3: 'EU-GMP documentation trail',
+
+    hpStepsTitle: 'Four steps, fully documented',
+    hpStep1Title: 'Farm registration',
+    hpStep1Body: 'Licence, ownership and location verified against Thai FDA records before anything is listed.',
+    hpStep1Who: 'Farm + DDP',
+    hpStep2Title: 'Inventory & grading',
+    hpStep2Body: 'Every batch weighed, photographed, graded and given a code that follows it to Prague.',
+    hpStep2Who: 'DDP inspector',
+    hpStep3Title: 'Evidence assembly',
+    hpStep3Body: 'COA, batch numbers and export readiness collected into one dossier.',
+    hpStep3Who: 'DDP compliance',
+    hpStep4Title: 'Buyer release',
+    hpStep4Body: 'Licensed European buyers see only batches whose documentation is complete and current.',
+    hpStep4Who: 'Buyer + DDP',
+
+    hpFarmsEyebrow: 'For farms · สำหรับเกษตรกร',
+    hpFarmsTitle: 'Register once. We chase the buyers.',
+    hpFarmsBody: 'Apply from your phone in Thai. Photograph your licence, list what you have, and our team tells you exactly which document is missing before a buyer ever sees the batch — not after.',
+    hpFarmsCta: 'Start a farm application',
+    hpFarmPoint1: 'Free to apply — DDP is paid on completed sales, not on registration.',
+    hpFarmPoint2: 'A named Thai-speaking contact reviews your file personally.',
+    hpFarmPoint3: 'You see exactly which document is missing, and why it matters.',
+    hpFarmPoint4: 'Your licence and lab reports are never shared outside verified buyers.',
+
+    hpFormTitle: 'Farm application',
+    hpFormStep: 'Step 1 of 4 · about 6 minutes',
+    hpFormFarmName: 'Farm name',
+    hpFormProvince: 'Province',
+    hpFormLicence: 'Thai FDA licence number',
+    hpFormCrops: 'What do you grow for export?',
+    // Static, and translated. These were hardcoded English pills that a Thai
+    // visitor met untranslated in the middle of otherwise-Thai copy, and they
+    // were clickable — so a farmer could answer an apparent "Step 1 of 4"
+    // question whose answer went nowhere. Same reasoning as the fields above.
+    hpCrop1: 'Dried flower',
+    hpCrop2: 'Trim',
+    hpCrop3: 'Fresh frozen',
+    hpCrop4: 'Extract',
+    hpFormUploadNote: 'Photograph your licence with your phone camera — we accept a clear photo, no scanner needed.',
+    hpFormReassure: 'You can stop at any step and come back — nothing is submitted to a buyer until you and DDP both approve it.',
+
+    hpComplianceTitle: 'Every claim on this page is a record in the ledger',
+    // The handoff's last sentence read "Decision support, reviewed by qualified
+    // humans, never automated legal advice." That breaks the project's own
+    // public-copy constraint — publicCopyConstraints.test.ts caught it — which
+    // is that public copy never names the mechanism, and "automated" names it.
+    // Denying automation still raises it, and on a regulated product it invites
+    // exactly the question it was trying to close. The disclaimer and the
+    // named-human claim both survive; only the mechanism word is gone.
+    hpComplianceBody: 'Licence, batch, grade, COA, export readiness — each one timestamped, attributed to the person who approved it, and exportable as a dossier. Decision support, reviewed by qualified people. Not legal advice.',
+
+    hpBuyersTitle: 'Licensed European buyers: request the current supply sheet',
+    hpBuyersBody: 'Verified importers and pharmacies only. Send your licence and we will return available graded stock, with documentation status per batch.',
+    hpBuyersCta: 'Request access',
+
+    hpFooterNote: 'Medical supply only. No sale to consumers.',
   },
   th: {
     // ── Farm portal — DRAFTED THAI, NOT PROOFREAD. See the English block. ──
@@ -1676,6 +1759,73 @@ export const T = {
     scopeLoadingRequests: 'กำลังโหลดคำขอของคุณ…',
     scopeLoadingDashboard: 'กำลังโหลดข้อมูลฟาร์มของคุณ…',
     scopeLoadingSubmissions: 'กำลังโหลดรายการของคุณ…',
+
+    // ── Homepage, Organic redesign — DRAFTED THAI, NOT PROOFREAD ────────────
+    // #222 cleared the Thai that was already in the product. It did NOT clear
+    // these: they were written 2026-08-12 and no native speaker has read them.
+    // This is the public front door in the acquisition language, so it needs a
+    // proofread before it is treated as final — same standard as the farm
+    // portal block above.
+    hpNavHowItWorks: 'ขั้นตอนการทำงาน',
+    hpNavForFarms: 'สำหรับเกษตรกร',
+    hpNavForBuyers: 'สำหรับผู้ซื้อ',
+    hpNavCompliance: 'การกำกับดูแล',
+    hpNavSignIn: 'เข้าสู่ระบบ',
+    hpNavApply: 'สมัครเป็นผู้ผลิต',
+
+    hpHeroBadge: 'อุปทานทางการแพทย์ที่ได้รับอนุญาต · ไทย → สาธารณรัฐเช็ก',
+    hpHeroTitle: 'เอกสารที่เดินทางได้ไกลเท่ากับผลผลิตของคุณ',
+    hpHeroBody: 'DDP ขึ้นทะเบียนฟาร์มไทย ตรวจนับและจัดเกรดทุกล็อต ตรวจสอบใบรับรองผลวิเคราะห์ และส่งมอบชุดเอกสารที่หน่วยงานกำกับดูแลของผู้ซื้อในยุโรปยอมรับ บัญชีเดียว สองภาษา',
+    hpHeroCtaFarm: 'ขึ้นทะเบียนฟาร์มของคุณ',
+    hpHeroCtaBuyer: 'ฉันเป็นผู้ซื้อที่ได้รับอนุญาต',
+    hpCred1: 'เฉพาะฟาร์มที่ได้รับอนุญาตจาก อย. ไทย',
+    hpCred2: 'มีใบรับรองผลวิเคราะห์รายล็อต',
+    hpCred3: 'ชุดเอกสารตามมาตรฐาน EU-GMP',
+
+    hpStepsTitle: 'สี่ขั้นตอน พร้อมเอกสารครบถ้วน',
+    hpStep1Title: 'ขึ้นทะเบียนฟาร์ม',
+    hpStep1Body: 'ตรวจสอบใบอนุญาต กรรมสิทธิ์ และที่ตั้ง กับข้อมูลของ อย. ไทย ก่อนนำสินค้าขึ้นแสดง',
+    hpStep1Who: 'ฟาร์ม + DDP',
+    hpStep2Title: 'ตรวจนับและจัดเกรด',
+    hpStep2Body: 'ทุกล็อตได้รับการชั่งน้ำหนัก ถ่ายภาพ จัดเกรด และกำหนดรหัสที่ติดตามไปจนถึงกรุงปราก',
+    hpStep2Who: 'ผู้ตรวจของ DDP',
+    hpStep3Title: 'รวบรวมหลักฐาน',
+    hpStep3Body: 'ใบรับรองผลวิเคราะห์ หมายเลขล็อต และความพร้อมส่งออก รวมอยู่ในชุดเอกสารเดียว',
+    hpStep3Who: 'ฝ่ายกำกับดูแลของ DDP',
+    hpStep4Title: 'เปิดให้ผู้ซื้อ',
+    hpStep4Body: 'ผู้ซื้อที่ได้รับอนุญาตในยุโรปจะเห็นเฉพาะล็อตที่เอกสารครบถ้วนและเป็นปัจจุบัน',
+    hpStep4Who: 'ผู้ซื้อ + DDP',
+
+    hpFarmsEyebrow: 'สำหรับเกษตรกร',
+    hpFarmsTitle: 'ขึ้นทะเบียนครั้งเดียว ที่เหลือเราติดตามให้',
+    hpFarmsBody: 'สมัครจากโทรศัพท์ของคุณเป็นภาษาไทย ถ่ายภาพใบอนุญาต ระบุสิ่งที่คุณมี แล้วทีมงานของเราจะบอกคุณว่าขาดเอกสารใด ก่อนที่ผู้ซื้อจะเห็นล็อตนั้น ไม่ใช่หลังจากนั้น',
+    hpFarmsCta: 'เริ่มยื่นคำขอ',
+    hpFarmPoint1: 'สมัครฟรี — DDP ได้รับค่าตอบแทนเมื่อขายสำเร็จ ไม่ใช่ตอนขึ้นทะเบียน',
+    hpFarmPoint2: 'มีผู้ติดต่อที่พูดภาษาไทยและระบุชื่อได้ ตรวจแฟ้มของคุณด้วยตนเอง',
+    hpFarmPoint3: 'คุณเห็นชัดเจนว่าขาดเอกสารใด และเหตุใดจึงสำคัญ',
+    hpFarmPoint4: 'ใบอนุญาตและผลแล็บของคุณจะไม่ถูกเปิดเผยนอกกลุ่มผู้ซื้อที่ผ่านการตรวจสอบ',
+
+    hpFormTitle: 'คำขอขึ้นทะเบียนฟาร์ม',
+    hpFormStep: 'ขั้นที่ 1 จาก 4 · ประมาณ 6 นาที',
+    hpFormFarmName: 'ชื่อฟาร์ม',
+    hpFormProvince: 'จังหวัด',
+    hpFormLicence: 'เลขที่ใบอนุญาต อย.',
+    hpFormCrops: 'คุณปลูกอะไรเพื่อการส่งออก',
+    hpCrop1: 'ดอกแห้ง',
+    hpCrop2: 'ทริม',
+    hpCrop3: 'แช่แข็งสด',
+    hpCrop4: 'สารสกัด',
+    hpFormUploadNote: 'ถ่ายภาพใบอนุญาตด้วยกล้องโทรศัพท์ของคุณ — ภาพที่ชัดเจนก็เพียงพอ ไม่ต้องใช้เครื่องสแกน',
+    hpFormReassure: 'คุณหยุดขั้นตอนใดก็ได้แล้วกลับมาทำต่อ — จะไม่มีการส่งข้อมูลถึงผู้ซื้อจนกว่าคุณและ DDP จะเห็นชอบทั้งสองฝ่าย',
+
+    hpComplianceTitle: 'ทุกข้อความบนหน้านี้คือบันทึกในระบบ',
+    hpComplianceBody: 'ใบอนุญาต ล็อต เกรด ใบรับรองผลวิเคราะห์ และความพร้อมส่งออก — แต่ละรายการมีเวลากำกับ ระบุผู้อนุมัติ และส่งออกเป็นชุดเอกสารได้ เป็นข้อมูลประกอบการตัดสินใจที่ผู้เชี่ยวชาญเป็นผู้ตรวจ ไม่ใช่คำแนะนำทางกฎหมาย',
+
+    hpBuyersTitle: 'ผู้ซื้อที่ได้รับอนุญาตในยุโรป: ขอรายการอุปทานปัจจุบัน',
+    hpBuyersBody: 'เฉพาะผู้นำเข้าและร้านขายยาที่ผ่านการตรวจสอบ ส่งใบอนุญาตของคุณมา แล้วเราจะแจ้งสต็อกที่จัดเกรดแล้วพร้อมสถานะเอกสารของแต่ละล็อต',
+    hpBuyersCta: 'ขอสิทธิ์เข้าถึง',
+
+    hpFooterNote: 'จำหน่ายเพื่อการแพทย์เท่านั้น ไม่จำหน่ายให้ผู้บริโภคทั่วไป',
   },
 }
 
