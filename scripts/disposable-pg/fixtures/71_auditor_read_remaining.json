@@ -1,0 +1,136 @@
+{
+  "id": "71_auditor_read_remaining",
+  "title": "Migration 71 \u2014 the seventeen tables that told the auditor \u201cnothing here\u201d",
+  "description": "Builds the world production was in on 2026-08-12 for the SEVENTEEN tables that never errored and never showed the auditing role anything: the base schema, then 9, 10, 17, 30, 34, 36, 39, 40, 41, 42, 43, 44 and 67, then a pre-apply stage that creates both auditing roles AND grants them SELECT on all seventeen \u2014 because the grants are the whole trap. On production `has_table_privilege` was already true for both roles on all seventeen and every read still returned 0: the policies are scoped TO authenticated and neither role is a member, so no permissive policy applied and PostgreSQL returned nothing. Not an error. Nothing. Two were provably lying: public_intake_attempts held 14 rows and read as 0; security_settings held 1 and read as 0. Unlike migration 70 this is purely additive \u2014 none of the seventeen carries a RESTRICTIVE policy and none carries a policy scoped TO public, so there is no plan-time EXECUTE trap and no existing policy is touched. VERIFY B is the section that matters: on these tables the DEFECT IS A ZERO, so counting rows or checking for no-error would pass identically before and after. B writes one row into each of the seventeen and requires each auditing role to find that specific row. C pins what an ordinary logged-in non-admin sees across all seventeen \u2014 values measured by running the same probe with 71 applied and with 71 rolled back and confirming the two were identical \u2014 and asserts in both directions, including that the two deliberately-open tables still read 1. Rollback drops seventeen policies and nothing else, which is why it is so much shorter than 70's.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "BASE-FARMER",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "PRE-9",
+      "file": "9_COMPLIANCE_WATCHTOWER_MVP.sql"
+    },
+    {
+      "label": "PRE-10",
+      "file": "10_BUYER_PACK_SNAPSHOTS_MVP.sql"
+    },
+    {
+      "label": "PRE-17",
+      "file": "17_PROCUREMENT_DECISIONS_MVP.sql"
+    },
+    {
+      "label": "PRE-30",
+      "file": "30_PROCUREMENT_OVERRIDES_SERVER_AUTHORITATIVE_HARDENING.sql"
+    },
+    {
+      "label": "PRE-34",
+      "file": "34_FARMER_ACCESS_REQUESTS_HARDENING.sql"
+    },
+    {
+      "label": "PRE-36",
+      "file": "36_FARMER_ACCESS_REQUEST_INTAKE_HARDENING.sql"
+    },
+    {
+      "label": "PRE-39",
+      "file": "39_COUNTERPARTY_ORGANISATIONS_HARDENING.sql"
+    },
+    {
+      "label": "PRE-40",
+      "file": "40_LICENCES_AND_PERMITS_HARDENING.sql"
+    },
+    {
+      "label": "PRE-41",
+      "file": "41_EFFECTIVE_DATED_RULESETS_HARDENING.sql"
+    },
+    {
+      "label": "PRE-42",
+      "file": "42_EXPORT_ELIGIBILITY_GATE_HARDENING.sql"
+    },
+    {
+      "label": "PRE-43",
+      "file": "43_MFA_FOR_GATE_APPROVAL_HARDENING.sql"
+    },
+    {
+      "label": "PRE-44",
+      "file": "44_RESERVATION_LEDGER_HARDENING.sql"
+    },
+    {
+      "label": "PRE-67",
+      "file": "67_MIGRATIONS_LEDGER_HARDENING.sql"
+    },
+    {
+      "label": "PRE71-AUDIT-ROLES",
+      "file": "scripts/disposable-pg/fixtures/sql/97_pre71_audit_roles.sql"
+    },
+    {
+      "label": "HARDENING",
+      "file": "71_AUDITOR_READ_REMAINING_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "71_AUDITOR_READ_REMAINING_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F"
+    ],
+    "expectedPassCount": 6,
+    "note": "A structural: seventeen auditor policies on PUBLIC naming both roles, and nothing else newly on PUBLIC \u2014 a policy there would be planned for the auditing roles and reintroduce migration 70's plan-time EXECUTE trap. B behavioural and the whole point: a row that IS there must be VISIBLE to each auditing role in each of the seventeen. Asserting visibility rather than absence-of-error is not stylistic here \u2014 the defect being fixed IS a silent zero, so a no-error check passes on a broken database and a count-is-zero check passes on an empty one. C behavioural, both directions: an ordinary non-admin gains nothing, is still refused public_intake_attempts at the privilege layer, and still reads the two tables whose own migrations grant USING(true) \u2014 the last of these catches 71 breaking the app rather than widening it. D the auditing role still cannot write. E the apply recorded itself. F neither auditing role owns a SECURITY DEFINER function, the standing condition that makes the current_user comparison safe and whose reach 71 widens. That this VERIFY fails once 71 is rolled back is not asserted by any fixture key \u2014 the harness has none, and inventing one would be a claim nothing checks; it is proven by re-running the VERIFY on a rolled-back cluster."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "71-rollback",
+        "source": "file",
+        "file": "71_AUDITOR_READ_REMAINING_ROLLBACK.sql"
+      }
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "functions": [],
+      "tables": []
+    },
+    "retained": {
+      "tables": [
+        "public.organisations",
+        "public.reservations",
+        "public.schema_migrations"
+      ],
+      "functions": [
+        "public.is_ddp_admin"
+      ]
+    }
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.profiles",
+      "public.farms",
+      "public.inventory_batches",
+      "public.is_ddp_admin",
+      "public.has_operational_farmer_access",
+      "public.has_farm_membership"
+    ]
+  }
+}
