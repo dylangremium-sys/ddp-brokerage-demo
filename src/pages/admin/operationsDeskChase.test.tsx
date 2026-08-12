@@ -371,8 +371,46 @@ describe('a compliance matter can be chased', () => {
     const chases = onChase.mock.calls[0][0]
     const chase = chases.find(c => c.farmProfileId === FARM_A)
     expect(chase).toBeDefined()
-    // What the farm is told is the alert's own detail, not a generic nudge.
-    expect(chase!.missing).toContain('A regulatory update affects this farm.')
+    // The farm is told the gap and which record it is on — never DDP's own note.
+    expect(chase!.missing).toContain('Licence renewal published (Calli Krush)')
+  })
+
+  /**
+   * A compliance alert's DETAIL is written for a DDP reader. The shipped rule
+   * text carries working guidance — "Do not describe it as buyer-ready; request
+   * COA evidence first" is an instruction to a reviewer, not something to say to
+   * a farm — and an alert an admin types by hand has a free-text detail box that
+   * can hold anything at all. The chase used to send that field verbatim.
+   */
+  it('never sends the alert detail to the farm', async () => {
+    const onChase = vi.fn<(c: FarmChase[]) => void>()
+    const INTERNAL = 'Do not describe it as buyer-ready; internal note, chase them again'
+    renderWithAlert({ alertDetail: INTERNAL }, onChase)
+
+    // The admin reading the row still sees it — the desk is not being censored.
+    expect(screen.getByText(INTERNAL)).toBeTruthy()
+
+    const box = complianceRow().querySelector('input[type="checkbox"]') as HTMLInputElement
+    fireEvent.click(box)
+    await waitFor(() => expect(chaseButton().disabled).toBe(false), { timeout: 8000 })
+    fireEvent.click(chaseButton())
+
+    const sent = onChase.mock.calls[0][0].flatMap(c => c.missing).join('\n')
+    expect(sent).not.toContain(INTERNAL)
+    expect(sent).not.toContain('internal note')
+    expect(sent).toContain('Licence renewal published')
+  })
+
+  it('other queues are unchanged — their reason is a fact about the record and is still sent', async () => {
+    const onChase = vi.fn<(c: FarmChase[]) => void>()
+    renderDesk(onChase)
+    enabledBoxes().forEach(b => fireEvent.click(b))
+    await waitFor(() => expect(chaseButton().disabled).toBe(false), { timeout: 8000 })
+    fireEvent.click(chaseButton())
+
+    const sent = onChase.mock.calls[0][0].flatMap(c => c.missing)
+    expect(sent.length).toBeGreaterThan(0)
+    expect(sent.every(m => m.trim().length > 0)).toBe(true)
   })
 
   it('a batch-level alert is chased to the batch OWNER', async () => {
