@@ -82,7 +82,9 @@ export const NEEDS_NATIVE_REVIEW = [
   },
   {
     key: 'docBatchRecords',
-    // "บันทึกแบทช์" is the wording already used in landingHero1, kept for consistency.
+    // "บันทึกแบทช์" is the wording already used in landingAboutText1, kept for
+    // consistency. It previously cited landingHero1, which was never rendered and
+    // has been removed.
     en: 'Batch records for the supply being offered',
     th: 'บันทึกแบทช์ของอุปทานที่เสนอ',
   },
