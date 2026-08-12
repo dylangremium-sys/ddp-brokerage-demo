@@ -116,11 +116,10 @@
   }
 
   /* ── Hero ───────────────────────────────────────────────────────────────── */
+  /* One column, not the handoff's 1.08fr 0.92fr — the right column was the
+     photograph, and there is no photograph. Restore the two-column rule when a
+     real asset arrives; the hero copy is already held to its 17ch / 50ch. */
   & .hp-hero {
-    display: grid;
-    grid-template-columns: 1.08fr 0.92fr;
-    gap: 56px;
-    align-items: center;
     padding-block: 72px 88px;
   }
 
@@ -175,27 +174,10 @@
     margin-top: 28px;
   }
 
-  /* The photograph slot. Deliberately not an image: the handoff supplies no
-     photography and forbids shipping its placeholders. This holds the space
-     and the brief without asserting anything. */
-  & .hp-photo-slot {
-    min-height: 480px;
-    border-radius: var(--radius-lg);
-    background: var(--color-neutral-200);
-    border: 1px dashed var(--color-neutral-400);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 32px;
-    text-align: center;
-  }
-  & .hp-photo-brief {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 12px;
-    line-height: 1.7;
-    color: var(--color-neutral-600);
-    max-width: 30ch;
-  }
+  /* There is no photograph slot. See the note in LandingPage.tsx: the box that
+     stood here rendered an internal shoot brief to every visitor. Until a real
+     photograph exists the hero runs one column — hence the single-column
+     grid-template below rather than the handoff's 1.08fr 0.92fr. */
 
   /* ── How it works ───────────────────────────────────────────────────────── */
   & .hp-band-sand { background: var(--color-neutral-100); }

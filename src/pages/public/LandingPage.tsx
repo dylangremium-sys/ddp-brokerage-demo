@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { T } from '../../translations'
 import type { Lang, Page } from '../../types'
 import { pathForPage } from '../../lib/urlRouting'
@@ -28,8 +27,17 @@ import '../../styles/publicHome.css'
         the third is a compliance claim about a regulated product. The band says
         what is true without them. Real figures are open question 3.
 
-   NO PHOTOGRAPH. The handoff supplies none and forbids shipping its striped
-   placeholders. The hero's right column holds the shoot brief instead.
+   NO PHOTOGRAPH, AND NO SLOT. The handoff supplies none and forbids shipping
+   its striped placeholders. A first pass held the space with a dashed box
+   containing the shoot brief — which meant the front door showed every visitor
+   an internal note. The hero runs one column until a real asset exists; the
+   brief lives in the handoff README under "Assets".
+
+   NOTHING CLAIMS CHAIN OF CUSTODY. AGENTS.md § "Ground rules": fulfilment and
+   chain-of-custody tracking are PLANNED, NOT IMPLEMENTED. The handoff's copy
+   asserts both in the hero and the compliance band; publishing that to
+   regulated buyers would be claiming a capability the record cannot support —
+   standing rule 10 again, this time in prose rather than in figures.
 
    THE APPLICATION FORM IS A PREVIEW, NOT AN INTAKE. See FarmApplicationPanel.
 ──────────────────────────────────────────────────────────────────────────── */
@@ -88,8 +96,7 @@ function FooterLink({ target, label, onNavigate }: {
  */
 function FarmApplicationPanel({ lang, onStart }: { lang: Lang; onStart: () => void }) {
   const t = T[lang]
-  const [crop, setCrop] = useState<string>('Dried flower')
-  const crops = ['Dried flower', 'Trim', 'Fresh frozen', 'Extract']
+  const crops = [t.hpCrop1, t.hpCrop2, t.hpCrop3, t.hpCrop4]
 
   return (
     <div className="hp-form">
@@ -109,18 +116,14 @@ function FarmApplicationPanel({ lang, onStart }: { lang: Lang; onStart: () => vo
       </ul>
 
       <p style={{ margin: '22px 0 10px', fontSize: 14, fontWeight: 600 }}>{t.hpFormCrops}</p>
+      {/* Labels, not controls. These were buttons with local `crop` state that
+          `onStart` never received and navigation threw away — an apparent
+          answer to an apparent "Step 1 of 4", silently discarded. That is the
+          same trap the fields above are written to avoid, so the pills stop
+          pretending too. The real choice is made in the registration flow. */}
       <div className="hp-croprow">
         {crops.map(c => (
-          <button
-            key={c}
-            type="button"
-            className={`tag ${crop === c ? 'tag-accent' : 'tag-outline'}`}
-            aria-pressed={crop === c}
-            onClick={() => setCrop(c)}
-            style={{ cursor: 'pointer', border: crop === c ? undefined : '1px solid var(--color-accent)' }}
-          >
-            {c}
-          </button>
+          <span key={c} className="tag tag-outline">{c}</span>
         ))}
       </div>
 
@@ -228,13 +231,22 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
               </div>
             </div>
 
-            {/* No photograph exists. This holds the space and states the brief
-                rather than shipping the handoff's striped placeholder. */}
-            <div className="hp-photo-slot" role="presentation">
-              <p className="hp-photo-brief">
-                photo — a licensed Chiang Mai greenhouse, daylight, workers with visible ID badges
-              </p>
-            </div>
+            {/*
+              NO PHOTOGRAPH, AND NO SLOT EITHER.
+
+              This held a dashed box containing the words "photo — a licensed
+              Chiang Mai greenhouse, daylight, workers with visible ID badges".
+              That is a note to ourselves, and it was rendered at full size to
+              every visitor on the front door — `role="presentation"` changes
+              how assistive technology treats an element, it does not hide it.
+              So the comment above it said "do not ship the placeholder" while
+              the markup shipped one.
+
+              An empty framed box is not better: it reads as a broken image. The
+              hero simply runs one column until there is a photograph to put
+              here. The brief lives in the handoff README under "Assets", which
+              is where a brief belongs.
+            */}
           </section>
         </div>
 

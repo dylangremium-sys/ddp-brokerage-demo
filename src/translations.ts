@@ -898,7 +898,7 @@ export const T = {
 
     hpHeroBadge: 'Licensed medical supply · Thailand → Czech Republic',
     hpHeroTitle: 'Paperwork that travels as well as the flower does.',
-    hpHeroBody: 'DDP registers Thai farms, inventories and grades every batch, verifies the certificates of analysis, and hands European medical buyers a dossier their regulator will accept. One ledger, one chain of custody, both languages.',
+    hpHeroBody: 'DDP registers Thai farms, inventories and grades every batch, verifies the certificates of analysis, and hands European medical buyers a dossier their regulator will accept. One ledger, both languages.',
     hpHeroCtaFarm: 'Register your farm',
     hpHeroCtaBuyer: 'I am a licensed buyer',
     hpCred1: 'Thai FDA-licensed farms only',
@@ -913,7 +913,7 @@ export const T = {
     hpStep2Body: 'Every batch weighed, photographed, graded and given a code that follows it to Prague.',
     hpStep2Who: 'DDP inspector',
     hpStep3Title: 'Evidence assembly',
-    hpStep3Body: 'COA, chain of custody, batch numbers and export readiness collected into one dossier.',
+    hpStep3Body: 'COA, batch numbers and export readiness collected into one dossier.',
     hpStep3Who: 'DDP compliance',
     hpStep4Title: 'Buyer release',
     hpStep4Body: 'Licensed European buyers see only batches whose documentation is complete and current.',
@@ -934,6 +934,14 @@ export const T = {
     hpFormProvince: 'Province',
     hpFormLicence: 'Thai FDA licence number',
     hpFormCrops: 'What do you grow for export?',
+    // Static, and translated. These were hardcoded English pills that a Thai
+    // visitor met untranslated in the middle of otherwise-Thai copy, and they
+    // were clickable — so a farmer could answer an apparent "Step 1 of 4"
+    // question whose answer went nowhere. Same reasoning as the fields above.
+    hpCrop1: 'Dried flower',
+    hpCrop2: 'Trim',
+    hpCrop3: 'Fresh frozen',
+    hpCrop4: 'Extract',
     hpFormUploadNote: 'Photograph your licence with your phone camera — we accept a clear photo, no scanner needed.',
     hpFormReassure: 'You can stop at any step and come back — nothing is submitted to a buyer until you and DDP both approve it.',
 
@@ -945,7 +953,7 @@ export const T = {
     // Denying automation still raises it, and on a regulated product it invites
     // exactly the question it was trying to close. The disclaimer and the
     // named-human claim both survive; only the mechanism word is gone.
-    hpComplianceBody: 'Licence, batch, grade, COA, chain of custody, export readiness — each one timestamped, attributed to the person who approved it, and exportable as a dossier. Decision support, reviewed by qualified people. Not legal advice.',
+    hpComplianceBody: 'Licence, batch, grade, COA, export readiness — each one timestamped, attributed to the person who approved it, and exportable as a dossier. Decision support, reviewed by qualified people. Not legal advice.',
 
     hpBuyersTitle: 'Licensed European buyers: request the current supply sheet',
     hpBuyersBody: 'Verified importers and pharmacies only. Send your licence and we will return available graded stock, with documentation status per batch.',
@@ -1767,7 +1775,7 @@ export const T = {
 
     hpHeroBadge: 'อุปทานทางการแพทย์ที่ได้รับอนุญาต · ไทย → สาธารณรัฐเช็ก',
     hpHeroTitle: 'เอกสารที่เดินทางได้ไกลเท่ากับผลผลิตของคุณ',
-    hpHeroBody: 'DDP ขึ้นทะเบียนฟาร์มไทย ตรวจนับและจัดเกรดทุกล็อต ตรวจสอบใบรับรองผลวิเคราะห์ และส่งมอบชุดเอกสารที่หน่วยงานกำกับดูแลของผู้ซื้อในยุโรปยอมรับ บัญชีเดียว ห่วงโซ่การดูแลเดียว สองภาษา',
+    hpHeroBody: 'DDP ขึ้นทะเบียนฟาร์มไทย ตรวจนับและจัดเกรดทุกล็อต ตรวจสอบใบรับรองผลวิเคราะห์ และส่งมอบชุดเอกสารที่หน่วยงานกำกับดูแลของผู้ซื้อในยุโรปยอมรับ บัญชีเดียว สองภาษา',
     hpHeroCtaFarm: 'ขึ้นทะเบียนฟาร์มของคุณ',
     hpHeroCtaBuyer: 'ฉันเป็นผู้ซื้อที่ได้รับอนุญาต',
     hpCred1: 'เฉพาะฟาร์มที่ได้รับอนุญาตจาก อย. ไทย',
@@ -1782,7 +1790,7 @@ export const T = {
     hpStep2Body: 'ทุกล็อตได้รับการชั่งน้ำหนัก ถ่ายภาพ จัดเกรด และกำหนดรหัสที่ติดตามไปจนถึงกรุงปราก',
     hpStep2Who: 'ผู้ตรวจของ DDP',
     hpStep3Title: 'รวบรวมหลักฐาน',
-    hpStep3Body: 'ใบรับรองผลวิเคราะห์ ห่วงโซ่การดูแล หมายเลขล็อต และความพร้อมส่งออก รวมอยู่ในชุดเอกสารเดียว',
+    hpStep3Body: 'ใบรับรองผลวิเคราะห์ หมายเลขล็อต และความพร้อมส่งออก รวมอยู่ในชุดเอกสารเดียว',
     hpStep3Who: 'ฝ่ายกำกับดูแลของ DDP',
     hpStep4Title: 'เปิดให้ผู้ซื้อ',
     hpStep4Body: 'ผู้ซื้อที่ได้รับอนุญาตในยุโรปจะเห็นเฉพาะล็อตที่เอกสารครบถ้วนและเป็นปัจจุบัน',
@@ -1803,11 +1811,15 @@ export const T = {
     hpFormProvince: 'จังหวัด',
     hpFormLicence: 'เลขที่ใบอนุญาต อย.',
     hpFormCrops: 'คุณปลูกอะไรเพื่อการส่งออก',
+    hpCrop1: 'ดอกแห้ง',
+    hpCrop2: 'ทริม',
+    hpCrop3: 'แช่แข็งสด',
+    hpCrop4: 'สารสกัด',
     hpFormUploadNote: 'ถ่ายภาพใบอนุญาตด้วยกล้องโทรศัพท์ของคุณ — ภาพที่ชัดเจนก็เพียงพอ ไม่ต้องใช้เครื่องสแกน',
     hpFormReassure: 'คุณหยุดขั้นตอนใดก็ได้แล้วกลับมาทำต่อ — จะไม่มีการส่งข้อมูลถึงผู้ซื้อจนกว่าคุณและ DDP จะเห็นชอบทั้งสองฝ่าย',
 
     hpComplianceTitle: 'ทุกข้อความบนหน้านี้คือบันทึกในระบบ',
-    hpComplianceBody: 'ใบอนุญาต ล็อต เกรด ใบรับรองผลวิเคราะห์ ห่วงโซ่การดูแล และความพร้อมส่งออก — แต่ละรายการมีเวลากำกับ ระบุผู้อนุมัติ และส่งออกเป็นชุดเอกสารได้ เป็นข้อมูลประกอบการตัดสินใจที่ผู้เชี่ยวชาญเป็นผู้ตรวจ ไม่ใช่คำแนะนำทางกฎหมาย',
+    hpComplianceBody: 'ใบอนุญาต ล็อต เกรด ใบรับรองผลวิเคราะห์ และความพร้อมส่งออก — แต่ละรายการมีเวลากำกับ ระบุผู้อนุมัติ และส่งออกเป็นชุดเอกสารได้ เป็นข้อมูลประกอบการตัดสินใจที่ผู้เชี่ยวชาญเป็นผู้ตรวจ ไม่ใช่คำแนะนำทางกฎหมาย',
 
     hpBuyersTitle: 'ผู้ซื้อที่ได้รับอนุญาตในยุโรป: ขอรายการอุปทานปัจจุบัน',
     hpBuyersBody: 'เฉพาะผู้นำเข้าและร้านขายยาที่ผ่านการตรวจสอบ ส่งใบอนุญาตของคุณมา แล้วเราจะแจ้งสต็อกที่จัดเกรดแล้วพร้อมสถานะเอกสารของแต่ละล็อต',
