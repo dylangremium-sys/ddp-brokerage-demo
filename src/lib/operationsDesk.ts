@@ -100,8 +100,21 @@ export interface OperationsDeskItem {
   priority: OperationsDeskPriority
   title: string
   entityLabel: string
-  /** Plain-language explanation of why this is in the queue. */
+  /** Plain-language explanation of why this is in the queue. Shown to an admin. */
   reason: string
+  /**
+   * What to write to the FARM when this matter is chased, where that must differ
+   * from `reason`.
+   *
+   * The chase sends `reason` verbatim, which is right for every queue whose
+   * reason is a fact about the farm's own record. It is wrong for compliance
+   * matters: their reason is the alert's detail, which is written for a DDP
+   * reader and, for an alert an admin typed by hand, is arbitrary internal text.
+   * Sending that to a farm leaks whatever was in the box.
+   *
+   * Falls back to `reason` when unset, so no other queue changes.
+   */
+  chaseMessage?: string
   /** Factual timestamp already recorded on the source record, when one exists. */
   occurredAt?: string
   ageInDays?: number
@@ -475,6 +488,12 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
             entityLabel: entity.label,
             farmProfileId: entity.farmProfileId,
             reason: alert.alertDetail,
+            // The title states the gap and the label says which record it is on.
+            // The DETAIL is deliberately not sent: it carries DDP's own working
+            // notes — "Do not describe it as buyer-ready; request COA evidence
+            // first" is guidance to a reviewer, and a hand-written alert's detail
+            // is whatever an admin typed into a free-text box.
+            chaseMessage: `${alert.alertTitle} (${entity.label})`,
             occurredAt: alert.createdAt,
             ageInDays: daysBetween(alert.createdAt, now),
             statusLabel: alert.status,
