@@ -42,6 +42,43 @@
 --
 -- Sections B, C and D build their own rows and unwind them via a caught
 -- exception. They never touch a pre-existing row.
+--
+-- ── SECTIONS B AND D CANNOT RUN IN THE SUPABASE SQL EDITOR ──────────────────
+--
+-- Learned the hard way on 2026-08-12, after this file was handed to the owner
+-- claiming they would. They fail with:
+--
+--     ERROR: permission denied to set role "ddp_ro"
+--
+-- PostgreSQL 16 split role membership into an INHERIT option and a SET option,
+-- and on production `postgres` holds the first and not the second:
+--
+--     pg_has_role('postgres','ddp_ro','MEMBER') = true
+--     pg_has_role('postgres','ddp_ro','SET')    = FALSE
+--
+-- The original check asked for MEMBER, saw true, and concluded SET ROLE would
+-- work. MEMBER is not the question. If you are testing whether something can
+-- SET ROLE, ask for 'SET'.
+--
+-- This file is unchanged for the disposable-PostgreSQL harness, where the roles
+-- are created locally, the runner IS superuser, and B and D are the sections
+-- that give this migration its meaning. To run it on PRODUCTION, either:
+--
+--   * run only A, C, E and F in the editor, and verify B and D from the
+--     auditing role's OWN connection, which is stronger than a superuser
+--     simulating it — that is how they were verified on 2026-08-12:
+--       B: as ddp_ro, public_intake_attempts -> 14, security_settings -> 1
+--          (both read 0 before this migration), and all 23 readable tables
+--          agreed exactly with pg_stat_user_tables;
+--       D: as ddp_ro, INSERT and UPDATE both -> permission denied; or
+--
+--   * run `GRANT ddp_ro, ddp_audit_reader TO postgres WITH SET TRUE;` first,
+--     which grants no new data access — postgres is already BYPASSRLS — and
+--     then run this file whole. That is a production permission change and
+--     deserves to be a decision rather than a side effect.
+--
+-- `SET LOCAL ROLE authenticated` in section C is unaffected: set_option is
+-- true for that role, so C runs in the editor as written.
 -- ============================================================================
 
 -- A — structural.
