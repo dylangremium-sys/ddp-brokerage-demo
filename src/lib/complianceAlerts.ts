@@ -20,6 +20,25 @@ function enforcedRuleMap(rules: ComplianceRule[]): Map<string, ComplianceRule> {
   return map
 }
 
+/**
+ * Every alert this module derives is given an id under this prefix. Nothing else
+ * uses it: a hand-raised alert takes its id from the database (or `makeId` in
+ * local mode), and an auto alert that is later persisted is inserted as a NEW
+ * row and gets a fresh id too.
+ */
+export const DERIVED_ALERT_ID_PREFIX = 'auto-'
+
+/**
+ * True when the alert was generated from a rule rather than typed by a person.
+ *
+ * The distinction matters wherever an alert's own words leave DDP: a derived
+ * alert's title and detail come from the templates in this file, while a
+ * hand-raised one is whatever an admin put in the Watchtower form.
+ */
+export function isRuleDerivedAlert(alert: Pick<ComplianceAlert, 'id'>): boolean {
+  return alert.id.startsWith(DERIVED_ALERT_ID_PREFIX)
+}
+
 function buildAlert(
   rule: ComplianceRule,
   entityType: ComplianceRuleEntityType,
@@ -29,7 +48,7 @@ function buildAlert(
   severity?: ComplianceSeverity,
 ): ComplianceAlert {
   return {
-    id: `auto-${rule.ruleCode.toLowerCase()}-${entityType}-${entityId}`,
+    id: `${DERIVED_ALERT_ID_PREFIX}${rule.ruleCode.toLowerCase()}-${entityType}-${entityId}`,
     entityType,
     entityId,
     ruleId: rule.id,

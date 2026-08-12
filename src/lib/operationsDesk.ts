@@ -31,6 +31,7 @@ const FARM_ONLY_REQUIREMENT_TYPES: ReadonlySet<DocumentRequirementType> = new Se
   'responsible_contact',
 ])
 import { farmForItem } from './complianceEvidence'
+import { isRuleDerivedAlert } from './complianceAlerts'
 import {
   classifyOperationsDeskPriority,
   type OperationsDeskPriority,
@@ -115,6 +116,15 @@ export interface OperationsDeskItem {
    * Falls back to `reason` when unset, so no other queue changes.
    */
   chaseMessage?: string
+  /**
+   * Set when this matter must NOT be chased even though its farm is known, and
+   * says why in words an operator can read.
+   *
+   * Distinct from "no farm on file": that is an inability, this is a decision.
+   * The row's tooltip uses this text, so the screen never explains a deliberate
+   * block with the wrong reason.
+   */
+  notChaseableReason?: string
   /** Factual timestamp already recorded on the source record, when one exists. */
   occurredAt?: string
   ageInDays?: number
@@ -491,9 +501,15 @@ export function buildOperationsDeskItems(input: OperationsDeskInput): Operations
             // The title states the gap and the label says which record it is on.
             // The DETAIL is deliberately not sent: it carries DDP's own working
             // notes — "Do not describe it as buyer-ready; request COA evidence
-            // first" is guidance to a reviewer, and a hand-written alert's detail
-            // is whatever an admin typed into a free-text box.
+            // first" is guidance to a reviewer.
             chaseMessage: `${alert.alertTitle} (${entity.label})`,
+            // A hand-raised alert's title is free text from the Watchtower form
+            // too, so there is no field on it written to be read by a farm. It
+            // is a note a colleague made; it is resolved in Watchtower, not by
+            // messaging the farm from here.
+            notChaseableReason: isRuleDerivedAlert(alert)
+              ? undefined
+              : 'Raised by hand in Watchtower. Resolve it there — its wording was not written to be sent to a farm.',
             occurredAt: alert.createdAt,
             ageInDays: daysBetween(alert.createdAt, now),
             statusLabel: alert.status,
