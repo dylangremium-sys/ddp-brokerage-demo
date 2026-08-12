@@ -192,7 +192,7 @@ Numbered migrations run 3 → 23. Numbers 1, 2, 5, 6, 7 do not exist; the number
 
 > ### ⚠️ Single Source of Truth
 > 
-> **For the authoritative per-environment migration status, read `docs/MIGRATION_RUNTIME_STATUS.md`.** It is the canonical register of which migrations are actually applied to staging and production, verified by direct runtime inspection. This README's migration table cross-references that register; **if this README and `MIGRATION_RUNTIME_STATUS.md` disagree, the latter is correct.** The README describes the forward migration process and safety concerns; the status document records the actual runtime state.
+> **Two places record runtime status, and neither covers everything.** From migration 67 onward the production database keeps its own ledger, `public.schema_migrations`, written by each migration as its final act — that is the best evidence for the migrations it contains (63–65 backfilled, 67–71 self-recorded). For migrations **10, 17, 19–24** and **47–50**, read `docs/MIGRATION_RUNTIME_STATUS.md`, a hand-maintained register of dated runtime observations. **Where this README disagrees with either, they are correct.** Everything else — thirty-seven forward migrations — is recorded in neither and is `UNKNOWN`: not looked at, which is not the same as not applied. See that file's *Coverage and authority* section for the exact lists. The README describes the forward migration process and safety concerns; it is not evidence of application.
 
 | Group | Forward migration(s) | VERIFY / ROLLBACK | Repository status | Runtime application |
 |---|---|---|---|---|
@@ -230,7 +230,7 @@ Numbered migrations run 3 → 23. Numbers 1, 2, 5, 6, 7 do not exist; the number
 
 Migration 24 (Evidence Request & Resolution) **is part of `main`** and its files are present in the repository. However, the change freeze (`docs/PRODUCTION_CHANGE_FREEZE_2026-07-25.md` §1.1) explicitly defers its application to production. It is not a prerequisite for anything in the current pilot scope.
 
-For the authoritative per-environment position, read `docs/MIGRATION_RUNTIME_STATUS.md` — it is the current authority for runtime application status and covers migrations 10, 17 and 19–23, plus the 2026-07-21 staging security harness result.
+For the recorded per-environment position, read `docs/MIGRATION_RUNTIME_STATUS.md` — it covers migrations 10, 17, 19–24 and 47–50, plus the 2026-07-21 staging security harness result, and its *Coverage and authority* section names what it does not cover. For migrations 63 onward the production database's own ledger, `public.schema_migrations`, is the better record.
 
 ### Bootstrap the first DDP Admin user
 
