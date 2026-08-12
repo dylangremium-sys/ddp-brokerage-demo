@@ -255,3 +255,20 @@ they create exist. See `docs/runbooks/EXPORT_HUB_FOUNDATION_APPLY.md` before app
    already have a *file*. This is how 45 was found.
 7. **Claim before you write, not when you finish.** A row in this file costs nothing and is the only
    artefact a concurrent session can see. The number is reserved by the claim, not by the SQL.
+
+
+## Allocation made by the evidence-review rebuild (2026-08-12)
+
+**Supersedes an earlier claim on 62 and 66, which were both already taken.** Those numbers were
+claimed against `main` and `git worktree list`, which are NOT the claim space: every number from 3 to
+66 is claimed on some unmerged branch. `feat/rule-condition-evaluator` took 62 on 2026-08-07 and
+`feat/regulatory-subscribe` took 66 on 2026-08-09. CI's AUDIT-001 check reported both on the first
+run of the branch and the report went unread for a day.
+
+`npm run verify:migrations` now runs the numbering, collision and rollback-symmetry gates together,
+so the answer arrives before a push instead of in a log afterwards.
+
+| # | Migration stem | What it does | Depends on |
+|---|---|---|---|
+| 67 | `67_MIGRATIONS_LEDGER_*` | `schema_migrations`: every migration records its own apply as its final statement, inside its own transaction. Readable by any role, so verification does not depend on the person who applied it. Backfills 63-66 by probe, marked as backfilled, with no invented timestamp. | none |
+| 68 | `68_EVIDENCE_DECISION_GATE_*` | `farmer_document_opens`, `sha256_at_decision`, and a BEFORE INSERT OR UPDATE trigger refusing a decision with no recorded open by the deciding reviewer and no reason of substance. Refuses to run without 67. | 64, 65, 67 |
