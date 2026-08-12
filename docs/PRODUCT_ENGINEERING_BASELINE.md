@@ -155,6 +155,20 @@ Two edits, verbatim. **Neither is applied.**
 One word. "Organises" describes what the system does to what it holds; "turns …
 into … for buyers" implies a delivery that has not occurred.
 
+> **Correction, 2026-08-12 — this edit would have changed nothing on any page,
+> and where to make it instead.** When written, this pointed at the translation
+> key `landingHero1`. That key was rendered by no component: the string existed in
+> English and Thai and reached no screen, and the phrase "review packs" appeared 0
+> times in the served HTML. Editing it would have produced a green diff and an
+> unchanged site — the shape of a copy fix that quietly does not land.
+>
+> The sentence is authored **per locale** in
+> `src/pages/public/localisedBuyerContent.ts` as each entry's `lead`, where the
+> German and Czech prerendered pages carry it live and already in the present
+> tense. So the concern is real and still unaddressed; only the address was wrong.
+> `landingHero1` has since been deleted as dead copy, so this edit must be made to
+> the `lead` of every locale entry that renders it, not to a translation key.
+
 **B. The licence claim — assertion to process.**
 
 > **Now:** "Licences are verified, laboratory accreditation is confirmed, and

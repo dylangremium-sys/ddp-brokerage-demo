@@ -48,6 +48,57 @@ presence of a `.sql` file in the repository is **not** evidence of application.
 
 ---
 
+## Migrations 47–50 — `NOT_APPLIED` by decision, 2026-08-12
+
+Recorded because the numbered migration files, read alone, imply Production has an
+AI job/cost/audit/prompt substrate. It does not, and that is deliberate.
+
+| | |
+|---|---|
+| Migrations | `47_AI_JOB_QUEUE_FOUNDATION`, `48_AI_COST_TRACKING`, `49_AI_AUDIT_LOGGING`, `50_AI_PROMPT_REGISTRY` |
+| Repository status | On `main` |
+| Staging | `NOT_APPLIED` |
+| Production | `NOT_APPLIED` |
+| Decided | 2026-08-12, by the repository owner |
+
+**Runtime evidence.** Read-only catalog query as `ddp_ro` against Production
+(`iihxjrfxmycjafbtjvvq`), 2026-08-12:
+
+```
+select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relkind = 'r' and c.relname like 'ai\_%';
+→ 0
+```
+
+The 13 tables, ~30 indexes and 10 functions those four migrations declare are
+absent. This is `NOT_APPLIED` in the sense defined above — positively observed
+absent, not unknown.
+
+**Why this is not a defect.** Nothing in the shipped application reads or writes
+any of it. Measured at `main` on the same date:
+
+```
+grep -raoE "from\(['\"]ai_[a-z_]+['\"]\)" src api | wc -l
+→ 0
+```
+
+So there is no code shipped ahead of its migration, which is the failure mode this
+register exists to catch. The files are retained, unapplied, against the AI phase
+resuming.
+
+**What would change this.** Any consumer of an `ai_*` table entering `src/` or
+`api/` makes this a blocker rather than a decision: the code would reach
+Production before its substrate. If that happens, apply 47–50 to staging first,
+run each migration's own `*_VERIFY.sql`, and record the result here.
+
+**What was NOT done.** No database was written to. The two migration registers
+elsewhere in this repository are stale on their own terms and were not rewritten
+here — `README.md` still says "Numbered migrations run 3 → 23" and this document's
+own matrix ends at 24, while `main` now carries migrations up to 69. That gap is
+wider than these four migrations and is not fixed by this entry.
+
+---
+
 ## Production verification — 2026-07-26
 
 Closes AUDIT-013 ("Production status of migrations 19, 20, 21, 22, 23 is UNKNOWN").
