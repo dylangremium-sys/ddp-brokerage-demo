@@ -110,6 +110,47 @@ describe('every one of the nine steps still asks the farm something', () => {
   })
 })
 
+describe('the rail states progress only where it knows it', () => {
+  /**
+   * The rail used to print the profile-wide completion figure on every entry,
+   * so the eight rows that were not the current step each read "0% complete" —
+   * a claim about that step, from a number that measures the whole profile.
+   * Per-step completion is not computed anywhere, so those eight rows were
+   * saying something no code knew to be true.
+   *
+   * The walkthrough above cannot notice this: it counts rail entries and the
+   * controls behind them, never what an entry says. These two expectations are
+   * the ones that fail if the percentage comes back.
+   */
+  it('gives exactly one entry a state line, and it is the current step', () => {
+    const { container } = renderWizard()
+    fireEvent.click(railButtons(container)[4])
+
+    const states = container.querySelectorAll('.ob-rail .ob-stage-state')
+    expect(states).toHaveLength(1)
+    expect(states[0].textContent).toBe(T.en.stepOf(5, TOTAL_STEPS))
+
+    const current = container.querySelector('.ob-rail [aria-current="step"]')
+    expect(current?.contains(states[0]), 'the state line sits on a step that is not current').toBe(true)
+  })
+
+  it('never claims a percentage for an individual step', () => {
+    const { container } = renderWizard()
+    const claiming: string[] = []
+
+    for (let i = 0; i < TOTAL_STEPS; i++) {
+      fireEvent.click(railButtons(container)[i])
+      for (const [j, entry] of railButtons(container).entries()) {
+        if (/\d+\s*%/u.test(entry.textContent ?? '')) {
+          claiming.push(`step ${j + 1} while on step ${i + 1}: "${entry.textContent?.trim()}"`)
+        }
+      }
+    }
+
+    expect(claiming, `rail entries stating a completion percentage:\n${claiming.join('\n')}`).toEqual([])
+  })
+})
+
 describe('the rail does not impersonate the submit button', () => {
   // Step 9 is titled "Ready to Submit?". A rail entry announcing that title
   // would be a second control that a screen reader reads as the submit action.
