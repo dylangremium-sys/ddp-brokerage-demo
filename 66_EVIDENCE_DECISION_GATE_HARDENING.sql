@@ -296,4 +296,37 @@ BEGIN
 END;
 $function$;
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 5. Record that this migration ran, here, now.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- The rule established by migration 62: the LAST statement of every migration
+-- writes its own ledger row, inside this transaction. If the transaction rolls
+-- back there is no row; if only part of this file was executed the insert is
+-- never reached and there is no row; if it went to the wrong database the row
+-- lands there and the intended one still shows nothing.
+--
+-- This migration was reported applied to production three times while production
+-- was unchanged, and nothing recorded that. This clause is why it cannot happen
+-- silently again.
+DO $ledger$
+BEGIN
+  IF to_regclass('public.schema_migrations') IS NULL THEN
+    RAISE EXCEPTION
+      'Apply 62 (the migrations ledger) before this migration. Without it there is no record of what landed, which is the failure 62 exists to prevent.'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  INSERT INTO public.schema_migrations (number, name, applied_at, applied_by, evidence)
+  VALUES (66, 'EVIDENCE_DECISION_GATE', now(), current_user, 'self-recorded')
+  ON CONFLICT (number) DO UPDATE
+    SET applied_at = excluded.applied_at,
+        applied_by = excluded.applied_by,
+        -- A row backfilled by 62 from the presence of the table is upgraded to a
+        -- witnessed one when the migration itself runs. The reverse never
+        -- happens: nothing downgrades a self-recorded row to a guess.
+        evidence   = 'self-recorded'
+    WHERE public.schema_migrations.evidence LIKE 'backfilled%';
+END
+$ledger$;
+
 COMMIT;

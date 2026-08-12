@@ -98,7 +98,19 @@ BEGIN
   SELECT public.evidence_reason_is_substantive(NULL) INTO v_ok;
   IF v_ok IS NOT FALSE THEN RAISE EXCEPTION 'VERIFY FAILED: NULL did not resolve to false'; END IF;
 
-  RAISE NOTICE 'VERIFY PASSED: substrate, append-only, grants and the reason floor.';
+  -- The ledger row is part of what 66 claims: an apply that left no record is
+  -- the failure this whole pair exists to close.
+  IF to_regclass('public.schema_migrations') IS NULL THEN
+    RAISE EXCEPTION 'VERIFY FAILED: no migrations ledger — apply 62 first';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.schema_migrations
+     WHERE number = 66 AND evidence = 'self-recorded' AND applied_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED: 66 did not record itself in the ledger';
+  END IF;
+
+  RAISE NOTICE 'VERIFY PASSED: substrate, append-only, grants, the reason floor, and the ledger row.';
 END
 $verify$;
 
