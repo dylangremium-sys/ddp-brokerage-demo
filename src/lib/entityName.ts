@@ -19,6 +19,17 @@
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/**
+ * True when a value is an identifier rather than a name.
+ *
+ * Exported so callers that need the same judgement — the Operations Desk asks it
+ * of a farm record it holds — ask it of this module instead of keeping a second
+ * copy of the pattern. Two copies is how the desk came to miss #212/#213.
+ */
+export function isIdentifier(value: string): boolean {
+  return UUID.test((value ?? '').trim())
+}
+
 export interface DisplayedName {
   /** What to render as the title. Never a UUID, never empty. */
   name: string
@@ -39,15 +50,19 @@ export function displayName(
   unnamedText: string,
   fallbackId?: string,
 ): DisplayedName {
-  // Sources join product and farm with " · ", so an empty farm leaves the
-  // separator behind. Strip it from either end rather than shipping the shape
-  // of missing data as though it were a name.
-  const cleaned = (label ?? '').trim().replace(/^[·\s]+|[·\s]+$/g, '').trim()
+  // Sources join parts with " · " — product · farm, and older callers type · id.
+  // Judge each PART, not the joined string: a composite is not a bare identifier,
+  // so a whole-string test passes "farm · b1f4182c-…" through and prints the id
+  // as a title. Splitting also disposes of a dangling separator from an empty
+  // join, at either end, without a second rule for it.
+  const parts = (label ?? '').split('·').map(part => part.trim()).filter(Boolean)
+  const named = parts.filter(part => !UUID.test(part))
+  // Any identifier among the parts is kept as metadata — demoted, not discarded.
+  const carried = parts.find(part => UUID.test(part))
 
-  if (cleaned && !UUID.test(cleaned)) return { name: cleaned, unnamed: false }
+  if (named.length > 0) return { name: named.join(' · '), identifier: carried, unnamed: false }
 
-  const identifier = UUID.test(cleaned) ? cleaned : fallbackId
-  return { name: unnamedText, identifier, unnamed: true }
+  return { name: unnamedText, identifier: carried ?? fallbackId, unnamed: true }
 }
 
 /** Shortened for display. The full value stays in the record, never on screen. */

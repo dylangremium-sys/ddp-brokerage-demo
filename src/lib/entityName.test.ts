@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { daysOpen, displayName, shortIdentifier } from './entityName'
+import { daysOpen, displayName, isIdentifier, shortIdentifier } from './entityName'
 import { initialLanguage } from './languagePreference'
 
 /**
@@ -46,6 +46,44 @@ describe('displayName', () => {
 
   it('is case-insensitive about UUIDs, because sources differ', () => {
     expect(displayName(A_UUID.toUpperCase(), UNNAMED).unnamed).toBe(true)
+  })
+
+  // The whole-label test passed these through, because a composite is not a bare
+  // identifier. The Operations Desk built exactly this shape for every
+  // compliance matter, so the id printed as the record's title.
+  it('never renders an identifier as the title just because a word is glued to it', () => {
+    const shown = displayName(`farm · ${A_UUID}`, UNNAMED)
+    expect(shown.name).not.toContain(A_UUID)
+    expect(shown.name).toBe('farm')
+    expect(shown.identifier).toBe(A_UUID)
+  })
+
+  it('keeps the real half of a composite and demotes the identifier half', () => {
+    const shown = displayName(`Sunrise Mango · ${A_UUID}`, UNNAMED)
+    expect(shown.name).toBe('Sunrise Mango')
+    expect(shown.identifier).toBe(A_UUID)
+    expect(shown.unnamed).toBe(false)
+  })
+
+  it('falls back to unnamed when every part is an identifier', () => {
+    const shown = displayName(`${A_UUID} · ${A_UUID}`, UNNAMED)
+    expect(shown.name).toBe(UNNAMED)
+    expect(shown.identifier).toBe(A_UUID)
+    expect(shown.unnamed).toBe(true)
+  })
+
+  it('leaves a genuine two-part name alone', () => {
+    expect(displayName('Northern Lights · Green Valley', UNNAMED).name)
+      .toBe('Northern Lights · Green Valley')
+  })
+})
+
+describe('isIdentifier', () => {
+  it('separates an id from a name, so callers need no second copy of the rule', () => {
+    expect(isIdentifier(A_UUID)).toBe(true)
+    expect(isIdentifier(` ${A_UUID.toUpperCase()} `)).toBe(true)
+    expect(isIdentifier('Mae Rim Organics')).toBe(false)
+    expect(isIdentifier('')).toBe(false)
   })
 })
 
