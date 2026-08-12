@@ -1,0 +1,83 @@
+{
+  "id": "68_evidence_decision_gate",
+  "title": "Migration 68 \u2014 the evidence decision gate, enforced in the database",
+  "description": "Applies the farmer MVP schema, migration 67 (the ledger, which 68 refuses to run without), then 68. VERIFY D builds its own farm, user and document inside a subtransaction it then unwinds, so the gate is exercised against real rows on an empty cluster and leaves no residue \u2014 a vacuous pass on the section that proves the gate works is worse than no section, because it reads green while asserting nothing. Then rolls 68 back alone and asserts the opens table and the gate functions are gone while 67 and farmer_document_reviews survive.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "BASE-SCHEMA",
+      "file": "SUPABASE_SCHEMA.sql"
+    },
+    {
+      "label": "FARMER-MVP",
+      "file": "FARMER_MVP_MIGRATION.sql"
+    },
+    {
+      "label": "67-PREREQ",
+      "file": "67_MIGRATIONS_LEDGER_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING",
+      "file": "68_EVIDENCE_DECISION_GATE_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "68_EVIDENCE_DECISION_GATE_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "expectedPassCount": 5,
+    "note": "A substrate and the trigger's reach \u2014 it must cover INSERT as well as UPDATE, because a gate watching only UPDATE is walked around by creating the row already decided (measured on staging before the clause existed). B the reason floor at its edges, including one character repeated, which defeats a length test. C the predicate is IMMUTABLE. D the gate exercised against real rows. E the apply recorded itself in the ledger."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "68-rollback",
+        "source": "file",
+        "file": "68_EVIDENCE_DECISION_GATE_ROLLBACK.sql"
+      }
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": [
+        "public.farmer_document_opens"
+      ],
+      "functions": [
+        "public.enforce_evidence_decision_gate",
+        "public.evidence_reason_is_substantive",
+        "public.set_document_open_actor",
+        "public.refuse_document_open_mutation"
+      ]
+    },
+    "retained": {
+      "tables": [
+        "public.farmer_document_reviews",
+        "public.schema_migrations"
+      ]
+    }
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.is_ddp_admin",
+      "public.farmer_documents",
+      "public.farmer_document_reviews"
+    ]
+  }
+}
