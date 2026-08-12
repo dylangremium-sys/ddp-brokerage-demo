@@ -116,19 +116,27 @@ export default function FarmerPortal({
   )
 
   /**
-   * What to call the farm in the header.
+   * What to call the farm on its own portal.
    *
-   * The farm record's trading name first, then the signed-in account's own
-   * name. Measured on the live portal: the farm had no trading name, so the
-   * header greeted a real farm with "Farm with no name on file" while its
-   * account plainly said "Billy Bum Farm". Telling someone their farm has no
-   * name where their name should be is not honesty, it is just unkind — the
-   * missing trading name is already reported in the profile checklist, which is
-   * the place that can actually be acted on.
+   * THE NAME THEY GIVE THEMSELVES COMES FIRST. `trading_name` is the formal
+   * name that goes on a dossier a buyer reads; the account's own display name
+   * is what the farm calls itself, and this is the farm's own screen. Owner's
+   * rule, 2026-08-11: use the self-given name, not the trading name.
+   *
+   * The trading name is still the fallback, because a farm that filled that in
+   * and left its account name blank has still told us what it is called. Only
+   * when there is nothing at all does the no-name statement appear — and that
+   * is reported in the profile checklist, which is the place a farm can act on
+   * it, rather than shouted in the header.
+   *
+   * NOTE this is a display rule only. Nothing here writes a self-given name
+   * into `trading_name`: that field feeds buyer paperwork, and a name a farm
+   * uses for itself is not necessarily the business's registered one.
    */
-  const accountLabel = farmNamed.unnamed
-    ? (currentProfile?.displayName || currentProfile?.email || farmNamed.name)
-    : farmNamed.name
+  const portalName = currentProfile?.displayName?.trim()
+    || (farmNamed.unnamed ? '' : farmNamed.name)
+    || currentProfile?.email
+    || farmNamed.name
 
   return (
     <div className="organic-scope">
@@ -140,8 +148,8 @@ export default function FarmerPortal({
         <PortalHeader
           lang={lang}
           onLang={onLang}
-          farmName={accountLabel}
-          accountLabel={accountLabel}
+          farmName={portalName}
+          accountLabel={portalName}
           onSignOut={onSignOut}
         />
 
