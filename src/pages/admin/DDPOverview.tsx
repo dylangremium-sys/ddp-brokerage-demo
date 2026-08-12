@@ -1,4 +1,5 @@
 import { farmTotalScore, isFarmScored } from '../../data'
+import { displayName, shortIdentifier } from '../../lib/entityName'
 import type { FarmProfile, InventoryItem, FarmStatus, InventoryStatus } from '../../types'
 
 interface Props {
@@ -59,12 +60,22 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
 
       <div className="eo-kpi-strip">
         <SummaryCard val={totalFarms} lbl="Registered Farms" cls="s-total" />
-        <SummaryCard val={pendingFarms} lbl="Awaiting Review" cls="s-pending" />
+        {/* NAMED FOR WHAT IT COUNTS. This counts FARMS at 'Submitted to DDP'
+            or 'Under Review'; it has never had anything to do with documents.
+            Labelled "Awaiting Review" on a console whose sidebar also carries
+            Evidence, it read as the evidence queue — so on 2026-08-12 it showed
+            0 while a document sat awaiting clarification, and looked like a
+            contradiction. The count was right; the word was missing. */}
+        <SummaryCard val={pendingFarms} lbl="Farms Awaiting Review" cls="s-pending" />
         <SummaryCard val={approvedFarms} lbl="Approved Farms" cls="s-approved" />
         <SummaryCard val={watchlistFarms} lbl="Watchlist" cls="s-missing" />
         <SummaryCard val={`${totalKg.toLocaleString()} kg`} lbl="Total Submitted Stock" cls="s-total" />
         <SummaryCard val={`${approvedKg.toLocaleString()} kg`} lbl="Approved Stock" cls="s-approved" />
-        <SummaryCard val={missingDocItems} lbl="Missing Documents" cls="s-missing" />
+        {/* Likewise: this counts INVENTORY BATCHES flagged 'Missing Document',
+            not entries in the document register. A document that arrived and
+            was queried is not counted here and should not be — it is not
+            missing. The evidence queue is its own surface. */}
+        <SummaryCard val={missingDocItems} lbl="Batches Missing a Document" cls="s-missing" />
         <SummaryCard val={exportReadyFarms} lbl="Export Document Review" cls="s-farms" />
       </div>
 
@@ -80,7 +91,19 @@ export default function DDPOverview({ farms, inventory, onReviewFarm, onReviewIt
                   <tr><td colSpan={4} className="empty-table-cell">NO RECORDS ON FILE</td></tr>
                 ) : recentFarms.map(f => (
                   <tr key={f.id}>
-                    <td className="eo-td-primary" data-label="Farm">{f.tradingName}</td>
+                    {/* A farm with no trading name rendered as an empty cell,
+                        which reads as a table fault rather than as missing
+                        data. Standing rule 5a: never blank, never a raw UUID.
+                        Display only — nothing here writes a name into
+                        `trading_name`, which feeds buyer paperwork. */}
+                    <td className="eo-td-primary" data-label="Farm">
+                      {(() => {
+                        const named = displayName(f.tradingName ?? '', 'No name on file', f.id)
+                        return named.unnamed && named.identifier
+                          ? <>{named.name} <span className="mono-id">{shortIdentifier(named.identifier)}</span></>
+                          : named.name
+                      })()}
+                    </td>
                     <td data-label="Province">{f.province}</td>
                     <td data-label="Status"><span className={`badge ${FARM_STATUS_CLASS[f.status]}`}>{f.status}</span></td>
                     <td><button className="btn btn-review" onClick={() => onReviewFarm(f.id)}>Open Review</button></td>

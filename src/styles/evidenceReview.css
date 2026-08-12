@@ -81,6 +81,24 @@
   & .ev-fact-value { font-size: 14px; font-weight: 500; text-align: right; min-width: 0; word-break: break-word; }
   & .ev-mono { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
 
+  /* Transcribing what the report says. Sits in the same rail card as the facts
+     it replaces, so the eye does not move to edit them. */
+  & .ev-facts-edit { display: grid; gap: 12px; padding: 12px 0 2px; }
+  & .ev-facts-label {
+    display: grid; gap: 5px;
+    font-size: 13px; color: var(--color-neutral-600);
+  }
+  & .ev-facts-label input {
+    width: 100%; box-sizing: border-box;
+    padding: 9px 11px; font: inherit; font-size: 14px;
+    color: var(--color-neutral-900); background: var(--color-neutral-000);
+    border: 1px solid var(--color-neutral-300); border-radius: var(--radius-sm);
+  }
+  & .ev-facts-label input:focus-visible {
+    outline: 2px solid var(--color-accent-600); outline-offset: 1px;
+  }
+  & .ev-facts-actions { display: flex; gap: 18px; flex-wrap: wrap; }
+
   & .ev-question { background: var(--color-accent-100); border-radius: var(--radius-lg); padding: 24px 26px; }
   & .ev-question-label {
     font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;

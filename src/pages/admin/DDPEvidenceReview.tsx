@@ -3,6 +3,7 @@ import { runGuardedLoad } from '../../lib/asyncLoadGuard'
 import {
   loadFarmerDocuments, setDocumentReviewStatus, loadDocumentReviewEvents,
   getCoaSignedUrl, recordDocumentOpen, loadMyDocumentOpens, createReviewRequest,
+  setDocumentReportFields,
 } from '../../lib/db'
 import {
   loadReviewerDirectory, reviewerLabel, reviewerRole,
@@ -130,6 +131,11 @@ export default function DDPEvidenceReview({ inventory = [] }: { inventory?: Inve
   const [showFullHash, setShowFullHash] = useState(false)
   const [history, setHistory] = useState<DocumentReviewEvent[] | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  // Transcribing what the report says it is — see setDocumentReportFields.
+  const [factsOpen, setFactsOpen] = useState(false)
+  const [factDraft, setFactDraft] = useState({ labName: '', reportNumber: '', sampleName: '' })
+  const [factsBusy, setFactsBusy] = useState(false)
+  const [factsError, setFactsError] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
 
   useEffect(() => {
@@ -201,6 +207,29 @@ export default function DDPEvidenceReview({ inventory = [] }: { inventory?: Inve
     setOpenedIds(prev => new Set(prev).add(doc.id))
     setOpenedAt(prev => ({ ...prev, [doc.id]: new Date().toISOString() }))
   }, [])
+
+  /**
+   * Save what the reviewer transcribed from the report.
+   *
+   * Not a decision, and deliberately not gated like one: it leaves
+   * review_status untouched, which migration 68's trigger passes straight
+   * through. Recording what a document SAYS is not the same act as judging it,
+   * and requiring a reason to write down a report number would only teach
+   * reviewers to type something meaningless into the reason box.
+   */
+  const saveFacts = useCallback(async (doc: FarmerDocument) => {
+    setFactsBusy(true)
+    setFactsError(null)
+    try {
+      await setDocumentReportFields(doc.id, factDraft)
+      setFactsOpen(false)
+      setReloadToken(t => t + 1)
+    } catch (err) {
+      setFactsError(err instanceof Error ? err.message : 'Those details could not be saved.')
+    } finally {
+      setFactsBusy(false)
+    }
+  }, [factDraft])
 
   const decide = useCallback(async (doc: FarmerDocument, status: DocumentReviewStatus) => {
     if (!isSubstantiveReason(reason)) {
@@ -392,9 +421,80 @@ export default function DDPEvidenceReview({ inventory = [] }: { inventory?: Inve
             <section className="ev-card">
               <h2 className="ev-card-head">What this document is</h2>
               <Fact label="Document type" value={TYPE_LABEL[selected.documentType] ?? selected.documentType} />
-              <Fact label="Laboratory" value={selected.labName} />
-              <Fact label="Report number" value={selected.reportNumber} mono />
-              <Fact label="Sample named on report" value={selected.sampleName} />
+              {factsOpen ? (
+                <div className="ev-facts-edit">
+                  {/* Transcribed from the report by the person reading it.
+                      Nothing parses these out of the filename: a filename that
+                      happens to contain a report number is not a report number,
+                      and a guess in a compliance column reads downstream as
+                      something a human checked. Blank is allowed and clears the
+                      field — "not stated on the report" is a real answer. */}
+                  <label className="ev-facts-label">
+                    Laboratory
+                    <input
+                      value={factDraft.labName}
+                      onChange={e => setFactDraft(d => ({ ...d, labName: e.target.value }))}
+                    />
+                  </label>
+                  <label className="ev-facts-label">
+                    Report number
+                    <input
+                      className="ev-mono"
+                      value={factDraft.reportNumber}
+                      onChange={e => setFactDraft(d => ({ ...d, reportNumber: e.target.value }))}
+                    />
+                  </label>
+                  <label className="ev-facts-label">
+                    Sample named on report
+                    <input
+                      value={factDraft.sampleName}
+                      onChange={e => setFactDraft(d => ({ ...d, sampleName: e.target.value }))}
+                    />
+                  </label>
+                  {factsError && <p role="alert" className="ev-alert-inline">{factsError}</p>}
+                  <div className="ev-facts-actions">
+                    <button
+                      type="button"
+                      className="ev-link"
+                      disabled={factsBusy}
+                      onClick={() => { saveFacts(selected).catch(() => undefined) }}
+                    >
+                      {factsBusy ? 'Saving…' : 'Save what the report says'}
+                    </button>
+                    <button
+                      type="button"
+                      className="ev-link"
+                      disabled={factsBusy}
+                      onClick={() => { setFactsOpen(false); setFactsError(null) }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Fact label="Laboratory" value={selected.labName} />
+                  <Fact label="Report number" value={selected.reportNumber} mono />
+                  <Fact label="Sample named on report" value={selected.sampleName} />
+                  <button
+                    type="button"
+                    className="ev-link"
+                    onClick={() => {
+                      setFactDraft({
+                        labName: selected.labName ?? '',
+                        reportNumber: selected.reportNumber ?? '',
+                        sampleName: selected.sampleName ?? '',
+                      })
+                      setFactsError(null)
+                      setFactsOpen(true)
+                    }}
+                  >
+                    {selected.labName || selected.reportNumber || selected.sampleName
+                      ? 'Correct these details'
+                      : 'Record what the report says'}
+                  </button>
+                </>
+              )}
               <Fact label="Attached batch" value={batchLabel} mono />
               <Fact label="Received" value={when(selected.uploadedAt)} />
               {selected.reviewStatus !== 'pending' && (
@@ -463,8 +563,26 @@ export default function DDPEvidenceReview({ inventory = [] }: { inventory?: Inve
 
               {/* Demoted to text: the two decisions above are the point. */}
               <div className="ev-links">
+                {/* Gated on the REASON ONLY, deliberately not on the open.
+                    Returning a document to the queue withdraws a decision
+                    rather than recording an examination, so it needs no fresh
+                    read — migration 68's trigger draws the same line. But it is
+                    still a decision someone must answer for, and the trigger
+                    requires a substantive reason for it exactly as for the
+                    other three.
+
+                    Before this, it was the one control with no disabled state
+                    at all: `decide` refused it and explained why, but only
+                    after the click. Observed live 2026-08-12 — it rendered
+                    dark and underlined beside three visibly-dead siblings, so
+                    it read as the one thing you could still do. */}
                 {selected.reviewStatus !== 'pending' && (
-                  <button type="button" className="ev-link" onClick={() => { decide(selected, 'pending').catch(() => undefined) }}>
+                  <button
+                    type="button"
+                    className="ev-link"
+                    disabled={!isSubstantiveReason(reason)}
+                    onClick={() => { decide(selected, 'pending').catch(() => undefined) }}
+                  >
                     Return to queue
                   </button>
                 )}
@@ -488,7 +606,13 @@ export default function DDPEvidenceReview({ inventory = [] }: { inventory?: Inve
                 key={d.id}
                 type="button"
                 className={`ev-queue-item${d.id === selected.id ? ' is-current' : ''}`}
-                onClick={() => { setSelectedId(d.id); setReason(''); setPreviewUrl(null); setHistoryOpen(false) }}
+                /* Close the transcription editor too: a half-typed report
+                   number belongs to the document it was read from, and must
+                   never carry across to the next one in the queue. */
+                onClick={() => {
+                  setSelectedId(d.id); setReason(''); setPreviewUrl(null)
+                  setHistoryOpen(false); setFactsOpen(false); setFactsError(null)
+                }}
               >
                 <span>{recordTitle(d)}</span>
                 <span className="ev-queue-meta">{when(d.uploadedAt)}</span>
