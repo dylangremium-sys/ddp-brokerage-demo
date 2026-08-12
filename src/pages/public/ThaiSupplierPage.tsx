@@ -6,6 +6,7 @@ import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
 import { metadataForPage } from '../../lib/publicPageMetadata'
 import { DRAFTED } from './thaiSupplierCopy'
 import { OFFICE_TEL_HREF } from '../../lib/publicPhone'
+import '../../styles/publicSupplier.css'
 
 /* ────────────────────────────────────────────────────────────────────────────
    /th/suppliers — the Thai-language page for producers.
@@ -74,46 +75,63 @@ export default function ThaiSupplierPage({ onNavigate }: Props) {
   const documents = ['docCoa', 'docThc', 'docPanel', 'docBatchRecords', 'docGacp'] as const
 
   return (
-    <div className="corp-shell">
-      <header className="corp-nav">
-        <div className="corp-nav-inner">
-          <InternalLink target="landing" onNavigate={onNavigate} className="corp-brand">
-            <DDPMonogramLogo height={44} color="#C6A24C" />
-            {/* EXISTING: navBrandDescriptor */}
-            <span className="corp-brand-descriptor">{copy.navBrandDescriptor}</span>
-          </InternalLink>
+    <div className="organic-scope">
+      <div className="sup">
+        <div className="sup-wrap">
+          <header className="sup-nav">
+            <InternalLink target="landing" onNavigate={onNavigate} className="sup-brand">
+              <DDPMonogramLogo height={44} color="#C6A24C" />
+              {/* EXISTING: navBrandDescriptor */}
+              <span className="sup-brand-descriptor">{copy.navBrandDescriptor}</span>
+            </InternalLink>
 
-          <nav className="corp-nav-menu" aria-label="เมนู">
-            <InternalLink target="landing" onNavigate={onNavigate} className="corp-nav-link">
-              English site
-            </InternalLink>
-            {/* EXISTING: farmerRegHeading — "สมัครเป็นผู้จัดหาสินค้า" */}
-            <InternalLink target="farmer-register" onNavigate={onNavigate} className="corp-nav-link">
-              {copy.farmerRegHeading}
-            </InternalLink>
-          </nav>
+            <nav className="sup-nav-menu" aria-label="เมนู">
+              <InternalLink target="landing" onNavigate={onNavigate} className="sup-nav-link">
+                English site
+              </InternalLink>
+              {/* EXISTING: farmerRegHeading — "สมัครเป็นผู้จัดหาสินค้า" */}
+              <InternalLink target="farmer-register" onNavigate={onNavigate} className="sup-nav-link">
+                {copy.farmerRegHeading}
+              </InternalLink>
+            </nav>
+          </header>
         </div>
-      </header>
 
-      <main className="corp-main" id="main">
-        <article className="corp-doc">
-          {/* EXISTING: landingAboutText1 is the fullest published description of
-              what DDP does with Thai farm supply, so it carries the heading. */}
-          <h1 className="corp-heading">{DRAFTED.headingSell}</h1>
+        <main id="main">
+          {/* ── Hero ────────────────────────────────────────────────────────
+              The handoff's hero proportions, carrying the sentences this page
+              already had. `landingSupplierDemand` is the plain promise — the
+              thing the redesign wanted at the front — so it leads as the lede
+              rather than sitting in the body. No sentence is new. */}
+          <div className="sup-wrap sup-hero">
+            <h1>{DRAFTED.headingSell}</h1>
 
-          <p className="corp-provenance">
-            <span>ผู้ดูแลเนื้อหา: <strong>DDP Brokerage — Compliance &amp; Operations</strong></span>
-            <span className="corp-provenance-sep" aria-hidden="true">·</span>
-            <span>
-              ตรวจทานล่าสุด:{' '}
-              <time dateTime={metadataForPage('th-supplier').lastReviewed}>9 สิงหาคม 2569</time>
-            </span>
-          </p>
+            {/* REUSED from the homepage supplier block — same sentence, one
+                translation, so the two pages cannot drift apart on the claim. */}
+            <p className="sup-lede"><strong>{copy.landingSupplierDemand}</strong></p>
 
-          {/* REUSED from the homepage supplier block — same sentence, one
-              translation, so the two pages cannot drift apart on the claim. */}
-          <p><strong>{copy.landingSupplierDemand}</strong></p>
+            <div className="sup-cta-row">
+              <a className="btn btn-primary" href={pathForPage('farmer-register')}
+                 onClick={e => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate('farmer-register') }}>
+                {copy.farmerRegHeading}
+              </a>
+              <a className="btn btn-ghost" href={OFFICE_TEL_HREF}>
+                {copy.homeFooterOfficeTel}
+              </a>
+            </div>
 
+            <p className="sup-provenance">
+              <span>ผู้ดูแลเนื้อหา: <strong>DDP Brokerage — Compliance &amp; Operations</strong></span>
+              <span aria-hidden="true">·</span>
+              <span>
+                ตรวจทานล่าสุด:{' '}
+                <time dateTime={metadataForPage('th-supplier').lastReviewed}>9 สิงหาคม 2569</time>
+              </span>
+            </p>
+          </div>
+
+          <div className="sup-band">
+            <article className="sup-wrap sup-doc">
           {/* EXISTING: landingAboutText1. This is §2's second paragraph almost
               word for word, and it already had approved Thai. Reused, not
               retranslated — the largest single saving in this change. */}
@@ -180,28 +198,56 @@ export default function ThaiSupplierPage({ onNavigate }: Props) {
             </InternalLink>
           </p>
 
-          {/* EXISTING: landingAuthorityNote. The sentence that bounds every
-              other sentence here. Never retyped, never softened. */}
-          <h2>{DRAFTED.headingLimits}</h2>
-          <p>{copy.landingAuthorityNote}</p>
+          {/* EXISTING: landingAuthorityNote and landingDisclaimer. The two
+              sentences that bound every other sentence on this page.
 
-          {/* EXISTING: landingDisclaimer. */}
-          <h2>{DRAFTED.headingEligibility}</h2>
-          <p>{copy.landingDisclaimer} {copy.landingDisclaimerAccess}</p>
-        </article>
-      </main>
+              Set apart on the dark ground rather than styled down. A limits
+              notice made quiet is a limits notice nobody reads, and the
+              original's instruction is that it is never softened — so the
+              redesign gives it more weight, not less. Words unchanged. */}
+          <div className="sup-notice">
+            <h2>{DRAFTED.headingLimits}</h2>
+            <p>{copy.landingAuthorityNote}</p>
+          </div>
 
-      <footer className="corp-footer">
-        <div className="corp-footer-inner">
-          <nav className="corp-footer-links" aria-label="เมนู">
-            <InternalLink target="landing" onNavigate={onNavigate} className="corp-footer-link">English site</InternalLink>
-            <InternalLink target="farmer-register" onNavigate={onNavigate} className="corp-footer-link">{copy.farmerRegHeading}</InternalLink>
-            <InternalLink target="privacy" onNavigate={onNavigate} className="corp-footer-link">Privacy Policy</InternalLink>
-            <InternalLink target="terms" onNavigate={onNavigate} className="corp-footer-link">Terms of Use</InternalLink>
-          </nav>
-          <p className="corp-copyright">© 2026 DDP Brokerage Co., Ltd. All rights reserved.</p>
-        </div>
-      </footer>
+          <div className="sup-notice">
+            <h2>{DRAFTED.headingEligibility}</h2>
+            <p>{copy.landingDisclaimer} {copy.landingDisclaimerAccess}</p>
+          </div>
+            </article>
+          </div>
+
+          {/* ── Close ───────────────────────────────────────────────────────
+              One primary action on the page, and it is here: the step after
+              reading. `farmerRegHeading` is the same cleared string the nav
+              uses, so the page asks for one thing in one wording. */}
+          <div className="sup-wrap sup-close">
+            <h2>{DRAFTED.headingSell}</h2>
+            <div className="sup-cta-row">
+              {/* Secondary, not primary. The handoff draws a filled button both
+                  here and in the hero, but standing rule 1 allows one filled
+                  terracotta button per screen and the hero's is it. Repeating
+                  the action at the foot is right; repeating its weight is not. */}
+              <a className="btn btn-secondary" href={pathForPage('farmer-register')}
+                 onClick={e => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate('farmer-register') }}>
+                {copy.farmerRegHeading}
+              </a>
+            </div>
+          </div>
+        </main>
+
+        <footer className="sup-footer">
+          <div className="sup-wrap">
+            <nav className="sup-footer-links" aria-label="เมนู">
+              <InternalLink target="landing" onNavigate={onNavigate} className="sup-footer-link">English site</InternalLink>
+              <InternalLink target="farmer-register" onNavigate={onNavigate} className="sup-footer-link">{copy.farmerRegHeading}</InternalLink>
+              <InternalLink target="privacy" onNavigate={onNavigate} className="sup-footer-link">Privacy Policy</InternalLink>
+              <InternalLink target="terms" onNavigate={onNavigate} className="sup-footer-link">Terms of Use</InternalLink>
+            </nav>
+            <p className="sup-copyright">© 2026 DDP Brokerage Co., Ltd. All rights reserved.</p>
+          </div>
+        </footer>
+      </div>
     </div>
   )
 }

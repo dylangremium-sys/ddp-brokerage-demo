@@ -1,0 +1,275 @@
+/*
+ * /th/suppliers — handoff screen 10, restyled onto the Organic system.
+ *
+ * ITS OWN CLASSES, NOT `.corp-*`. The page was built on the shared corporate
+ * document shell, which /about, /contact, /privacy, /terms, /de and /cs all
+ * use. Restyling `.corp-shell` or `.corp-doc` would silently restyle six other
+ * published pages. So this file introduces `.sup-*` and touches nothing else,
+ * and the corporate pages keep the shell exactly as it was.
+ *
+ * THE PAGE STAYS THAI. The handoff draws screen 10 English-led — "We are buying
+ * now." — but /th/suppliers is deliberately Thai: a Thai producer arrives from a
+ * Thai search, not from a language toggle (see the note on `Page` in
+ * src/types.ts). Owner's decision, 12 Aug 2026: same words, same audience, new
+ * look. Nothing here changes what the page says or who it is for.
+ *
+ * CAPRASIMO CANNOT SET THIS PAGE. The display face has no Thai glyphs, so a
+ * Thai heading in Caprasimo renders in whatever the system substitutes — the
+ * one face the design most wants is the one this page cannot use. Headings are
+ * Sarabun at 700 instead, which is what the rest of the product already uses
+ * for Thai. Recorded in the README revision log.
+ *
+ * NO LETTER-SPACING ANYWHERE IN THIS FILE. Every string on the page is Thai,
+ * and Thai has no word spaces — tracking pulls the marks apart. Rather than
+ * guard each rule with `:lang(th)`, this sheet simply never introduces the
+ * property. If you add a rule here, do not add tracking to it.
+ */
+
+.organic-scope {
+
+  & .sup {
+    background: var(--color-bg);
+    color: var(--color-text);
+    min-height: 100vh;
+    /* Sarabun, product-wide, for the reason in the header note. */
+    font-family: var(--font-thai);
+    line-height: 1.75; /* Thai marks sit above and below the baseline */
+  }
+
+  & .sup-wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding-inline: 56px;
+  }
+
+  /* ── Nav ────────────────────────────────────────────────────────────────── */
+  & .sup-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding-block: 20px;
+    flex-wrap: wrap;
+  }
+  & .sup-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: inherit;
+  }
+  & .sup-brand-descriptor {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-neutral-800);
+  }
+  & .sup-nav-menu { display: flex; gap: 20px; flex-wrap: wrap; }
+  & .sup-nav-link {
+    font-size: 15px;
+    color: var(--color-neutral-800);
+    text-decoration: none;
+  }
+  & .sup-nav-link:hover { color: var(--color-accent-700); }
+
+  /* ── Hero ───────────────────────────────────────────────────────────────
+     The handoff's proportions, in the face this page can actually render. */
+  & .sup-hero { padding-block: 76px 64px; }
+
+  & .sup-badge {
+    display: inline-block;
+    padding: 7px 16px;
+    border-radius: 999px;
+    background: var(--color-accent-200);
+    color: var(--color-accent-800);
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+
+  & .sup-hero h1 {
+    font-family: var(--font-thai);
+    font-weight: 700;
+    font-size: 54px;
+    line-height: 1.25;
+    max-width: 20ch;
+    margin: 22px 0 0;
+  }
+
+  & .sup-lede {
+    font-size: 21px;
+    line-height: 1.7;
+    max-width: 60ch;
+    margin: 22px 0 0;
+  }
+
+  & .sup-cta-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 30px;
+  }
+  & .sup-cta-row .btn { font-size: 16px; padding: 16px 28px; }
+
+  /* Provenance line — who maintains this page and when it was last reviewed.
+     Kept from the original: it is the page's own audit trail. */
+  & .sup-provenance {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 13.5px;
+    color: var(--color-neutral-700);
+    margin-top: 26px;
+  }
+
+  /* ── Document body ──────────────────────────────────────────────────────── */
+  & .sup-band { background: var(--color-neutral-100); }
+
+  & .sup-doc { padding-block: 72px; }
+
+  & .sup-doc h2 {
+    font-family: var(--font-thai);
+    font-weight: 700;
+    font-size: 30px;
+    line-height: 1.35;
+    max-width: 24ch;
+    margin: 56px 0 0;
+  }
+  /* Only whatever actually opens the document loses its top margin. This was
+     `h2:first-of-type`, which assumed a heading opens it — a paragraph does, so
+     the first heading lost its spacing and read as part of the text above it. */
+  & .sup-doc > :first-child { margin-top: 0; }
+
+  & .sup-doc p {
+    font-size: 17px;
+    line-height: 1.8;
+    max-width: 62ch;
+    margin: 18px 0 0;
+  }
+
+  & .sup-doc ul,
+  & .sup-doc ol {
+    max-width: 62ch;
+    margin: 18px 0 0;
+    padding-left: 0;
+    list-style: none;
+    display: grid;
+    gap: 12px;
+    counter-reset: sup-step;
+  }
+
+  /* Documents you may send — a guide, not a gate, so a tick rather than a
+     bullet. The original page makes exactly this point in its own words. */
+  /* The marker is POSITIONED, not a grid or flex child.
+     A list item here can hold several children — `<strong>title</strong> — text`
+     is three nodes — and grid/flex would make each one its own track, breaking
+     a sentence into a vertical stack of fragments. Absolute positioning leaves
+     the content in normal inline flow, so it wraps as prose regardless of how
+     many elements the item is built from. */
+  & .sup-doc ul li {
+    position: relative;
+    padding-left: 38px;
+    font-size: 17px;
+    line-height: 1.7;
+  }
+  & .sup-doc ul li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    top: 3px;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--color-accent-2-300);
+    color: var(--color-accent-2-900);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+  }
+
+  /* Numbered sequences — the process, and what happens next. */
+  & .sup-doc ol li {
+    position: relative;
+    padding-left: 42px;
+    font-size: 17px;
+    line-height: 1.7;
+    counter-increment: sup-step;
+  }
+  & .sup-doc ol li::before {
+    content: counter(sup-step);
+    position: absolute;
+    left: 0;
+    top: 2px;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: var(--color-accent-200);
+    color: var(--color-accent-800);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  & .sup-doc a { color: var(--color-accent-700); }
+
+  /* The bounding notices — authority limits and eligibility. Set apart rather
+     than styled down: they are the sentences that bound every other sentence
+     on the page, and the original never softens them. */
+  & .sup-notice {
+    background: var(--color-accent-2-900);
+    color: var(--color-accent-2-100);
+    border-radius: var(--radius-lg);
+    padding: 34px 36px;
+    margin-top: 34px;
+  }
+  & .sup-notice h2 {
+    color: var(--color-neutral-100);
+    margin-top: 0;
+    font-size: 24px;
+  }
+  & .sup-notice p { color: var(--color-accent-2-200); }
+
+  /* ── Closing call to action ─────────────────────────────────────────────── */
+  & .sup-close { padding-block: 72px; }
+  & .sup-close h2 {
+    font-family: var(--font-thai);
+    font-weight: 700;
+    font-size: 34px;
+    line-height: 1.35;
+    max-width: 22ch;
+    margin: 0;
+  }
+
+  /* ── Footer ─────────────────────────────────────────────────────────────── */
+  & .sup-footer {
+    background: var(--color-neutral-200);
+    padding-block: 40px;
+  }
+  & .sup-footer-links {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  & .sup-footer-link { font-size: 14px; color: var(--color-neutral-800); }
+  & .sup-copyright {
+    font-size: 13px;
+    color: var(--color-neutral-700);
+    margin: 0;
+  }
+
+  /* ── Responsive ─────────────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    & .sup-wrap { padding-inline: 22px; }
+    & .sup-hero { padding-block: 40px 36px; }
+    & .sup-hero h1 { font-size: 32px; }
+    & .sup-lede { font-size: 18px; }
+    & .sup-doc { padding-block: 48px; }
+    & .sup-doc h2 { font-size: 24px; margin-top: 40px; }
+    & .sup-doc p { font-size: 16px; }
+    & .sup-notice { padding: 24px 22px; }
+    & .sup-close { padding-block: 48px; }
+    & .sup-close h2 { font-size: 26px; }
+  }
+}
