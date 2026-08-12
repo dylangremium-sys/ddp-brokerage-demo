@@ -1,0 +1,33 @@
+{
+  "id": "67_migrations_ledger",
+  "title": "Migration 67 — the migrations ledger: every migration records its own apply",
+  "description": "Applies 67 on a disposable cluster and runs VERIFY A-F. The properties that matter cannot be read from the DDL: that the migration recorded ITSELF (B), that a backfilled row does not claim a time or an actor it cannot know (C), that the constraint refuses the reverse (D), that a ledger row cannot be deleted (E), and that anon holds nothing (F). Then rolls 67 back and asserts the table and its trigger function are gone. This migration exists because 68 was reported applied to production three times while production was unchanged; the fixture proves the mechanism that makes that impossible to hide.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    { "label": "BASE-SCHEMA", "file": "SUPABASE_SCHEMA.sql" },
+    { "label": "HARDENING", "file": "67_MIGRATIONS_LEDGER_HARDENING.sql" }
+  ],
+  "verify": {
+    "file": "67_MIGRATIONS_LEDGER_VERIFY.sql",
+    "expectedSections": ["A", "B", "C", "D", "E", "F"],
+    "expectedPassCount": 6,
+    "note": "A shape; B self-recording; C backfilled rows carry no invented time or actor; D the constraint refuses a self-recorded row with no witness; E rows are not deletable; F RLS on and anon holds nothing. B and C are the ones that would silently rot — a ledger that does not record itself, or that blurs a probe into a witnessed apply, looks identical to one that works."
+  },
+  "rollback": {
+    "stages": [
+      { "label": "67-rollback", "source": "file", "file": "67_MIGRATIONS_LEDGER_ROLLBACK.sql" }
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "tables": ["public.schema_migrations"],
+      "functions": ["public.refuse_schema_migration_removal"]
+    }
+  },
+  "declaredSubstrate": {
+    "roles": ["anon", "authenticated", "service_role"],
+    "schemas": ["auth", "public"],
+    "symbols": ["auth.users"]
+  }
+}
