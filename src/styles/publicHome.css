@@ -1,0 +1,435 @@
+/*
+ * The public homepage — handoff screen 9.
+ *
+ * SCOPED, like every Organic screen. Everything is nested under
+ * `.organic-scope` so the design system's tokens and component classes reach
+ * this page and nothing else; App.css still owns the rest of the product. See
+ * styles/organicScoped.css for why that matters.
+ *
+ * THE PAGE THIS REPLACES was built to a different approved spec (LandPage.png:
+ * forest green, gold, cream) under `.landing-shell` in App.css. Those rules are
+ * left in place rather than deleted — they are ~500 lines inside a 5,700-line
+ * sheet, nothing else references them, and removing them is a separate change
+ * with its own blast radius. They are dead once this ships.
+ *
+ * ONE PRIMARY ACTION. Standing rule 1: the filled terracotta button appears
+ * once per screen. Here it is "Apply to supply" in the nav. Every other call to
+ * action on the page is secondary, ghost, or a link — including the two hero
+ * buttons, which the prototype drew as primary + secondary.
+ *
+ * NO PHOTOGRAPH. The handoff ships striped placeholders with a monospace brief
+ * and says explicitly not to ship them. The hero's right column therefore
+ * degrades to a documented empty slot rather than rendering a fake image.
+ */
+
+.organic-scope {
+
+  /* ── Page shell ─────────────────────────────────────────────────────────── */
+  & .hp {
+    background: var(--color-bg);
+    color: var(--color-text);
+    min-height: 100vh;
+  }
+
+  & .hp-wrap {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding-inline: 56px;
+  }
+
+  /* ── Nav ────────────────────────────────────────────────────────────────
+     Four destinations plus sign-in and one primary action — down from six
+     items, two of them dropdowns, a language switch and two buttons. */
+  & .hp-nav {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    padding-block: 22px;
+    flex-wrap: wrap;
+  }
+
+  & .hp-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: auto;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  & .hp-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background: var(--color-accent-2-900);
+    color: var(--color-accent-400);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+  }
+
+  & .hp-wordmark {
+    font-family: var(--font-heading);
+    font-weight: var(--font-heading-weight);
+    font-size: 20px;
+  }
+
+  & .hp-navlink {
+    font-size: 15px;
+    color: var(--color-neutral-800);
+    text-decoration: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  & .hp-navlink:hover { color: var(--color-accent-700); }
+
+  /* Language segment. Organic's `.seg-opt` marks the active option with
+     `:has(input:checked)` — it expects a radio inside each option. These are
+     buttons, so that rule can never match and the active language would carry
+     no state. Hence its own pair of classes. */
+  & .hp-seg {
+    display: inline-flex;
+    background: var(--color-neutral-200);
+    border-radius: 999px;
+    padding: 3px;
+  }
+  & .hp-seg-opt {
+    border: 0;
+    background: none;
+    cursor: pointer;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--color-neutral-700);
+  }
+  & .hp-seg-opt.is-active {
+    background: var(--color-neutral-100);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  /* ── Hero ───────────────────────────────────────────────────────────────── */
+  & .hp-hero {
+    display: grid;
+    grid-template-columns: 1.08fr 0.92fr;
+    gap: 56px;
+    align-items: center;
+    padding-block: 72px 88px;
+  }
+
+  & .hp-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 15px;
+    border-radius: 999px;
+    background: var(--color-accent-2-200);
+    color: var(--color-accent-2-800);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  & .hp-badge::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--color-accent-2-600);
+  }
+
+  & .hp-hero h1 {
+    font-size: 74px;
+    line-height: 1.03;
+    max-width: 17ch;
+    margin: 22px 0 0;
+  }
+
+  & .hp-hero-body {
+    font-size: 19px;
+    line-height: 1.6;
+    max-width: 50ch;
+    margin: 22px 0 0;
+  }
+
+  & .hp-cta-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 30px;
+  }
+  & .hp-cta-row .btn {
+    font-size: 16px;
+    padding: 16px 28px;
+  }
+
+  & .hp-creds {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 28px;
+  }
+
+  /* The photograph slot. Deliberately not an image: the handoff supplies no
+     photography and forbids shipping its placeholders. This holds the space
+     and the brief without asserting anything. */
+  & .hp-photo-slot {
+    min-height: 480px;
+    border-radius: var(--radius-lg);
+    background: var(--color-neutral-200);
+    border: 1px dashed var(--color-neutral-400);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    text-align: center;
+  }
+  & .hp-photo-brief {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--color-neutral-600);
+    max-width: 30ch;
+  }
+
+  /* ── How it works ───────────────────────────────────────────────────────── */
+  & .hp-band-sand { background: var(--color-neutral-100); }
+
+  & .hp-section { padding-block: 84px; }
+
+  & .hp-steps {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-top: 40px;
+  }
+
+  & .hp-step {
+    background: var(--color-bg);
+    border-radius: var(--radius-md);
+    padding: 28px 26px;
+    min-height: 260px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  & .hp-step-num {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    background: var(--color-accent-200);
+    color: var(--color-accent-800);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  & .hp-step h3 {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 19px;
+    margin: 18px 0 0;
+  }
+
+  & .hp-step p {
+    font-size: 14.5px;
+    line-height: 1.6;
+    margin: 10px 0 0;
+  }
+
+  /* Bottom-anchored "who does this" line. */
+  & .hp-step-who {
+    margin-top: auto;
+    padding-top: 18px;
+    font-size: 13px;
+    color: var(--color-neutral-700);
+  }
+
+  /* ── For farms + application ────────────────────────────────────────────── */
+  & .hp-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    align-items: start;
+  }
+
+  & .hp-eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-neutral-700);
+  }
+
+  & .hp-points {
+    list-style: none;
+    margin: 28px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 14px;
+  }
+  & .hp-points li {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 12px;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  & .hp-tick {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--color-accent-2-300);
+    color: var(--color-accent-2-900);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+  }
+
+  & .hp-form {
+    background: var(--color-neutral-100);
+    border-radius: var(--radius-lg);
+    padding: 36px 38px;
+    box-shadow: var(--shadow-md);
+  }
+
+  & .hp-progress {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--color-neutral-300);
+    overflow: hidden;
+    margin-top: 12px;
+  }
+  & .hp-progress-fill {
+    height: 100%;
+    width: 25%;
+    border-radius: 999px;
+    background: var(--color-accent-500);
+  }
+
+  & .hp-field-grid {
+    display: grid;
+    gap: 18px;
+    margin-top: 26px;
+  }
+
+  & .hp-croprow {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  & .hp-note {
+    background: var(--color-accent-100);
+    color: var(--color-accent-900);
+    border-radius: var(--radius-md);
+    padding: 14px 18px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    margin-top: 20px;
+  }
+
+  & .hp-reassure {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--color-neutral-700);
+    margin-top: 16px;
+  }
+
+  /* ── Compliance band ────────────────────────────────────────────────────── */
+  & .hp-compliance {
+    background: var(--color-accent-2-900);
+    color: var(--color-neutral-100);
+  }
+  & .hp-compliance h2 {
+    font-size: 42px;
+    max-width: 22ch;
+    color: var(--color-neutral-100);
+    margin: 0;
+  }
+  & .hp-compliance p {
+    font-size: 17px;
+    line-height: 1.65;
+    max-width: 52ch;
+    color: var(--color-accent-2-200);
+    margin: 20px 0 0;
+  }
+
+  /* ── Buyer strip ────────────────────────────────────────────────────────── */
+  & .hp-buyers {
+    display: flex;
+    gap: 40px;
+    align-items: end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  & .hp-buyers h2 { font-size: 38px; margin: 0; max-width: 20ch; }
+  & .hp-buyers p { font-size: 17px; line-height: 1.6; max-width: 50ch; margin: 16px 0 0; }
+
+  /* ── Footer ─────────────────────────────────────────────────────────────── */
+  & .hp-footer {
+    background: var(--color-neutral-200);
+    padding-block: 44px;
+  }
+  & .hp-footer-links {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  & .hp-footer a {
+    font-size: 14px;
+    color: var(--color-neutral-800);
+  }
+  & .hp-footer-note {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--color-neutral-700);
+    margin: 0;
+  }
+
+  /* ── Thai ───────────────────────────────────────────────────────────────
+     Every explicit letter-spacing this file introduces needs a guard: Thai
+     has no word spaces and tracking pulls the marks apart. `:lang(th)` goes
+     on the TARGET element — the descendant form needs an intermediate element
+     and so fails open. Same rule as organicScoped.css. */
+  & .hp-eyebrow:lang(th) {
+    letter-spacing: 0;
+    font-size: 13px; /* 12px mono is below the app's Thai floor */
+    /* App.css keeps mono under Thai for `.mono` — but that carve-out is for
+       IDENTIFIERS, which are Latin and numeric either way. This eyebrow carries
+       Thai words, and IBM Plex Mono has no Thai glyphs, so leaving it mono
+       renders the label in whatever the system substitutes. */
+    font-family: var(--font-thai);
+    text-transform: none; /* uppercasing does nothing to Thai but costs nothing to drop */
+  }
+
+  /* ── Responsive ─────────────────────────────────────────────────────────
+     The handoff collapses two-column marketing sections to one below ~900px. */
+  @media (max-width: 900px) {
+    & .hp-wrap { padding-inline: 24px; }
+    & .hp-hero {
+      grid-template-columns: 1fr;
+      gap: 36px;
+      padding-block: 40px 56px;
+    }
+    & .hp-hero h1 { font-size: 42px; }
+    & .hp-hero-body { font-size: 17px; }
+    & .hp-photo-slot { min-height: 260px; }
+    & .hp-steps { grid-template-columns: 1fr; }
+    & .hp-step { min-height: 0; }
+    & .hp-split { grid-template-columns: 1fr; gap: 40px; }
+    & .hp-section { padding-block: 52px; }
+    & .hp-compliance h2 { font-size: 30px; }
+    & .hp-buyers h2 { font-size: 28px; }
+    & .hp-form { padding: 26px 22px; }
+  }
+}

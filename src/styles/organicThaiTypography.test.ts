@@ -57,6 +57,30 @@ describe('handoff defect 2 — a ghost button is all label, so it needs a text-g
   })
 })
 
+describe('the Organic faces are actually loaded', () => {
+  // organicScoped.css dropped the handoff's @import (an @import is only valid
+  // at the top of a stylesheet) and says the faces "are loaded with a <link>
+  // where this is used". That link did not exist until 2026-08-12, so every
+  // Organic screen specified Caprasimo and rendered system-ui, and every mono
+  // identifier specified IBM Plex Mono and rendered generic monospace — on four
+  // screens, silently, because a missing font degrades instead of failing.
+  //
+  // Asserted against index.html because that is where the link lives. Note
+  // document.fonts.check() cannot test this at runtime: it returns TRUE for a
+  // family that is absent, since falling back to a system font counts as
+  // "available". The registered-families list is the only honest runtime check.
+  const html = readFileSync(join(__dirname, '..', '..', 'index.html'), 'utf8')
+
+  it.each(['Caprasimo', 'Figtree', 'IBM+Plex+Mono'])('requests %s', family => {
+    expect(html).toContain(family)
+  })
+
+  it('requests Caprasimo at one weight, because it ships one', () => {
+    // Asking for 600/700 makes the browser synthesise a bold that smears.
+    expect(html).not.toMatch(/Caprasimo:wght/)
+  })
+})
+
 describe('Thai typography survives the Organic layer', () => {
   it('defines a Thai face, because Caprasimo and Figtree have no Thai glyphs', () => {
     expect(CSS).toContain('--font-thai')
