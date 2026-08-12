@@ -1,0 +1,91 @@
+{
+  "id": "69_document_deletion_record",
+  "title": "Migration 69 \u2014 a document may be deleted; its deletion may not go unrecorded",
+  "description": "Applies the farmer document substrate, migration 67 (the ledger, which 69 refuses to run without) and 68 (whose evidence_reason_is_substantive predicate 69 reuses rather than writing a second copy of), then 69. VERIFY D is the section that matters: it builds its own user, farm and document and drives every refusal against real rows \u2014 no actor, no reason, a reason of one repeated character, and TRUNCATE, which bypasses row triggers entirely and would otherwise erase every document in silence. It then proves the permitted case actually deletes AND writes the record, because a gate that blocks everything is not the requirement; a gate that lets nothing through unrecorded is. The whole section unwinds via VERIFY_D_UNWIND so nothing survives it. Rollback then removes the gate and returns the database to its pre-apply shape. The record table is dropped ONLY because it is empty here: with records in it, the rollback keeps them and demands an explicit opt-in to destroy, since erasing the only evidence that documents were removed is the harm 69 exists to prevent. An earlier draft kept it unconditionally and the rollback-symmetry check caught that \u2014 protecting zero rows is not a safety property, it is residue.",
+  "pgMajor": 17,
+  "migrationDir": ".",
+  "applyStages": [
+    {
+      "label": "PRE-MIGRATION-64",
+      "file": "64_DOCUMENT_REVIEW_ATTRIBUTION_HARDENING.sql"
+    },
+    {
+      "label": "PRE-MIGRATION-65",
+      "file": "65_DOCUMENT_REVIEW_CLARIFICATION_HARDENING.sql"
+    },
+    {
+      "label": "PRE-MIGRATION-67",
+      "file": "67_MIGRATIONS_LEDGER_HARDENING.sql"
+    },
+    {
+      "label": "PRE-MIGRATION-68",
+      "file": "68_EVIDENCE_DECISION_GATE_HARDENING.sql"
+    },
+    {
+      "label": "HARDENING",
+      "file": "69_DOCUMENT_DELETION_RECORD_HARDENING.sql"
+    }
+  ],
+  "verify": {
+    "file": "69_DOCUMENT_DELETION_RECORD_VERIFY.sql",
+    "expectedSections": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "expectedPassCount": 5,
+    "note": "A the record's shape, including the deliberate ABSENCE of a foreign key to farmer_documents \u2014 the row it describes is gone, so a foreign key would make the record impossible to keep. B all four triggers, one of which exists solely because TRUNCATE bypasses the other three. C no client role may execute the new functions. D the refusals AND the permitted case, against rows the section builds and unwinds: a structural check can prove a trigger exists but never that it refuses, and this corpus has already shipped a VERIFY that passed identically before and after a rollback. D deliberately never touches a pre-existing document \u2014 it has to DELETE something to prove anything. E the apply recorded itself in the ledger."
+  },
+  "rollback": {
+    "stages": [
+      {
+        "label": "69-rollback",
+        "source": "file",
+        "file": "69_DOCUMENT_DELETION_RECORD_ROLLBACK.sql"
+      }
+    ]
+  },
+  "postRollback": {
+    "removed": {
+      "functions": [
+        "public.record_document_deletion",
+        "public.refuse_document_truncate",
+        "public.refuse_document_deletion_mutation"
+      ],
+      "tables": [
+        "public.farmer_document_deletions"
+      ]
+    },
+    "retained": {
+      "tables": [
+        "public.farmer_documents",
+        "public.farmer_document_opens",
+        "public.schema_migrations"
+      ],
+      "functions": [
+        "public.evidence_reason_is_substantive",
+        "public.enforce_evidence_decision_gate"
+      ]
+    }
+  },
+  "declaredSubstrate": {
+    "roles": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "schemas": [
+      "auth",
+      "public"
+    ],
+    "symbols": [
+      "auth.uid",
+      "auth.users",
+      "public.farms",
+      "public.farmer_documents",
+      "public.is_ddp_admin"
+    ]
+  }
+}
