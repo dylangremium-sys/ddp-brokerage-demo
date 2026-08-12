@@ -39,7 +39,13 @@ export interface LocalisedBuyerContent {
   reviewedLabel: string
   /** Human-readable review date, in this language. */
   reviewedValue: string
-  /** landingHero1 */
+  /**
+   * The hero's opening sentence, in this language.
+   *
+   * Authored here, per locale. It used to cite `landingHero1` as its source, but
+   * that translation key was never rendered by anything and has been removed —
+   * these prerendered pages are where the sentence actually lives.
+   */
   lead: string
   /** The landing hero body. */
   body: string
