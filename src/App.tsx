@@ -76,7 +76,6 @@ import BuyerDashboard from './pages/buyer/BuyerDashboard'
 import FarmerRequests from './pages/farmer/FarmerRequests'
 import FarmerStatus from './pages/farmer/FarmerStatus'
 import FarmerEvidence from './pages/farmer/FarmerEvidence'
-import DDPOverview from './pages/admin/DDPOverview'
 import DDPFarmProfiles from './pages/admin/DDPFarmProfiles'
 import DDPFarmReview from './pages/admin/DDPFarmReview'
 import DDPInventoryDashboard from './pages/admin/DDPInventoryDashboard'
@@ -88,6 +87,7 @@ import DDPCoaIntelligence from './pages/admin/DDPCoaIntelligence'
 import DDPRiskRegister from './pages/admin/DDPRiskRegister'
 import DDPComplianceWatchtower from './pages/admin/DDPComplianceWatchtower'
 import DDPOperationsDeskOrganic, { type FarmChase } from './pages/admin/DDPOperationsDeskOrganic'
+import DDPOverviewOrganic from './pages/admin/DDPOverviewOrganic'
 import OrganicConsoleShell from './components/admin/OrganicConsoleShell'
 import './styles/organicScoped.css'
 import LangToggle from './components/shared/LangToggle'
@@ -116,6 +116,25 @@ const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
+
+/**
+ * The console sidebar, in one place.
+ *
+ * Every screen rebuilt on the Organic system replaces AdminShell with
+ * OrganicConsoleShell and therefore needs this list. Duplicating it per frame
+ * is how two console screens end up disagreeing about what the console
+ * contains.
+ */
+const CONSOLE_NAV_ITEMS: { page: Page; label: string }[] = [
+  { page: 'ddp-overview', label: 'Overview' },
+  { page: 'ddp-operations-desk', label: 'Operations Desk' },
+  { page: 'ddp-access-requests', label: 'Supplier Enquiries' },
+  { page: 'ddp-buyer-provisioning', label: 'Buyers' },
+  { page: 'ddp-document-review', label: 'Evidence' },
+  { page: 'ddp-farms', label: 'Compliance' },
+  { page: 'ddp-master', label: 'Supply Ledger' },
+  { page: 'ddp-compliance-watchtower', label: 'Compliance Watchtower' },
+]
 
 export default function App() {
   // The invite / password-recovery redirect this page load arrived with, if any.
@@ -1115,6 +1134,30 @@ export default function App() {
    * out of is already the largest in this file, and this branch is
    * self-contained.
    */
+  function overviewFrame() {
+    return (
+      <OrganicConsoleShell
+        page={page}
+        goTo={goTo}
+        onSignOut={handleSignOut}
+        signedInAs={
+          currentProfile
+            ? `Signed in as ${currentProfile.displayName || currentProfile.email}`
+            : 'Demo mode'
+        }
+        items={CONSOLE_NAV_ITEMS}
+      >
+        <DDPOverviewOrganic
+          farms={farms}
+          inventory={inventory}
+          onReviewFarm={handleReviewFarm}
+          onReviewItem={handleReviewItem}
+          onOpenDesk={() => goTo('ddp-operations-desk')}
+        />
+      </OrganicConsoleShell>
+    )
+  }
+
   function operationsDeskFrame() {
       // The Operations Desk is the first screen rebuilt on the Organic design
       // system, and that system brings its own console frame. It therefore
@@ -1135,16 +1178,7 @@ export default function App() {
                 ? `Signed in as ${currentProfile.displayName || currentProfile.email}`
                 : 'Demo mode'
             }
-            items={[
-              { page: 'ddp-overview', label: 'Overview' },
-              { page: 'ddp-operations-desk', label: 'Operations Desk' },
-              { page: 'ddp-access-requests', label: 'Supplier Enquiries' },
-              { page: 'ddp-buyer-provisioning', label: 'Buyers' },
-              { page: 'ddp-document-review', label: 'Evidence' },
-              { page: 'ddp-farms', label: 'Compliance' },
-              { page: 'ddp-master', label: 'Supply Ledger' },
-              { page: 'ddp-compliance-watchtower', label: 'Compliance Watchtower' },
-            ]}
+            items={CONSOLE_NAV_ITEMS}
           >
             <DDPOperationsDeskOrganic
               // The same guarded admin view the old desk used: never a stale
@@ -1773,15 +1807,6 @@ export default function App() {
             <AccessDenied onBack={() => goTo(isFarmerRole ? 'farmer-status' : 'landing')} />
           )}
 
-          {page === 'ddp-overview' && isAdminRole && (
-            <DDPOverview
-              farms={farms}
-              inventory={inventory}
-              onReviewFarm={handleReviewFarm}
-              onReviewItem={handleReviewItem}
-            />
-          )}
-
           {page === 'ddp-farms' && isAdminRole && (
             <DDPFarmProfiles
               farms={farms}
@@ -1917,6 +1942,9 @@ export default function App() {
         // The Operations Desk renders in its own frame — see operationsDeskFrame
         // below for why it replaces AdminShell rather than nesting inside it.
         if (page === 'ddp-operations-desk' && isAdminRole) return operationsDeskFrame()
+        // Overview is the console's landing page, so it belongs in the same
+        // frame as the desk it points at.
+        if (page === 'ddp-overview' && isAdminRole) return overviewFrame()
 
         // Identical routed content in both frames — only the surrounding chrome
         // differs, so no page's behaviour depends on which one is drawn.
