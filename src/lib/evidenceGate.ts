@@ -2,7 +2,7 @@
  * When a decision may be recorded on a document, and what the screen says while
  * it may not.
  *
- * THIS MIRRORS THE DATABASE. Migration 66 refuses the same two conditions in a
+ * THIS MIRRORS THE DATABASE. Migration 68 refuses the same two conditions in a
  * trigger on farmer_documents: no decision without a recorded open by the
  * deciding reviewer, and no decision without a reason of substance. If the two
  * ever disagree, the database is the one that decides — this exists so the

@@ -58,11 +58,23 @@ export const T = {
           }).replace(',', ',')
     },
     portalTask: {
+      // WHAT THIS STATE ACTUALLY MEANS, because the previous copy got it wrong
+      // and shipped: `evidence` is chosen when a document the farm has ALREADY
+      // SENT came back rejected or awaiting clarification. It never means "no
+      // document has arrived". The old wording asked for a photo of a lab
+      // report the farm had already sent 4 days earlier, and never mentioned
+      // the question DDP had actually asked — so following it produced a
+      // duplicate upload and no answer. Observed live 2026-08-12 on the one
+      // real document in production.
+      //
+      // Covers both statuses the count includes (rejected and awaiting
+      // clarification) without naming either, because the reason on the
+      // evidence page says which, in DDP's own words.
       evidence: {
         tag: 'DDP is waiting on you',
-        title: 'Send a photo of your lab report',
-        body: 'DDP cannot clear your stock for buyers until the certificate of analysis is on file. A photo taken on this phone is enough — it does not need to be scanned.',
-        cta: 'Take a photo of the COA',
+        title: 'DDP has a question about a document you sent',
+        body: 'DDP read your document and could not finish with it. The reason is on your evidence page — read it there, then send what is needed.',
+        cta: 'Read what DDP said',
       },
       requests: {
         tag: 'DDP is waiting on you',
@@ -884,11 +896,14 @@ export const T = {
           })
     },
     portalTask: {
+      // NEWLY DRAFTED THAI — awaiting a Thai reader. Listed in the PR.
+      // See the English note: this state means a document already sent came
+      // back with a question, never that one is missing.
       evidence: {
         tag: 'DDP กำลังรอคุณอยู่',
-        title: 'ส่งภาพถ่ายผลตรวจแล็บของคุณ',
-        body: 'DDP ไม่สามารถอนุมัติสินค้าของคุณให้ผู้ซื้อได้ จนกว่าจะได้รับใบรับรองผลการวิเคราะห์ ถ่ายภาพด้วยโทรศัพท์เครื่องนี้ก็เพียงพอ ไม่จำเป็นต้องสแกน',
-        cta: 'ถ่ายภาพ COA',
+        title: 'DDP มีคำถามเกี่ยวกับเอกสารที่คุณส่งมา',
+        body: 'DDP ได้อ่านเอกสารของคุณแล้ว แต่ยังดำเนินการต่อไม่ได้ เหตุผลอยู่ในหน้าเอกสารหลักฐานของคุณ กรุณาอ่านแล้วส่งสิ่งที่ต้องการเพิ่มเติม',
+        cta: 'อ่านสิ่งที่ DDP แจ้ง',
       },
       requests: {
         tag: 'DDP กำลังรอคุณอยู่',

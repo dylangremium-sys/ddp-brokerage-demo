@@ -1033,6 +1033,49 @@ export async function setDocumentReviewStatus(
 }
 
 /**
+ * Record what the document SAYS it is: the laboratory, the report number and
+ * the sample the report names.
+ *
+ * These three columns have existed on farmer_documents throughout and have
+ * never been written by anything. The review screen surfaced them on
+ * 2026-08-12 and every one rendered "—", so a reviewer could not see what they
+ * were judging without opening the PDF — the gap the screen was rebuilt to
+ * close, still open one layer down.
+ *
+ * TRANSCRIBED BY A PERSON, ON PURPOSE. Nothing here parses them out of the
+ * filename or the note. A filename that happens to contain a report number is
+ * not a report number, and a guess written into a compliance column is worse
+ * than an honest dash — it reads downstream as something a human checked.
+ *
+ * Deliberately does NOT touch review_status: migration 68's trigger passes any
+ * update that leaves the status alone straight through, so recording what the
+ * document is never counts as deciding about it, and needs no open and no
+ * reason. Blank clears the field, because "I recorded this and it is not
+ * stated on the report" is a real outcome that must be expressible.
+ */
+export async function setDocumentReportFields(
+  documentId: string,
+  fields: { labName: string; reportNumber: string; sampleName: string },
+): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!isValidUUID(documentId)) throw new Error('A document id must be a UUID.')
+  const clean = (value: string) => {
+    const trimmed = (value ?? '').trim()
+    return trimmed === '' ? null : trimmed
+  }
+  await sbUpdate(
+    'farmer_documents',
+    {
+      lab_name: clean(fields.labName),
+      report_number: clean(fields.reportNumber),
+      sample_name: clean(fields.sampleName),
+    },
+    'id',
+    documentId,
+  )
+}
+
+/**
  * Load the append-only review history for one document.
  *
  * Reads public.farmer_document_reviews under the caller's own policies — the
