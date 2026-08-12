@@ -1,0 +1,294 @@
+/*
+ * Farm onboarding — handoff screen 3, restyled onto the Organic system.
+ *
+ * NEW LOOK, SAME NINE STEPS. Owner's decision, 12 Aug 2026. The handoff draws a
+ * four-stage rail, but it draws only ONE of those stages, and this wizard
+ * carries 141 fields. Regrouping them is a product decision about where each
+ * field lives, not a restyle, and this is the one flow a farm must complete to
+ * register at all. So the structure the handoff asks for — a rail beside a form
+ * panel, instead of a thin progress bar above a wall of inputs — is applied to
+ * the nine steps that already exist. Not one field moved.
+ *
+ * SCOPED, and it matters more here than usual. This page leans on class names
+ * the rest of the product owns — `.wizard-*` is shared with
+ * FarmerAdvancedProfile.tsx, and `.card`, `.field`, `.page-title` are shared with
+ * most of the app. Everything below is nested under `.organic-scope`, which only
+ * this page carries, so none of those rules reach anywhere else.
+ *
+ * NO OUTCOME LINES. The handoff gives each stage a line saying what it unlocks
+ * ("Lets DDP verify you with the Thai FDA") and calls that copy load-bearing. It
+ * supplies four of them; there are nine steps here. Writing the other five would
+ * mean inventing claims about what each step unlocks, in two languages, one of
+ * which nobody on this side can proofread. The rail states the step and its
+ * state, which is true, and the outcome lines wait for copy.
+ *
+ * THAI. Every rule that sets letter-spacing carries a `:lang(th)` guard, on the
+ * target element. Thai has no word spaces and tracking pulls the marks apart.
+ */
+
+.organic-scope {
+
+  & .ob {
+    background: var(--color-bg);
+    color: var(--color-text);
+    min-height: 100vh;
+    padding: 48px 48px 90px;
+  }
+
+  & .ob-inner { max-width: 1180px; margin: 0 auto; }
+
+  /* ── Intro ──────────────────────────────────────────────────────────────── */
+  & .ob-eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-neutral-700);
+  }
+  & .ob-eyebrow:lang(th) {
+    letter-spacing: 0;
+    text-transform: none;
+    font-size: 13px;
+    font-family: var(--font-thai);
+  }
+
+  & .ob-title {
+    font-family: var(--font-heading);
+    font-weight: var(--font-heading-weight);
+    font-size: 42px;
+    line-height: 1.1;
+    margin: 12px 0 0;
+    max-width: 22ch;
+  }
+  /* Caprasimo has no Thai glyphs — a Thai title asking for it renders in
+     whatever the system substitutes. Sarabun 700, as everywhere else in Thai. */
+  & .ob-title:lang(th) {
+    font-family: var(--font-thai);
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: 0;
+  }
+
+  & .ob-desc {
+    font-size: 16px;
+    line-height: 1.6;
+    max-width: 46ch;
+    margin: 14px 0 0;
+    color: var(--color-neutral-800);
+  }
+
+  /* ── Two columns: rail, then the form ───────────────────────────────────── */
+  & .ob-cols {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 32px;
+    align-items: start;
+    margin-top: 36px;
+  }
+
+  /* ── Stage rail ─────────────────────────────────────────────────────────
+     Nine cards, one per step, replacing a 4px progress bar whose only signal
+     was how far along a percentage had crept. */
+  & .ob-rail { display: grid; gap: 10px; }
+
+  & .ob-stage {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 12px;
+    align-items: start;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    font: inherit;
+    background: var(--color-neutral-200);
+    border-radius: var(--radius-md);
+    padding: 18px 20px;
+    cursor: pointer;
+  }
+  & .ob-stage.is-current { background: var(--color-accent-200); }
+  & .ob-stage:hover:not(.is-current) { background: var(--color-neutral-300); }
+
+  & .ob-stage-num {
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    background: var(--color-neutral-300);
+    color: var(--color-neutral-700);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  & .ob-stage.is-current .ob-stage-num {
+    background: var(--color-neutral-100);
+    color: var(--color-accent-600);
+  }
+  /* A step behind the current one is one you have BEEN PAST, which is not the
+     same as one you have completed — Skip advances without filling anything in,
+     and per-step completion is not tracked at all. So it gets a neutral mark,
+     not the sage one: standing rule 2 reserves sage for cleared/healthy, and
+     spending it on "you walked past this" is exactly the undisciplined tinting
+     the redesign exists to remove. */
+  & .ob-stage.is-done .ob-stage-num {
+    background: var(--color-neutral-400);
+    color: var(--color-neutral-100);
+  }
+
+  /* Both are spans inside a grid cell; without this they run together as
+     "Farm BasicsStep 1 of 9" and the margin below does nothing. */
+  & .ob-stage-name { display: block; font-size: 15px; font-weight: 600; }
+  & .ob-stage-state {
+    display: block;
+    font-size: 12.5px;
+    margin-top: 3px;
+    color: var(--color-neutral-700);
+  }
+  & .ob-stage.is-current .ob-stage-state { color: var(--color-accent-800); }
+
+  /* ── Form panel ─────────────────────────────────────────────────────────── */
+  & .ob-panel {
+    background: var(--color-neutral-100);
+    border-radius: var(--radius-lg);
+    padding: 34px 36px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* The step bodies are `.card.form-card`, which App.css gives its own surface,
+     border and radius. Inside this panel that renders as a second framed box
+     inset in the first. The panel IS the card here. */
+  & .ob-panel .card,
+  & .ob-panel .form-card {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  & .ob-panel-hint {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--color-neutral-700);
+    margin: 0 0 24px;
+  }
+
+  /* The wizard's own row/field markup, restyled in place — no JSX rewiring, so
+     no field can be lost to a class rename. */
+  /* `Row` renders `.form-row-2`, and `Field` renders a <label class="field">
+     whose first child is a <span> carrying the label text — NOT a nested
+     <label>. Targeting `.field > label` matched nothing; this is what the
+     markup actually is. */
+  & .ob-panel .form-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  & .ob-panel .field { display: block; margin-bottom: 20px; }
+  & .ob-panel .field > span:first-child,
+  & .ob-panel .field-label {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--color-text);
+    /* App.css uppercases these. The handoff specifies Figtree 600 at 13.5px in
+       sentence case, and a hint that reads "THE NAME YOU WANT DISPLAYED" is
+       shouting an aside. Also: uppercasing does nothing to Thai, so the two
+       languages drift apart for no gain. */
+    text-transform: none;
+    letter-spacing: normal;
+  }
+  & .ob-panel .field-hint {
+    display: block;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--color-neutral-600);
+    margin-top: 6px;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
+  }
+  & .ob-panel input,
+  & .ob-panel select,
+  & .ob-panel textarea {
+    width: 100%;
+    font: inherit;
+    font-size: 15px;
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-neutral-300);
+    border-radius: var(--radius-md);
+    padding: 11px 14px;
+  }
+  & .ob-panel textarea { min-height: 92px; resize: vertical; }
+  & .ob-panel input:focus-visible,
+  & .ob-panel select:focus-visible,
+  & .ob-panel textarea:focus-visible { border-color: var(--color-accent); }
+
+  /* ── Farm type as a segmented control ───────────────────────────────────
+     The handoff is explicit that this is never a free-text box or a dropdown
+     whose empty value renders as "—", which is what the current build shows.
+     Same field, same four stored values; only the affordance changes. */
+  & .ob-seg { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+  & .ob-seg-opt {
+    border: 1px solid var(--color-accent);
+    background: transparent;
+    color: var(--color-accent-700);
+    border-radius: 999px;
+    padding: 9px 18px;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  & .ob-seg-opt.is-active {
+    background: var(--color-accent-500);
+    border-color: var(--color-accent-500);
+    color: var(--color-accent-900);
+    font-weight: 600;
+  }
+
+  /* ── Unlock note ────────────────────────────────────────────────────────── */
+  & .ob-note {
+    background: var(--color-accent-2-200);
+    color: var(--color-accent-2-900);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    font-size: 14px;
+    line-height: 1.55;
+    margin-top: 24px;
+  }
+
+  /* ── Footer ─────────────────────────────────────────────────────────────
+     Every control the wizard had is still here. What changed is weight: one
+     filled button, the rest secondary or text. Standing rule 1 is about which
+     action looks like THE action, not about removing the others — a farmer who
+     relies on "Skip for now" should still find it. */
+  & .ob-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 28px;
+    padding-top: 22px;
+    border-top: 1px solid var(--color-neutral-300);
+  }
+  & .ob-foot-status {
+    font-size: 13px;
+    color: var(--color-neutral-600);
+    margin-right: auto;
+  }
+
+  /* ── Responsive ─────────────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    & .ob { padding: 28px 20px 72px; }
+    & .ob-title { font-size: 30px; }
+    & .ob-cols { grid-template-columns: 1fr; gap: 22px; }
+    & .ob-panel { padding: 22px 20px; }
+    & .ob-panel .form-row-2 { grid-template-columns: 1fr; gap: 0; }
+    /* On a phone the rail is history, not navigation — the current step leads. */
+    & .ob-rail { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 4px; }
+    & .ob-stage { min-width: 210px; }
+  }
+}
