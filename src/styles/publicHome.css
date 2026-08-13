@@ -509,6 +509,18 @@
     margin: 20px 0 0;
   }
 
+  /* §9's link out to the Governance page. accent-400 on the dark band; a
+     lighter step than the body text so it reads as the one action here. */
+  & .hp-compliance-link {
+    display: inline-block;
+    margin-top: 22px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-accent-400);
+    text-decoration: none;
+  }
+  & .hp-compliance-link:hover { text-decoration: underline; }
+
   /* ── Buyer strip ────────────────────────────────────────────────────────── */
   & .hp-buyers {
     display: flex;

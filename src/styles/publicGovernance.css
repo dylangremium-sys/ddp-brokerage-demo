@@ -1,0 +1,258 @@
+/*
+ * Governance — handoff §11.
+ *
+ * Scoped under `.organic-scope` like every other Organic surface. Nothing here
+ * touches `:root`; see organicScoped.css for why the system is nested rather
+ * than adopted product-wide.
+ *
+ * STANDING RULE 11 throughout: the band colour sits on the outer element and
+ * the content is capped at 1440px inside it, so a large monitor gets a
+ * full-bleed background with centred text rather than a page stranded left.
+ * Section rhythm is 96px.
+ *
+ * The status tags are Organic's own `.tag` classes, applied from the shared
+ * vocabulary constant. They are not restyled here — a table that repainted them
+ * would be a second definition of the same four colours.
+ */
+
+/*
+ * These two sit OUTSIDE `.organic-scope` on purpose: the element that carries
+ * `corp-doc-full` is the same element that carries `organic-scope`, and a
+ * descendant selector cannot match the element it is scoped to.
+ *
+ * The shell's reading measure is for /privacy and /terms — documents. This page
+ * bands edge to edge, so it opts out and each band caps its own content. The
+ * main padding goes too, or the full-bleed backgrounds stop 32px short of the
+ * viewport edge and the band colour reveals the page ground behind it.
+ */
+.corp-doc-full {
+  max-width: none;
+  padding: 0;
+}
+
+.corp-main-full {
+  padding-inline: 0;
+}
+
+.organic-scope {
+  & .gov-wrap {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding-inline: 56px;
+  }
+
+  & .gov-section { padding-block: 96px; }
+
+  /* ── Hero ─────────────────────────────────────────────────────────────── */
+  & .gov-hero-band {
+    background: var(--color-bg);
+    padding-block: 76px 56px;
+  }
+
+  /* Latin only — the mono eyebrow's letter-spacing must never reach Thai,
+     which is unspaced and combining. */
+  & .gov-eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-accent-700);
+  }
+  & .gov-eyebrow:lang(th) {
+    letter-spacing: normal;
+    text-transform: none;
+    font-family: var(--font-thai);
+    font-size: 12.5px;
+  }
+
+  & .gov-h1 {
+    font-family: var(--font-heading);
+    font-weight: var(--font-heading-weight);
+    font-size: 58px;
+    line-height: 1.05;
+    max-width: 20ch;
+    margin: 14px 0 0;
+  }
+
+  & .gov-lede {
+    font-size: 19px;
+    line-height: 1.6;
+    max-width: 58ch;
+    margin: 22px 0 0;
+  }
+
+  /* ── Status vocabulary band ───────────────────────────────────────────── */
+  & .gov-band-sand { background: var(--color-neutral-100); }
+
+  & .gov-h2 {
+    font-family: var(--font-heading);
+    font-weight: var(--font-heading-weight);
+    font-size: 34px;
+    line-height: 1.1;
+    margin: 0;
+  }
+
+  & .gov-note {
+    font-size: 16px;
+    line-height: 1.6;
+    max-width: 64ch;
+    margin: 16px 0 0;
+  }
+
+  & .gov-vocab {
+    margin-top: 30px;
+    background: var(--color-bg);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  & .gov-vocab-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 24px;
+    align-items: center;
+    padding: 18px 26px;
+    border-top: 1px solid var(--color-neutral-200);
+  }
+  & .gov-vocab-row:first-child { border-top: 0; }
+
+  & .gov-vocab-meaning {
+    font-size: 15px;
+    line-height: 1.55;
+    margin: 0;
+  }
+
+  /* Thai has no inter-word spaces; without this the browser breaks a tag one
+     cluster per line. */
+  & .gov-vocab .tag:lang(th) { white-space: nowrap; }
+
+  /* ── Accountability split ─────────────────────────────────────────────── */
+  & .gov-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    align-items: start;
+  }
+
+  & .gov-body {
+    font-size: 16.5px;
+    line-height: 1.65;
+    max-width: 48ch;
+    margin: 18px 0 0;
+  }
+
+  & .gov-points {
+    list-style: none;
+    margin: 26px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  & .gov-points li {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 15.5px;
+    line-height: 1.6;
+    max-width: 48ch;
+  }
+
+  & .gov-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--color-accent-2-500);
+    flex: 0 0 auto;
+    margin-top: 8px;
+  }
+
+  & .gov-notdo {
+    background: var(--color-accent-100);
+    border-radius: var(--radius-lg);
+    padding: 34px 36px;
+  }
+
+  & .gov-notdo-title {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 20px;
+    color: var(--color-accent-900);
+    margin: 0;
+  }
+
+  & .gov-notdo-intro {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--color-accent-900);
+    margin: 10px 0 0;
+  }
+
+  & .gov-notdo-items {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  & .gov-notdo-item {
+    background: var(--color-bg);
+    border-radius: var(--radius-md);
+    padding: 15px 18px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--color-neutral-800);
+  }
+
+  /* ── Dossier request ──────────────────────────────────────────────────── */
+  & .gov-band-dark { background: var(--color-accent-2-900); }
+
+  & .gov-request {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 48px;
+    justify-content: space-between;
+    align-items: end;
+  }
+
+  & .gov-request-title {
+    font-family: var(--font-heading);
+    font-weight: var(--font-heading-weight);
+    font-size: 36px;
+    line-height: 1.1;
+    color: var(--color-neutral-100);
+    max-width: 22ch;
+    margin: 0;
+  }
+
+  & .gov-request-body {
+    font-size: 16.5px;
+    line-height: 1.6;
+    color: var(--color-accent-2-200);
+    max-width: 50ch;
+    margin: 16px 0 0;
+  }
+
+  & .gov-request-cta {
+    font-size: 16px;
+    padding: 16px 28px;
+    flex: 0 0 auto;
+  }
+
+  /* ── Responsive ───────────────────────────────────────────────────────
+     Marketing sections collapse to one column below ~900px. */
+  @media (max-width: 900px) {
+    & .gov-wrap { padding-inline: 24px; }
+    & .gov-section { padding-block: 56px; }
+    & .gov-hero-band { padding-block: 44px 36px; }
+    & .gov-h1 { font-size: 38px; }
+    & .gov-lede { font-size: 17px; }
+    & .gov-h2 { font-size: 27px; }
+    & .gov-split { grid-template-columns: 1fr; gap: 40px; }
+    & .gov-vocab-row { grid-template-columns: 1fr; gap: 10px; align-items: start; }
+    & .gov-request-title { font-size: 28px; }
+    & .gov-notdo { padding: 26px 22px; }
+  }
+}

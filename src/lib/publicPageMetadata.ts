@@ -121,6 +121,15 @@ const PUBLIC_PAGE_METADATA: Partial<Record<Page, PublicPageMetadata>> = {
     lastReviewed: '2026-08-08',
   },
 
+  governance: {
+    title: 'Governance — how DDP Brokerage keeps the record',
+    description:
+      'The four-state status vocabulary shared by the public site and the console, who is accountable for each clearance, and the limits DDP states plainly.',
+    canonicalPath: '/governance',
+    robots: 'index,follow',
+    lastReviewed: '2026-08-13',
+  },
+
   contact: {
     title: 'Contact DDP Brokerage — Bangkok head office and enquiry channels',
     description:
