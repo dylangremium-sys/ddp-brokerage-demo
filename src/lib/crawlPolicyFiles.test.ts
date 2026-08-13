@@ -187,6 +187,15 @@ describe('sitemap.xml', () => {
     expect(locations).toEqual([
       `${CANONICAL_ORIGIN}/`,
       `${CANONICAL_ORIGIN}/about`,
+      // /governance — handoff §11. Added deliberately, and this list failing
+      // was the intended consequence of publishing an eighth URL. It is the
+      // page a compliance officer searches for, and it states only the status
+      // vocabulary, who is accountable for a clearance, and the limits DDP
+      // places on itself — all of which can be read out of this repository and
+      // the live schema. Two of the handoff's own accountability claims were
+      // NOT published because production does not support them; see the header
+      // of pages/public/GovernancePage.tsx.
+      `${CANONICAL_ORIGIN}/governance`,
       `${CANONICAL_ORIGIN}/contact`,
       `${CANONICAL_ORIGIN}/privacy`,
       `${CANONICAL_ORIGIN}/terms`,

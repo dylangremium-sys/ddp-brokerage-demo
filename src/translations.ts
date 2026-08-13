@@ -355,6 +355,7 @@ export const T = {
     homeFooterPrivacy: 'Privacy Policy',
     homeFooterTerms: 'Terms of Use',
     homeFooterAbout: 'About',
+    homeFooterGovernance: 'Governance',
     homeFooterContact: 'Contact',
 
     // ── Public corporate pages (/about, /contact, /privacy, /terms) ──────────
@@ -892,7 +893,8 @@ export const T = {
     hpNavHowItWorks: 'How it works',
     hpNavForFarms: 'For farms',
     hpNavForBuyers: 'For buyers',
-    hpNavCompliance: 'Compliance',
+    hpNavCompliance: 'Governance',
+    hpComplianceLink: 'How we govern the record →',
     hpNavSignIn: 'Sign in',
     hpNavApply: 'Apply to supply',
 
@@ -915,6 +917,38 @@ export const T = {
     hpDossierDocPhyto: 'Phytosanitary certificate',
     hpDossierDocGmp: 'EU-GMP audit reference',
     hpDossierLegend: 'What the colours mean',
+
+    /* ── Governance page (handoff §11) ──────────────────────────────────────
+       The four status states are NOT here — they live in lib/statusVocabulary.ts
+       so the table, the homepage card and the console cannot drift apart.
+
+       Two accountability bullets differ from §11's prototype copy on purpose:
+       the separation-of-duties claim and the "only a second reviewer" claim are
+       both false against production. See the header of GovernancePage.tsx. */
+    govEyebrow: 'Governance',
+    govTitle: 'Organising evidence. Supporting decisions.',
+    govLede: 'This is the page that sentence belongs on. If you are a compliance officer deciding whether DDP can be relied on, everything below is written for you — how the record is kept, who is accountable for each decision, and what the platform deliberately does not do.',
+
+    govVocabTitle: 'One vocabulary, public site and console alike',
+    govVocabNote: 'Four states. A buyer reading a supply sheet and an operator reading the desk are reading the same words, in the same colours. Nothing outside this list is tinted.',
+
+    govAcctTitle: 'Who is accountable for what',
+    govAcctBody: 'Every clearance carries a named person and a timestamp. No batch reaches a buyer unless someone cleared it, and no decision is recorded by anyone who has not opened the document.',
+    govAcct1: 'A document is cleared by a named reviewer, never by the system. The reviewer is taken from the signed-in session, not chosen by whoever is writing.',
+    govAcct2: 'A document must arrive undecided. Creating one that is already accepted is refused by the database, not by the screen.',
+    govAcct3: 'No decision without reading it. The reviewer must have opened the document, and every change of state carries a written reason — including taking a decision back.',
+    govAcct4: 'Farms see their own trail in Thai, in the portal they already use.',
+
+    govNotTitle: 'What DDP does not do',
+    govNotIntro: 'Stating the limits plainly is part of being trustworthy. These are deliberate.',
+    govNot1: 'We do not give legal advice. We organise evidence so your counsel can decide quickly.',
+    govNot2: 'We do not sell to consumers, and we do not broker outside licensed medical channels.',
+    govNot3: 'Nothing clears itself. No batch is released without a qualified person on the record.',
+    govNot4: 'We do not publish a farm’s documents to buyers without that farm’s explicit approval.',
+
+    govRequestTitle: 'Request a sample dossier',
+    govRequestBody: 'A real cleared batch with names and dates redacted — the exact document set your regulator would receive. Licensed importers and pharmacies only.',
+    govRequestCta: 'Request the dossier',
 
     hpStepsTitle: 'Four steps, fully documented',
     hpStep1Title: 'Farm registration',
@@ -1269,6 +1303,7 @@ export const T = {
     homeFooterPrivacy: 'นโยบายความเป็นส่วนตัว',
     homeFooterTerms: 'ข้อกำหนดการใช้งาน',
     homeFooterAbout: 'เกี่ยวกับเรา',
+    homeFooterGovernance: 'การกำกับดูแล',
     homeFooterContact: 'ติดต่อเรา',
 
     // ── Public corporate pages ───────────────────────────────────────────────
@@ -1781,6 +1816,7 @@ export const T = {
     hpNavForFarms: 'สำหรับเกษตรกร',
     hpNavForBuyers: 'สำหรับผู้ซื้อ',
     hpNavCompliance: 'การกำกับดูแล',
+    hpComplianceLink: 'วิธีที่เรากำกับดูแลบันทึก →',
     hpNavSignIn: 'เข้าสู่ระบบ',
     hpNavApply: 'สมัครเป็นผู้ผลิต',
 
@@ -1802,6 +1838,35 @@ export const T = {
     hpDossierDocPhyto: 'ใบรับรองสุขอนามัยพืช',
     hpDossierDocGmp: 'เอกสารอ้างอิงการตรวจ EU-GMP',
     hpDossierLegend: 'ความหมายของสี',
+
+    /* ── Governance page (handoff §11) ──────────────────────────────────────
+       UNPROOFREAD THAI. Every string below was newly authored for this page and
+       has not been read by a native speaker. Flagged in the PR alongside the 15
+       from PR #238. */
+    govEyebrow: 'การกำกับดูแล',
+    govTitle: 'จัดระเบียบหลักฐาน สนับสนุนการตัดสินใจ',
+    govLede: 'นี่คือหน้าที่ประโยคนั้นควรอยู่ หากคุณเป็นเจ้าหน้าที่กำกับดูแลที่กำลังพิจารณาว่า DDP เชื่อถือได้หรือไม่ ทุกอย่างด้านล่างนี้เขียนขึ้นเพื่อคุณ — วิธีที่เราเก็บบันทึก ใครรับผิดชอบการตัดสินใจแต่ละครั้ง และสิ่งที่แพลตฟอร์มนี้ตั้งใจจะไม่ทำ',
+
+    govVocabTitle: 'คำศัพท์ชุดเดียว ทั้งเว็บไซต์สาธารณะและระบบภายใน',
+    govVocabNote: 'สี่สถานะ ผู้ซื้อที่อ่านรายการอุปทานและเจ้าหน้าที่ที่อ่านหน้าจอปฏิบัติการเห็นคำเดียวกันและสีเดียวกัน ไม่มีสิ่งใดนอกรายการนี้ที่ถูกใส่สี',
+
+    govAcctTitle: 'ใครรับผิดชอบอะไร',
+    govAcctBody: 'การอนุมัติทุกครั้งมีชื่อผู้รับผิดชอบและเวลากำกับ ไม่มีล็อตใดถึงมือผู้ซื้อโดยไม่มีผู้รับผิดชอบอนุมัติ และไม่มีการบันทึกการตัดสินใจโดยผู้ที่ยังไม่ได้เปิดอ่านเอกสาร',
+    govAcct1: 'เอกสารได้รับการอนุมัติโดยผู้ตรวจที่ระบุชื่อ ไม่ใช่โดยระบบ ชื่อผู้ตรวจมาจากบัญชีที่เข้าสู่ระบบ ไม่ใช่จากการกรอกเอง',
+    govAcct2: 'เอกสารต้องเข้าสู่ระบบในสถานะที่ยังไม่ตัดสิน การสร้างเอกสารที่อนุมัติแล้วตั้งแต่ต้นจะถูกปฏิเสธที่ฐานข้อมูล ไม่ใช่ที่หน้าจอ',
+    govAcct3: 'ไม่มีการตัดสินโดยไม่ได้อ่าน ผู้ตรวจต้องเปิดเอกสารก่อน และการเปลี่ยนสถานะทุกครั้งต้องมีเหตุผลเป็นลายลักษณ์อักษร รวมถึงการถอนการตัดสินใจ',
+    govAcct4: 'ฟาร์มเห็นประวัติของตนเองเป็นภาษาไทย ในระบบที่ใช้อยู่แล้ว',
+
+    govNotTitle: 'สิ่งที่ DDP ไม่ทำ',
+    govNotIntro: 'การระบุขอบเขตอย่างตรงไปตรงมาเป็นส่วนหนึ่งของความน่าเชื่อถือ ข้อจำกัดเหล่านี้เป็นความตั้งใจ',
+    govNot1: 'เราไม่ให้คำปรึกษาทางกฎหมาย เราจัดระเบียบหลักฐานเพื่อให้ที่ปรึกษาของคุณตัดสินใจได้เร็วขึ้น',
+    govNot2: 'เราไม่ขายให้ผู้บริโภคโดยตรง และไม่เป็นตัวกลางนอกช่องทางการแพทย์ที่ได้รับอนุญาต',
+    govNot3: 'ไม่มีสิ่งใดผ่านได้เอง ไม่มีล็อตใดถูกปล่อยโดยไม่มีผู้เชี่ยวชาญลงบันทึกไว้',
+    govNot4: 'เราไม่เผยแพร่เอกสารของฟาร์มให้ผู้ซื้อโดยไม่ได้รับความยินยอมชัดเจนจากฟาร์มนั้น',
+
+    govRequestTitle: 'ขอตัวอย่างชุดเอกสาร',
+    govRequestBody: 'ล็อตที่ผ่านการตรวจจริง โดยปกปิดชื่อและวันที่ — เป็นชุดเอกสารเดียวกับที่หน่วยงานกำกับดูแลของคุณจะได้รับ เฉพาะผู้นำเข้าและร้านขายยาที่ได้รับอนุญาตเท่านั้น',
+    govRequestCta: 'ขอชุดเอกสาร',
 
     hpStepsTitle: 'สี่ขั้นตอน พร้อมเอกสารครบถ้วน',
     hpStep1Title: 'ขึ้นทะเบียนฟาร์ม',

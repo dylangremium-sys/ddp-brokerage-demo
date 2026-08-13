@@ -58,6 +58,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { Page } from '../types'
 import LandingPage from '../pages/public/LandingPage'
 import AboutPage from '../pages/public/AboutPage'
+import GovernancePage from '../pages/public/GovernancePage'
 import ContactPage from '../pages/public/ContactPage'
 import PrivacyPage from '../pages/public/PrivacyPage'
 import TermsPage from '../pages/public/TermsPage'
@@ -151,6 +152,10 @@ export function renderPublicRoutes(): PrerenderedRoute[] {
           onNavigate={noop}
         />,
       ),
+    },
+    {
+      page: 'governance',
+      bodyHtml: renderToStaticMarkup(<GovernancePage lang={lang} setLang={noop} onNavigate={noop} />),
     },
     {
       page: 'about',

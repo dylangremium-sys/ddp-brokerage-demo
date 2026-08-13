@@ -416,6 +416,11 @@ export type Page =
   | 'contact'
   | 'privacy'
   | 'terms'
+  // Governance (handoff §11) — the destination for the compliance argument the
+  // homepage used to open with. Indexable: it is the page a compliance officer
+  // searches for, and it states only behaviour that can be read out of this
+  // repository and the live schema.
+  | 'governance'
   // The German-language buyer page at /de.
   //
   // The site speaks English and Thai. Thai serves the SUPPLY side — Thai farms
