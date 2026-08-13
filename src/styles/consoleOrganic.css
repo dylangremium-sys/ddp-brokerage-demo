@@ -222,11 +222,18 @@
  * a scrollable region and a truncated one look exactly the same until you try.
  * The header ends mid-word at "CO CH…" with nothing to say more exists.
  *
- * So this makes the scroll DISCOVERABLE and relayouts nothing. Two parts:
+ * So this makes the scroll DISCOVERABLE and relayouts nothing. THE EDGE SHADOW
+ * IS THE FIX; the scrollbar rules are cosmetic where a scrollbar exists at all.
  *
- * 1. A scrollbar that is always drawn. `-webkit-appearance: none` on the
- *    scrollbar itself is what defeats the overlay behaviour; without it the
- *    height and colours below are accepted and then ignored.
+ * 1. Scrollbar styling — WHICH DOES NOT MAKE IT PERSISTENT ON macOS, and the
+ *    rules below are kept only because they do work elsewhere. Measured in the
+ *    owner's real Chrome, not headless: offsetHeight - clientHeight is 0, so the
+ *    bar still takes no layout space and is still invisible at rest.
+ *    `-webkit-appearance: none` is widely described as defeating overlay
+ *    scrollbars and it does not — current Chrome follows the OS "Show scroll
+ *    bars" setting regardless. On Windows and Linux, and on a Mac set to always
+ *    show scrollbars, these rules give the bar Organic's colours. Nowhere do
+ *    they make it appear. Do not read them as the fix.
  *
  * 2. Edge shadows that appear ONLY when there is more content, using the
  *    background-attachment trick: the two `local` gradients scroll WITH the
