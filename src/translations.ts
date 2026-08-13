@@ -905,6 +905,17 @@ export const T = {
     hpCred2: 'Batch-level COA on file',
     hpCred3: 'EU-GMP documentation trail',
 
+    /* Batch dossier card — handoff §9. The status words themselves are NOT here:
+       they live in src/lib/statusVocabulary.ts so the card, the console and the
+       Governance table cannot drift apart. Only the document names are copy. */
+    hpDossierTitle: 'Batch dossier ·',
+    hpDossierSub: 'Farm 02 · Chiang Mai · 42 kg',
+    hpDossierDocLicence: 'Thai FDA cultivation licence',
+    hpDossierDocCoa: 'Certificate of analysis',
+    hpDossierDocPhyto: 'Phytosanitary certificate',
+    hpDossierDocGmp: 'EU-GMP audit reference',
+    hpDossierLegend: 'What the colours mean',
+
     hpStepsTitle: 'Four steps, fully documented',
     hpStep1Title: 'Farm registration',
     hpStep1Body: 'Licence, ownership and location verified against Thai FDA records before anything is listed.',
@@ -1781,6 +1792,16 @@ export const T = {
     hpCred1: 'เฉพาะฟาร์มที่ได้รับอนุญาตจาก อย. ไทย',
     hpCred2: 'มีใบรับรองผลวิเคราะห์รายล็อต',
     hpCred3: 'ชุดเอกสารตามมาตรฐาน EU-GMP',
+
+    /* Batch dossier card — handoff §9. UNPROOFREAD THAI, flagged for native
+       review with the rest (README "Fidelity", open question 1). */
+    hpDossierTitle: 'ชุดเอกสารประจำล็อต ·',
+    hpDossierSub: 'ฟาร์ม 02 · เชียงใหม่ · 42 กก.',
+    hpDossierDocLicence: 'ใบอนุญาตเพาะปลูกจาก อย. ไทย',
+    hpDossierDocCoa: 'ใบรับรองผลวิเคราะห์',
+    hpDossierDocPhyto: 'ใบรับรองสุขอนามัยพืช',
+    hpDossierDocGmp: 'เอกสารอ้างอิงการตรวจ EU-GMP',
+    hpDossierLegend: 'ความหมายของสี',
 
     hpStepsTitle: 'สี่ขั้นตอน พร้อมเอกสารครบถ้วน',
     hpStep1Title: 'ขึ้นทะเบียนฟาร์ม',

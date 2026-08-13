@@ -2,6 +2,7 @@ import { T } from '../../translations'
 import type { Lang, Page } from '../../types'
 import { pathForPage } from '../../lib/urlRouting'
 import { shouldInterceptAnchorClick } from '../../lib/anchorNavigation'
+import { BatchDossierCard } from '../../components/public/BatchDossierCard'
 import '../../styles/publicHome.css'
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -14,10 +15,16 @@ import '../../styles/publicHome.css'
    already carried the plain promise; this brings it to the front door.
 
    STANDING RULES APPLIED HERE
-     1. One primary action. The filled terracotta button is "Apply to supply",
-        once, in the nav. The prototype drew the two hero buttons as primary +
-        secondary; both are secondary here so the rule holds on the page as a
-        whole.
+     1. One primary action, AND IT BELONGS TO THE PAGE. The filled terracotta
+        button is the hero's "Register your farm". An earlier pass put the only
+        primary in the nav and stepped both hero buttons down to secondary,
+        reasoning that one-per-page was satisfied either way. It is not: rule 1
+        says the primary "belongs to the *page*, never to the chrome — the nav's
+        own CTA steps down to `.btn-secondary` so it cannot outrank the hero's".
+        A visitor met a front door whose loudest control was a nav item.
+     3. The status vocabulary is four states, and the hero's batch dossier card
+        renders them from src/lib/statusVocabulary.ts — the same constant the
+        console reads. No status string is typed on this page.
     10. Never display a claim the record cannot support. The prototype's three
         "trust" figures — 2 licensed farms, 233 regulatory updates, 100% of
         batches released with a COA on file — are NOT rendered. They are
@@ -200,8 +207,10 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
             <button type="button" className="btn btn-ghost" onClick={onSecureLogin}>
               {t.hpNavSignIn}
             </button>
-            {/* The one primary action on this page. */}
-            <button type="button" className="btn btn-primary" onClick={onSupplierSignup}>
+            {/* Secondary, not primary. Rule 1: the filled terracotta button
+                belongs to the page, never to the chrome — the nav's CTA steps
+                down so it cannot outrank the hero's. */}
+            <button type="button" className="btn btn-secondary" onClick={onSupplierSignup}>
               {t.hpNavApply}
             </button>
           </nav>
@@ -216,7 +225,8 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
               <p className="hp-hero-body">{t.hpHeroBody}</p>
 
               <div className="hp-cta-row">
-                <button type="button" className="btn btn-secondary" onClick={onSupplierSignup}>
+                {/* The page's one primary action. */}
+                <button type="button" className="btn btn-primary" onClick={onSupplierSignup}>
                   {t.hpHeroCtaFarm}
                 </button>
                 <button type="button" className="btn btn-ghost" onClick={() => scrollToId('for-buyers')}>
@@ -232,21 +242,15 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
             </div>
 
             {/*
-              NO PHOTOGRAPH, AND NO SLOT EITHER.
-
-              This held a dashed box containing the words "photo — a licensed
-              Chiang Mai greenhouse, daylight, workers with visible ID badges".
-              That is a note to ourselves, and it was rendered at full size to
-              every visitor on the front door — `role="presentation"` changes
-              how assistive technology treats an element, it does not hide it.
-              So the comment above it said "do not ship the placeholder" while
-              the markup shipped one.
-
-              An empty framed box is not better: it reads as a broken image. The
-              hero simply runs one column until there is a photograph to put
-              here. The brief lives in the handoff README under "Assets", which
-              is where a brief belongs.
+              STILL NO PHOTOGRAPH. §9 puts a 210px `.washed` frame above this
+              card and there is no such asset — the only image in the repo is an
+              unrelated 343×361 graphic. The earlier note here holds and is worth
+              keeping: the box that once stood in this column rendered the shoot
+              brief itself to every visitor, and an empty frame reads as a broken
+              image. So the column carries the card alone until the facility
+              frame exists; the brief lives in the handoff README under "Assets".
             */}
+            <BatchDossierCard lang={lang} />
           </section>
         </div>
 

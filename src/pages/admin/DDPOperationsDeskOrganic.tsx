@@ -6,6 +6,7 @@ import {
 import type { ComplianceAlert, FarmProfile, InventoryItem, ReviewRequest } from '../../types'
 import { resolveOperationsDeskEmptyState } from '../../lib/operationsDeskEmptyState'
 import { displayName, isIdentifier } from '../../lib/entityName'
+import { STATUS_VOCABULARY } from '../../lib/statusVocabulary'
 
 /**
  * The Operations Desk on the Organic design system — handoff screen 4.
@@ -511,7 +512,7 @@ export default function DDPOperationsDeskOrganic({
           Backgrounds carry the meaning: terracotta needs a person, sage is
           cleared, plain neutral is a count with no opinion. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 18, marginTop: 32 }}>
-        <Tile tone="accent" label="Needs a person" value={String(result.items.length)}
+        <Tile tone="accent" label={STATUS_VOCABULARY.needsPerson.label.en} value={String(result.items.length)}
           note={`across ${farmsOwing} farm${farmsOwing === 1 ? '' : 's'}`} />
         <Tile tone="accent-soft" label={`Waiting over ${SLA_DAYS} days`} value={String(overdue)}
           note={overdue === 0 ? 'nothing has aged past the target' : 'these are the ones to open first'} />

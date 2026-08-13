@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { isFarmScored } from '../../data'
 import { displayName, shortIdentifier, daysOpen } from '../../lib/entityName'
+import { STATUS_VOCABULARY } from '../../lib/statusVocabulary'
 import type { FarmProfile, InventoryItem } from '../../types'
 import '../../styles/overview.css'
 
@@ -153,7 +154,8 @@ export default function DDPOverviewOrganic({
       {/* ── Four tiles. Every note is plain language, never a bare number. ── */}
       <div className="ov-kpis">
         <div className={`ov-kpi ${queue.length > 0 ? 'is-person' : ''}`}>
-          <div className="ov-kpi-label">Needs a person</div>
+          {/* The vocabulary's own word, not a retyped copy of it. */}
+          <div className="ov-kpi-label">{STATUS_VOCABULARY.needsPerson.label.en}</div>
           <div className="ov-kpi-value">{queue.length}</div>
           <div className="ov-kpi-note">
             {queue.length === 0

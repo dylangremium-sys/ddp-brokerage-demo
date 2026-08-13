@@ -31,8 +31,12 @@
     min-height: 100vh;
   }
 
+  /* Standing rule 11: every band caps its content at 1440px, margin 0 auto,
+     with the band colour on the outer element. Full-bleed background,
+     contained content — without it the page strands its text against a dead
+     right half on a large monitor. */
   & .hp-wrap {
-    max-width: 1280px;
+    max-width: 1440px;
     margin: 0 auto;
     padding-inline: 56px;
   }
@@ -116,10 +120,15 @@
   }
 
   /* ── Hero ───────────────────────────────────────────────────────────────── */
-  /* One column, not the handoff's 1.08fr 0.92fr — the right column was the
-     photograph, and there is no photograph. Restore the two-column rule when a
-     real asset arrives; the hero copy is already held to its 17ch / 50ch. */
+  /* The handoff's 1.08fr 0.92fr. The right column carries the batch dossier
+     card; §9 also puts a 210px `.washed` photograph above it, which waits on a
+     real asset (see LandingPage.tsx). `align-items: start` so the card sits at
+     the top of the column rather than stretching to the copy's height. */
   & .hp-hero {
+    display: grid;
+    grid-template-columns: 1.08fr 0.92fr;
+    gap: 56px;
+    align-items: start;
     padding-block: 72px 88px;
   }
 
@@ -174,15 +183,125 @@
     margin-top: 28px;
   }
 
-  /* There is no photograph slot. See the note in LandingPage.tsx: the box that
-     stood here rendered an internal shoot brief to every visitor. Until a real
-     photograph exists the hero runs one column — hence the single-column
-     grid-template below rather than the handoff's 1.08fr 0.92fr. */
+  /* ── Batch dossier card ─────────────────────────────────────────────────────
+     Handoff §9, and the fix for finding 12. The shop window teaches the same
+     colour rule the console obeys. Every colour here comes from the four-state
+     vocabulary in src/lib/statusVocabulary.ts; the tags themselves are Organic's
+     own `.tag` classes and are not restyled. */
+  & .hp-dossier {
+    background: var(--color-neutral-100);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: 28px 30px 26px;
+  }
+
+  & .hp-dossier-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  & .hp-dossier-title {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 18px;
+    margin: 0;
+  }
+
+  /* Rule 4: identifiers in mono, names in body type. */
+  & .hp-dossier-code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 400;
+  }
+
+  & .hp-dossier-sub {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--color-neutral-600);
+    margin: 6px 0 0;
+  }
+
+  & .hp-dossier-rows { margin-top: 18px; }
+
+  & .hp-dossier-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-block: 12px;
+    border-top: 1px solid var(--color-neutral-200);
+  }
+
+  & .hp-dossier-doc {
+    font-size: 14.5px;
+    color: var(--color-neutral-800);
+  }
+
+  & .hp-dossier-legend {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-neutral-200);
+  }
+
+  /* Latin only — the mono eyebrow's letter-spacing must never reach Thai, which
+     is unspaced and combining. The `:lang(th)` reset below is the guard. */
+  & .hp-dossier-legend-label {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-neutral-600);
+  }
+  & .hp-dossier-legend-label:lang(th) {
+    letter-spacing: normal;
+    text-transform: none;
+    /* IBM Plex Mono carries no Thai glyphs; leaving it mono renders whatever the
+       system substitutes. Same carve-out as the eyebrow below. */
+    font-family: var(--font-thai);
+    font-size: 11.5px;
+  }
+
+  & .hp-dossier-legend-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  & .hp-dossier-legend-items li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--color-neutral-800);
+  }
+
+  & .hp-dossier-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+  }
+  /* The vocabulary's colours. Modifier classes, not inline styles: the CSP has
+     no 'unsafe-inline' and this route is prerendered, so a `style` attribute
+     would be refused and the dot would render unpainted. */
+  & .hp-dossier-dot.is-cleared { background: var(--color-accent-2-500); }
+  & .hp-dossier-dot.is-needs-person { background: var(--color-accent-500); }
+  & .hp-dossier-dot.is-watching { background: var(--color-neutral-400); }
+  & .hp-dossier-dot.is-not-applicable { background: var(--color-neutral-300); }
+
+  /* Thai has no inter-word spaces; without this the browser breaks a tag one
+     cluster per line. */
+  & .hp-dossier .tag:lang(th) { white-space: nowrap; }
 
   /* ── How it works ───────────────────────────────────────────────────────── */
   & .hp-band-sand { background: var(--color-neutral-100); }
 
-  & .hp-section { padding-block: 84px; }
+  /* Section rhythm is 96px, not per-section guesswork. */
+  & .hp-section { padding-block: 96px; }
 
   & .hp-steps {
     display: grid;
