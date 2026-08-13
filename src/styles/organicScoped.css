@@ -264,7 +264,15 @@ textarea.input { min-height: 90px; resize: vertical; }
 .tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
 .tag-accent-2 { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
 .tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
-.tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
+/* HANDOFF DEFECT 2, SECOND SITE — same cause as `.btn-ghost` above, found by
+   measuring the batch dossier card's "Not applicable" tag at 3.30:1 on the card
+   ground. `.tag-outline` is all label, so the base accent fails the 4.5:1
+   body-text floor here exactly as it did on the ghost button.
+   --color-accent-700 measures 6.22:1.
+
+   THE BORDER KEEPS THE BASE ACCENT. A border is a non-text UI boundary with a
+   3:1 floor, which it meets; only the label needed the deeper step. */
+.tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent-700); }
 
 /* — navigation — */
 .nav {
