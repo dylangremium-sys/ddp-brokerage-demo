@@ -8,9 +8,8 @@
 -- re-created migration 65's fn_farmer_document_review_event under the guise of
 -- its own work, and only a catalog hash caught it. In particular this rollback
 -- does NOT touch fn_farmer_documents_set_reviewer, enforce_evidence_decision_gate
--- or record_document_deletion — 72 created none of them. The one thing it does
--- to another migration's object is drop the column IT added to
--- farmer_document_deletions, which is 72's column on 69's table.
+-- or record_document_deletion — 72 created none of them, and 72 adds nothing to
+-- 69's deletion record either (see section 4 of the HARDENING).
 --
 -- THE ATTRIBUTIONS ARE KEPT WHEN THERE ARE ANY. Once 72 has been live, every
 -- document uploaded since carries a real person in `uploaded_by`. Dropping the
@@ -62,7 +61,6 @@ DO $attributions$
 DECLARE
   opt_in    text := coalesce(current_setting('ddp.rollback_72_destroy_attributions', true), '');
   stamped   bigint := 0;
-  on_deaths bigint := 0;
 BEGIN
   IF to_regclass('public.farmer_documents') IS NULL THEN
     RAISE NOTICE '72 rollback: farmer_documents is not present; nothing to keep or destroy.';
@@ -79,34 +77,24 @@ BEGIN
     EXECUTE 'SELECT count(uploaded_by) FROM public.farmer_documents' INTO stamped;
   END IF;
 
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'farmer_document_deletions'
-       AND column_name = 'uploaded_by'
-  ) THEN
-    EXECUTE 'SELECT count(uploaded_by) FROM public.farmer_document_deletions' INTO on_deaths;
-  END IF;
-
-  IF stamped = 0 AND on_deaths = 0 THEN
-    ALTER TABLE public.farmer_documents          DROP COLUMN IF EXISTS uploaded_by;
-    ALTER TABLE public.farmer_document_deletions DROP COLUMN IF EXISTS uploaded_by;
+  IF stamped = 0 THEN
+    ALTER TABLE public.farmer_documents DROP COLUMN IF EXISTS uploaded_by;
     RAISE NOTICE
-      '72 rollback: no uploader was ever stamped; both columns dropped and the schema is back to its pre-apply shape.';
+      '72 rollback: no uploader was ever stamped; the column is dropped and the schema is back to its pre-apply shape.';
 
   ELSIF opt_in = 'yes I am destroying the uploader attributions' THEN
-    ALTER TABLE public.farmer_documents          DROP COLUMN IF EXISTS uploaded_by;
-    ALTER TABLE public.farmer_document_deletions DROP COLUMN IF EXISTS uploaded_by;
+    ALTER TABLE public.farmer_documents DROP COLUMN IF EXISTS uploaded_by;
     RAISE WARNING
-      '72 rollback: DESTROYED % uploader attribution(s) on farmer_documents and % on farmer_document_deletions, on explicit instruction.',
-      stamped, on_deaths;
+      '72 rollback: DESTROYED % uploader attribution(s) on farmer_documents, on explicit instruction.',
+      stamped;
 
   ELSE
     RAISE EXCEPTION
-      E'72 rollback refused: % document(s) and % deletion record(s) carry a real uploader, and nothing else in the database records who uploaded them.\n'
+      E'72 rollback refused: % document(s) carry a real uploader, and nothing else in the database records who uploaded them.\n'
       'NOTHING HAS CHANGED — this file is one transaction, so the constraint, the trigger and the columns are all still in place and the separation is still enforced.\n'
       'To roll back anyway and discard those attributions, re-run with:\n'
       '    SET ddp.rollback_72_destroy_attributions = ''yes I am destroying the uploader attributions'';',
-      stamped, on_deaths
+      stamped
       USING ERRCODE = 'check_violation';
   END IF;
 END

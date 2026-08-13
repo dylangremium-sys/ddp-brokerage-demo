@@ -77,7 +77,7 @@ ALTER TABLE public.farmer_documents
   ADD COLUMN IF NOT EXISTS uploaded_by uuid;
 
 COMMENT ON COLUMN public.farmer_documents.uploaded_by IS
-  'The session that inserted this document, stamped by trg_set_uploaded_by. '
+  'The session that inserted this document, stamped by farmer_documents_set_uploaded_by. '
   'NULL for rows predating migration 72 and for inserts outside a request '
   'context. Compared against reviewed_by by document_uploader_is_not_reviewer.';
 
@@ -95,6 +95,16 @@ BEGIN
   RETURN NEW;
 END;
 $fn$;
+
+-- Trigger functions are invoked by the trigger, never by a caller, so nobody
+-- holds EXECUTE. Stated explicitly rather than left to the default, because the
+-- PostgreSQL default is EXECUTE to PUBLIC — and this one is SECURITY DEFINER,
+-- so a caller holding EXECUTE could run it with the owner's rights.
+-- acl-no-grant: set_document_uploaded_by
+REVOKE EXECUTE ON FUNCTION public.set_document_uploaded_by() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.set_document_uploaded_by() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.set_document_uploaded_by() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.set_document_uploaded_by() FROM service_role;
 
 DROP TRIGGER IF EXISTS farmer_documents_set_uploaded_by ON public.farmer_documents;
 CREATE TRIGGER farmer_documents_set_uploaded_by
@@ -121,17 +131,20 @@ ALTER TABLE public.farmer_documents
 ALTER TABLE public.farmer_documents
   VALIDATE CONSTRAINT document_uploader_is_not_reviewer;
 
--- ── 4. The deletion record carries it too ───────────────────────────────────
--- record_document_deletion already reads OLD through to_jsonb precisely so that
--- columns added later are picked up. One column on the register and one on the
--- INSERT list keeps a deleted document's uploader from being the one fact the
--- deletion record cannot state.
-ALTER TABLE public.farmer_document_deletions
-  ADD COLUMN IF NOT EXISTS uploaded_by uuid;
-
-COMMENT ON COLUMN public.farmer_document_deletions.uploaded_by IS
-  'Copied from farmer_documents.uploaded_by at deletion. NULL where the deleted '
-  'document predated migration 72.';
+-- ── 4. THE DELETION RECORD DOES NOT CARRY THE UPLOADER, AND THAT IS A GAP ───
+-- An earlier draft of this migration added `uploaded_by` to
+-- farmer_document_deletions. It was removed before this shipped, because the
+-- column would never have been written: `record_document_deletion` is migration
+-- 69's function and its INSERT names its columns explicitly, so a new column on
+-- the table is simply skipped. The result would have been a column that exists,
+-- reads NULL forever, and a VERIFY section asserting its presence — false
+-- assurance, which is worse than the gap it pretended to close.
+--
+-- Populating it means REPLACING 69's function, which is precisely the move this
+-- migration refuses elsewhere and which a rollback would then have to restore
+-- byte-for-byte. That is its own migration, deliberately scoped, with 69's body
+-- captured first. Recorded here so it is a known gap rather than a discovery:
+-- DELETING A DOCUMENT STILL LOSES WHO UPLOADED IT.
 
 -- ── 5. Record the apply, in the ledger 67 created ───────────────────────────
 DO $ledger$

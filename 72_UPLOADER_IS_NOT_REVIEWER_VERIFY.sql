@@ -5,7 +5,7 @@
 -- Sections A–E. Each raises on failure and prints "VERIFY <letter> PASSED" on
 -- success, so a section that is skipped is not mistaken for one that passed.
 --
--- A  the column exists on both tables and is shaped like reviewed_by
+-- A  the column exists and is shaped like reviewed_by
 -- B  the stamp: trigger and function, and the function OVERWRITES the caller
 -- C  the constraint exists, is VALID, and says what it is supposed to say
 -- D  the apply recorded itself in the ledger
@@ -56,16 +56,10 @@ BEGIN
       t_uploaded, t_reviewed;
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'farmer_document_deletions'
-       AND column_name = 'uploaded_by'
-  ) THEN
-    RAISE EXCEPTION
-      'VERIFY A FAILED: farmer_document_deletions.uploaded_by does not exist — a deleted document would lose its uploader';
-  END IF;
-
-  RAISE NOTICE 'VERIFY A PASSED: uploaded_by exists on the register and on the deletion record, typed as reviewed_by is (%).', t_uploaded;
+  -- NOT asserted here: farmer_document_deletions.uploaded_by. 72 deliberately
+  -- does not add it — see section 4 of the HARDENING. Deleting a document still
+  -- loses who uploaded it, and that gap is recorded rather than papered over.
+  RAISE NOTICE 'VERIFY A PASSED: uploaded_by exists on farmer_documents, typed as reviewed_by is (%).', t_uploaded;
 END
 $a$;
 
@@ -108,7 +102,23 @@ BEGIN
       'VERIFY B FAILED: set_document_uploaded_by coalesces the caller''s uploaded_by, so a caller can name its own uploader';
   END IF;
 
-  RAISE NOTICE 'VERIFY B PASSED: a BEFORE INSERT ROW trigger stamps uploaded_by from the session and overwrites whatever the caller sent.';
+  -- SECURITY DEFINER plus EXECUTE to PUBLIC would let any caller run this with
+  -- the owner's rights. Nobody needs EXECUTE: a trigger function is invoked by
+  -- the trigger.
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = 'set_document_uploaded_by'
+       AND (
+         has_function_privilege('anon',          p.oid, 'EXECUTE') OR
+         has_function_privilege('authenticated', p.oid, 'EXECUTE') OR
+         has_function_privilege('service_role',  p.oid, 'EXECUTE')
+       )
+  ) THEN
+    RAISE EXCEPTION
+      'VERIFY B FAILED: a client role holds EXECUTE on set_document_uploaded_by, which is SECURITY DEFINER';
+  END IF;
+
+  RAISE NOTICE 'VERIFY B PASSED: a BEFORE INSERT ROW trigger stamps uploaded_by from the session, overwrites whatever the caller sent, and no client role may execute it.';
 END
 $b$;
 
