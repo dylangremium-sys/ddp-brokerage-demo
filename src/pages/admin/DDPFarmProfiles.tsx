@@ -83,11 +83,15 @@ export default function DDPFarmProfiles({ farms, inventory = [], onReview }: Pro
         <p className="page-desc">All submitted farm profiles — qualification, compliance, and partner assessment.</p>
       </div>
 
-      <div className="filter-tabs">
+      <div className="seg" role="tablist">
         {(['All', 'Pending', 'Approved', 'Watchlist', 'Rejected'] as FilterStatus[]).map(s => (
           <button
             key={s}
-            className={`filter-tab${filter === s ? ' filter-active' : ''}`}
+            type="button"
+            role="tab"
+            className="seg-opt"
+            aria-pressed={filter === s}
+            aria-selected={filter === s}
             onClick={() => setFilter(s)}
           >
             {s === 'All' ? `All (${counts.all})` :
