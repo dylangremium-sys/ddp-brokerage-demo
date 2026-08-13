@@ -35,10 +35,28 @@ const STATUS_CLASS: Record<FarmStatus, string> = {
   'Rejected': 'badge-rejected',
 }
 
-function riskLevel(farm: FarmProfile): { label: string; cls: string } {
-  if (farm.completionPct >= 80 && farm.exportLicence && farm.gmpCert) return { label: 'Low', cls: 'risk-low' }
-  if (farm.completionPct >= 60) return { label: 'Medium', cls: 'risk-medium' }
-  return { label: 'High', cls: 'risk-high' }
+/**
+ * A risk LEVEL, as plain text.
+ *
+ * This returned a `risk-low` / `risk-medium` / `risk-high` class, and those
+ * painted a green / amber / RED traffic system — three states, in a product
+ * whose vocabulary has four and contains no red. `.risk-high` used
+ * rgba(153,27,27,…) as a literal, so it survived the token remap that converted
+ * everything else on this screen; it is the last red on the console.
+ *
+ * IT IS NOT MAPPED ONTO ONE OF THE FOUR STATES, and that is the point. The four
+ * describe what must happen to a RECORD — cleared, needs a person, watching,
+ * not applicable. A risk level describes a FARM, and rendering "High" as
+ * "Needs a person" would assert an action nobody has queued. Standing rule 2
+ * covers the case directly: ordinals, step numbers and decorative chips are not
+ * statuses and take the neutral ramp.
+ *
+ * So the level is stated and the colour is dropped. Owner's decision, 13 Aug.
+ */
+function riskLevel(farm: FarmProfile): { label: string } {
+  if (farm.completionPct >= 80 && farm.exportLicence && farm.gmpCert) return { label: 'Low' }
+  if (farm.completionPct >= 60) return { label: 'Medium' }
+  return { label: 'High' }
 }
 
 function exportReadiness(farm: FarmProfile): string {
@@ -146,12 +164,10 @@ export default function DDPFarmProfiles({ farms, inventory = [], onReview }: Pro
                       </div>
                     </td>
                     <td data-label="Status"><span className={`badge ${STATUS_CLASS[farm.status]}`}>{farm.status}</span></td>
-                    <td data-label="Export Signal">
-                      <span className={`readiness-chip readiness-${exp.toLowerCase()}`}>{exp}</span>
-                    </td>
-                    <td data-label="Risk Level">
-                      <span className={`risk-chip ${risk.cls}`}>{risk.label}</span>
-                    </td>
+                    {/* Same reasoning as Risk Level: a readiness LEVEL is not one
+                        of the four states, and readiness-low was the other red. */}
+                    <td data-label="Export Signal">{exp}</td>
+                    <td data-label="Risk Level">{risk.label}</td>
                     <td data-label="Compliance Tier">
                       <span className={`farm-tier-badge ${complianceTierClass(deriveComplianceTier(farm, inventory))}`}>
                         {COMPLIANCE_TIER_LABEL[deriveComplianceTier(farm, inventory)]}

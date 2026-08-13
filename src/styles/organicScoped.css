@@ -351,6 +351,17 @@ button.seg-opt { border: 0; background: none; font: inherit; color: inherit; }
 /* — rounded frame: everything softens, small controls go pill — */
 .card, .dialog { border-radius: calc(var(--radius-lg) * 1.15); }
 .btn, .tag, .seg, .input { border-radius: 999px; }
+
+/* A PILL IS FOR A SINGLE LINE. The rule above is right for buttons, tags and
+   one-line inputs, and wrong for a textarea: at 90px+ tall a 999px radius
+   carves a lens out of the box and pushes the first line of text away from the
+   corner it should sit near. Standing rule 8 asks for round and warm, not for
+   every corner to be maximal.
+
+   Found by looking at a converted console form rather than by reading the rule
+   — Compliance Watchtower's raw-text field is the tallest textarea in the
+   product and it was the only place the shape became obviously wrong. */
+textarea.input { border-radius: var(--radius-md); }
 .input { padding-inline: 14px; }
 
 

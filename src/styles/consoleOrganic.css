@@ -79,22 +79,86 @@
 }
 
 /*
- * The second display face, retired.
+ * THE THIRD IDENTITY, retired in full.
  *
- * `--ddp-serif` (Noto Serif / Georgia) and `--ddp-sans` (Inter) are the audit's
- * "thinner quiet serif" and its body companion — a whole second identity
- * declared in two lines at App.css:3590-3591. They are NOT deleted from App.css,
- * because the farmer portal's editorial screens still read them and those are
- * out of this pass's scope. Inside the console they resolve to Organic's pair,
- * so no rule needs editing and no call site can quietly keep the old face.
+ * `--ddp-serif` and `--ddp-sans` were the visible half of something larger: an
+ * entire parallel design system of 27 tokens with 427 usages across 124 rules
+ * scoped under `.ddp-wrap`. Found by asking the browser which rule actually
+ * styled a console input, after a token remap and a class swap both failed to
+ * move it — grep had not connected the pieces because they share no prefix with
+ * anything else and each looked like a one-off.
  *
- * Standing rule on typography: Caprasimo is page titles and section headings
- * only; everything else is Figtree. A serif with "real personality" and a
- * "quiet serif" are two display faces, and the product may have one.
+ * It is the audit's third identity, entire:
+ *
+ *     --ddp-gold-500   #B89446   the mustard button
+ *     --ddp-green-900  #17382D   the deep-green chrome
+ *     --ddp-serif      Noto Serif — the "thinner quiet serif"
+ *     --ddp-r-control  3px       the square corners
+ *     --ddp-paper-strong #FFFFFF the white inputs
+ *     --ddp-risk-700   #8C3028   the red that is not in the palette
+ *
+ * Every one is rebound below. Nothing in App.css is edited: the farmer portal's
+ * editorial screens still read these tokens and are out of this pass's scope, so
+ * the values change only for descendants of the console frame.
+ *
+ * WHY THIS BEATS A SPECIFICITY FIGHT. The rule that was winning is
+ * `.ddp-wrap input:not([type=checkbox]):not([type=radio]):not([type=file])
+ * :not([type=hidden]):not([type=range])` — six selectors of specificity against
+ * `.organic-scope .input`'s two. Out-specifying it per component would mean a
+ * new arms race on every screen. Rebinding what it READS converts all 427 usages
+ * at once and leaves the cascade alone.
  */
 .console-organic {
+  /* Faces — Caprasimo is titles and headings, Figtree is everything else. */
   --ddp-serif: var(--font-heading);
   --ddp-sans: var(--font-body);
+
+  /* Grounds and paper */
+  --ddp-canvas: var(--color-bg);
+  --ddp-paper: var(--color-neutral-100);
+  --ddp-paper-muted: var(--color-neutral-200);
+  /* The input fill. Organic fills a control with the sand surface, not white —
+     white is the one value that made the console's forms read as a different
+     product from the page they sit on. */
+  --ddp-paper-strong: var(--color-surface);
+
+  /* Rules and edges */
+  --ddp-line-soft: var(--color-neutral-200);
+  --ddp-line-strong: var(--color-neutral-300);
+
+  /* Ink. -500 lands on neutral-700, not -600: measured 3.92:1 on the card
+     ground, under the 4.5:1 floor. */
+  --ddp-ink-950: var(--color-text);
+  --ddp-ink-700: var(--color-neutral-800);
+  --ddp-ink-500: var(--color-neutral-700);
+
+  /* Gold → terracotta. Standing rule 2: this is the colour that means a named
+     human must decide or chase, and the gold carried no rule at all. */
+  --ddp-gold-500: var(--color-accent);
+  --ddp-gold-700: var(--color-accent-700);
+  --ddp-focus-dark: var(--color-accent);
+  --ddp-focus-light: var(--color-accent-700);
+
+  /* The deep-green chrome → sage, which is the system's own dark ground. */
+  --ddp-green-700: var(--color-accent-2-700);
+  --ddp-green-800: var(--color-accent-2-800);
+  --ddp-green-900: var(--color-accent-2-900);
+  --ddp-green-950: var(--color-accent-2-900);
+
+  /* Status. RED IS NOT IN THE PALETTE — --ddp-risk-700 was the last place it
+     survived as a token. The deepest accent step reads as urgent without
+     introducing a hue the system does not contain. Where red carried a LEVEL
+     rather than a state, the colour is removed entirely instead — see
+     DDPFarmProfiles. */
+  --ddp-risk-700: var(--color-accent-800);
+  --ddp-success-700: var(--color-accent-2-700);
+  --ddp-warning-700: var(--color-accent-700);
+
+  /* Corners. 3px and 2px are the square geometry standing rule 8 forbids;
+     `.organic-scope .input` already pills controls at 999px, so the control
+     token matches it rather than fighting it. */
+  --ddp-r-control: 999px;
+  --ddp-r-surface: var(--radius-lg);
 }
 
 /*
