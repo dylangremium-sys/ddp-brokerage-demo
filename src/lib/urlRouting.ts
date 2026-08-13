@@ -165,6 +165,25 @@ export function getInitialPageFromPath(pathname: string): Page | null {
  * the href a visitor sees is the same path the router will accept on a cold
  * load. Unmapped pages fall back to "/", matching syncUrlToPage.
  */
+/**
+ * Does this page live under /console?
+ *
+ * Derived from PAGE_TO_PATH rather than written as a second list, so a console
+ * screen cannot be added to the router and forgotten here — the two would drift
+ * and the drift would be invisible.
+ *
+ * Used to keep the farmer navigation off the console in DEMO MODE. Demo grants
+ * every role at once (`showFarmerNav = isDemo || isFarmerRole`), so a demo
+ * visitor on a console screen got the farmer's top bar stacked above the
+ * console's own sidebar — two navigations for two roles the same person cannot
+ * hold in production. A real admin never saw it, which is precisely what made
+ * it worth fixing: it appeared only where nobody signs in, so every screenshot
+ * taken of the console carried a caveat instead of showing the product.
+ */
+export function isConsolePage(page: Page): boolean {
+  return (PAGE_TO_PATH[page] ?? '').startsWith('/console')
+}
+
 export function pathForPage(page: Page): string {
   return PAGE_TO_PATH[page] ?? '/'
 }
