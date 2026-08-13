@@ -207,3 +207,74 @@
      the face was not. */
   font-family: var(--font-body);
 }
+
+
+/*
+ * A SCROLLABLE TABLE THAT LOOKS SCROLLABLE.
+ *
+ * Measured on Master Inventory at 1440px before changing anything: the table is
+ * 1158px across 12 columns, `.table-scroll` gets 804px, and
+ * scrollWidth (1158) > clientWidth (804) — so `overflow-x: auto` was already
+ * there and the region already scrolled. Identical at 1280 and 1600.
+ *
+ * The audit read it as "horizontal overflow isn't handled". It is. What is not
+ * handled is that macOS draws OVERLAY scrollbars, which are invisible at rest:
+ * a scrollable region and a truncated one look exactly the same until you try.
+ * The header ends mid-word at "CO CH…" with nothing to say more exists.
+ *
+ * So this makes the scroll DISCOVERABLE and relayouts nothing. Two parts:
+ *
+ * 1. A scrollbar that is always drawn. `-webkit-appearance: none` on the
+ *    scrollbar itself is what defeats the overlay behaviour; without it the
+ *    height and colours below are accepted and then ignored.
+ *
+ * 2. Edge shadows that appear ONLY when there is more content, using the
+ *    background-attachment trick: the two `local` gradients scroll WITH the
+ *    content and so cover the shadows when you reach either end, while the two
+ *    `scroll` radials stay pinned to the box. No JavaScript, no resize
+ *    observer, and it stays correct when the column count or the container
+ *    width changes.
+ *
+ * The cover gradients must match the ground the table sits on or they read as a
+ * band; --bg-card is the same token the card itself uses, so they track it.
+ *
+ * NOT FIXED HERE, deliberately: the table needs 1158px and the filter panel
+ * takes ~420px of the width it could have had. Widening it means collapsing
+ * that panel or carrying fewer columns, both of which are layout and editorial
+ * decisions rather than a defect, and both are out of this pass.
+ */
+.console-organic .table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-400) transparent;
+
+  /* The cover gradients have to match the ground EXACTLY or they read as a pale
+     band at the edge — which is what --bg-card did here, because the ground
+     behind this scroller is the card's --color-surface (measured
+     rgb(235,221,197)), not the page's neutral-100. Rather than guess per screen,
+     the scroller paints its own ground as the final background layer below, so
+     cover and ground are the same token by construction. */
+  background:
+    linear-gradient(to right, var(--color-surface) 30%, transparent) left center / 44px 100% no-repeat local,
+    linear-gradient(to left, var(--color-surface) 30%, transparent) right center / 44px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--color-text) 18%, transparent), transparent) left center / 16px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--color-text) 18%, transparent), transparent) right center / 16px 100% no-repeat scroll,
+    var(--color-surface);
+}
+
+.console-organic .table-scroll::-webkit-scrollbar {
+  height: 10px;
+  -webkit-appearance: none;
+}
+.console-organic .table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.console-organic .table-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-400);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.console-organic .table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neutral-500);
+  background-clip: content-box;
+}
