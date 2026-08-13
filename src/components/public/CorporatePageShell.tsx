@@ -61,8 +61,23 @@ interface Props {
    * second shell that would drift.
    */
   hero?: ReactNode
-  /** Opt out of `corp-doc`'s reading measure for pages that band edge-to-edge. */
+  /**
+   * Opt out of `corp-doc`'s reading measure for pages that band edge-to-edge.
+   * Also drops `corp-main`'s horizontal padding, or the bands stop short of the
+   * viewport edge and the full-bleed background is not full-bleed.
+   */
   fullBleed?: boolean
+  /**
+   * Extra classes for the content element — in practice `organic-scope`.
+   *
+   * The Organic design system is nested under that class on purpose (see
+   * organicScoped.css), so a page that wants `.tag`, `.btn` or any Organic
+   * token has to sit inside it. This shell was built for /privacy and /terms,
+   * which use the app's own chrome and never needed it; Governance does. The
+   * chrome stays outside the scope deliberately — the header and footer are
+   * shared with the other corporate pages and must keep matching them.
+   */
+  bodyClass?: string
   children: ReactNode
 }
 
@@ -237,14 +252,18 @@ function CorporateFooter({
 }
 
 export default function CorporatePageShell({
-  lang, setLang, page, onNavigate, heading, hero, fullBleed, children,
+  lang, setLang, page, onNavigate, heading, hero, fullBleed, bodyClass, children,
 }: Props) {
   return (
     <div className="corp-shell">
       <CorporateHeader lang={lang} setLang={setLang} page={page} onNavigate={onNavigate} />
 
-      <main className="corp-main" id="main">
-        <article className={fullBleed ? 'corp-doc corp-doc-full' : 'corp-doc'}>
+      <main className={fullBleed ? 'corp-main corp-main-full' : 'corp-main'} id="main">
+        <article className={[
+          'corp-doc',
+          fullBleed ? 'corp-doc-full' : '',
+          bodyClass ?? '',
+        ].filter(Boolean).join(' ')}>
           {hero ?? (
             <>
               <h1 className="corp-heading">{heading}</h1>

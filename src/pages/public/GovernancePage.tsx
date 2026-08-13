@@ -86,6 +86,7 @@ export default function GovernancePage({ lang, setLang, onNavigate }: Props) {
       onNavigate={onNavigate}
       heading={t.govTitle}
       fullBleed
+      bodyClass="organic-scope"
       hero={
         <div className="gov-hero-band">
           <div className="gov-wrap">

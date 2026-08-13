@@ -15,14 +15,26 @@
  * would be a second definition of the same four colours.
  */
 
-.organic-scope {
-  /* The shell's reading measure is for /privacy and /terms. This page bands
-     edge to edge, so it opts out and each band caps its own content. */
-  & .corp-doc-full {
-    max-width: none;
-    padding: 0;
-  }
+/*
+ * These two sit OUTSIDE `.organic-scope` on purpose: the element that carries
+ * `corp-doc-full` is the same element that carries `organic-scope`, and a
+ * descendant selector cannot match the element it is scoped to.
+ *
+ * The shell's reading measure is for /privacy and /terms — documents. This page
+ * bands edge to edge, so it opts out and each band caps its own content. The
+ * main padding goes too, or the full-bleed backgrounds stop 32px short of the
+ * viewport edge and the band colour reveals the page ground behind it.
+ */
+.corp-doc-full {
+  max-width: none;
+  padding: 0;
+}
 
+.corp-main-full {
+  padding-inline: 0;
+}
+
+.organic-scope {
   & .gov-wrap {
     max-width: 1440px;
     margin: 0 auto;
