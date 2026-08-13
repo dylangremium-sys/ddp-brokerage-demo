@@ -204,15 +204,23 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
               ))}
             </div>
 
-            <button type="button" className="btn btn-ghost" onClick={onSecureLogin}>
-              {t.hpNavSignIn}
-            </button>
-            {/* Secondary, not primary. Rule 1: the filled terracotta button
-                belongs to the page, never to the chrome — the nav's CTA steps
-                down so it cannot outrank the hero's. */}
-            <button type="button" className="btn btn-secondary" onClick={onSupplierSignup}>
-              {t.hpNavApply}
-            </button>
+            {/* One action group, not two controls adrift in the corner. The
+                pair sits in its own wrapper so the gap between them is tighter
+                than the nav's own 26px rhythm, which is what makes them read as
+                belonging together. */}
+            <div className="hp-nav-actions">
+              <button type="button" className="btn btn-ghost" onClick={onSecureLogin}>
+                {t.hpNavSignIn}
+              </button>
+              {/* Secondary, not primary. Rule 1: the filled terracotta button
+                  belongs to the page, never to the chrome — the nav's CTA steps
+                  down so it cannot outrank the hero's. Weight is not hierarchy:
+                  this carries a tint so it reads as a deliberate control, and
+                  the tint is a ramp step nowhere near the hero's solid 500. */}
+              <button type="button" className="btn btn-secondary" onClick={onSupplierSignup}>
+                {t.hpNavApply}
+              </button>
+            </div>
           </nav>
         </div>
 

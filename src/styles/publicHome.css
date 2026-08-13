@@ -80,6 +80,80 @@
     font-size: 20px;
   }
 
+  /* ── Nav actions ────────────────────────────────────────────────────────
+     Sign in and Apply to supply are one group. Before this they were two loose
+     controls at the end of a 26px flex rhythm: a ghost button that Organic
+     gives `padding-inline: var(--space-1)` — 4.4px, so it rendered as bare text
+     with no button affordance — sitting beside a pill whose only definition is
+     `border-color: var(--color-divider)`, a hairline with no fill. Next to the
+     hero's solid terracotta the pair read as unfinished.
+
+     SCOPED TO THIS NAV, NOT TO `.btn-ghost` AND `.btn-secondary` THEMSELVES.
+     Those two classes are used across every piloted Organic screen — the farm
+     portal, the evidence gate, the buyer view — and widening their padding at
+     source would move controls on screens nobody looked at in this change.
+
+     WEIGHT, NOT HIERARCHY. Rule 1 is untouched: the page's one filled
+     terracotta button is still the hero's. The tint below is accent-100 with an
+     accent-200 edge — two ramp steps, nowhere near the 500 the hero fills with,
+     and it stays a secondary control by every measure that matters. */
+  & .hp-nav-actions {
+    display: flex;
+    align-items: center;
+    /* Tighter than the nav's own 26px, which is what makes the two read as one
+       group rather than as two more nav items. */
+    gap: 8px;
+  }
+
+  /* Equal box, equal padding, both centred on the nav's own axis so they sit on
+     the same line as the links beside them. */
+  & .hp-nav-actions .btn {
+    min-height: 40px;
+    padding: 0 18px;
+    font-size: 14.5px;
+    line-height: 1;
+  }
+
+  /* Give the ghost an actual button footprint. Organic's 4.4px inline padding
+     is right for a ghost sitting in a stack of text links; it is wrong for one
+     paired with a pill. */
+  & .hp-nav-actions .btn-ghost {
+    padding-inline: 18px;
+  }
+
+  /* A fill AND an edge that can actually be seen.
+     
+     MEASURED, because the obvious choice does not work on this ground. Every
+     light step of the accent ramp is near-isoluminant with --color-bg:
+     accent-100 is 1.09:1 against it, accent-200 is 1.04:1, accent-300 is
+     1.27:1. A tint alone therefore cannot carry the control's boundary — it is
+     visible by HUE, which is not something a luminance floor credits, and not
+     something every reader gets.
+     
+     THIS IS ALSO WHY THE ORIGINAL LOOKED LIKE A PLACEHOLDER. Organic's
+     `.btn-secondary` draws its edge in --color-divider, which measures 1.25:1
+     here — below any perceptibility floor. The pill was not thin, it was
+     nearly absent.
+     
+     So the fill stays accent-100 for warmth and the edge goes to
+     --color-accent, which measures 3.03:1 and clears the 3:1 non-text floor.
+     That is the same value `.tag-outline` already ships on this page, so the
+     nav is consistent with the credential pills under the hero rather than a
+     new treatment. Label is accent-900 on the tint at 13.07:1. */
+  & .hp-nav-actions .btn-secondary {
+    background: var(--color-accent-100);
+    border-color: var(--color-accent);
+    color: var(--color-accent-900);
+  }
+  & .hp-nav-actions .btn-secondary:hover {
+    background: var(--color-accent-200);
+    border-color: var(--color-accent-600);
+  }
+  & .hp-nav-actions .btn-secondary:active {
+    background: var(--color-accent-300);
+    border-color: var(--color-accent-700);
+  }
+
   & .hp-navlink {
     font-size: 15px;
     color: var(--color-neutral-800);
