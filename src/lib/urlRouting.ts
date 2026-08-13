@@ -83,6 +83,22 @@ const PATH_TO_PAGE: Record<string, Page> = {
   '/console/compliance': 'ddp-farms',
   '/console/supply-ledger': 'ddp-master',
   '/console/watchtower': 'ddp-compliance-watchtower',
+  /* The drill-downs. They had no address either, and in DEMO MODE that had a
+     second consequence: isConsolePage() reads this map, so a console screen
+     missing from it fell out of the console shell entirely and rendered bare.
+     A real admin never saw that — showFarmerNav is false for them — but it
+     meant seven of the fifteen screens could not be looked at as they ship.
+     Addressing them fixes the demo hole and gives the drill-downs bookmarks in
+     the same change. Farm Review and Inventory Review need a selected record;
+     arriving cold shows the parent's empty state, which is the same thing that
+     happens on any other cold entry to a detail screen. */
+  '/console/farm-review': 'ddp-farm-review',
+  '/console/inventory': 'ddp-inventory',
+  '/console/inventory-review': 'ddp-inventory-review',
+  '/console/missing-documents': 'ddp-missing-documents',
+  '/console/coa-intelligence': 'ddp-coa-intelligence',
+  '/console/risk-register': 'ddp-risk-register',
+  '/console/buyer-preview': 'ddp-buyer',
 }
 
 /** Page → canonical path. Pages not listed here revert to root. */
@@ -109,6 +125,13 @@ const PAGE_TO_PATH: Partial<Record<Page, string>> = {
   'ddp-farms': '/console/compliance',
   'ddp-master': '/console/supply-ledger',
   'ddp-compliance-watchtower': '/console/watchtower',
+  'ddp-farm-review': '/console/farm-review',
+  'ddp-inventory': '/console/inventory',
+  'ddp-inventory-review': '/console/inventory-review',
+  'ddp-missing-documents': '/console/missing-documents',
+  'ddp-coa-intelligence': '/console/coa-intelligence',
+  'ddp-risk-register': '/console/risk-register',
+  'ddp-buyer': '/console/buyer-preview',
 }
 
 /**

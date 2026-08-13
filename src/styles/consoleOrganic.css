@@ -278,3 +278,57 @@
   background: var(--color-neutral-500);
   background-clip: content-box;
 }
+
+
+/*
+ * THE LAST LITERAL REDS — found by asking which ELEMENT carried the colour,
+ * after an override written against the wrong selector changed nothing.
+ *
+ * Four rules in App.css write rgba(153,27,27,…) directly rather than through a
+ * token, so every remap in this file passed straight over them. They are the
+ * same red that .risk-high used and the same reason it survived: a literal has
+ * no name to rebind.
+ *
+ * .alert-danger and .btn-reject are STATES, not levels — an alert that needs
+ * acting on, and the control that rejects a submission. So unlike the risk
+ * badge these keep their tint and take terracotta, which is the system's colour
+ * for "a named human must decide or chase". Standing rule 2.
+ *
+ * Found on Farm Review with a record loaded. Reaching it cold shows the
+ * parent's empty state, so the earlier pass measured a screen that was not
+ * there — the drill-down had to be clicked through before it could be checked.
+ */
+.console-organic .alert-danger {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent-300);
+  color: var(--color-accent-900);
+}
+
+.console-organic .btn-reject {
+  border-color: var(--color-accent-600);
+}
+.console-organic .btn-reject:hover {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent-700);
+}
+
+
+/* .risk-flag-negative is the one the first override missed: a warning flag on
+   Farm Review's risk panel, reached only with a farm actually selected. It is a
+   state — something a reviewer must weigh — so it keeps a tint and takes
+   terracotta, like .alert-danger above. */
+.console-organic .risk-flag-negative {
+  background: var(--color-accent-100);
+  color: var(--color-accent-900);
+}
+
+
+/* .check-fail — Inventory Review's failed checklist row, the last literal red
+   in the console. A failed check is a state a reviewer must act on, so it keeps
+   its tint and takes terracotta. Found the same way as .risk-flag-negative: by
+   drilling into the screen with a record loaded and asking which element
+   carried the colour. Neither was reachable cold. */
+.console-organic .checklist-row.check-fail {
+  background: var(--color-accent-100);
+  color: var(--color-accent-900);
+}
