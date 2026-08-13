@@ -1,4 +1,5 @@
 import type { Page } from '../../types'
+import '../../styles/consoleOrganic.css'
 
 /**
  * The console shell on the Organic design system — handoff screen 4's sidebar.
@@ -40,8 +41,14 @@ export default function OrganicConsoleShell({
   onSignOut: () => void
 }) {
   return (
+    /* `console-organic` alongside `organic-scope`: the first rebinds App.css's
+       own semantic names (--bg-card, --accent, --error, --ddp-serif …) onto
+       Organic ramps so every var() call site in the console converts at once;
+       the second brings Organic's tokens and component classes. Both are scope
+       classes — removing them removes the conversion, and nothing outside this
+       subtree can be affected by either. See styles/consoleOrganic.css. */
     <div
-      className="organic-scope"
+      className="organic-scope console-organic"
       style={{ display: 'grid', gridTemplateColumns: '252px 1fr', minHeight: '100vh' }}
     >
       <aside

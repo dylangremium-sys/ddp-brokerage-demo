@@ -1,0 +1,145 @@
+/*
+ * The console, on Organic — by remapping names rather than rewriting rules.
+ *
+ * WHY THIS FILE EXISTS AND WHY IT IS NOT `:root`.
+ *
+ * App.css and Organic define the SAME custom-property names with different
+ * values:
+ *
+ *     --radius-lg   App.css 10px   Organic 28px
+ *     --radius-md   App.css  6px   Organic 16px
+ *     --radius-sm   App.css  4px   Organic  8px
+ *     --font-mono   JetBrains Mono / IBM Plex Mono
+ *
+ * Promoting Organic to `:root` would therefore re-render every one of App.css's
+ * ~5,700 lines that reads those names — the farmer portal, the login screens and
+ * the public corporate pages included, none of which are in this pass. So the
+ * console gets a SCOPE, exactly as the pilot screens already do, and everything
+ * outside it is untouched by construction. Removing the class from the shell
+ * removes this entire conversion from the running app.
+ *
+ * WHAT THE REMAPPING DOES. App.css styles the console through its own semantic
+ * names — `--bg-card`, `--accent`, `--text-muted`, `--error` and so on. Those
+ * names are not Organic's, so `.organic-scope` alone does not touch them: it
+ * would leave a sand page with navy cards on it. Rebinding them here converts
+ * every `var(--…)` call site in the console at once, without editing App.css and
+ * without touching a single rule the farmer portal depends on.
+ *
+ * It does NOT convert hard-coded hexes. App.css carries 252 literal colour
+ * occurrences and those are handled per screen, in the pass that follows.
+ *
+ * The mapping is deliberate, not mechanical:
+ *
+ *   --accent → terracotta       Standing rule 2: terracotta means a named human
+ *                               must decide or chase. App.css's gold carried no
+ *                               rule at all.
+ *   --success → sage            Cleared / healthy.
+ *   --warning → terracotta-700  "Needs a person" is the same idea; the system
+ *                               has no separate amber and inventing one would be
+ *                               a fifth state.
+ *   --error → terracotta-800    RED IS NOT IN THE PALETTE. The deepest accent
+ *                               step reads as urgent without introducing a hue
+ *                               the system does not contain. Where red was
+ *                               carrying a *level* rather than a state (the risk
+ *                               badge), the colour is removed entirely rather
+ *                               than remapped — see DDPFarmProfiles.
+ *   --text-muted → neutral-700  NOT neutral-600. Measured 3.92:1 on the card
+ *                               ground, under the 4.5:1 body-text floor;
+ *                               neutral-700 is 6.02:1.
+ */
+
+.console-organic {
+  /* ── Grounds ─────────────────────────────────────────────────────────── */
+  --bg: var(--color-bg);
+  --bg-card: var(--color-neutral-100);
+  --bg-elevated: var(--color-neutral-200);
+  --bg-deep: var(--color-accent-2-900);
+
+  /* ── Action ──────────────────────────────────────────────────────────── */
+  --accent: var(--color-accent);
+  --accent-strong: var(--color-accent-700);
+  --jade: var(--color-accent-2-900);
+
+  /* ── Text ────────────────────────────────────────────────────────────── */
+  --text: var(--color-text);
+  --text-muted: var(--color-neutral-700);
+  --border: var(--color-neutral-300);
+
+  /* ── Status ──────────────────────────────────────────────────────────── */
+  --success: var(--color-accent-2-700);
+  --warning: var(--color-accent-700);
+  --error: var(--color-accent-800);
+
+  /* ── Identifiers ─────────────────────────────────────────────────────── */
+  /* Rule 4: identifiers in mono. Organic's mono is IBM Plex, not JetBrains. */
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* App.css's own alias, used by a handful of console rules. */
+  --radius-pill: 999px;
+}
+
+/*
+ * The second display face, retired.
+ *
+ * `--ddp-serif` (Noto Serif / Georgia) and `--ddp-sans` (Inter) are the audit's
+ * "thinner quiet serif" and its body companion — a whole second identity
+ * declared in two lines at App.css:3590-3591. They are NOT deleted from App.css,
+ * because the farmer portal's editorial screens still read them and those are
+ * out of this pass's scope. Inside the console they resolve to Organic's pair,
+ * so no rule needs editing and no call site can quietly keep the old face.
+ *
+ * Standing rule on typography: Caprasimo is page titles and section headings
+ * only; everything else is Figtree. A serif with "real personality" and a
+ * "quiet serif" are two display faces, and the product may have one.
+ */
+.console-organic {
+  --ddp-serif: var(--font-heading);
+  --ddp-sans: var(--font-body);
+}
+
+/*
+ * Hard-coded faces, which a variable remap cannot reach.
+ *
+ * Five rules in App.css write `'Georgia', 'Times New Roman', serif` and two
+ * write `'Inter', …` as literals. Inside the console those elements are pulled
+ * back onto the pair by selector rather than by token — listed explicitly so it
+ * is visible which surfaces were carrying a third and fourth face.
+ */
+.console-organic .page-title,
+.console-organic .page-header h1,
+.console-organic .summary-val,
+.console-organic .master-title,
+.console-organic .eo-title {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+}
+
+.console-organic .page-subtitle,
+.console-organic .page-header p,
+.console-organic .master-desc,
+.console-organic .eo-body {
+  font-family: var(--font-body);
+}
+
+/*
+ * Corners.
+ *
+ * `--radius-*` is inherited from `.organic-scope` on the same element, so every
+ * App.css rule reading those names already lands on Organic's scale inside the
+ * console. What that does NOT catch is a literal `border-radius: 4px` or `6px`,
+ * of which App.css has several on console components. Those are corrected per
+ * screen; the two below are the shared table and card shells that every screen
+ * inherits, so they are done once here.
+ *
+ * Standing rule 8: round, warm, airy — no hairline-only geometry.
+ */
+.console-organic .card,
+.console-organic .table-card {
+  border-radius: var(--radius-lg);
+}
+
+.console-organic .inv-table thead th {
+  /* App.css sets a 10px uppercase label here; the size and tracking are right,
+     the face was not. */
+  font-family: var(--font-body);
+}
