@@ -178,9 +178,15 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
             <button type="button" className="hp-navlink" onClick={() => scrollToId('for-buyers')}>
               {t.hpNavForBuyers}
             </button>
-            <button type="button" className="hp-navlink" onClick={() => scrollToId('compliance')}>
+            {/* A page, not an anchor. Rendered as an anchor with the real path
+                so it is discoverable — the same reasoning as the footer links. */}
+            <a
+              href={pathForPage('governance')}
+              className="hp-navlink"
+              onClick={e => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate('governance') }}
+            >
               {t.hpNavCompliance}
-            </button>
+            </a>
 
             {/* Language. The label is each language in its own script, so a
                 reader who cannot read the current one can still find theirs.
@@ -299,6 +305,14 @@ export default function LandingPage({ lang, setLang, onSecureLogin, onSupplierSi
           <div className="hp-wrap hp-section">
             <h2>{t.hpComplianceTitle}</h2>
             <p>{t.hpComplianceBody}</p>
+            {/* §9 specifies this link; it had no destination until §11 existed. */}
+            <a
+              href={pathForPage('governance')}
+              className="hp-compliance-link"
+              onClick={e => { if (!shouldInterceptAnchorClick(e)) return; e.preventDefault(); onNavigate('governance') }}
+            >
+              {t.hpComplianceLink}
+            </a>
           </div>
         </div>
 

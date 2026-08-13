@@ -42,8 +42,27 @@ interface Props {
   page: Page
   /** In-app navigation. The anchors still carry a real href for crawlers. */
   onNavigate: (page: Page) => void
-  /** Page heading, rendered as the single <h1>. */
+  /** Page heading, rendered as the single <h1>. Ignored when `hero` is given. */
   heading: string
+  /**
+   * A page that owns its own opening band, replacing the default heading block.
+   *
+   * WHY THIS EXISTS. /privacy and /terms are documents: a title, a provenance
+   * line, then prose, and `corp-doc` holds them to a reading measure. Governance
+   * (handoff §11) is not a document — it opens with a mono eyebrow, a 58px
+   * display heading and a lede, and then runs full-bleed tinted and dark bands
+   * to the page edges. Passing that as `children` would render the shell's own
+   * `<h1>` above it, giving the page two first-level headings.
+   *
+   * A page supplying a hero takes responsibility for containing exactly one
+   * `<h1>` and for its own provenance line. Everything else the shell provides —
+   * the crawler-visible `<a href>` links, the language switch, the footer — is
+   * unchanged, which is the point of extending it here rather than forking a
+   * second shell that would drift.
+   */
+  hero?: ReactNode
+  /** Opt out of `corp-doc`'s reading measure for pages that band edge-to-edge. */
+  fullBleed?: boolean
   children: ReactNode
 }
 
@@ -51,7 +70,9 @@ interface Props {
 const CORPORATE_LINKS: Array<{
   page: Page
   labelKey: 'homeFooterAbout' | 'homeFooterContact' | 'homeFooterPrivacy' | 'homeFooterTerms'
+    | 'homeFooterGovernance'
 }> = [
+  { page: 'governance', labelKey: 'homeFooterGovernance' },
   { page: 'about', labelKey: 'homeFooterAbout' },
   { page: 'contact', labelKey: 'homeFooterContact' },
   { page: 'privacy', labelKey: 'homeFooterPrivacy' },
@@ -215,15 +236,21 @@ function CorporateFooter({
   )
 }
 
-export default function CorporatePageShell({ lang, setLang, page, onNavigate, heading, children }: Props) {
+export default function CorporatePageShell({
+  lang, setLang, page, onNavigate, heading, hero, fullBleed, children,
+}: Props) {
   return (
     <div className="corp-shell">
       <CorporateHeader lang={lang} setLang={setLang} page={page} onNavigate={onNavigate} />
 
       <main className="corp-main" id="main">
-        <article className="corp-doc">
-          <h1 className="corp-heading">{heading}</h1>
-          <PageProvenance lang={lang} page={page} />
+        <article className={fullBleed ? 'corp-doc corp-doc-full' : 'corp-doc'}>
+          {hero ?? (
+            <>
+              <h1 className="corp-heading">{heading}</h1>
+              <PageProvenance lang={lang} page={page} />
+            </>
+          )}
           {children}
         </article>
       </main>

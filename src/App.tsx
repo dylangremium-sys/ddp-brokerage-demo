@@ -56,6 +56,7 @@ import { fetchRules as fetchComplianceRules, fetchAlerts as fetchComplianceAlert
 import { DDPMonogramLogo } from './components/logos'
 import LandingPage from './pages/public/LandingPage'
 import AboutPage from './pages/public/AboutPage'
+import GovernancePage from './pages/public/GovernancePage'
 import ContactPage from './pages/public/ContactPage'
 import PrivacyPage from './pages/public/PrivacyPage'
 import TermsPage from './pages/public/TermsPage'
@@ -1550,6 +1551,9 @@ export default function App() {
           `goTo` is passed whole as onNavigate: these pages link to each other,
           to the landing page, to login and to supplier registration, and every
           one of those links must still go through the navigation guard. */}
+      {page === 'governance' && (
+        <GovernancePage lang={lang} setLang={setLang} onNavigate={goTo} />
+      )}
       {page === 'about' && (
         <AboutPage lang={lang} setLang={setLang} onNavigate={goTo} />
       )}

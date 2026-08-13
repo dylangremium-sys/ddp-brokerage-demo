@@ -53,6 +53,7 @@ const PATH_TO_PAGE: Record<string, Page> = {
   '/contact': 'contact',
   '/privacy': 'privacy',
   '/terms': 'terms',
+  '/governance': 'governance',
 }
 
 /** Page → canonical path. Pages not listed here revert to root. */
@@ -66,6 +67,7 @@ const PAGE_TO_PATH: Partial<Record<Page, string>> = {
   contact: '/contact',
   privacy: '/privacy',
   terms: '/terms',
+  governance: '/governance',
 }
 
 /**
