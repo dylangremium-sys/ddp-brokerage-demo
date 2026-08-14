@@ -33,6 +33,23 @@ import { getInitialPageFromPath } from './urlRouting'
  *                      and the guard admits everything in it anyway
  *   anything else    → held, and replayed on the first auth resolution
  *
+ * WHAT A SIGNED-OUT VISITOR ACTUALLY GETS, measured against production rather
+ * than inferred from this file: the PUBLIC LANDING PAGE, not 'login'.
+ *
+ * consumeDeepLinkIntent resolves to 'login' for a stranger and the unit test
+ * says so — but App.tsx only calls it inside the bootstrap block's
+ * `action.kind === 'route'` branch, and there is nothing to route a signed-out
+ * visitor to. So the intent is never consumed, the visitor stays on the public
+ * page decideColdLoad already put them on, and nothing about the console is
+ * rendered or hinted at.
+ *
+ * That is the safer of the two outcomes and it is being kept deliberately:
+ * bouncing a stranger to /login would confirm that /console/* means something.
+ * The held intent also survives, so if that visitor then signs in as an admin
+ * the bootstrap route fires and takes them to the screen they originally
+ * bookmarked. Documented here because "signed-out visitors get login" is what
+ * the PR for this change said, and it is not what the product does.
+ *
  * The holding place is module scope, mirroring lib/authRedirect.ts, for the same
  * reason: it must survive a render and be readable from code that runs outside
  * one, and it must not be a piece of state whose staleness could be captured in
