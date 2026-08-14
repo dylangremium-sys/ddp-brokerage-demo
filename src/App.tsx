@@ -662,7 +662,15 @@ export default function App() {
    * auth change would work too, and would churn a window listener for no gain.
    */
   const navContextRef = useRef({ isDemo, isSignedIn, isAdminRole, isBuyerRole })
-  navContextRef.current = { isDemo, isSignedIn, isAdminRole, isBuyerRole }
+  // Refreshed in an effect, NOT during render. Assigning to a ref while
+  // rendering is a side effect in the render phase — unsafe under concurrent
+  // rendering, and eslint's rules-of-React caught it. No dependency array, so
+  // it runs after every commit and the listener always reads current identity.
+  // The gap between render and commit cannot matter here: popstate is a user
+  // gesture and cannot fire inside a render.
+  useEffect(() => {
+    navContextRef.current = { isDemo, isSignedIn, isAdminRole, isBuyerRole }
+  })
 
   useEffect(() => {
     function handlePopState() {
