@@ -25,7 +25,15 @@ describe('a deep link held until identity resolves', () => {
   const farmer = { isDemo: false, isSignedIn: true, isAdminRole: false }
   const strangerCtx = { isDemo: false, isSignedIn: false, isAdminRole: false }
 
-  it('sends a signed-out visitor to login, not to the console screen they asked for', () => {
+  /**
+   * This is the FUNCTION's answer, not the product's. App.tsx only consumes an
+   * intent inside the bootstrap block's route branch, and a signed-out visitor
+   * has nothing to route to — so in practice they stay on the public landing
+   * page decideColdLoad put them on. Measured against production. Either way
+   * the console is neither rendered nor hinted at; see the note in
+   * deepLinkIntent.ts.
+   */
+  it('never resolves a console page for a stranger', () => {
     holdDeepLinkIntent('ddp-overview')
     expect(consumeDeepLinkIntent(strangerCtx, 'landing')).toBe('login')
   })
