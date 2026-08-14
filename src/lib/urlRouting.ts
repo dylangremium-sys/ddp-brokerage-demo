@@ -55,50 +55,6 @@ const PATH_TO_PAGE: Record<string, Page> = {
   '/terms': 'terms',
   '/governance': 'governance',
 
-  /* ── The console, deep-linkable ──────────────────────────────────────────
-     ROUTABLE IS NOT THE SAME AS PUBLIC, and this is the second case that
-     proves it after /farmer. These paths set the `page` value and nothing
-     else: App.tsx gates every console screen on `isAdminRole`, so a signed-out
-     visitor or a farmer who follows one of these URLs gets AccessDenied, which
-     is exactly what they get today by any other route in.
-
-     WHY THEY EXIST. The console had no addresses at all — it was reachable
-     only by clicking through from a signed-in landing, which meant no
-     bookmark, no "send me the screen you mean", no way to open two screens
-     side by side, and no way to look at a console screen in a demo-mode build
-     without credentials. A product whose operators live in it all day had no
-     URL for any of it.
-
-     They are NOT in publicPageMetadata, so they are not indexable and are not
-     in the sitemap; vercel.json serves them `X-Robots-Tag: noindex, nofollow`,
-     the same treatment /farmer gets. robots.txt deliberately does NOT disallow
-     them, for the reason recorded there: a crawler told not to fetch a page
-     never sees the noindex on it. */
-  '/console': 'ddp-overview',
-  '/console/overview': 'ddp-overview',
-  '/console/operations-desk': 'ddp-operations-desk',
-  '/console/supplier-enquiries': 'ddp-access-requests',
-  '/console/buyers': 'ddp-buyer-provisioning',
-  '/console/evidence': 'ddp-document-review',
-  '/console/compliance': 'ddp-farms',
-  '/console/supply-ledger': 'ddp-master',
-  '/console/watchtower': 'ddp-compliance-watchtower',
-  /* The drill-downs. They had no address either, and in DEMO MODE that had a
-     second consequence: isConsolePage() reads this map, so a console screen
-     missing from it fell out of the console shell entirely and rendered bare.
-     A real admin never saw that — showFarmerNav is false for them — but it
-     meant seven of the fifteen screens could not be looked at as they ship.
-     Addressing them fixes the demo hole and gives the drill-downs bookmarks in
-     the same change. Farm Review and Inventory Review need a selected record;
-     arriving cold shows the parent's empty state, which is the same thing that
-     happens on any other cold entry to a detail screen. */
-  '/console/farm-review': 'ddp-farm-review',
-  '/console/inventory': 'ddp-inventory',
-  '/console/inventory-review': 'ddp-inventory-review',
-  '/console/missing-documents': 'ddp-missing-documents',
-  '/console/coa-intelligence': 'ddp-coa-intelligence',
-  '/console/risk-register': 'ddp-risk-register',
-  '/console/buyer-preview': 'ddp-buyer',
 }
 
 /** Page → canonical path. Pages not listed here revert to root. */
@@ -113,25 +69,6 @@ const PAGE_TO_PATH: Partial<Record<Page, string>> = {
   privacy: '/privacy',
   terms: '/terms',
   governance: '/governance',
-
-  /* The canonical address for each console screen. `/console` is an alias that
-     resolves to Overview on the way in; it is deliberately absent here so the
-     address bar always settles on the specific screen rather than the alias. */
-  'ddp-overview': '/console/overview',
-  'ddp-operations-desk': '/console/operations-desk',
-  'ddp-access-requests': '/console/supplier-enquiries',
-  'ddp-buyer-provisioning': '/console/buyers',
-  'ddp-document-review': '/console/evidence',
-  'ddp-farms': '/console/compliance',
-  'ddp-master': '/console/supply-ledger',
-  'ddp-compliance-watchtower': '/console/watchtower',
-  'ddp-farm-review': '/console/farm-review',
-  'ddp-inventory': '/console/inventory',
-  'ddp-inventory-review': '/console/inventory-review',
-  'ddp-missing-documents': '/console/missing-documents',
-  'ddp-coa-intelligence': '/console/coa-intelligence',
-  'ddp-risk-register': '/console/risk-register',
-  'ddp-buyer': '/console/buyer-preview',
 }
 
 /**
@@ -188,25 +125,6 @@ export function getInitialPageFromPath(pathname: string): Page | null {
  * the href a visitor sees is the same path the router will accept on a cold
  * load. Unmapped pages fall back to "/", matching syncUrlToPage.
  */
-/**
- * Does this page live under /console?
- *
- * Derived from PAGE_TO_PATH rather than written as a second list, so a console
- * screen cannot be added to the router and forgotten here — the two would drift
- * and the drift would be invisible.
- *
- * Used to keep the farmer navigation off the console in DEMO MODE. Demo grants
- * every role at once (`showFarmerNav = isDemo || isFarmerRole`), so a demo
- * visitor on a console screen got the farmer's top bar stacked above the
- * console's own sidebar — two navigations for two roles the same person cannot
- * hold in production. A real admin never saw it, which is precisely what made
- * it worth fixing: it appeared only where nobody signs in, so every screenshot
- * taken of the console carried a caveat instead of showing the product.
- */
-export function isConsolePage(page: Page): boolean {
-  return (PAGE_TO_PATH[page] ?? '').startsWith('/console')
-}
-
 export function pathForPage(page: Page): string {
   return PAGE_TO_PATH[page] ?? '/'
 }

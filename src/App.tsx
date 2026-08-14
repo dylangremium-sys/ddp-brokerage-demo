@@ -104,7 +104,7 @@ import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
 import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 import { FARMER_PORTAL_DEFAULT_LANGUAGE, initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
-import { getInitialPageFromPath, isConsolePage, syncUrlToPage } from './lib/urlRouting'
+import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
 import { applyPublicPageMetadata, metadataForPage } from './lib/publicPageMetadata'
 
 // FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
@@ -1468,11 +1468,7 @@ export default function App() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  // Demo mode holds every role at once, so without the console exclusion a demo
-  // visitor on /console/* gets the farmer top bar above the console sidebar —
-  // two navigations for two roles no real person holds. A signed-in admin has
-  // isFarmerRole false and never reached this state.
-  const showFarmerNav = (isDemo || isFarmerRole) && !isConsolePage(page)
+  const showFarmerNav = isDemo || isFarmerRole
   const showDDPNav = isAdminRole
 
   // Which chrome to draw around the routed page. Presentation only: it reads the
