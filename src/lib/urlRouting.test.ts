@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { decideColdLoad } from './deepLinkIntent'
 import { getInitialPageFromPath } from './urlRouting'
 import { PUBLIC_PAGES } from './navigationGuard'
 import type { Page } from '../types'
@@ -48,8 +49,52 @@ describe('deep-linkable paths stay inside the public surface', () => {
     expect(mappedPaths.length).toBeGreaterThan(0)
   })
 
-  it.each(mappedPaths)('$path maps to $page, which is a PUBLIC page', ({ page }) => {
-    expect(PUBLIC_PAGES).toContain(page)
+  /**
+   * THE INVARIANT CHANGED SHAPE, not strength.
+   *
+   * It used to be "every mapped path is PUBLIC", which was a proxy for the
+   * thing that actually matters — that a deep link cannot reach authenticated
+   * surface without the guard's consent — and it made the console
+   * un-addressable as a side effect.
+   *
+   * The real property is asserted directly now: for every mapped path, a cold
+   * load either lands on a page the guard admits for anyone, or HOLDS the intent
+   * for replay once identity is known. There is no third outcome, and a path
+   * that set authenticated surface directly would fail here.
+   *
+   * Tested through decideColdLoad itself rather than by reading App.tsx, so it
+   * fails on a change to the behaviour rather than to a comment.
+   */
+  it.each(mappedPaths)('$path cannot reach $page without the guard', ({ path, page }) => {
+    const { page: landed, held } = decideColdLoad(path, { isDemo: false })
+
+    if (PUBLIC_PAGES.includes(page)) {
+      expect(landed).toBe(page)
+      expect(held).toBeNull()
+      return
+    }
+
+    // Authenticated surface: the visitor must land somewhere public, and the
+    // intent must survive for the guard to rule on.
+    expect(PUBLIC_PAGES).toContain(landed)
+    expect(held).toBe(page)
+  })
+
+  /**
+   * Demo mode has no identity to wait for and the guard admits everything in
+   * it, so a held intent there would strand the visitor on 'landing' forever —
+   * nothing would ever resolve to replay it.
+   */
+  it.each(mappedPaths)('$path is honoured immediately in demo mode', ({ path, page }) => {
+    const { page: landed, held } = decideColdLoad(path, { isDemo: true })
+    expect(landed).toBe(page)
+    expect(held).toBeNull()
+  })
+
+  it('holds nothing for a path that is not mapped at all', () => {
+    const { page, held } = decideColdLoad('/no/such/path', { isDemo: false })
+    expect(page).toBe('landing')
+    expect(held).toBeNull()
   })
 
   it('every mapped page resolves through the real function too', () => {
@@ -94,13 +139,17 @@ describe('the set-password redirect still outranks any deep link', () => {
     expect(init).not.toBe('')
 
     const redirectAt = init.indexOf('getAuthRedirect()')
-    const pathAt = init.indexOf('getInitialPageFromPath')
+    // The initialiser consults the pathname through decideColdLoad now, which
+    // is what routes an authenticated deep link through the guard. The name
+    // changed; the ordering guarantee did not, and it is the guarantee that
+    // keeps an invited supplier on the set-password screen.
+    const pathAt = init.indexOf('decideColdLoad')
 
     expect(redirectAt).toBeGreaterThanOrEqual(0)
-    expect(pathAt).toBeGreaterThanOrEqual(0)
+    expect(pathAt, 'the initialiser must consult the pathname via decideColdLoad').toBeGreaterThanOrEqual(0)
     expect(
       redirectAt < pathAt,
-      "getAuthRedirect() must be checked BEFORE getInitialPageFromPath() in the page initialiser",
+      "getAuthRedirect() must be checked BEFORE the pathname in the page initialiser",
     ).toBe(true)
   })
 })
