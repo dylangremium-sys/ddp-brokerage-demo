@@ -84,10 +84,12 @@ beforeEach(() => {
   loadDocumentReviewEvents.mockResolvedValue([])
   // A Set, not an array — the component calls .has() on it.
   loadMyDocumentOpens.mockResolvedValue(new Set<string>())
-  recordDocumentOpen.mockResolvedValue(undefined)
-  createReviewRequest.mockResolvedValue(undefined)
-  setDocumentReportFields.mockResolvedValue(undefined)
-  setDocumentReviewStatus.mockResolvedValue(undefined)
+  // These four resolve with nothing. The empty call still INSTALLS an
+  // implementation — which is the whole point of this block, per the note above.
+  recordDocumentOpen.mockResolvedValue()
+  createReviewRequest.mockResolvedValue()
+  setDocumentReportFields.mockResolvedValue()
+  setDocumentReviewStatus.mockResolvedValue()
   getCoaSignedUrl.mockResolvedValue('https://example.test/signed.pdf')
 })
 
@@ -106,17 +108,27 @@ function doc(over: Partial<FarmerDocument> = {}): FarmerDocument {
 /** A reason the gate accepts: more than 9 characters and not one repeated. */
 const GOOD_REASON = 'Checked the lab reference against the certificate.'
 
+/*
+ * These four are declared BEFORE renderReady, which calls accept().
+ *
+ * They are `const` arrows, so they sit in the temporal dead zone until this
+ * point in module evaluation. renderReady is only ever called from inside an
+ * it(), long after the module has finished evaluating, so the old order was
+ * safe — but it read as use-before-definition to anything checking statically,
+ * and it would become a real ReferenceError the moment anyone called
+ * renderReady at the top level. Cheaper to keep the order honest.
+ */
+const accept = () => screen.getByRole('button', { name: /^(Accept|Recording…)$/u }) as HTMLButtonElement
+const reject = () => screen.getByRole('button', { name: /^(Reject|Recording…)$/u }) as HTMLButtonElement
+const openBtn = () => screen.getByRole('button', { name: /Open (and read the document|the document again)/ })
+const reasonBox = () => screen.getByLabelText(/reason for your decision/i)
+
 async function renderReady(rows: FarmerDocument[] = [doc()]) {
   loadFarmerDocuments.mockResolvedValue(rows)
   const view = render(<DDPEvidenceReview />)
   await waitFor(() => expect(accept()).toBeTruthy())
   return view
 }
-
-const accept = () => screen.getByRole('button', { name: /^(Accept|Recording…)$/ }) as HTMLButtonElement
-const reject = () => screen.getByRole('button', { name: /^(Reject|Recording…)$/ }) as HTMLButtonElement
-const openBtn = () => screen.getByRole('button', { name: /Open (and read the document|the document again)/ })
-const reasonBox = () => screen.getByLabelText(/reason for your decision/i)
 
 const type = (text: string) => fireEvent.change(reasonBox(), { target: { value: text } })
 
