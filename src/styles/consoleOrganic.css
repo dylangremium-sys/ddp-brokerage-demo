@@ -339,3 +339,101 @@
   background: var(--color-accent-100);
   color: var(--color-accent-900);
 }
+
+
+/*
+ * THE TWELVE-COLUMN SQUEEZE.
+ *
+ * Measured at a 1440px viewport before changing anything: the table is 1158px
+ * across twelve columns and its scroll container gets 804px — a 355px shortfall,
+ * so a third of every row sat off-screen behind a scrollbar macOS does not draw
+ * at rest. The edge shadow added earlier made that discoverable; it did not make
+ * the table any wider.
+ *
+ * Two changes here, neither of which drops a column. What columns a supply
+ * ledger row needs is an editorial question, and the measurements for it are in
+ * the PR rather than acted on unilaterally.
+ */
+
+/* 1. THE FILTER PANEL FOLDS AWAY, returning 260px (240 + the 20px gap) to the
+      table. It opens on demand and its trigger carries the active count, so a
+      filtered list can never be mistaken for the whole list while shut. */
+.console-organic .filter-layout {
+  position: relative;
+}
+
+.console-organic .filter-layout.filters-collapsed {
+  grid-template-columns: 1fr;
+}
+
+.console-organic .filter-layout.filters-collapsed .filter-sidebar {
+  display: none;
+}
+
+.console-organic .filters-toggle {
+  position: absolute;
+  top: -52px;
+  left: 0;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.console-organic .filters-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 2. THE BATCH ID STAYS PUT while the rest scrolls.
+ 
+      Even with the panel folded the table still exceeds its container at 1440px
+      (1158 against 1064), and it always will at some width — twelve columns of
+      real data is simply wide. What makes horizontal scrolling tolerable is not
+      eliminating it but keeping the row's identity visible: without this,
+      scrolling to read Compliance Tier means losing which batch you are reading
+      it for, and a reviewer is left counting rows.
+ 
+      Applies to .inv-table generally, so Inventory Dashboard and the Watchtower
+      lists get it too — they are the same component with the same problem. */
+.console-organic .inv-table thead th:first-child,
+.console-organic .inv-table tbody td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.console-organic .inv-table thead th:first-child {
+  /* Above the body cells, which are also sticky and would otherwise slide over
+     the header at the top of a scrolled table. */
+  z-index: 3;
+  background: var(--color-neutral-200);
+}
+
+.console-organic .inv-table tbody td:first-child {
+  /* An opaque ground is what makes it a column rather than text sliding over
+     text — the cell is transparent by default and inherits the row. */
+  background: var(--color-surface);
+}
+
+/* The seam between the pinned column and the scrolling remainder, drawn only
+   while there is something to scroll past. */
+.console-organic .inv-table thead th:first-child::after,
+.console-organic .inv-table tbody td:first-child::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-neutral-300);
+}

@@ -38,6 +38,30 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
   const [cbdRange, setCbdRange] = useState<RangeValue>(CBD_BOUNDS)
   const [moistureRange, setMoistureRange] = useState<RangeValue>(MOISTURE_BOUNDS)
   const [certFilters, setCertFilters] = useState<string[]>([])
+  /*
+   * The filter panel starts CLOSED, and that is a measurement rather than a
+   * preference. The table is 1158px across twelve columns; the panel takes 240px
+   * plus a 20px gap, leaving the table 804px at a 1440px viewport — a 355px
+   * shortfall, so a third of the row was always off-screen behind a scrollbar
+   * macOS does not draw.
+   *
+   * Closed by default loses nothing, because every filter's default is inert:
+   * all three ranges open at their full bounds and no compliance gate is
+   * selected, so a freshly-loaded panel filters exactly nothing while costing
+   * the table a quarter of its width. The count below surfaces the moment that
+   * stops being true, so a narrowed list can never look like the whole list.
+   */
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  // Derived, not tracked: a filter is "active" when it is not at its default,
+  // so the badge cannot drift from what the list is actually doing.
+  const narrowed = (v: RangeValue, bounds: RangeValue) =>
+    v.min !== bounds.min || v.max !== bounds.max
+  const activeFilterCount =
+    (narrowed(thcRange, THC_BOUNDS) ? 1 : 0) +
+    (narrowed(cbdRange, CBD_BOUNDS) ? 1 : 0) +
+    (narrowed(moistureRange, MOISTURE_BOUNDS) ? 1 : 0) +
+    certFilters.length
 
   function toggleCert(key: string) {
     setCertFilters(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
@@ -140,7 +164,18 @@ export default function DDPMasterInventory({ inventory, farms, onGetCoaUrl, onBu
           <p style={{ color: 'var(--text-muted)', fontSize: 13.5 }}>Approved inventory batches from the Inventory Review screen will appear here once approved.</p>
         </div>
       ) : (
-      <div className="filter-layout">
+      <div className={`filter-layout${filtersOpen ? '' : ' filters-collapsed'}`}>
+        {/* The toggle carries the active count, so a filtered list is never
+            mistaken for the full one while the panel is shut. */}
+        <button
+          type="button"
+          className="btn btn-secondary filters-toggle"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen(o => !o)}
+        >
+          {filtersOpen ? 'Hide filters' : 'Filters'}
+          {activeFilterCount > 0 && <span className="filters-count">{activeFilterCount}</span>}
+        </button>
         <FilterSidebar onReset={resetFilters}>
           <RangeSlider label="THC %" bounds={THC_BOUNDS} value={thcRange} onChange={setThcRange} />
           <RangeSlider label="CBD %" bounds={CBD_BOUNDS} value={cbdRange} onChange={setCbdRange} />
