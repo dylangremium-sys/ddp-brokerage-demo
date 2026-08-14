@@ -22,7 +22,7 @@ describe('a deep link held until identity resolves', () => {
   beforeEach(__resetDeepLinkIntent)
 
   const admin = { isDemo: false, isSignedIn: true, isAdminRole: true }
-  const farmer = { isDemo: false, isSignedIn: true, isAdminRole: false }
+  const farmer = { isDemo: false, isSignedIn: true, isAdminRole: false, isFarmerRole: true }
   const strangerCtx = { isDemo: false, isSignedIn: false, isAdminRole: false }
 
   /**
@@ -44,25 +44,18 @@ describe('a deep link held until identity resolves', () => {
   })
 
   /**
-   * A FARMER IS NOT TURNED AWAY HERE, AND THAT IS THE GUARD'S EXISTING SHAPE
-   * rather than anything this file introduced.
+   * The asymmetry this test used to document is gone.
    *
-   * resolveNavigationTarget steers an ADMIN away from farmer pages
-   * (FARMER_PAGES → 'ddp-overview') and has no converse rule, so a signed-in
-   * farmer asking for an admin page is returned it. What stops them is the
-   * render: `DDP_PAGES.includes(page) && !isAdminRole` paints AccessDenied, and
-   * RLS refuses the reads behind it.
-   *
-   * That is exactly what a farmer already gets by clicking through in-app —
-   * goTo() runs the same guard — so a deep link is no weaker than the app's own
-   * navigation. Asserted as it behaves, not as I first assumed it behaved, and
-   * flagged for the owner: the asymmetry is defensible but it is not obvious,
-   * and a reader could easily take "routed through the guard" to mean more than
-   * it does.
+   * The guard steered an ADMIN away from farmer pages and had no converse rule,
+   * so a signed-in farmer asking for a console page was handed it — stopped only
+   * by AccessDenied at render and by RLS behind that. Nothing was exposed, but a
+   * guard that returns a page it does not mean to grant is one layer pretending
+   * to be two. resolveNavigationTarget now refuses it directly.
    */
-  it('leaves a farmer to be stopped by AccessDenied, as in-app navigation does', () => {
+  it('does not hand a farmer an admin screen', () => {
     holdDeepLinkIntent('ddp-master')
-    expect(consumeDeepLinkIntent(farmer, 'farmer-status')).toBe('ddp-master')
+    const landed = consumeDeepLinkIntent(farmer, 'farmer-status')
+    expect(landed).not.toBe('ddp-master')
   })
 
   it('turns a signed-out visitor away from every console page', () => {

@@ -14,12 +14,13 @@ import {
   FARMER_PAGES,
   isReachableWhileSignedOut,
   resolveNavigationTarget,
-  type NavigationContext,
-} from './navigationGuard'
+  type NavigationContext, DDP_PAGES } from './navigationGuard'
 import type { Page } from '../types'
 
 const SIGNED_OUT: NavigationContext = { isDemo: false, isSignedIn: false, isAdminRole: false }
-const FARMER: NavigationContext = { isDemo: false, isSignedIn: true, isAdminRole: false }
+const FARMER: NavigationContext = { isDemo: false, isSignedIn: true, isAdminRole: false, isFarmerRole: true }
+/** Signed in, role not yet resolved — neither admin, buyer, nor farmer. */
+const UNRESOLVED: NavigationContext = { isDemo: false, isSignedIn: true, isAdminRole: false }
 const ADMIN: NavigationContext = { isDemo: false, isSignedIn: true, isAdminRole: true }
 const DEMO: NavigationContext = { isDemo: true, isSignedIn: false, isAdminRole: false }
 
@@ -51,6 +52,47 @@ describe('signed-in farmer', () => {
 
   it('is not steered away from farmer pages', () => {
     for (const page of FARMER_PAGES) {
+      expect(resolveNavigationTarget(page, FARMER)).toBe(page)
+    }
+  })
+
+  /**
+   * The converse of the admin rule, and it was missing.
+   *
+   * The guard steered an admin away from farmer pages but handed a signed-in
+   * farmer any console page they asked for. Nothing was exposed — AccessDenied
+   * paints for DDP_PAGES without isAdminRole, and RLS refuses the reads — but a
+   * guard that returns a page it does not mean to grant is one layer pretending
+   * to be two.
+   */
+  it('is refused every console page', () => {
+    for (const page of DDP_PAGES) {
+      expect(
+        resolveNavigationTarget(page, FARMER),
+        `a farmer was routed to ${page}`,
+      ).not.toBe(page)
+    }
+  })
+
+  it('is sent to their own status screen rather than nowhere', () => {
+    expect(resolveNavigationTarget('ddp-overview', FARMER)).toBe('farmer-status')
+  })
+
+  /**
+   * A signed-in account whose role has not resolved — 'pending', or a profile
+   * that failed to load — is not a farmer, and must not be dropped onto a farmer
+   * screen on the strength of not being an admin. The refusal does not depend on
+   * knowing the role; only the destination does.
+   */
+  it('refuses an unresolved role too, and lands it somewhere public', () => {
+    for (const page of DDP_PAGES) {
+      expect(resolveNavigationTarget(page, UNRESOLVED)).not.toBe(page)
+    }
+    expect(resolveNavigationTarget('ddp-overview', UNRESOLVED)).toBe('landing')
+  })
+
+  it('still reads the public pages', () => {
+    for (const page of PUBLIC_PAGES) {
       expect(resolveNavigationTarget(page, FARMER)).toBe(page)
     }
   })
