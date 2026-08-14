@@ -278,17 +278,20 @@ describe('the X-Robots-Tag header that actually excludes /farmer', () => {
    * source is pinned to the exact path.
    */
   /**
-   * /farmer is the only path approved for noindex. The console was briefly
-   * added here when it had addresses; those were pulled back out — deep-linking
-   * an admin screen bypasses resolveNavigationTarget, which urlRouting.test.ts
-   * exists to catch, and it did.
+   * The paths approved for noindex: /farmer and the console.
    *
-   * A pattern would be allowed here; what is NOT allowed is a pattern that can
-   * reach an approved public page. That property is asserted below rather than
+   * The console is routable but never public — App.tsx gates every screen on
+   * isAdminRole, and since lib/deepLinkIntent.ts a deep link onto it is held
+   * and replayed through resolveNavigationTarget rather than setting the page
+   * directly. Adding an address must not add an indexable page, which is what
+   * the header is for.
+   *
+   * A pattern is allowed here; what is NOT allowed is a pattern that can reach
+   * an approved public page. That property is asserted below rather than
    * inferred from the shape of the string, because `/console/(.*)` and `/(.*)`
    * look similarly harmless and only one of them is.
    */
-  const NOINDEX_SOURCES = ['/farmer']
+  const NOINDEX_SOURCES = ['/farmer', '/console', '/console/(.*)']
 
   it('scopes X-Robots-Tag to the paths approved for it and nothing else', () => {
     for (const rule of vercelConfig.headers ?? []) {
