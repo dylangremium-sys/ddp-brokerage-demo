@@ -118,6 +118,7 @@ describe('Overview — unscored farms are not presented as ranked', () => {
         inventory={[]}
         onReviewFarm={noop}
         onReviewItem={noop}
+        onOpenDesk={noop}
       />,
     )
     expect(container.textContent).not.toMatch(/\/\s*900/)
@@ -131,6 +132,7 @@ describe('Overview — unscored farms are not presented as ranked', () => {
         inventory={[]}
         onReviewFarm={noop}
         onReviewItem={noop}
+        onOpenDesk={noop}
       />,
     )
     expect(container.textContent).toMatch(/None has been scored/i)
