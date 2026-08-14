@@ -83,6 +83,22 @@ export const FARMER_PAGES: Page[] = [
  */
 export const BUYER_PAGES: Page[] = [...PUBLIC_PAGES, 'buyer-dashboard']
 
+/**
+ * The DDP console. Every page here requires an admin.
+ *
+ * MOVED HERE FROM App.tsx, where it was a module constant used only to paint
+ * AccessDenied. The guard needs the same list to answer the converse question —
+ * may a non-admin be ROUTED here — and two copies of "which pages are the
+ * console" would be a drift waiting to happen, on the list that decides who
+ * sees what.
+ */
+export const DDP_PAGES: Page[] = [
+  'ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review',
+  'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence',
+  'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk',
+  'ddp-access-requests', 'ddp-buyer-provisioning', 'ddp-document-review',
+]
+
 export interface NavigationContext {
   /** Demo mode has no backend and no real identity; guards do not apply. */
   isDemo: boolean
@@ -93,6 +109,13 @@ export interface NavigationContext {
    * which is the safe default: the buyer rules below only ever RESTRICT.
    */
   isBuyerRole?: boolean
+  /**
+   * Optional, and it does NOT decide whether a console page is refused — only
+   * where the refused caller is sent. Absent means "not known to be a farmer",
+   * which lands them on the public landing page rather than a farmer screen
+   * they may have no business on. The refusal itself never depends on it.
+   */
+  isFarmerRole?: boolean
 }
 
 /**
@@ -126,6 +149,28 @@ export function resolveNavigationTarget(requested: Page, ctx: NavigationContext)
   // pages are exempt so an admin can still view the landing and auth screens.
   if (ctx.isAdminRole && FARMER_PAGES.includes(requested) && !PUBLIC_PAGES.includes(requested)) {
     return 'ddp-overview'
+  }
+
+  /*
+   * AND THE CONVERSE: a non-admin has no console.
+   *
+   * This rule was missing, and its absence was asymmetric in the dangerous
+   * direction — the guard steered admins away from farmer pages but handed a
+   * signed-in farmer any console page they asked for. Nothing was exposed:
+   * App.tsx paints AccessDenied for DDP_PAGES without isAdminRole, and RLS
+   * refuses the reads behind it. But a guard that returns a page it does not
+   * mean to grant is one layer pretending to be two, and it reads as though the
+   * routing were the control.
+   *
+   * Found while giving the console addresses — a test asserting "a farmer is
+   * not handed an admin screen" failed, and the honest fix was to make the
+   * assertion true rather than to weaken it.
+   *
+   * Public pages are exempt for the same reason as above: a farmer may still
+   * read the landing page and the auth screens.
+   */
+  if (!ctx.isAdminRole && DDP_PAGES.includes(requested) && !PUBLIC_PAGES.includes(requested)) {
+    return ctx.isFarmerRole ? 'farmer-status' : 'landing'
   }
 
   return requested

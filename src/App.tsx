@@ -101,7 +101,7 @@ import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import DDPBuyerProvisioning from './pages/admin/DDPBuyerProvisioning'
 import DDPEvidenceReview from './pages/admin/DDPEvidenceReview'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
-import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
+import { DDP_PAGES, FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 import { FARMER_PORTAL_DEFAULT_LANGUAGE, initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
 import { getInitialPageFromPath, isConsolePage, syncUrlToPage } from './lib/urlRouting'
@@ -113,7 +113,6 @@ import { applyPublicPageMetadata, metadataForPage } from './lib/publicPageMetada
 // 'farmer-register', which silently made the "Supplier signup" button a no-op
 // for every signed-out visitor; navigationGuard.test.ts now asserts that every
 // target a public surface links to is actually reachable.
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk', 'ddp-access-requests', 'ddp-buyer-provisioning', 'ddp-document-review']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
@@ -408,6 +407,7 @@ export default function App() {
             isSignedIn: profile !== null,
             isAdminRole: profile?.role === 'ddp_admin',
             isBuyerRole: profile?.role === 'buyer',
+            isFarmerRole: profile?.role === 'farmer',
           },
           action.page,
         )
@@ -661,7 +661,7 @@ export default function App() {
    * is registered once and still reads current identity. Re-subscribing on every
    * auth change would work too, and would churn a window listener for no gain.
    */
-  const navContextRef = useRef({ isDemo, isSignedIn, isAdminRole, isBuyerRole })
+  const navContextRef = useRef({ isDemo, isSignedIn, isAdminRole, isBuyerRole, isFarmerRole })
   // Refreshed in an effect, NOT during render. Assigning to a ref while
   // rendering is a side effect in the render phase — unsafe under concurrent
   // rendering, and eslint's rules-of-React caught it. No dependency array, so
@@ -669,7 +669,7 @@ export default function App() {
   // The gap between render and commit cannot matter here: popstate is a user
   // gesture and cannot fire inside a render.
   useEffect(() => {
-    navContextRef.current = { isDemo, isSignedIn, isAdminRole, isBuyerRole }
+    navContextRef.current = { isDemo, isSignedIn, isAdminRole, isBuyerRole, isFarmerRole }
   })
 
   useEffect(() => {
@@ -911,7 +911,7 @@ export default function App() {
   function goTo(p: Page) {
     // The decision itself is pure and lives in lib/navigationGuard.ts; this
     // function keeps only the side effects.
-    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole, isBuyerRole })
+    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole, isBuyerRole, isFarmerRole })
     // DO NOT CLEAR dbError HERE. An earlier revision of this fix did, and it was
     // wrong in a way worth recording.
     //
