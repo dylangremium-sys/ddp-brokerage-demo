@@ -85,38 +85,55 @@ describe('DDPFarmReview — the score panel tells the truth', () => {
 // ─── The same honesty must hold on the OVERVIEW ─────────────────────────────
 //
 // Flagged by review on the first version of this change: making the review page
-// say "Not yet scored" while DDPOverview still ranked the same farm under
+// say "Not yet scored" while the Overview still ranked the same farm under
 // "Top-Scored Farm Profiles" at 0 / 900 would have left the two screens
 // contradicting each other — and presented unranked farms as ranked.
 //
-// The assertions target the SCORE TEXT, not the farm name: a farm legitimately
-// appears elsewhere on this page (the profiles table), so asserting its absence
-// outright fails for the wrong reason. The first draft of this suite did exactly
-// that and reported a <td> from an unrelated table.
-describe('DDPOverview — unscored farms are not "top-scored"', () => {
-  it('never prints a 0 / 900 ranking', async () => {
-    const { default: DDPOverview } = await import('./DDPOverview')
-    render(
-      <DDPOverview
+// REHOMED FROM DDPOverview TO DDPOverviewOrganic, which is the screen an
+// operator actually reaches. The old one has not been routed since the Organic
+// rebuild, so these assertions were passing against a page nobody can open.
+//
+// ONE HALF MOVED AND ONE HALF DID NOT, and the difference is the point. The
+// live Overview does not rank farms at all — its own header says "NOTHING HERE
+// ASSERTS A SCORE … a 'top-scored' list of unscored farms is a ranking of
+// things that were never ranked. The rail says so in words instead." So:
+//
+//   "never prints 0 / 900 for an unscored farm"  → moved, and now holds by
+//                                                  construction rather than by
+//                                                  a filter
+//   "still ranks a farm that HAS been scored"    → NOT moved. It describes a
+//                                                  feature the live screen
+//                                                  deliberately dropped, and
+//                                                  re-asserting it would demand
+//                                                  the ranking come back.
+//
+// What replaces it is the honest statement the live rail makes instead: the
+// count of farms that have been scored, in words.
+describe('Overview — unscored farms are not presented as ranked', () => {
+  it('prints no /900 ranking for an unscored farm', async () => {
+    const { default: DDPOverviewOrganic } = await import('./DDPOverviewOrganic')
+    const { container } = render(
+      <DDPOverviewOrganic
         farms={[makeFarm({ id: 'f1', tradingName: 'Unscored Farm' })]}
         inventory={[]}
         onReviewFarm={noop}
         onReviewItem={noop}
       />,
     )
-    expect(screen.queryByText('0 / 900')).toBeNull()
+    expect(container.textContent).not.toMatch(/\/\s*900/)
   })
 
-  it('still ranks a farm that HAS been scored', async () => {
-    const { default: DDPOverview } = await import('./DDPOverview')
-    render(
-      <DDPOverview
-        farms={[makeFarm({ id: 'f2', tradingName: 'Scored Farm', scoreCompliance: 90 })]}
+  it('says in words that nothing has been scored, rather than showing a zero', async () => {
+    const { default: DDPOverviewOrganic } = await import('./DDPOverviewOrganic')
+    const { container } = render(
+      <DDPOverviewOrganic
+        farms={[makeFarm({ id: 'f1', tradingName: 'Unscored Farm' })]}
         inventory={[]}
         onReviewFarm={noop}
         onReviewItem={noop}
       />,
     )
-    expect(screen.getByText('90 / 900')).toBeTruthy()
+    expect(container.textContent).toMatch(/None has been scored/i)
+    expect(container.textContent).not.toMatch(/\/\s*900/)
   })
 })
