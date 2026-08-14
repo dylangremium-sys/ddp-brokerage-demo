@@ -54,6 +54,7 @@ const PATH_TO_PAGE: Record<string, Page> = {
   '/privacy': 'privacy',
   '/terms': 'terms',
   '/governance': 'governance',
+
 }
 
 /** Page → canonical path. Pages not listed here revert to root. */

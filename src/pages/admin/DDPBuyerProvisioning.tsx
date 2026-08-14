@@ -168,7 +168,7 @@ export default function DDPBuyerProvisioning() {
       >
         <div>
           <label htmlFor="buyer-email">Buyer email</label>
-          <input
+          <input className="input"
             id="buyer-email"
             type="email"
             required
@@ -181,7 +181,7 @@ export default function DDPBuyerProvisioning() {
 
         <div>
           <label htmlFor="buyer-name">Contact name (optional)</label>
-          <input
+          <input className="input"
             id="buyer-name"
             type="text"
             maxLength={120}
@@ -193,7 +193,7 @@ export default function DDPBuyerProvisioning() {
 
         <div>
           <label htmlFor="buyer-phone">Phone (optional)</label>
-          <input
+          <input className="input"
             id="buyer-phone"
             type="tel"
             maxLength={32}
@@ -220,7 +220,7 @@ export default function DDPBuyerProvisioning() {
             <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
               <div>
                 <label htmlFor="org-legal">Legal name</label>
-                <input
+                <input className="input"
                   id="org-legal"
                   type="text"
                   maxLength={200}
@@ -231,7 +231,7 @@ export default function DDPBuyerProvisioning() {
               </div>
               <div>
                 <label htmlFor="org-display">Trading name (optional)</label>
-                <input
+                <input className="input"
                   id="org-display"
                   type="text"
                   maxLength={120}
@@ -242,7 +242,7 @@ export default function DDPBuyerProvisioning() {
               </div>
               <div>
                 <label htmlFor="org-country">Country code</label>
-                <input
+                <input className="input"
                   id="org-country"
                   type="text"
                   maxLength={2}
@@ -280,7 +280,7 @@ export default function DDPBuyerProvisioning() {
           {orgMode === 'existing' && (
             <div>
               <label htmlFor="org-existing">Organisation</label>
-              <select
+              <select className="input"
                 id="org-existing"
                 value={organisationId}
                 onChange={e => setOrganisationId(e.target.value)}
@@ -298,7 +298,7 @@ export default function DDPBuyerProvisioning() {
 
           <div style={{ marginTop: 12 }}>
             <label htmlFor="org-role">Role within the organisation</label>
-            <select
+            <select className="input"
               id="org-role"
               value={orgRole}
               onChange={e => setOrgRole(e.target.value as (typeof ORG_ROLES)[number])}

@@ -1538,9 +1538,20 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
         <div className="summary-card s-missing"><div className="summary-val">{blockingAlertCount}</div><div className="summary-lbl">Blocking Alerts</div></div>
       </div>
 
-      <div className="filter-tabs supply-ledger-tabs" style={{ marginTop: 22 }}>
+      {/* Organic's segmented control. `filter-tab` was one of three components
+          doing this job; aria-pressed carries the active state, which is both
+          what assistive technology already reads and what .seg now styles. */}
+      <div className="seg" role="tablist" style={{ marginTop: 22 }}>
         {TABS.map(item => (
-          <button key={item.id} className={`filter-tab${tab === item.id ? ' filter-active' : ''}`} onClick={() => setTab(item.id)}>
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            className="seg-opt"
+            aria-pressed={tab === item.id}
+            aria-selected={tab === item.id}
+            onClick={() => setTab(item.id)}
+          >
             {item.label}
           </button>
         ))}
@@ -1553,23 +1564,23 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
           <div className="form-grid-3">
             <label className="field">
               <span>Title</span>
-              <input value={legalForm.title} onChange={e => setLegalForm({ ...legalForm, title: e.target.value })} />
+              <input className="input" value={legalForm.title} onChange={e => setLegalForm({ ...legalForm, title: e.target.value })} />
             </label>
             <label className="field">
               <span>Jurisdiction</span>
-              <input value={legalForm.jurisdiction} onChange={e => setLegalForm({ ...legalForm, jurisdiction: e.target.value })} />
+              <input className="input" value={legalForm.jurisdiction} onChange={e => setLegalForm({ ...legalForm, jurisdiction: e.target.value })} />
             </label>
             <label className="field">
               <span>Source name</span>
-              <input value={legalForm.sourceName} onChange={e => setLegalForm({ ...legalForm, sourceName: e.target.value })} />
+              <input className="input" value={legalForm.sourceName} onChange={e => setLegalForm({ ...legalForm, sourceName: e.target.value })} />
             </label>
             <label className="field">
               <span>Source URL</span>
-              <input value={legalForm.sourceUrl} onChange={e => setLegalForm({ ...legalForm, sourceUrl: e.target.value })} />
+              <input className="input" value={legalForm.sourceUrl} onChange={e => setLegalForm({ ...legalForm, sourceUrl: e.target.value })} />
             </label>
             <label className="field">
               <span>Published date if known</span>
-              <input type="date" value={legalForm.publishedAt} onChange={e => setLegalForm({ ...legalForm, publishedAt: e.target.value })} />
+              <input className="input" type="date" value={legalForm.publishedAt} onChange={e => setLegalForm({ ...legalForm, publishedAt: e.target.value })} />
             </label>
           </div>
           <div style={{ marginTop: 18 }}>
@@ -1585,15 +1596,15 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
           </div>
           <label className="field" style={{ marginTop: 18 }}>
             <span>Raw pasted text</span>
-            <textarea rows={6} value={legalForm.rawText} onChange={e => setLegalForm({ ...legalForm, rawText: e.target.value })} />
+            <textarea className="input" rows={6} value={legalForm.rawText} onChange={e => setLegalForm({ ...legalForm, rawText: e.target.value })} />
           </label>
           <label className="field" style={{ marginTop: 14 }}>
             <span>AI-assisted/manual summary</span>
-            <textarea rows={4} value={legalForm.summary} onChange={e => setLegalForm({ ...legalForm, summary: e.target.value })} />
+            <textarea className="input" rows={4} value={legalForm.summary} onChange={e => setLegalForm({ ...legalForm, summary: e.target.value })} />
           </label>
           <label className="field" style={{ marginTop: 14 }}>
             <span>Reviewer notes</span>
-            <textarea rows={3} value={legalForm.notes} onChange={e => setLegalForm({ ...legalForm, notes: e.target.value })} />
+            <textarea className="input" rows={3} value={legalForm.notes} onChange={e => setLegalForm({ ...legalForm, notes: e.target.value })} />
           </label>
           <button className="btn btn-primary" style={{ marginTop: 18 }} disabled={busy} onClick={() => { void submitLegalUpdate() }}>
             {busy ? 'Saving…' : 'Create Legal Update + Review Item'}
@@ -1613,7 +1624,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
           <div className="form-grid-3">
             <label className="field">
               <span>Regulatory source</span>
-              <select value={monitoringSourceId} onChange={e => { setMonitoringSourceId(e.target.value); setMonitoringDecision(null) }}>
+              <select className="input" value={monitoringSourceId} onChange={e => { setMonitoringSourceId(e.target.value); setMonitoringDecision(null) }}>
                 <option value="">Select a registered source…</option>
                 {sources.map(source => (
                   <option key={source.id} value={source.id}>{source.name} ({source.jurisdiction})</option>
@@ -1623,7 +1634,7 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
           </div>
           <label className="field" style={{ marginTop: 14 }}>
             <span>Pasted source content (as currently retrieved)</span>
-            <textarea rows={8} value={monitoringContent} onChange={e => { setMonitoringContent(e.target.value); setMonitoringDecision(null) }} />
+            <textarea className="input" rows={8} value={monitoringContent} onChange={e => { setMonitoringContent(e.target.value); setMonitoringDecision(null) }} />
           </label>
           <button className="btn btn-primary" style={{ marginTop: 16 }} disabled={monitoringBusy} onClick={() => { void runMonitoringCheck() }}>
             {monitoringBusy ? 'Checking…' : 'Run Monitoring Check'}
@@ -1837,19 +1848,19 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
             <div className="form-grid-3">
               <label className="field">
                 <span>Entity type</span>
-                <select value={alertForm.entityType} onChange={e => setAlertForm({ ...alertForm, entityType: e.target.value as ComplianceRuleEntityType })}>{RULE_ENTITY_TYPES.map(type => <option key={type} value={type}>{statusText(type)}</option>)}</select>
+                <select className="input" value={alertForm.entityType} onChange={e => setAlertForm({ ...alertForm, entityType: e.target.value as ComplianceRuleEntityType })}>{RULE_ENTITY_TYPES.map(type => <option key={type} value={type}>{statusText(type)}</option>)}</select>
               </label>
               <label className="field">
                 <span>Entity ID</span>
-                <input value={alertForm.entityId} onChange={e => setAlertForm({ ...alertForm, entityId: e.target.value })} />
+                <input className="input" value={alertForm.entityId} onChange={e => setAlertForm({ ...alertForm, entityId: e.target.value })} />
               </label>
               <label className="field">
                 <span>Severity</span>
-                <select value={alertForm.severity} onChange={e => setAlertForm({ ...alertForm, severity: e.target.value as ComplianceSeverity })}>{COMPLIANCE_SEVERITIES.map(sev => <option key={sev} value={sev}>{statusText(sev)}</option>)}</select>
+                <select className="input" value={alertForm.severity} onChange={e => setAlertForm({ ...alertForm, severity: e.target.value as ComplianceSeverity })}>{COMPLIANCE_SEVERITIES.map(sev => <option key={sev} value={sev}>{statusText(sev)}</option>)}</select>
               </label>
               <label className="field">
                 <span>Linked approved rule</span>
-                <select value={alertForm.linkedRuleId} onChange={e => setAlertForm({ ...alertForm, linkedRuleId: e.target.value })}>
+                <select className="input" value={alertForm.linkedRuleId} onChange={e => setAlertForm({ ...alertForm, linkedRuleId: e.target.value })}>
                   <option value="">No linked rule</option>
                   {rules.filter(rule => isRuleEnforcedNow(rule)).map(rule => (
                     <option key={rule.id} value={rule.id}>{rule.ruleCode} — {rule.title}</option>
@@ -1859,11 +1870,11 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
             </div>
             <label className="field" style={{ marginTop: 14 }}>
               <span>Alert title</span>
-              <input value={alertForm.alertTitle} onChange={e => setAlertForm({ ...alertForm, alertTitle: e.target.value })} />
+              <input className="input" value={alertForm.alertTitle} onChange={e => setAlertForm({ ...alertForm, alertTitle: e.target.value })} />
             </label>
             <label className="field" style={{ marginTop: 14 }}>
               <span>Alert detail</span>
-              <textarea rows={3} value={alertForm.alertDetail} onChange={e => setAlertForm({ ...alertForm, alertDetail: e.target.value })} />
+              <textarea className="input" rows={3} value={alertForm.alertDetail} onChange={e => setAlertForm({ ...alertForm, alertDetail: e.target.value })} />
             </label>
             <button className="btn btn-primary" style={{ marginTop: 16 }} disabled={busy} onClick={() => { void submitManualAlert() }}>
               {busy ? 'Saving…' : 'Create Alert'}
@@ -1947,49 +1958,49 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
             <div className="form-grid-3">
               <label className="field">
                 <span>Name</span>
-                <input value={sourceForm.name} onChange={e => setSourceForm({ ...sourceForm, name: e.target.value })} />
+                <input className="input" value={sourceForm.name} onChange={e => setSourceForm({ ...sourceForm, name: e.target.value })} />
               </label>
               <label className="field">
                 <span>Jurisdiction</span>
-                <input value={sourceForm.jurisdiction} onChange={e => setSourceForm({ ...sourceForm, jurisdiction: e.target.value })} />
+                <input className="input" value={sourceForm.jurisdiction} onChange={e => setSourceForm({ ...sourceForm, jurisdiction: e.target.value })} />
               </label>
               <label className="field">
                 <span>Source type</span>
-                <select value={sourceForm.sourceType} onChange={e => setSourceForm({ ...sourceForm, sourceType: e.target.value })}>
+                <select className="input" value={sourceForm.sourceType} onChange={e => setSourceForm({ ...sourceForm, sourceType: e.target.value })}>
                   {SUPPORTED_SOURCE_TYPES.map(type => <option key={type} value={type}>{statusText(type)}</option>)}
                 </select>
               </label>
               <label className="field">
                 <span>Official URL</span>
-                <input value={sourceForm.url} onChange={e => setSourceForm({ ...sourceForm, url: e.target.value })} placeholder="https://…" />
+                <input className="input" value={sourceForm.url} onChange={e => setSourceForm({ ...sourceForm, url: e.target.value })} placeholder="https://…" />
               </label>
               <label className="field">
                 <span>Authority tier</span>
-                <select value={sourceForm.tier} onChange={e => setSourceForm({ ...sourceForm, tier: Number(e.target.value) as (typeof SUPPORTED_SOURCE_TIERS)[number] })}>
+                <select className="input" value={sourceForm.tier} onChange={e => setSourceForm({ ...sourceForm, tier: Number(e.target.value) as (typeof SUPPORTED_SOURCE_TIERS)[number] })}>
                   {SUPPORTED_SOURCE_TIERS.map(t => <option key={t} value={t}>{SOURCE_TIER_LABELS[t]}</option>)}
                 </select>
               </label>
               <label className="field">
                 <span>Authority type</span>
-                <select value={sourceForm.authorityType} onChange={e => setSourceForm({ ...sourceForm, authorityType: e.target.value as (typeof SUPPORTED_AUTHORITY_TYPES)[number] })}>
+                <select className="input" value={sourceForm.authorityType} onChange={e => setSourceForm({ ...sourceForm, authorityType: e.target.value as (typeof SUPPORTED_AUTHORITY_TYPES)[number] })}>
                   {SUPPORTED_AUTHORITY_TYPES.map(a => <option key={a} value={a}>{statusText(a)}</option>)}
                 </select>
               </label>
               <label className="field">
                 <span>Category</span>
-                <select value={sourceForm.category} onChange={e => setSourceForm({ ...sourceForm, category: e.target.value as (typeof SUPPORTED_SOURCE_CATEGORIES)[number] })}>
+                <select className="input" value={sourceForm.category} onChange={e => setSourceForm({ ...sourceForm, category: e.target.value as (typeof SUPPORTED_SOURCE_CATEGORIES)[number] })}>
                   {SUPPORTED_SOURCE_CATEGORIES.map(c => <option key={c} value={c}>{statusText(c)}</option>)}
                 </select>
               </label>
               <label className="field">
                 <span>Monitoring method</span>
-                <select value={sourceForm.monitoringMethod} onChange={e => setSourceForm({ ...sourceForm, monitoringMethod: e.target.value as (typeof SUPPORTED_MONITORING_METHODS)[number] })}>
+                <select className="input" value={sourceForm.monitoringMethod} onChange={e => setSourceForm({ ...sourceForm, monitoringMethod: e.target.value as (typeof SUPPORTED_MONITORING_METHODS)[number] })}>
                   {SUPPORTED_MONITORING_METHODS.map(m => <option key={m} value={m}>{statusText(m)}</option>)}
                 </select>
               </label>
               <label className="field">
                 <span>Priority (1 urgent – 100)</span>
-                <input
+                <input className="input"
                   type="number" min={1} max={100} value={sourceForm.priority}
                   onChange={e => setSourceForm({ ...sourceForm, priority: Math.max(1, Math.min(100, Number(e.target.value) || 100)) })}
                 />

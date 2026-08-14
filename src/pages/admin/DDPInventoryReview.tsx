@@ -336,7 +336,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                   <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '-2px 0 10px' }}>
                     Once you've compared the typed values against the uploaded COA, record it here — e.g. "COA checked against typed values."
                   </p>
-                  <textarea
+                  <textarea className="input"
                     rows={3}
                     value={note}
                     onChange={e => setNote(e.target.value)}
@@ -404,7 +404,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                 )}
                 <div className="field" style={{ marginBottom: 10 }}>
                   <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Request type</span>
-                  <select
+                  <select className="input"
                     value={reqType}
                     onChange={e => setReqType(e.target.value as RequestType)}
                     style={{ fontSize: 13 }}
@@ -416,7 +416,7 @@ export default function DDPInventoryReview({ item, farm, onBack, onAction, onSen
                 </div>
                 <div className="field" style={{ marginBottom: 10 }}>
                   <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Message to farmer</span>
-                  <textarea
+                  <textarea className="input"
                     rows={3}
                     value={reqMsg}
                     onChange={e => setReqMsg(e.target.value)}

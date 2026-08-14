@@ -1,0 +1,341 @@
+/*
+ * The console, on Organic — by remapping names rather than rewriting rules.
+ *
+ * WHY THIS FILE EXISTS AND WHY IT IS NOT `:root`.
+ *
+ * App.css and Organic define the SAME custom-property names with different
+ * values:
+ *
+ *     --radius-lg   App.css 10px   Organic 28px
+ *     --radius-md   App.css  6px   Organic 16px
+ *     --radius-sm   App.css  4px   Organic  8px
+ *     --font-mono   JetBrains Mono / IBM Plex Mono
+ *
+ * Promoting Organic to `:root` would therefore re-render every one of App.css's
+ * ~5,700 lines that reads those names — the farmer portal, the login screens and
+ * the public corporate pages included, none of which are in this pass. So the
+ * console gets a SCOPE, exactly as the pilot screens already do, and everything
+ * outside it is untouched by construction. Removing the class from the shell
+ * removes this entire conversion from the running app.
+ *
+ * WHAT THE REMAPPING DOES. App.css styles the console through its own semantic
+ * names — `--bg-card`, `--accent`, `--text-muted`, `--error` and so on. Those
+ * names are not Organic's, so `.organic-scope` alone does not touch them: it
+ * would leave a sand page with navy cards on it. Rebinding them here converts
+ * every `var(--…)` call site in the console at once, without editing App.css and
+ * without touching a single rule the farmer portal depends on.
+ *
+ * It does NOT convert hard-coded hexes. App.css carries 252 literal colour
+ * occurrences and those are handled per screen, in the pass that follows.
+ *
+ * The mapping is deliberate, not mechanical:
+ *
+ *   --accent → terracotta       Standing rule 2: terracotta means a named human
+ *                               must decide or chase. App.css's gold carried no
+ *                               rule at all.
+ *   --success → sage            Cleared / healthy.
+ *   --warning → terracotta-700  "Needs a person" is the same idea; the system
+ *                               has no separate amber and inventing one would be
+ *                               a fifth state.
+ *   --error → terracotta-800    RED IS NOT IN THE PALETTE. The deepest accent
+ *                               step reads as urgent without introducing a hue
+ *                               the system does not contain. Where red was
+ *                               carrying a *level* rather than a state (the risk
+ *                               badge), the colour is removed entirely rather
+ *                               than remapped — see DDPFarmProfiles.
+ *   --text-muted → neutral-700  NOT neutral-600. Measured 3.92:1 on the card
+ *                               ground, under the 4.5:1 body-text floor;
+ *                               neutral-700 is 6.02:1.
+ */
+
+.console-organic {
+  /* ── Grounds ─────────────────────────────────────────────────────────── */
+  --bg: var(--color-bg);
+  --bg-card: var(--color-neutral-100);
+  --bg-elevated: var(--color-neutral-200);
+  --bg-deep: var(--color-accent-2-900);
+
+  /* ── Action ──────────────────────────────────────────────────────────── */
+  --accent: var(--color-accent);
+  --accent-strong: var(--color-accent-700);
+  --jade: var(--color-accent-2-900);
+
+  /* ── Text ────────────────────────────────────────────────────────────── */
+  --text: var(--color-text);
+  --text-muted: var(--color-neutral-700);
+  --border: var(--color-neutral-300);
+
+  /* ── Status ──────────────────────────────────────────────────────────── */
+  --success: var(--color-accent-2-700);
+  --warning: var(--color-accent-700);
+  --error: var(--color-accent-800);
+
+  /* ── Identifiers ─────────────────────────────────────────────────────── */
+  /* Rule 4: identifiers in mono. Organic's mono is IBM Plex, not JetBrains. */
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* App.css's own alias, used by a handful of console rules. */
+  --radius-pill: 999px;
+}
+
+/*
+ * THE THIRD IDENTITY, retired in full.
+ *
+ * `--ddp-serif` and `--ddp-sans` were the visible half of something larger: an
+ * entire parallel design system of 27 tokens with 427 usages across 124 rules
+ * scoped under `.ddp-wrap`. Found by asking the browser which rule actually
+ * styled a console input, after a token remap and a class swap both failed to
+ * move it — grep had not connected the pieces because they share no prefix with
+ * anything else and each looked like a one-off.
+ *
+ * It is the audit's third identity, entire:
+ *
+ *     --ddp-gold-500   #B89446   the mustard button
+ *     --ddp-green-900  #17382D   the deep-green chrome
+ *     --ddp-serif      Noto Serif — the "thinner quiet serif"
+ *     --ddp-r-control  3px       the square corners
+ *     --ddp-paper-strong #FFFFFF the white inputs
+ *     --ddp-risk-700   #8C3028   the red that is not in the palette
+ *
+ * Every one is rebound below. Nothing in App.css is edited: the farmer portal's
+ * editorial screens still read these tokens and are out of this pass's scope, so
+ * the values change only for descendants of the console frame.
+ *
+ * WHY THIS BEATS A SPECIFICITY FIGHT. The rule that was winning is
+ * `.ddp-wrap input:not([type=checkbox]):not([type=radio]):not([type=file])
+ * :not([type=hidden]):not([type=range])` — six selectors of specificity against
+ * `.organic-scope .input`'s two. Out-specifying it per component would mean a
+ * new arms race on every screen. Rebinding what it READS converts all 427 usages
+ * at once and leaves the cascade alone.
+ */
+.console-organic {
+  /* Faces — Caprasimo is titles and headings, Figtree is everything else. */
+  --ddp-serif: var(--font-heading);
+  --ddp-sans: var(--font-body);
+
+  /* Grounds and paper */
+  --ddp-canvas: var(--color-bg);
+  --ddp-paper: var(--color-neutral-100);
+  --ddp-paper-muted: var(--color-neutral-200);
+  /* The input fill. Organic fills a control with the sand surface, not white —
+     white is the one value that made the console's forms read as a different
+     product from the page they sit on. */
+  --ddp-paper-strong: var(--color-surface);
+
+  /* Rules and edges */
+  --ddp-line-soft: var(--color-neutral-200);
+  --ddp-line-strong: var(--color-neutral-300);
+
+  /* Ink. -500 lands on neutral-700, not -600: measured 3.92:1 on the card
+     ground, under the 4.5:1 floor. */
+  --ddp-ink-950: var(--color-text);
+  --ddp-ink-700: var(--color-neutral-800);
+  --ddp-ink-500: var(--color-neutral-700);
+
+  /* Gold → terracotta. Standing rule 2: this is the colour that means a named
+     human must decide or chase, and the gold carried no rule at all. */
+  --ddp-gold-500: var(--color-accent);
+  --ddp-gold-700: var(--color-accent-700);
+  --ddp-focus-dark: var(--color-accent);
+  --ddp-focus-light: var(--color-accent-700);
+
+  /* The deep-green chrome → sage, which is the system's own dark ground. */
+  --ddp-green-700: var(--color-accent-2-700);
+  --ddp-green-800: var(--color-accent-2-800);
+  --ddp-green-900: var(--color-accent-2-900);
+  --ddp-green-950: var(--color-accent-2-900);
+
+  /* Status. RED IS NOT IN THE PALETTE — --ddp-risk-700 was the last place it
+     survived as a token. The deepest accent step reads as urgent without
+     introducing a hue the system does not contain. Where red carried a LEVEL
+     rather than a state, the colour is removed entirely instead — see
+     DDPFarmProfiles. */
+  --ddp-risk-700: var(--color-accent-800);
+  --ddp-success-700: var(--color-accent-2-700);
+  --ddp-warning-700: var(--color-accent-700);
+
+  /* Corners. 3px and 2px are the square geometry standing rule 8 forbids;
+     `.organic-scope .input` already pills controls at 999px, so the control
+     token matches it rather than fighting it. */
+  --ddp-r-control: 999px;
+  --ddp-r-surface: var(--radius-lg);
+}
+
+/*
+ * Hard-coded faces, which a variable remap cannot reach.
+ *
+ * Five rules in App.css write `'Georgia', 'Times New Roman', serif` and two
+ * write `'Inter', …` as literals. Inside the console those elements are pulled
+ * back onto the pair by selector rather than by token — listed explicitly so it
+ * is visible which surfaces were carrying a third and fourth face.
+ */
+.console-organic .page-title,
+.console-organic .page-header h1,
+.console-organic .summary-val,
+.console-organic .master-title,
+.console-organic .eo-title {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+}
+
+.console-organic .page-subtitle,
+.console-organic .page-header p,
+.console-organic .master-desc,
+.console-organic .eo-body {
+  font-family: var(--font-body);
+}
+
+/*
+ * Corners.
+ *
+ * `--radius-*` is inherited from `.organic-scope` on the same element, so every
+ * App.css rule reading those names already lands on Organic's scale inside the
+ * console. What that does NOT catch is a literal `border-radius: 4px` or `6px`,
+ * of which App.css has several on console components. Those are corrected per
+ * screen; the two below are the shared table and card shells that every screen
+ * inherits, so they are done once here.
+ *
+ * Standing rule 8: round, warm, airy — no hairline-only geometry.
+ */
+.console-organic .card,
+.console-organic .table-card {
+  border-radius: var(--radius-lg);
+}
+
+.console-organic .inv-table thead th {
+  /* App.css sets a 10px uppercase label here; the size and tracking are right,
+     the face was not. */
+  font-family: var(--font-body);
+}
+
+
+/*
+ * A SCROLLABLE TABLE THAT LOOKS SCROLLABLE.
+ *
+ * Measured on Master Inventory at 1440px before changing anything: the table is
+ * 1158px across 12 columns, `.table-scroll` gets 804px, and
+ * scrollWidth (1158) > clientWidth (804) — so `overflow-x: auto` was already
+ * there and the region already scrolled. Identical at 1280 and 1600.
+ *
+ * The audit read it as "horizontal overflow isn't handled". It is. What is not
+ * handled is that macOS draws OVERLAY scrollbars, which are invisible at rest:
+ * a scrollable region and a truncated one look exactly the same until you try.
+ * The header ends mid-word at "CO CH…" with nothing to say more exists.
+ *
+ * So this makes the scroll DISCOVERABLE and relayouts nothing. THE EDGE SHADOW
+ * IS THE FIX; the scrollbar rules are cosmetic where a scrollbar exists at all.
+ *
+ * 1. Scrollbar styling — WHICH DOES NOT MAKE IT PERSISTENT ON macOS, and the
+ *    rules below are kept only because they do work elsewhere. Measured in the
+ *    owner's real Chrome, not headless: offsetHeight - clientHeight is 0, so the
+ *    bar still takes no layout space and is still invisible at rest.
+ *    `-webkit-appearance: none` is widely described as defeating overlay
+ *    scrollbars and it does not — current Chrome follows the OS "Show scroll
+ *    bars" setting regardless. On Windows and Linux, and on a Mac set to always
+ *    show scrollbars, these rules give the bar Organic's colours. Nowhere do
+ *    they make it appear. Do not read them as the fix.
+ *
+ * 2. Edge shadows that appear ONLY when there is more content, using the
+ *    background-attachment trick: the two `local` gradients scroll WITH the
+ *    content and so cover the shadows when you reach either end, while the two
+ *    `scroll` radials stay pinned to the box. No JavaScript, no resize
+ *    observer, and it stays correct when the column count or the container
+ *    width changes.
+ *
+ * The cover gradients must match the ground the table sits on or they read as a
+ * band; --bg-card is the same token the card itself uses, so they track it.
+ *
+ * NOT FIXED HERE, deliberately: the table needs 1158px and the filter panel
+ * takes ~420px of the width it could have had. Widening it means collapsing
+ * that panel or carrying fewer columns, both of which are layout and editorial
+ * decisions rather than a defect, and both are out of this pass.
+ */
+.console-organic .table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-400) transparent;
+
+  /* The cover gradients have to match the ground EXACTLY or they read as a pale
+     band at the edge — which is what --bg-card did here, because the ground
+     behind this scroller is the card's --color-surface (measured
+     rgb(235,221,197)), not the page's neutral-100. Rather than guess per screen,
+     the scroller paints its own ground as the final background layer below, so
+     cover and ground are the same token by construction. */
+  background:
+    linear-gradient(to right, var(--color-surface) 30%, transparent) left center / 44px 100% no-repeat local,
+    linear-gradient(to left, var(--color-surface) 30%, transparent) right center / 44px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--color-text) 18%, transparent), transparent) left center / 16px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--color-text) 18%, transparent), transparent) right center / 16px 100% no-repeat scroll,
+    var(--color-surface);
+}
+
+.console-organic .table-scroll::-webkit-scrollbar {
+  height: 10px;
+  -webkit-appearance: none;
+}
+.console-organic .table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.console-organic .table-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-400);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.console-organic .table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neutral-500);
+  background-clip: content-box;
+}
+
+
+/*
+ * THE LAST LITERAL REDS — found by asking which ELEMENT carried the colour,
+ * after an override written against the wrong selector changed nothing.
+ *
+ * Four rules in App.css write rgba(153,27,27,…) directly rather than through a
+ * token, so every remap in this file passed straight over them. They are the
+ * same red that .risk-high used and the same reason it survived: a literal has
+ * no name to rebind.
+ *
+ * .alert-danger and .btn-reject are STATES, not levels — an alert that needs
+ * acting on, and the control that rejects a submission. So unlike the risk
+ * badge these keep their tint and take terracotta, which is the system's colour
+ * for "a named human must decide or chase". Standing rule 2.
+ *
+ * Found on Farm Review with a record loaded. Reaching it cold shows the
+ * parent's empty state, so the earlier pass measured a screen that was not
+ * there — the drill-down had to be clicked through before it could be checked.
+ */
+.console-organic .alert-danger {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent-300);
+  color: var(--color-accent-900);
+}
+
+.console-organic .btn-reject {
+  border-color: var(--color-accent-600);
+}
+.console-organic .btn-reject:hover {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent-700);
+}
+
+
+/* .risk-flag-negative is the one the first override missed: a warning flag on
+   Farm Review's risk panel, reached only with a farm actually selected. It is a
+   state — something a reviewer must weigh — so it keeps a tint and takes
+   terracotta, like .alert-danger above. */
+.console-organic .risk-flag-negative {
+  background: var(--color-accent-100);
+  color: var(--color-accent-900);
+}
+
+
+/* .check-fail — Inventory Review's failed checklist row, the last literal red
+   in the console. A failed check is a state a reviewer must act on, so it keeps
+   its tint and takes terracotta. Found the same way as .risk-flag-negative: by
+   drilling into the screen with a record loaded and asking which element
+   carried the colour. Neither was reachable cold. */
+.console-organic .checklist-row.check-fail {
+  background: var(--color-accent-100);
+  color: var(--color-accent-900);
+}

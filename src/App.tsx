@@ -97,7 +97,6 @@ import AccessDenied from './components/shared/AccessDenied'
 import FarmerNav from './components/farmer/FarmerNav'
 import FarmerMobileNav from './components/farmer/FarmerMobileNav'
 import AdminNav from './components/admin/AdminNav'
-import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import DDPBuyerProvisioning from './pages/admin/DDPBuyerProvisioning'
 import DDPEvidenceReview from './pages/admin/DDPEvidenceReview'
@@ -1950,12 +1949,31 @@ export default function App() {
         // frame as the desk it points at.
         if (page === 'ddp-overview' && isAdminRole) return overviewFrame()
 
-        // Identical routed content in both frames — only the surrounding chrome
-        // differs, so no page's behaviour depends on which one is drawn.
+        // ONE CONSOLE SHELL. AdminShell drew a near-black top bar with a
+        // breadcrumb over a second sidebar, while Overview and the Operations
+        // Desk drew OrganicConsoleShell's sage sidebar — two navigation shells
+        // alternating screen to screen inside one authenticated product. The
+        // 13 Aug audit found that, plus a second display face and a fourth
+        // palette on buyer onboarding alone.
+        //
+        // Every console screen now renders in the Organic frame. The routed
+        // content is unchanged: both shells already wrapped the SAME `appPages`,
+        // so no screen's behaviour depends on which one is drawn — only the
+        // chrome around it, and the scope classes the frame carries.
         return useEditorialShell ? (
-          <AdminShell page={page} goTo={goTo} profile={currentProfile} onSignOut={handleSignOut}>
+          <OrganicConsoleShell
+            page={page}
+            goTo={goTo}
+            onSignOut={handleSignOut}
+            signedInAs={
+              currentProfile
+                ? `Signed in as ${currentProfile.displayName || currentProfile.email}`
+                : 'Demo mode'
+            }
+            items={CONSOLE_NAV_ITEMS}
+          >
             {appPages}
-          </AdminShell>
+          </OrganicConsoleShell>
         ) : (
           // eo-farmer applies the editorial appearance to the farmer screens.
           // Class only — isFarmerPage is the app's existing value, and the
