@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DDP_PAGES } from './navigationGuard'
 import { resolvePostLoginDecision } from './postLoginRouting'
 import type { UserProfile } from '../services/auth'
 
@@ -48,9 +49,18 @@ describe('Operations Desk — routing registration', () => {
     expect(TYPES_SRC).toContain(`| '${PAGE_ID}'`)
   })
 
-  it('registers the page in DDP_PAGES so a non-admin gets AccessDenied, not a blank frame', () => {
-    const ddpPages = APP_SRC.match(/const DDP_PAGES: Page\[\] = \[[^\]]*\]/)?.[0] ?? ''
-    expect(ddpPages).toContain(`'${PAGE_ID}'`)
+  /**
+   * DDP_PAGES moved from App.tsx to lib/navigationGuard.ts when the guard grew
+   * the rule that refuses a non-admin a console page: the guard needs the same
+   * list, and two copies of "which pages are the console" would drift on the
+   * list that decides who sees what.
+   *
+   * Asserted against the exported value rather than the source text now — the
+   * page must be IN the list, which is the property; where the list is written
+   * is not.
+   */
+  it('registers the page in DDP_PAGES, so a non-admin is refused rather than shown a blank frame', () => {
+    expect(DDP_PAGES).toContain(PAGE_ID)
   })
 
   it('is NOT registered as a farmer or public page', () => {

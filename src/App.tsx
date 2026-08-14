@@ -97,15 +97,15 @@ import AccessDenied from './components/shared/AccessDenied'
 import FarmerNav from './components/farmer/FarmerNav'
 import FarmerMobileNav from './components/farmer/FarmerMobileNav'
 import AdminNav from './components/admin/AdminNav'
-import AdminShell from './components/admin/AdminShell'
 import DDPAccessRequests from './pages/admin/DDPAccessRequests'
 import DDPBuyerProvisioning from './pages/admin/DDPBuyerProvisioning'
 import DDPEvidenceReview from './pages/admin/DDPEvidenceReview'
 import SupplyLedgerTabs from './components/admin/SupplyLedgerTabs'
-import { FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
+import { DDP_PAGES, FARMER_PAGES, PUBLIC_AUTH_PAGES, PUBLIC_CORPORATE_PAGES, PUBLIC_PAGES, resolveNavigationTarget } from './lib/navigationGuard'
 import { FARMER_PORTAL_DEFAULT_LANGUAGE, initialLanguage, storeLanguage } from './lib/languagePreference'
 import { clearAuthRedirect, getAuthRedirect } from './lib/authRedirect'
-import { getInitialPageFromPath, syncUrlToPage } from './lib/urlRouting'
+import { getInitialPageFromPath, isConsolePage, syncUrlToPage } from './lib/urlRouting'
+import { consumeDeepLinkIntent, decideColdLoad, holdDeepLinkIntent } from './lib/deepLinkIntent'
 import { applyPublicPageMetadata, metadataForPage } from './lib/publicPageMetadata'
 
 // FARMER_PAGES / PUBLIC_PAGES and the routing decision live in
@@ -113,7 +113,6 @@ import { applyPublicPageMetadata, metadataForPage } from './lib/publicPageMetada
 // 'farmer-register', which silently made the "Supplier signup" button a no-op
 // for every signed-out visitor; navigationGuard.test.ts now asserts that every
 // target a public surface links to is actually reachable.
-const DDP_PAGES: Page[] = ['ddp-overview', 'ddp-farms', 'ddp-farm-review', 'ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register', 'ddp-compliance-watchtower', 'ddp-operations-desk', 'ddp-access-requests', 'ddp-buyer-provisioning', 'ddp-document-review']
 const SUPPLY_LEDGER_PAGES: Page[] = ['ddp-inventory', 'ddp-inventory-review', 'ddp-master', 'ddp-buyer', 'ddp-missing-documents', 'ddp-coa-intelligence', 'ddp-risk-register']
 
 // ─── Main App ────────────────────────────────────────────────────────────────
@@ -154,10 +153,21 @@ export default function App() {
   // and no way to obtain one.
   const [page, setPage] = useState<Page>(() => {
     if (getAuthRedirect()) return 'set-password'
-    // Honour deep-link paths (e.g. /farmer) on a cold load so a bookmarked or
-    // QR-scanned URL reaches the right screen without requiring the user to
-    // navigate from the landing page first.
-    return getInitialPageFromPath(window.location.pathname) ?? 'landing'
+    // Honour deep-link paths (e.g. /farmer, /console/*) on a cold load so a
+    // bookmarked or QR-scanned URL reaches the right screen without requiring
+    // the user to navigate from the landing page first.
+    //
+    // A path onto AUTHENTICATED surface cannot be honoured here: identity is
+    // unknown at this instant (authLoading is still true, the session restores
+    // asynchronously), so resolving it now would treat a signed-in admin as a
+    // stranger and bounce them to /login moments before their own session
+    // arrived. decideColdLoad holds those and they are replayed through the
+    // guard on the first auth resolution below. See lib/deepLinkIntent.ts.
+    const { page: initial, held } = decideColdLoad(window.location.pathname, {
+      isDemo: !isSupabaseConfigured,
+    })
+    holdDeepLinkIntent(held)
+    return initial
   })
   // Opens in the farmer's own language, and remembers the choice. This was a
   // hardcoded 'en' that was never persisted, so a Thai farm scanning the QR
@@ -294,24 +304,6 @@ export default function App() {
     syncUrlToPage(page)
   }, [page])
 
-  // Browser Back / Forward: when the user navigates via history, map the new
-  // pathname back to a page (or fall back to 'landing').
-  //
-  // This calls setPage directly rather than goTo, so it does NOT run
-  // resolveNavigationTarget. That is only safe because every path in
-  // urlRouting's PATH_TO_PAGE maps to a PUBLIC page, which the guard would
-  // admit for any visitor anyway. urlRouting.test.ts enforces that invariant —
-  // if someone adds a farmer or admin route to the map, that test fails and
-  // this handler must be routed through the guard before the route ships.
-  useEffect(() => {
-    function handlePopState() {
-      const mapped = getInitialPageFromPath(window.location.pathname)
-      setPage(mapped ?? 'landing')
-      window.scrollTo(0, 0)
-    }
-    window.addEventListener('popstate', handlePopState)
-    return () => window.removeEventListener('popstate', handlePopState)
-  }, [])
 
   // ── Auth subscription ────────────────────────────────────────────────────
   // authLoading is initialised to false in demo mode via useState, so no
@@ -397,7 +389,29 @@ export default function App() {
       })
       didBootstrapRoute.current = routed
       if (action.kind === 'route') {
-        setPage(action.page)
+        // A DEEP LINK OUTRANKS THE DEFAULT ROLE PAGE, but only after the guard
+        // has seen it. This is the other half of decideColdLoad: a path onto
+        // authenticated surface was held at load because identity was unknown,
+        // and this is the first moment it IS known. resolveNavigationTarget
+        // decides — a signed-out visitor gets 'login', a farmer following a
+        // console URL gets sent where the guard sends them, and an admin gets
+        // the screen they asked for.
+        //
+        // Consumed, so it can never fire twice. Without that, every later auth
+        // event — a token refresh, StrictMode's duplicate init — would drag the
+        // operator back to the URL they arrived on, which is exactly what
+        // didBootstrapRoute exists to prevent.
+        const deepLink = consumeDeepLinkIntent(
+          {
+            isDemo: !isSupabaseConfigured,
+            isSignedIn: profile !== null,
+            isAdminRole: profile?.role === 'ddp_admin',
+            isBuyerRole: profile?.role === 'buyer',
+            isFarmerRole: profile?.role === 'farmer',
+          },
+          action.page,
+        )
+        setPage(deepLink ?? action.page)
         window.scrollTo(0, 0)
       } else if (action.kind === 'revoke-session') {
         void signOut()
@@ -631,6 +645,46 @@ export default function App() {
   const farmerCoaOnFileSafe = isDemo || !isFarmerRole ? null : farmerCoaOnFile
 
   const isBuyerRole = !isDemo && currentProfile?.role === 'buyer'
+
+  /*
+   * Browser Back / Forward, routed through the navigation guard.
+   *
+   * MOVED HERE FROM ABOVE THE ROLE DERIVATIONS. The handler needs isDemo /
+   * isSignedIn / isAdminRole / isBuyerRole, and those are declared further down
+   * the component than the listener used to be registered — referencing them in
+   * a dependency array up there is a temporal dead zone error, and capturing
+   * them in a closure with an empty array is worse: it compiles, and the
+   * listener then judges every future Back press against the identity the app
+   * had on its very first render.
+   *
+   * The context goes in a ref that is refreshed on each render, so the listener
+   * is registered once and still reads current identity. Re-subscribing on every
+   * auth change would work too, and would churn a window listener for no gain.
+   */
+  const navContextRef = useRef({ isDemo, isSignedIn, isAdminRole, isBuyerRole, isFarmerRole })
+  // Refreshed in an effect, NOT during render. Assigning to a ref while
+  // rendering is a side effect in the render phase — unsafe under concurrent
+  // rendering, and eslint's rules-of-React caught it. No dependency array, so
+  // it runs after every commit and the listener always reads current identity.
+  // The gap between render and commit cannot matter here: popstate is a user
+  // gesture and cannot fire inside a render.
+  useEffect(() => {
+    navContextRef.current = { isDemo, isSignedIn, isAdminRole, isBuyerRole, isFarmerRole }
+  })
+
+  useEffect(() => {
+    function handlePopState() {
+      const mapped = getInitialPageFromPath(window.location.pathname)
+      window.scrollTo(0, 0)
+      if (!mapped) { setPage('landing'); return }
+      // Identity is known by now — a Back press can only follow a load — so
+      // unlike the cold load there is nothing to hold and the guard just runs.
+      setPage(resolveNavigationTarget(mapped, navContextRef.current))
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
   const isFarmerPage = FARMER_PAGES.includes(page)
   // Derived — true while a farmer's scope is being fetched from Supabase
   const scopeLoading = isFarmerRole && farmerScope === null
@@ -857,7 +911,7 @@ export default function App() {
   function goTo(p: Page) {
     // The decision itself is pure and lives in lib/navigationGuard.ts; this
     // function keeps only the side effects.
-    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole, isBuyerRole })
+    const target = resolveNavigationTarget(p, { isDemo, isSignedIn, isAdminRole, isBuyerRole, isFarmerRole })
     // DO NOT CLEAR dbError HERE. An earlier revision of this fix did, and it was
     // wrong in a way worth recording.
     //
@@ -1469,7 +1523,12 @@ export default function App() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const showFarmerNav = isDemo || isFarmerRole
+  // Demo grants every role at once, so without the console exclusion a demo
+  // visitor on /console/* gets the farmer top bar above the console sidebar —
+  // and useEditorialShell (showDDPNav && !showFarmerNav) drops most console
+  // screens out of the Organic frame altogether. A signed-in admin has
+  // isFarmerRole false and is unaffected either way.
+  const showFarmerNav = (isDemo || isFarmerRole) && !isConsolePage(page)
   const showDDPNav = isAdminRole
 
   // Which chrome to draw around the routed page. Presentation only: it reads the
@@ -1950,12 +2009,31 @@ export default function App() {
         // frame as the desk it points at.
         if (page === 'ddp-overview' && isAdminRole) return overviewFrame()
 
-        // Identical routed content in both frames — only the surrounding chrome
-        // differs, so no page's behaviour depends on which one is drawn.
+        // ONE CONSOLE SHELL. AdminShell drew a near-black top bar with a
+        // breadcrumb over a second sidebar, while Overview and the Operations
+        // Desk drew OrganicConsoleShell's sage sidebar — two navigation shells
+        // alternating screen to screen inside one authenticated product. The
+        // 13 Aug audit found that, plus a second display face and a fourth
+        // palette on buyer onboarding alone.
+        //
+        // Every console screen now renders in the Organic frame. The routed
+        // content is unchanged: both shells already wrapped the SAME `appPages`,
+        // so no screen's behaviour depends on which one is drawn — only the
+        // chrome around it, and the scope classes the frame carries.
         return useEditorialShell ? (
-          <AdminShell page={page} goTo={goTo} profile={currentProfile} onSignOut={handleSignOut}>
+          <OrganicConsoleShell
+            page={page}
+            goTo={goTo}
+            onSignOut={handleSignOut}
+            signedInAs={
+              currentProfile
+                ? `Signed in as ${currentProfile.displayName || currentProfile.email}`
+                : 'Demo mode'
+            }
+            items={CONSOLE_NAV_ITEMS}
+          >
             {appPages}
-          </AdminShell>
+          </OrganicConsoleShell>
         ) : (
           // eo-farmer applies the editorial appearance to the farmer screens.
           // Class only — isFarmerPage is the app's existing value, and the

@@ -54,6 +54,38 @@ const PATH_TO_PAGE: Record<string, Page> = {
   '/privacy': 'privacy',
   '/terms': 'terms',
   '/governance': 'governance',
+
+  /* ── The console ─────────────────────────────────────────────────────────
+     ROUTABLE IS NOT PUBLIC, and these are the first mapped paths that are not.
+     That was exactly the invariant urlRouting.test.ts protected, and it
+     protected it by forbidding this — because a cold load and a Back press set
+     the page WITHOUT passing through resolveNavigationTarget.
+
+     Both now do. lib/deepLinkIntent.ts holds a path onto authenticated surface
+     until identity resolves and replays it through the guard; the popstate
+     handler calls the guard directly. So an admin bookmarking /console/evidence
+     lands on it, a signed-out visitor following the same URL gets 'login', and
+     a farmer gets wherever the guard sends them — none of it decided here.
+
+     Not in publicPageMetadata, not in the sitemap, and vercel.json serves them
+     noindex. robots.txt deliberately does not disallow them, for the reason
+     recorded there. */
+  '/console': 'ddp-overview',
+  '/console/overview': 'ddp-overview',
+  '/console/operations-desk': 'ddp-operations-desk',
+  '/console/supplier-enquiries': 'ddp-access-requests',
+  '/console/buyers': 'ddp-buyer-provisioning',
+  '/console/evidence': 'ddp-document-review',
+  '/console/compliance': 'ddp-farms',
+  '/console/supply-ledger': 'ddp-master',
+  '/console/watchtower': 'ddp-compliance-watchtower',
+  '/console/farm-review': 'ddp-farm-review',
+  '/console/inventory': 'ddp-inventory',
+  '/console/inventory-review': 'ddp-inventory-review',
+  '/console/missing-documents': 'ddp-missing-documents',
+  '/console/coa-intelligence': 'ddp-coa-intelligence',
+  '/console/risk-register': 'ddp-risk-register',
+  '/console/buyer-preview': 'ddp-buyer',
 }
 
 /** Page → canonical path. Pages not listed here revert to root. */
@@ -68,6 +100,24 @@ const PAGE_TO_PATH: Partial<Record<Page, string>> = {
   privacy: '/privacy',
   terms: '/terms',
   governance: '/governance',
+
+  /* '/console' is an inbound alias only — absent here so the address bar
+     settles on the specific screen rather than the alias. */
+  'ddp-overview': '/console/overview',
+  'ddp-operations-desk': '/console/operations-desk',
+  'ddp-access-requests': '/console/supplier-enquiries',
+  'ddp-buyer-provisioning': '/console/buyers',
+  'ddp-document-review': '/console/evidence',
+  'ddp-farms': '/console/compliance',
+  'ddp-master': '/console/supply-ledger',
+  'ddp-compliance-watchtower': '/console/watchtower',
+  'ddp-farm-review': '/console/farm-review',
+  'ddp-inventory': '/console/inventory',
+  'ddp-inventory-review': '/console/inventory-review',
+  'ddp-missing-documents': '/console/missing-documents',
+  'ddp-coa-intelligence': '/console/coa-intelligence',
+  'ddp-risk-register': '/console/risk-register',
+  'ddp-buyer': '/console/buyer-preview',
 }
 
 /**
@@ -124,6 +174,24 @@ export function getInitialPageFromPath(pathname: string): Page | null {
  * the href a visitor sees is the same path the router will accept on a cold
  * load. Unmapped pages fall back to "/", matching syncUrlToPage.
  */
+/**
+ * Does this page live under /console?
+ *
+ * Derived from PAGE_TO_PATH rather than kept as a second list, so a console
+ * screen cannot be added to the router and forgotten here.
+ *
+ * Used to keep the farmer navigation off the console in DEMO MODE, where
+ * `showFarmerNav = isDemo || isFarmerRole` is true and every role is granted at
+ * once. Without it a demo visitor on a console screen gets the farmer's top bar
+ * stacked above the console's own sidebar — and, because useEditorialShell is
+ * `showDDPNav && !showFarmerNav`, thirteen of the fifteen screens fall out of
+ * the Organic frame entirely and render bare. A real admin has isFarmerRole
+ * false and never saw either.
+ */
+export function isConsolePage(page: Page): boolean {
+  return (PAGE_TO_PATH[page] ?? '').startsWith('/console')
+}
+
 export function pathForPage(page: Page): string {
   return PAGE_TO_PATH[page] ?? '/'
 }

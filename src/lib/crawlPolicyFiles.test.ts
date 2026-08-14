@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { metadataForPage, indexablePages } from './publicPageMetadata'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -276,15 +277,55 @@ describe('the X-Robots-Tag header that actually excludes /farmer', () => {
    * blast radius of getting this wrong is the entire public surface, so the
    * source is pinned to the exact path.
    */
-  it('scopes the header to exactly /farmer and nothing else', () => {
+  /**
+   * The paths approved for noindex: /farmer and the console.
+   *
+   * The console is routable but never public — App.tsx gates every screen on
+   * isAdminRole, and since lib/deepLinkIntent.ts a deep link onto it is held
+   * and replayed through resolveNavigationTarget rather than setting the page
+   * directly. Adding an address must not add an indexable page, which is what
+   * the header is for.
+   *
+   * A pattern is allowed here; what is NOT allowed is a pattern that can reach
+   * an approved public page. That property is asserted below rather than
+   * inferred from the shape of the string, because `/console/(.*)` and `/(.*)`
+   * look similarly harmless and only one of them is.
+   */
+  const NOINDEX_SOURCES = ['/farmer', '/console', '/console/(.*)']
+
+  it('scopes X-Robots-Tag to the paths approved for it and nothing else', () => {
     for (const rule of vercelConfig.headers ?? []) {
       const setsRobots = rule.headers.some((header) => header.key.toLowerCase() === 'x-robots-tag')
       if (!setsRobots) continue
       expect(
-        rule.source,
-        `an X-Robots-Tag rule matches "${rule.source}". Anything broader than the exact ` +
-          '/farmer path risks marking the approved public pages noindex.',
-      ).toBe('/farmer')
+        NOINDEX_SOURCES,
+        `an X-Robots-Tag rule matches "${rule.source}", which is not on the approved list. ` +
+          'Anything broader risks marking the approved public pages noindex.',
+      ).toContain(rule.source)
+    }
+  })
+
+  /**
+   * The property the list above is a proxy for. Every page approved for search
+   * is checked against every noindex rule as the platform would match it — a
+   * rule whose regex reaches an indexable page would de-index it silently, and
+   * the failure looks like nothing at all until traffic disappears.
+   */
+  it('no noindex rule can match a page approved for search', () => {
+    const noindexRules = (vercelConfig.headers ?? []).filter((rule) =>
+      rule.headers.some((header) => header.key.toLowerCase() === 'x-robots-tag'),
+    )
+    expect(noindexRules.length).toBeGreaterThan(0)
+
+    for (const page of indexablePages()) {
+      const path = metadataForPage(page).canonicalPath
+      for (const rule of noindexRules) {
+        const re = new RegExp(`^${rule.source}$`)
+        expect(
+          re.test(path),
+          `the X-Robots-Tag rule "${rule.source}" matches ${path}, which is approved for search`,
+        ).toBe(false)
+      }
     }
   })
 

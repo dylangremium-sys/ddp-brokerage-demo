@@ -285,7 +285,7 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
                         <ComplianceRuleCheckBadge impact={ruleImpact} />
                       </td>
                       <td data-label="Status">
-                        <select
+                        <select className="input"
                           value={isPendingRow ? pending.status : risk.status}
                           onChange={e => handleStatusPick(risk.riskId, e.target.value as RiskStatus, risk.status)}
                           // Editing is gated on a settled successful read: staging a
@@ -303,7 +303,7 @@ export default function DDPRiskRegister({ farms, inventory, onReviewFarm, onRevi
                                 behind it) refuses a blank one, and nothing is
                                 auto-filled: an invented reason would defeat the
                                 point of recording one. */}
-                            <input
+                            <input className="input"
                               type="text"
                               value={pendingReason}
                               onChange={e => setPendingReason(e.target.value)}

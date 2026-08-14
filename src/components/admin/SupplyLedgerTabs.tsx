@@ -14,11 +14,15 @@ export default function SupplyLedgerTabs({ page, goTo }: {
   goTo: (p: Page) => void
 }) {
   return (
-    <div className="filter-tabs supply-ledger-tabs">
+    <div className="seg" role="tablist">
       {TABS.map(t => (
         <button
           key={t.target}
-          className={`filter-tab${t.pages.includes(page) ? ' filter-active' : ''}`}
+          type="button"
+          role="tab"
+          className="seg-opt"
+          aria-pressed={t.pages.includes(page)}
+          aria-selected={t.pages.includes(page)}
           onClick={() => goTo(t.target)}
         >
           {t.label}
