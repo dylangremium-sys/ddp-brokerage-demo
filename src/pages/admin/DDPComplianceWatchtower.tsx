@@ -65,6 +65,7 @@ import {
 } from '../../lib/watchtowerAiSummary'
 import { createComplianceAiSummaryHttpClient } from '../../lib/complianceAiSummaryClient'
 import { isSupabaseConfigured } from '../../lib/supabase'
+import { resolveAuditSink } from '../../lib/complianceAuditSink'
 import { getSession } from '../../services/auth'
 import {
   SUPPORTED_SOURCE_TIERS,
@@ -435,11 +436,28 @@ export default function DDPComplianceWatchtower({ farms, inventory, currentUser 
     entry: Omit<ComplianceAuditLog, 'id' | 'actorType' | 'actorId' | 'actorName' | 'createdAt'>,
     entryActorType: ComplianceAuditLog['actorType'] = 'admin',
   ): Promise<void> {
-    if (isSupabaseAdmin && currentUser) {
+    // WHERE THIS ENTRY MAY GO IS NOT DECIDED HERE — see lib/complianceAuditSink.
+    // The `currentUser` test is retained alongside it for TypeScript's benefit:
+    // isSupabaseAdmin already folds in `!!currentUser`, but the compiler cannot
+    // see that, and `currentUser.id` below needs the narrowing.
+    const sink = resolveAuditSink({
+      isSupabaseConfigured: repo.isSupabaseConfigured,
+      isSupabaseAdmin,
+    })
+
+    if (sink.kind === 'database' && currentUser) {
       const row = await repo.insertAuditLog(entry, currentUser.id, actorNameForId, entryActorType)
       setAuditLog(prev => [row, ...prev])
       return
     }
+
+    // A HOSTED BUILD HAS NO LOCAL FALLBACK. Unreachable from this screen today
+    // — all six hosted handlers refuse before writing — and that is exactly why
+    // it is here: the property should not depend on six call sites remembering.
+    if (sink.kind === 'refuse') {
+      throw new Error(sink.reason)
+    }
+
     const next: ComplianceAuditLog[] = [{
       id: makeId('audit'),
       actorType: entryActorType,
