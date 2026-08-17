@@ -1093,7 +1093,7 @@ function ApprovedInventoryList({ inventory, farms }: { inventory: InventoryItem[
   const candidateIds = candidates.map(i => i.id)
   // Stable primitive dep: the effect must re-run when the SET of candidate ids
   // changes, not on every re-render that rebuilds an equal array.
-  const candidateKey = candidateIds.join(' ')
+  const candidateKey = candidateIds.join('\u0000')
 
   // null = the authoritative read has not settled. The gate is CLOSED until it
   // does, so no batch is ever listed on the strength of unverified browser state.
@@ -1107,7 +1107,7 @@ function ApprovedInventoryList({ inventory, farms }: { inventory: InventoryItem[
 
   useEffect(() => {
     let cancelled = false
-    void resolveDecisions(candidateKey === '' ? [] : candidateKey.split(' ')).then(
+    void resolveDecisions(candidateKey === '' ? [] : candidateKey.split('\u0000')).then(
       next => { if (!cancelled) setResolved({ key: candidateKey, value: next }) },
       (err: unknown) => {
         if (cancelled) return
