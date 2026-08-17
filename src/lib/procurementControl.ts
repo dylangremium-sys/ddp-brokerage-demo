@@ -240,7 +240,7 @@ export function deriveCoaIntelligence(item: InventoryItem): CoaIntelligence {
  * the "unchanged risk keeps its override" half of the contract.
  */
 function riskContentFingerprint(severity: RiskSeverity, issue: string): string {
-  const input = `${severity} ${issue}`
+  const input = `${severity}\u0000${issue}`
   let hash = 0x811c9dc5
   for (let i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i)
