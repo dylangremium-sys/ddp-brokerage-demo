@@ -67,7 +67,10 @@ export function resolveApprovedListGate(
   reads: ReadonlyArray<{ unavailable: boolean } | null>,
 ): { unavailable: boolean } | null {
   if (reads.some(read => read === null)) return null
-  return { unavailable: reads.some(read => read!.unavailable) }
+  // `read?.` rather than a non-null assertion: the guard above already proves no
+  // entry is null, and an assertion here would only trade that proof for a
+  // runtime throw if the guard ever changed.
+  return { unavailable: reads.some(read => read?.unavailable === true) }
 }
 
 /**
