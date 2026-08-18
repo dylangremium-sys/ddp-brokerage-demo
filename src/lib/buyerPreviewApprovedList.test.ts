@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { resolveApprovedListState, isListApprovalDecision, type ApprovedListState } from './buyerPreviewApprovedList'
+import { resolveApprovedListState, resolveApprovedListGate, isListApprovalDecision, type ApprovedListState } from './buyerPreviewApprovedList'
 import { resolveDecisions } from './procurementDecisionStore'
 import { saveProcurementDecision } from './procurementControl'
 
@@ -311,6 +311,75 @@ describe('F3 — the list is wired to the authoritative read', () => {
 
   it('treats an unsettled or failed resolution as zero approved batches', () => {
     expect(PREVIEW_SRC).toContain('resolution === null || resolution.unavailable')
+  })
+
+  it('treats an unsettled or failed RULE-ENFORCEMENT read as zero approved batches', () => {
+    expect(PREVIEW_SRC).toContain('ruleSet === null || ruleSet.unavailable')
+  })
+
+  /**
+   * THE DEFECT this file was extended for. `ruleSet` gated the `approved` array
+   * but was absent from the state fold, so a failed rule read rendered the grey
+   * "No batches are currently human approved" all-clear. Asserting the call site
+   * passes all three reads to the shared gate is what stops the two diverging.
+   */
+  it('feeds ALL THREE authoritative reads into the user-visible list state', () => {
+    expect(PREVIEW_SRC).toContain('resolveApprovedListGate([resolution, overrideState, ruleSet])')
+    // The hand-rolled fold that omitted rule enforcement must not come back.
+    expect(PREVIEW_SRC).not.toContain('{ unavailable: resolution.unavailable || overrideState.unavailable }')
+  })
+})
+
+describe('F3 — the list-state gate folds every authoritative read', () => {
+  const ok = { unavailable: false }
+  const failed = { unavailable: true }
+
+  it('reports settled and healthy only when every read succeeded', () => {
+    expect(resolveApprovedListGate([ok, ok, ok])).toEqual({ unavailable: false })
+  })
+
+  it.each([
+    ['resolution', [null, ok, ok]],
+    ['overrides', [ok, null, ok]],
+    ['rule enforcement', [ok, ok, null]],
+  ] as const)('stays unsettled while the %s read is in flight', (_label, reads) => {
+    expect(resolveApprovedListGate([...reads])).toBeNull()
+  })
+
+  it.each([
+    ['resolution', [failed, ok, ok]],
+    ['overrides', [ok, failed, ok]],
+    ['rule enforcement', [ok, ok, failed]],
+  ] as const)('reports unavailable when the %s read failed', (_label, reads) => {
+    expect(resolveApprovedListGate([...reads])).toEqual({ unavailable: true })
+  })
+
+  it('lets an unsettled read dominate a failed one, so loading never reads as a failure', () => {
+    expect(resolveApprovedListGate([failed, null, ok])).toBeNull()
+  })
+
+  /**
+   * The end-to-end property the screen actually shipped broken: a failed or
+   * unsettled rule read yields zero approved batches, and that zero must NEVER
+   * surface as 'none-approved' — the only state that asserts nothing is approved.
+   */
+  it.each([
+    ['failed', failed, 'unavailable'],
+    ['unsettled', null, 'loading'],
+  ] as const)('never reports none-approved when the rule read is %s', (_label, ruleSet, expected) => {
+    const state = resolveApprovedListState({
+      resolution: resolveApprovedListGate([ok, ok, ruleSet]),
+      approvedCount: 0,
+    })
+    expect(state).toBe(expected)
+    expect(state).not.toBe('none-approved')
+  })
+
+  it('still reaches none-approved from a fully settled successful read', () => {
+    expect(resolveApprovedListState({
+      resolution: resolveApprovedListGate([ok, ok, ok]),
+      approvedCount: 0,
+    })).toBe('none-approved')
   })
 })
 
