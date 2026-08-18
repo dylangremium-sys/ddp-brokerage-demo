@@ -40,7 +40,7 @@ import {
   type DecisionSource,
   type ResolvedDecision,
 } from '../../lib/procurementDecisionStore'
-import { resolveApprovedListState, isListApprovalDecision } from '../../lib/buyerPreviewApprovedList'
+import { resolveApprovedListState, resolveApprovedListGate, isListApprovalDecision } from '../../lib/buyerPreviewApprovedList'
 import {
   resolveRiskOverrides,
   resolveRequirementOverrides,
@@ -1230,13 +1230,22 @@ function ApprovedInventoryList({ inventory, farms }: { inventory: InventoryItem[
         return computeBuyerDisclosureStatus(item, farms, authoritative, overrideState, rules).isHumanApproved
       })
 
-  // Both reads gate the list, so both feed its user-visible state. An empty table
-  // may only be shown once BOTH have settled successfully — otherwise "nothing is
-  // approved" is a positive claim made on an unread override store.
+  // ALL THREE reads gate the list, so all three feed its user-visible state. An
+  // empty table may only be shown once EVERY one has settled successfully —
+  // otherwise "nothing is approved" is a positive claim made on an unread store.
+  //
+  // Rule enforcement was added to the `approved` gate above but not to this one,
+  // so a failed rule read produced an empty list AND a settled-successful state:
+  // the grey "No batches are currently human approved" all-clear, on data that
+  // had failed to load.
+  //
+  // The gate above deliberately KEEPS its inline chain — it has to narrow each
+  // read to non-null for the filter body, which a folded value cannot do. So the
+  // two gates are still written separately, and what stops them drifting is the
+  // TEST PAIR in buyerPreviewApprovedList.test.ts: one pins the chain above,
+  // one pins this call. A fourth authoritative read must be added to BOTH.
   const listState = resolveApprovedListState({
-    resolution: resolution === null || overrideState === null
-      ? null
-      : { unavailable: resolution.unavailable || overrideState.unavailable },
+    resolution: resolveApprovedListGate([resolution, overrideState, ruleSet]),
     approvedCount: approved.length,
   })
 

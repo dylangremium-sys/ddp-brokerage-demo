@@ -42,6 +42,38 @@ export function resolveApprovedListState(input: {
 }
 
 /**
+ * Folds EVERY authoritative read that gates the list into the single settled/
+ * failed value `resolveApprovedListState` consumes.
+ *
+ * This exists because the previous inline fold was the bug. Rule enforcement was
+ * added as a third gate on the `approved` array but never added here, so a failed
+ * rule read produced zero approved batches AND a settled-successful gate — which
+ * is precisely the 'none-approved' all-clear, the one state that may never be
+ * reached from an unread source. The screen told operators "No batches are
+ * currently human approved" on data it had failed to load.
+ *
+ * Taking the reads as a LIST rather than as named fields keeps THIS fold from
+ * silently omitting one: a caller passes what gates the list, and every entry is
+ * treated identically. It does NOT unify the two gates — the `approved` filter in
+ * DDPBuyerPreview.tsx keeps its inline chain because it must narrow each read to
+ * non-null for the filter body. Adding a fourth authoritative read therefore
+ * still means editing BOTH, and the paired assertions in this module's tests are
+ * what enforce that, not shared code.
+ *
+ * A null read is "not settled yet" and dominates — it must surface as 'loading',
+ * never as a failure and never as an all-clear.
+ */
+export function resolveApprovedListGate(
+  reads: ReadonlyArray<{ unavailable: boolean } | null>,
+): { unavailable: boolean } | null {
+  if (reads.some(read => read === null)) return null
+  // `read?.` rather than a non-null assertion: the guard above already proves no
+  // entry is null, and an assertion here would only trade that proof for a
+  // runtime throw if the guard ever changed.
+  return { unavailable: reads.some(read => read?.unavailable === true) }
+}
+
+/**
  * Whether a resolved decision may count as approval for the LIST.
  *
  * Deliberately identical to the single-batch pack's rule
