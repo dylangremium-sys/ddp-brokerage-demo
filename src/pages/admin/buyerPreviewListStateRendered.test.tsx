@@ -27,12 +27,12 @@ const ITEM: InventoryItem = { ...SEED_INVENTORY[0], id: 'batch-1', farmId: FARM.
 // the rule read alone. A blanket failure would show the warning even pre-fix.
 vi.mock('../../lib/procurementDecisionStore', async (orig) => ({
   ...(await orig<typeof import('../../lib/procurementDecisionStore')>()),
-  resolveDecisions: vi.fn(async () => ({ decisions: new Map(), unavailable: false })),
+  resolveDecisions: vi.fn(() => Promise.resolve({ decisions: new Map(), unavailable: false })),
 }))
 vi.mock('../../lib/procurementOverrideStore', async (orig) => ({
   ...(await orig<typeof import('../../lib/procurementOverrideStore')>()),
-  resolveRiskOverrides: vi.fn(async () => ({ overrides: new Map(), unavailable: false })),
-  resolveRequirementOverrides: vi.fn(async () => ({ overrides: new Map(), unavailable: false })),
+  resolveRiskOverrides: vi.fn(() => Promise.resolve({ overrides: new Map(), unavailable: false })),
+  resolveRequirementOverrides: vi.fn(() => Promise.resolve({ overrides: new Map(), unavailable: false })),
 }))
 vi.mock('../../lib/complianceRepository', async (orig) => ({
   ...(await orig<typeof import('../../lib/complianceRepository')>()),
@@ -47,13 +47,19 @@ function installLocalStorage() {
   const stub: Storage = {
     get length() { return data.size },
     clear: () => data.clear(),
-    getItem: (k: string) => (data.has(k) ? data.get(k)! : null),
+    getItem: (k: string) => data.get(k) ?? null,
     key: (i: number) => Array.from(data.keys())[i] ?? null,
     removeItem: (k: string) => { data.delete(k) },
     setItem: (k: string, v: string) => { data.set(k, String(v)) },
   }
   Object.defineProperty(globalThis, 'localStorage', { value: stub, configurable: true, writable: true })
 }
+
+/**
+ * A read that never settles, i.e. still in flight. Named rather than inlined as
+ * `new Promise(() => {})` so the executor is not an empty function.
+ */
+const NEVER_SETTLES = new Promise<never>(() => undefined)
 
 const renderList = () => render(<DDPBuyerPreview inventory={[ITEM]} farms={[FARM]} />)
 
@@ -79,7 +85,7 @@ describe('the buyer-preview list, rendered, when the rule-enforcement read fails
   })
 
   it('stays on LOADING while the read is still in flight', { timeout: 20000 }, async () => {
-    vi.mocked(resolveEnforcedRuleAlertsForBatches).mockReturnValue(new Promise(() => {}))
+    vi.mocked(resolveEnforcedRuleAlertsForBatches).mockReturnValue(NEVER_SETTLES)
     renderList()
 
     await waitFor(() => expect(screen.getByText(LOADING)).toBeTruthy())
