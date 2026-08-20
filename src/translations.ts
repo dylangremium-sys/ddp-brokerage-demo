@@ -900,7 +900,7 @@ export const T = {
 
     hpHeroBadge: 'Licensed medical supply · Thailand → Czech Republic',
     hpHeroTitle: 'Paperwork that travels as well as the flower does.',
-    hpHeroBody: 'DDP registers Thai farms, inventories and grades every batch, verifies the certificates of analysis, and hands European medical buyers a dossier their regulator will accept. One ledger, both languages.',
+    hpHeroBody: 'DDP registers Thai farms, inventories and grades every batch, collects the certificate of analysis for each one, and assembles them into a single dossier for European medical buyers. One ledger, both languages.',
     hpHeroCtaFarm: 'Register your farm',
     hpHeroCtaBuyer: 'I am a licensed buyer',
     hpCred1: 'Thai FDA-licensed farms only',
@@ -952,7 +952,7 @@ export const T = {
 
     hpStepsTitle: 'Four steps, fully documented',
     hpStep1Title: 'Farm registration',
-    hpStep1Body: 'Licence, ownership and location verified against Thai FDA records before anything is listed.',
+    hpStep1Body: 'Licence, ownership and location are checked by a named DDP reviewer before anything is listed.',
     hpStep1Who: 'Farm + DDP',
     hpStep2Title: 'Inventory & grading',
     hpStep2Body: 'Every batch weighed, photographed, graded and given a code that follows it to Prague.',
@@ -961,7 +961,7 @@ export const T = {
     hpStep3Body: 'COA, batch numbers and export readiness collected into one dossier.',
     hpStep3Who: 'DDP compliance',
     hpStep4Title: 'Buyer release',
-    hpStep4Body: 'Licensed European buyers see only batches whose documentation is complete and current.',
+    hpStep4Body: 'Licensed European buyers see only the batches DDP has released for buyer view.',
     hpStep4Who: 'Buyer + DDP',
 
     hpFarmsEyebrow: 'For farms · สำหรับเกษตรกร',
@@ -971,7 +971,7 @@ export const T = {
     hpFarmPoint1: 'Free to apply — DDP is paid on completed sales, not on registration.',
     hpFarmPoint2: 'A named Thai-speaking contact reviews your file personally.',
     hpFarmPoint3: 'You see exactly which document is missing, and why it matters.',
-    hpFarmPoint4: 'Your licence and lab reports are never shared outside verified buyers.',
+    hpFarmPoint4: 'Your licence and lab reports are visible only to DDP and to buyers DDP has approved.',
 
     hpFormTitle: 'Farm application',
     hpFormStep: 'Step 1 of 4 · about 6 minutes',
@@ -990,7 +990,7 @@ export const T = {
     hpFormUploadNote: 'Photograph your licence with your phone camera — we accept a clear photo, no scanner needed.',
     hpFormReassure: 'You can stop at any step and come back — nothing is submitted to a buyer until you and DDP both approve it.',
 
-    hpComplianceTitle: 'Every claim on this page is a record in the ledger',
+    hpComplianceTitle: 'Every decision we take on a batch is recorded',
     // The handoff's last sentence read "Decision support, reviewed by qualified
     // humans, never automated legal advice." That breaks the project's own
     // public-copy constraint — publicCopyConstraints.test.ts caught it — which
@@ -998,7 +998,7 @@ export const T = {
     // Denying automation still raises it, and on a regulated product it invites
     // exactly the question it was trying to close. The disclaimer and the
     // named-human claim both survive; only the mechanism word is gone.
-    hpComplianceBody: 'Licence, batch, grade, COA, export readiness — each one timestamped, attributed to the person who approved it, and exportable as a dossier. Decision support, reviewed by qualified people. Not legal advice.',
+    hpComplianceBody: 'Batch status and document decisions are recorded as they happen — timestamped, append-only, and attributed to the reviewer who made them. Decision support, reviewed by qualified people. Not legal advice.',
 
     hpBuyersTitle: 'Licensed European buyers: request the current supply sheet',
     hpBuyersBody: 'Verified importers and pharmacies only. Send your licence and we will return available graded stock, with documentation status per batch.',
@@ -1822,7 +1822,7 @@ export const T = {
 
     hpHeroBadge: 'อุปทานทางการแพทย์ที่ได้รับอนุญาต · ไทย → สาธารณรัฐเช็ก',
     hpHeroTitle: 'เอกสารที่เดินทางได้ไกลเท่ากับผลผลิตของคุณ',
-    hpHeroBody: 'DDP ขึ้นทะเบียนฟาร์มไทย ตรวจนับและจัดเกรดทุกล็อต ตรวจสอบใบรับรองผลวิเคราะห์ และส่งมอบชุดเอกสารที่หน่วยงานกำกับดูแลของผู้ซื้อในยุโรปยอมรับ บัญชีเดียว สองภาษา',
+    hpHeroBody: 'DDP ขึ้นทะเบียนฟาร์มไทย ตรวจนับและจัดเกรดทุกล็อต รวบรวมใบรับรองผลวิเคราะห์ของแต่ละล็อต และจัดทำเป็นชุดเอกสารเดียวสำหรับผู้ซื้อทางการแพทย์ในยุโรป บัญชีเดียว สองภาษา',
     hpHeroCtaFarm: 'ขึ้นทะเบียนฟาร์มของคุณ',
     hpHeroCtaBuyer: 'ฉันเป็นผู้ซื้อที่ได้รับอนุญาต',
     hpCred1: 'เฉพาะฟาร์มที่ได้รับอนุญาตจาก อย. ไทย',
@@ -1870,7 +1870,7 @@ export const T = {
 
     hpStepsTitle: 'สี่ขั้นตอน พร้อมเอกสารครบถ้วน',
     hpStep1Title: 'ขึ้นทะเบียนฟาร์ม',
-    hpStep1Body: 'ตรวจสอบใบอนุญาต กรรมสิทธิ์ และที่ตั้ง กับข้อมูลของ อย. ไทย ก่อนนำสินค้าขึ้นแสดง',
+    hpStep1Body: 'ผู้ตรวจของ DDP ที่ระบุชื่อจะตรวจสอบใบอนุญาต กรรมสิทธิ์ และที่ตั้ง ก่อนนำสินค้าขึ้นแสดง',
     hpStep1Who: 'ฟาร์ม + DDP',
     hpStep2Title: 'ตรวจนับและจัดเกรด',
     hpStep2Body: 'ทุกล็อตได้รับการชั่งน้ำหนัก ถ่ายภาพ จัดเกรด และกำหนดรหัสที่ติดตามไปจนถึงกรุงปราก',
@@ -1879,7 +1879,7 @@ export const T = {
     hpStep3Body: 'ใบรับรองผลวิเคราะห์ หมายเลขล็อต และความพร้อมส่งออก รวมอยู่ในชุดเอกสารเดียว',
     hpStep3Who: 'ฝ่ายกำกับดูแลของ DDP',
     hpStep4Title: 'เปิดให้ผู้ซื้อ',
-    hpStep4Body: 'ผู้ซื้อที่ได้รับอนุญาตในยุโรปจะเห็นเฉพาะล็อตที่เอกสารครบถ้วนและเป็นปัจจุบัน',
+    hpStep4Body: 'ผู้ซื้อที่ได้รับอนุญาตในยุโรปจะเห็นเฉพาะล็อตที่ DDP อนุมัติให้แสดงแก่ผู้ซื้อแล้ว',
     hpStep4Who: 'ผู้ซื้อ + DDP',
 
     hpFarmsEyebrow: 'สำหรับเกษตรกร',
@@ -1889,7 +1889,7 @@ export const T = {
     hpFarmPoint1: 'สมัครฟรี — DDP ได้รับค่าตอบแทนเมื่อขายสำเร็จ ไม่ใช่ตอนขึ้นทะเบียน',
     hpFarmPoint2: 'มีผู้ติดต่อที่พูดภาษาไทยและระบุชื่อได้ ตรวจแฟ้มของคุณด้วยตนเอง',
     hpFarmPoint3: 'คุณเห็นชัดเจนว่าขาดเอกสารใด และเหตุใดจึงสำคัญ',
-    hpFarmPoint4: 'ใบอนุญาตและผลแล็บของคุณจะไม่ถูกเปิดเผยนอกกลุ่มผู้ซื้อที่ผ่านการตรวจสอบ',
+    hpFarmPoint4: 'ใบอนุญาตและผลแล็บของคุณจะเห็นได้เฉพาะ DDP และผู้ซื้อที่ DDP อนุมัติแล้วเท่านั้น',
 
     hpFormTitle: 'คำขอขึ้นทะเบียนฟาร์ม',
     hpFormStep: 'ขั้นที่ 1 จาก 4 · ประมาณ 6 นาที',
@@ -1904,8 +1904,8 @@ export const T = {
     hpFormUploadNote: 'ถ่ายภาพใบอนุญาตด้วยกล้องโทรศัพท์ของคุณ — ภาพที่ชัดเจนก็เพียงพอ ไม่ต้องใช้เครื่องสแกน',
     hpFormReassure: 'คุณหยุดขั้นตอนใดก็ได้แล้วกลับมาทำต่อ — จะไม่มีการส่งข้อมูลถึงผู้ซื้อจนกว่าคุณและ DDP จะเห็นชอบทั้งสองฝ่าย',
 
-    hpComplianceTitle: 'ทุกข้อความบนหน้านี้คือบันทึกในระบบ',
-    hpComplianceBody: 'ใบอนุญาต ล็อต เกรด ใบรับรองผลวิเคราะห์ และความพร้อมส่งออก — แต่ละรายการมีเวลากำกับ ระบุผู้อนุมัติ และส่งออกเป็นชุดเอกสารได้ เป็นข้อมูลประกอบการตัดสินใจที่ผู้เชี่ยวชาญเป็นผู้ตรวจ ไม่ใช่คำแนะนำทางกฎหมาย',
+    hpComplianceTitle: 'ทุกการตัดสินใจเกี่ยวกับล็อตสินค้าถูกบันทึกไว้',
+    hpComplianceBody: 'สถานะของล็อตและการตัดสินใจเกี่ยวกับเอกสารถูกบันทึกทันทีที่เกิดขึ้น — มีเวลากำกับ เพิ่มได้อย่างเดียวโดยแก้ไขไม่ได้ และระบุผู้ตรวจที่เป็นผู้ตัดสิน เป็นข้อมูลประกอบการตัดสินใจที่ผู้เชี่ยวชาญเป็นผู้ตรวจ ไม่ใช่คำแนะนำทางกฎหมาย',
 
     hpBuyersTitle: 'ผู้ซื้อที่ได้รับอนุญาตในยุโรป: ขอรายการอุปทานปัจจุบัน',
     hpBuyersBody: 'เฉพาะผู้นำเข้าและร้านขายยาที่ผ่านการตรวจสอบ ส่งใบอนุญาตของคุณมา แล้วเราจะแจ้งสต็อกที่จัดเกรดแล้วพร้อมสถานะเอกสารของแต่ละล็อต',
